@@ -41,3 +41,18 @@ class AgentPort(ABC):
     @abstractmethod
     async def on_shutdown(self) -> None:
         """Release resources gracefully."""
+
+    @abstractmethod
+    def get_env_status(self, user_id: str) -> dict:  # type: ignore[type-arg]
+        """Return the current status of the user's sandbox environment.
+
+        Possible values for the ``status`` key:
+        - ``none``     — no record or container
+        - ``stopped``  — container exists but is stopped
+        - ``starting`` — container is being created or restarted
+        - ``running``  — container is running and gRPC is accessible
+        """
+
+    @abstractmethod
+    def wake_env(self, user_id: str) -> None:
+        """Trigger sandbox environment creation/restart (fire-and-forget)."""

@@ -157,7 +157,8 @@ class StreamMessage:
         pipeline_body: dict,  # type: ignore[type-arg]
         conversation_id: uuid.UUID,
     ) -> AsyncGenerator[bytes, None]:
-        accumulated: list[str] = []
+        accumulated_text: list[str] = []
+        accumulated_error: list[str] = []
         gen = self._agent.pipe(content, model_id, messages_payload, pipeline_body)
 
         while True:
@@ -169,12 +170,14 @@ class StreamMessage:
                 try:
                     evt = json.loads(line[6:])
                     if evt.get("type") == "text":
-                        accumulated.append(evt.get("content", ""))
+                        accumulated_text.append(evt.get("content", ""))
+                    elif evt.get("type") == "error":
+                        accumulated_error.append(evt.get("message", ""))
                 except Exception:
                     pass
             yield chunk.encode("utf-8")
 
-        assistant_text = "".join(accumulated).strip()
+        assistant_text = "".join(accumulated_text).strip()
         if assistant_text:
             await self._messages.save(
                 Message(
@@ -182,5 +185,15 @@ class StreamMessage:
                     conversation_id=conversation_id,
                     role="assistant",
                     content=assistant_text,
+                )
+            )
+        elif accumulated_error:
+            error_content = "**Erro:** " + " ".join(accumulated_error)
+            await self._messages.save(
+                Message(
+                    id=uuid.uuid4(),
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content=error_content,
                 )
             )

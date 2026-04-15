@@ -150,6 +150,12 @@ class FakeAgent(AgentPort):
     async def on_shutdown(self) -> None:
         pass
 
+    def get_env_status(self, user_id: str) -> dict:  # type: ignore[type-arg]
+        return {"status": "running"}
+
+    def wake_env(self, user_id: str) -> None:
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Pytest Fixtures
