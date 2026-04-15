@@ -1,15 +1,17 @@
-"""Esquemas Pydantic para pedidos e respostas da API."""
+"""Esquemas Pydantic para pedidos e respostas HTTP da API.
+
+Validators delegam a app.domain.value_objects (DRY — lógica de validação
+definida uma única vez no domínio).
+"""
 
 from __future__ import annotations
 
-import re
 import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
-# Alinhado ao frontend (`validation.ts`) — evita rejeições estritas do `EmailStr` / email-validator.
-_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$")
+from app.domain.value_objects import validate_email, validate_password
 
 
 class UserCreate(BaseModel):
@@ -21,23 +23,12 @@ class UserCreate(BaseModel):
     @field_validator("email")
     @classmethod
     def email_normalizado(cls, v: object) -> str:
-        """Normaliza e valida formato (sem depender de EmailStr)."""
-        if v is None:
-            raise ValueError("Email é obrigatório.")
-        s = str(v).strip().lower()
-        if not s:
-            raise ValueError("Email é obrigatório.")
-        if not _EMAIL_RE.fullmatch(s):
-            raise ValueError("Email inválido. Use o formato nome@dominio.com.")
-        return s
+        return validate_email(str(v))
 
     @field_validator("password")
     @classmethod
     def password_min_len(cls, v: str) -> str:
-        """Garante mensagem clara em português (evita 422 genérico só com metadados)."""
-        if len(v) < 8:
-            raise ValueError("A password deve ter pelo menos 8 caracteres.")
-        return v
+        return validate_password(v)
 
 
 class UserOut(BaseModel):

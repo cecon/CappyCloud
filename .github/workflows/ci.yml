@@ -1,0 +1,51 @@
+name: API CI
+
+on:
+  push:
+    paths:
+      - "services/api/**"
+      - "services/cappycloud_agent/**"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    paths:
+      - "services/api/**"
+      - "services/cappycloud_agent/**"
+      - ".github/workflows/ci.yml"
+
+jobs:
+  lint-and-test:
+    name: Lint + Type check + Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install runtime dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Ruff — lint
+        run: ruff check .
+
+      - name: Ruff — format check
+        run: ruff format --check .
+
+      - name: Mypy — type check
+        run: mypy app/
+
+      - name: Pytest — tests + coverage gate (≥ 80%)
+        run: pytest
+        env:
+          DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+          JWT_SECRET: "test-secret-ci"
+          APP_NAME: "CappyCloud Test"
