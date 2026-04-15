@@ -40,7 +40,5 @@ def validate_password(raw: str) -> str:
         ValueError: se tiver menos de 8 caracteres.
     """
     if len(raw) < _PASSWORD_MIN_LEN:
-        raise ValueError(
-            f"A password deve ter pelo menos {_PASSWORD_MIN_LEN} caracteres."
-        )
+        raise ValueError(f"A password deve ter pelo menos {_PASSWORD_MIN_LEN} caracteres.")
     return raw

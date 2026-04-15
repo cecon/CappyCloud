@@ -174,9 +174,8 @@ def get_stream_msg_uc(
     convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
     msgs: Annotated[MessageRepository, Depends(get_msg_repo)],
     agent: Annotated[AgentPort, Depends(get_agent)],
-    repo_envs: Annotated[RepoEnvironmentRepository, Depends(get_repo_env_repo)],
 ) -> StreamMessage:
-    return StreamMessage(convs, msgs, agent, repo_envs)
+    return StreamMessage(convs, msgs, agent)
 
 
 def get_list_repo_envs_uc(

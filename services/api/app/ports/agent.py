@@ -18,8 +18,8 @@ class AgentPort(ABC):
         self,
         user_message: str,
         model_id: str,
-        messages: list[dict],  # type: ignore[type-arg]
-        body: dict,  # type: ignore[type-arg]
+        messages: list[dict],
+        body: dict,
     ) -> Generator[str, None, None]:
         """Stream SSE-formatted chunks from the agent.
 
@@ -43,7 +43,7 @@ class AgentPort(ABC):
         """Release resources gracefully."""
 
     @abstractmethod
-    def get_env_status(self, env_slug: str) -> dict:  # type: ignore[type-arg]
+    def get_env_status(self, env_slug: str) -> dict[str, object]:
         """Return the current status of a global environment container.
 
         Possible values for the ``status`` key:

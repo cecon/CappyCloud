@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Optional
 
 
 def _utcnow() -> datetime:
@@ -43,9 +42,9 @@ class Conversation:
     title: str
     created_at: datetime = field(default_factory=_utcnow)
     updated_at: datetime = field(default_factory=_utcnow)
-    environment_id: Optional[uuid.UUID] = None
-    env_slug: Optional[str] = None
-    base_branch: Optional[str] = None
+    environment_id: uuid.UUID | None = None
+    env_slug: str | None = None
+    base_branch: str | None = None
 
 
 @dataclass

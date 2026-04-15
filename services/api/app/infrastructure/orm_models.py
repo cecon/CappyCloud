@@ -17,27 +17,27 @@ class Base(DeclarativeBase):
     """Base declarativa para modelos ORM."""
 
 
-class UUIDType(TypeDecorator):  # type: ignore[type-arg]
+class UUIDType(TypeDecorator[uuid.UUID]):
     """UUID column compatible with both PostgreSQL and SQLite (for tests)."""
 
     impl = Uuid
     cache_ok = True
 
-    def load_dialect_impl(self, dialect):  # type: ignore[no-untyped-def]
+    def load_dialect_impl(self, dialect):
         if dialect.name == "sqlite":
             from sqlalchemy import String as SaString
 
             return dialect.type_descriptor(SaString(36))
         return dialect.type_descriptor(Uuid(as_uuid=True))
 
-    def process_bind_param(self, value, dialect):  # type: ignore[no-untyped-def]
+    def process_bind_param(self, value, dialect):
         if value is None:
             return value
         if dialect.name == "sqlite":
             return str(value)
         return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
 
-    def process_result_value(self, value, dialect):  # type: ignore[no-untyped-def]
+    def process_result_value(self, value, dialect):
         if value is None:
             return value
         return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
@@ -48,18 +48,14 @@ class RepoEnvironment(Base):
 
     __tablename__ = "repo_environments"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUIDType, primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
     slug: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     repo_url: Mapped[str] = mapped_column(Text, nullable=False)
     branch: Mapped[str] = mapped_column(String(256), nullable=False, default="main")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    conversations: Mapped[list["Conversation"]] = relationship(
+    conversations: Mapped[list[Conversation]] = relationship(
         "Conversation", back_populates="environment"
     )
 
@@ -69,16 +65,12 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUIDType, primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    conversations: Mapped[list["Conversation"]] = relationship(
+    conversations: Mapped[list[Conversation]] = relationship(
         "Conversation", back_populates="user", cascade="all, delete-orphan"
     )
 
@@ -88,9 +80,7 @@ class Conversation(Base):
 
     __tablename__ = "conversations"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUIDType, primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUIDType, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -102,9 +92,7 @@ class Conversation(Base):
     )
     title: Mapped[str] = mapped_column(String(512), default="Nova conversa")
     base_branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -113,7 +101,7 @@ class Conversation(Base):
     environment: Mapped[RepoEnvironment | None] = relationship(
         "RepoEnvironment", back_populates="conversations"
     )
-    messages: Mapped[list["Message"]] = relationship(
+    messages: Mapped[list[Message]] = relationship(
         "Message", back_populates="conversation", cascade="all, delete-orphan"
     )
 
@@ -123,9 +111,7 @@ class Message(Base):
 
     __tablename__ = "messages"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUIDType, primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         UUIDType,
         ForeignKey("conversations.id", ondelete="CASCADE"),
@@ -134,10 +120,6 @@ class Message(Base):
     )
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    conversation: Mapped[Conversation] = relationship(
-        "Conversation", back_populates="messages"
-    )
+    conversation: Mapped[Conversation] = relationship("Conversation", back_populates="messages")

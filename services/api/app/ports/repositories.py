@@ -60,9 +60,7 @@ class ConversationRepository(ABC):
         """Return all conversations for a user, newest first."""
 
     @abstractmethod
-    async def get(
-        self, conversation_id: uuid.UUID, user_id: uuid.UUID
-    ) -> Conversation | None:
+    async def get(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> Conversation | None:
         """Return conversation owned by user, or None if not found / not owned."""
 
     @abstractmethod
@@ -78,9 +76,7 @@ class MessageRepository(ABC):
     """Port for message persistence operations."""
 
     @abstractmethod
-    async def list_by_conversation(
-        self, conversation_id: uuid.UUID
-    ) -> list[Message]:
+    async def list_by_conversation(self, conversation_id: uuid.UUID) -> list[Message]:
         """Return all messages for a conversation, oldest first."""
 
     @abstractmethod

@@ -37,8 +37,5 @@ async def init_db() -> None:
         )
         # Migration incremental: branch de origem selecionada pelo utilizador para a sessão
         await conn.execute(
-            text(
-                "ALTER TABLE conversations "
-                "ADD COLUMN IF NOT EXISTS base_branch VARCHAR(255)"
-            )
+            text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS base_branch VARCHAR(255)")
         )

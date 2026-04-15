@@ -84,8 +84,7 @@ async def list_messages(
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return [
-        MessageOut(id=m.id, role=m.role, content=m.content, created_at=m.created_at)
-        for m in msgs
+        MessageOut(id=m.id, role=m.role, content=m.content, created_at=m.created_at) for m in msgs
     ]
 
 

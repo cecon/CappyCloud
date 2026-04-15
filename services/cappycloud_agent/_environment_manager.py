@@ -8,6 +8,10 @@ Architecture (one-container-per-slug, global):
   • Each conversation gets its own git worktree at /repos/<slug>/sessions/<id>/
   • ChatRequest.working_directory is set to the worktree path.
   • Multiple users can share the same environment container via separate worktrees.
+
+Repository config (repo_url, branch) is always fetched from the canonical
+repo_environments table via SessionStore.get_repo_config() — never passed
+by callers or stored redundantly in cappy_env_containers.
 """
 
 from __future__ import annotations
@@ -91,14 +95,20 @@ class EnvironmentManager:
         user_id: str,
         chat_id: str,
         env_slug: str,
-        repo_url: str = "",
-        branch: str = "main",
         base_branch: str = "",
     ) -> SandboxRecord:
         """Return a SandboxRecord for the given session, creating the environment
         container and/or the git worktree as needed.
+
+        repo_url and branch are resolved internally from repo_environments.
+        base_branch defaults to the canonical branch from repo_environments when empty.
         """
-        env = await self._get_or_create_env(env_slug, repo_url, branch)
+        env = await self._get_or_create_env(env_slug)
+
+        # Resolve base_branch default from canonical repo config
+        if not base_branch:
+            config = await self._store.get_repo_config(env_slug)
+            base_branch = config[1] if config else "main"
 
         record = await self._store.get(user_id, chat_id)
         if record:
@@ -115,7 +125,7 @@ class EnvironmentManager:
                 await self._store.delete(user_id, chat_id)
 
         return await self._create_worktree_session(
-            user_id, chat_id, env_slug, env, base_branch=base_branch or branch
+            user_id, chat_id, env_slug, env, base_branch=base_branch
         )
 
     async def destroy_session(self, user_id: str, chat_id: str) -> None:
@@ -199,12 +209,7 @@ class EnvironmentManager:
 
     # ── Environment container management ─────────────────────────
 
-    async def _get_or_create_env(
-        self,
-        env_slug: str,
-        repo_url: str = "",
-        branch: str = "main",
-    ) -> EnvironmentRecord:
+    async def _get_or_create_env(self, env_slug: str) -> EnvironmentRecord:
         """Return a running environment container for the slug, creating one if needed."""
         env = await self._store.get_env(env_slug)
 
@@ -230,8 +235,6 @@ class EnvironmentManager:
                             env_slug=env.env_slug,
                             container_id=env.container_id,
                             container_ip=current_ip,
-                            repo_url=env.repo_url,
-                            branch=env.branch,
                             status="running",
                         )
                 except Exception:
@@ -254,7 +257,7 @@ class EnvironmentManager:
                 )
                 await self._store.delete_env(env_slug)
 
-        return await self._create_env_container(env_slug, repo_url, branch)
+        return await self._create_env_container(env_slug)
 
     async def _restart_env_container(
         self, env_slug: str, env: EnvironmentRecord
@@ -272,7 +275,7 @@ class EnvironmentManager:
                 env_slug,
             )
             await self._store.delete_env(env_slug)
-            return await self._create_env_container(env_slug, env.repo_url, env.branch)
+            return await self._create_env_container(env_slug)
 
         container_ip = ""
         for attempt in range(10):
@@ -299,8 +302,6 @@ class EnvironmentManager:
             env_slug=env_slug,
             container_id=env.container_id,
             container_ip=container_ip,
-            repo_url=env.repo_url,
-            branch=env.branch,
             status="running",
         )
 
@@ -308,13 +309,23 @@ class EnvironmentManager:
         asyncio.create_task(self._trigger_indexing(env_slug))
         return updated_env
 
-    async def _create_env_container(
-        self,
-        env_slug: str,
-        repo_url: str = "",
-        branch: str = "main",
-    ) -> EnvironmentRecord:
-        """Create a persistent environment container for a slug."""
+    async def _create_env_container(self, env_slug: str) -> EnvironmentRecord:
+        """Create a persistent environment container for a slug.
+
+        repo_url and branch are fetched from the canonical repo_environments table.
+        """
+        repo_url = ""
+        branch = "main"
+        config = await self._store.get_repo_config(env_slug)
+        if config:
+            repo_url, branch = config
+        else:
+            log.warning(
+                "env_slug=%r not found in repo_environments — "
+                "creating container with no repo (empty workspace)",
+                env_slug,
+            )
+
         container_name = f"cappy_env_{env_slug}"
         clean_url = _normalize_repo_url(repo_url) if repo_url else ""
 
@@ -392,8 +403,6 @@ class EnvironmentManager:
             env_slug=env_slug,
             container_id=container.id,
             container_ip=container_ip,
-            repo_url=clean_url,
-            branch=branch,
             status="running",
         )
         await self._store.save_env(env_record)
@@ -450,7 +459,6 @@ class EnvironmentManager:
             container_id=env.container_id,
             container_ip=env.container_ip,
             grpc_port=self._grpc_port,
-            repo_url=env.repo_url,
             worktree_path=worktree_path,
         )
         await self._store.save(record)

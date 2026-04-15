@@ -28,8 +28,6 @@ class EnvironmentRecord:
     env_slug: str
     container_id: str
     container_ip: str
-    repo_url: str = ""
-    branch: str = "main"
     status: str = "running"
 
     def to_dict(self) -> dict:
@@ -50,7 +48,6 @@ class SandboxRecord:
     container_id: str
     container_ip: str
     grpc_port: int
-    repo_url: str = ""
     worktree_path: str = ""
 
     def to_dict(self) -> dict:
@@ -67,8 +64,6 @@ CREATE TABLE IF NOT EXISTS cappy_env_containers (
     env_slug     TEXT NOT NULL UNIQUE,
     container_id TEXT NOT NULL,
     container_ip TEXT NOT NULL,
-    repo_url     TEXT DEFAULT '',
-    branch       TEXT DEFAULT 'main',
     status       TEXT DEFAULT 'running',
     created_at   TIMESTAMPTZ DEFAULT NOW(),
     last_active  TIMESTAMPTZ DEFAULT NOW()
@@ -82,7 +77,6 @@ CREATE TABLE IF NOT EXISTS cappy_sessions (
     container_id   TEXT,
     container_ip   TEXT,
     grpc_port      INTEGER,
-    repo_url       TEXT DEFAULT '',
     worktree_path  TEXT DEFAULT '',
     created_at     TIMESTAMPTZ DEFAULT NOW(),
     last_active    TIMESTAMPTZ DEFAULT NOW(),
@@ -93,7 +87,9 @@ CREATE TABLE IF NOT EXISTS cappy_sessions (
 _MIGRATE = """
 ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS worktree_path TEXT DEFAULT '';
 ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS env_slug TEXT DEFAULT 'default';
-ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS repo_url TEXT DEFAULT '';
+ALTER TABLE cappy_env_containers DROP COLUMN IF EXISTS repo_url;
+ALTER TABLE cappy_env_containers DROP COLUMN IF EXISTS branch;
+ALTER TABLE cappy_sessions DROP COLUMN IF EXISTS repo_url;
 """
 
 
@@ -131,6 +127,23 @@ class SessionStore:
     def _session_key(user_id: str, chat_id: str) -> str:
         return f"sandbox:{user_id}:{chat_id}"
 
+    # ── Repository config lookup ─────────────────────────────────
+
+    async def get_repo_config(self, env_slug: str) -> tuple[str, str] | None:
+        """Look up repo_url and branch for an env_slug from the canonical repo_environments table.
+
+        Returns (repo_url, branch) or None if env_slug has no matching record.
+        Not cached in Redis — called only at container-creation time (infrequent path).
+        """
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT repo_url, branch FROM repo_environments WHERE slug = $1",
+                env_slug,
+            )
+        if row:
+            return row["repo_url"], row["branch"]
+        return None
+
     # ── Environment CRUD ─────────────────────────────────────────
 
     async def get_env(self, env_slug: str) -> Optional[EnvironmentRecord]:
@@ -162,21 +175,17 @@ class SessionStore:
             await conn.execute(
                 """
                 INSERT INTO cappy_env_containers
-                    (env_slug, container_id, container_ip, repo_url, branch, status)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                    (env_slug, container_id, container_ip, status)
+                VALUES ($1, $2, $3, $4)
                 ON CONFLICT (env_slug) DO UPDATE
                     SET container_id = EXCLUDED.container_id,
                         container_ip = EXCLUDED.container_ip,
-                        repo_url     = EXCLUDED.repo_url,
-                        branch       = EXCLUDED.branch,
                         status       = EXCLUDED.status,
                         last_active  = NOW()
                 """,
                 record.env_slug,
                 record.container_id,
                 record.container_ip,
-                record.repo_url,
-                record.branch,
                 record.status,
             )
 
@@ -266,14 +275,13 @@ class SessionStore:
                 """
                 INSERT INTO cappy_sessions
                     (user_id, chat_id, env_slug, container_id, container_ip,
-                     grpc_port, repo_url, worktree_path)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                     grpc_port, worktree_path)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT (user_id, chat_id) DO UPDATE
                     SET env_slug      = EXCLUDED.env_slug,
                         container_id  = EXCLUDED.container_id,
                         container_ip  = EXCLUDED.container_ip,
                         grpc_port     = EXCLUDED.grpc_port,
-                        repo_url      = EXCLUDED.repo_url,
                         worktree_path = EXCLUDED.worktree_path,
                         last_active   = NOW()
                 """,
@@ -283,7 +291,6 @@ class SessionStore:
                 record.container_id,
                 record.container_ip,
                 record.grpc_port,
-                record.repo_url,
                 record.worktree_path,
             )
 

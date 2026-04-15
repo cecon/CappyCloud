@@ -54,6 +54,7 @@ exclude = ["tests/"]
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "module"
 testpaths = ["tests"]
 addopts = "--cov=app --cov-report=term-missing --cov-fail-under=80"
 
@@ -62,6 +63,14 @@ source = ["app"]
 omit = [
     "app/infrastructure/orm_models.py",
     "app/routers/*",
+    # Legacy backward-compat shims — pure re-exports, no logic to test
+    "app/config.py",
+    "app/database.py",
+    "app/deps.py",
+    "app/models.py",
+    "app/security.py",
+    # Wraps external cappycloud_agent package (not available in test env)
+    "app/adapters/secondary/agent/pipeline_adapter.py",
 ]
 
 [tool.coverage.report]

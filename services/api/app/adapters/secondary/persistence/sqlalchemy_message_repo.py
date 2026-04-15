@@ -18,9 +18,7 @@ class SQLAlchemyMessageRepository(MessageRepository):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def list_by_conversation(
-        self, conversation_id: uuid.UUID
-    ) -> list[MsgEntity]:
+    async def list_by_conversation(self, conversation_id: uuid.UUID) -> list[MsgEntity]:
         result = await self._session.execute(
             select(MsgORM)
             .where(MsgORM.conversation_id == conversation_id)

@@ -76,22 +76,13 @@ def _env_slug_from_body(body: dict) -> str:
     return str(body.get("env_slug") or "default")
 
 
-def _repo_url_from_body(body: dict) -> str:
-    """Resolve repo URL from body (passed by the API use case)."""
-    return str(body.get("repo_url") or "")
-
-
-def _branch_from_body(body: dict) -> str:
-    """Resolve branch from body, defaulting to 'main'."""
-    return str(body.get("branch") or "main")
-
-
 def _base_branch_from_body(body: dict) -> str:
     """Resolve base branch for the session worktree (selected by user in UI).
 
-    Falls back to the environment branch if not explicitly set.
+    Empty string signals 'use canonical default from repo_environments',
+    which EnvironmentManager resolves internally.
     """
-    return str(body.get("base_branch") or body.get("branch") or "main")
+    return str(body.get("base_branch") or "")
 
 
 def _sse(payload: dict) -> str:
@@ -191,7 +182,10 @@ class Pipeline:
         return self._run(self._env_manager.get_env_status(env_slug), timeout=30)
 
     def wake_env(self, env_slug: str) -> None:
-        """Trigger environment creation or restart (fire-and-forget)."""
+        """Trigger environment creation or restart (fire-and-forget).
+
+        repo_url and branch are resolved internally by EnvironmentManager.
+        """
         if self._loop is None or self._env_manager is None:
             return
         asyncio.run_coroutine_threadsafe(
@@ -218,8 +212,6 @@ class Pipeline:
         user_id = _user_id_from_body(body)
         chat_id = _chat_id_from_body(body, messages)
         env_slug = _env_slug_from_body(body)
-        repo_url = _repo_url_from_body(body)
-        branch = _branch_from_body(body)
         base_branch = _base_branch_from_body(body)
         session_key = (user_id, chat_id)
 
@@ -252,8 +244,6 @@ class Pipeline:
                         user_id=user_id,
                         chat_id=chat_id,
                         env_slug=env_slug,
-                        repo_url=repo_url,
-                        branch=branch,
                         base_branch=base_branch,
                     ),
                     timeout=180,

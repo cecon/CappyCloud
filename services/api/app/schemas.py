@@ -9,7 +9,6 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -91,8 +90,8 @@ class ConversationCreate(BaseModel):
     """Criação de conversa."""
 
     title: str | None = Field(default="Nova conversa", max_length=512)
-    environment_id: Optional[uuid.UUID] = None
-    base_branch: Optional[str] = Field(default=None, max_length=255)
+    environment_id: uuid.UUID | None = None
+    base_branch: str | None = Field(default=None, max_length=255)
 
 
 class ConversationOut(BaseModel):
@@ -102,9 +101,9 @@ class ConversationOut(BaseModel):
     title: str
     created_at: datetime
     updated_at: datetime
-    environment_id: Optional[uuid.UUID] = None
-    env_slug: Optional[str] = None
-    base_branch: Optional[str] = None
+    environment_id: uuid.UUID | None = None
+    env_slug: str | None = None
+    base_branch: str | None = None
 
     model_config = {"from_attributes": True}
 

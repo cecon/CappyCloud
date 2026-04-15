@@ -9,21 +9,20 @@ import asyncio
 import json
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Optional
 
 from app.domain.entities import Conversation, Message, RepoEnvironment
 from app.ports.agent import AgentPort
 from app.ports.repositories import (
     ConversationRepository,
     MessageRepository,
-    RepoEnvironmentRepository,
+    RepoEnvironmentRepository,  # used by Repo Environment use cases only
 )
 
 _TITLE_MAX_LEN = 80
 _DEFAULT_TITLE = "Nova conversa"
 
 
-def _next_chunk(gen):  # type: ignore[no-untyped-def]
+def _next_chunk(gen):
     """Pull one chunk from a synchronous generator (for asyncio.to_thread)."""
     try:
         return next(gen)
@@ -112,8 +111,8 @@ class CreateConversation:
         self,
         user_id: uuid.UUID,
         title: str | None = None,
-        environment_id: Optional[uuid.UUID] = None,
-        base_branch: Optional[str] = None,
+        environment_id: uuid.UUID | None = None,
+        base_branch: str | None = None,
     ) -> Conversation:
         conv = Conversation(
             id=uuid.uuid4(),
@@ -136,9 +135,7 @@ class ListMessages:
         self._conversations = conversations
         self._messages = messages
 
-    async def execute(
-        self, conversation_id: uuid.UUID, user_id: uuid.UUID
-    ) -> list[Message]:
+    async def execute(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> list[Message]:
         """Return messages for conversation.
 
         Raises:
@@ -172,12 +169,10 @@ class StreamMessage:
         conversations: ConversationRepository,
         messages: MessageRepository,
         agent: AgentPort,
-        repo_envs: RepoEnvironmentRepository | None = None,
     ) -> None:
         self._conversations = conversations
         self._messages = messages
         self._agent = agent
-        self._repo_envs = repo_envs
 
     async def execute(
         self,
@@ -205,34 +200,22 @@ class StreamMessage:
         )
 
         if conv.title == _DEFAULT_TITLE:
-            conv.title = content[:_TITLE_MAX_LEN] + (
-                "…" if len(content) > _TITLE_MAX_LEN else ""
-            )
+            conv.title = content[:_TITLE_MAX_LEN] + ("…" if len(content) > _TITLE_MAX_LEN else "")
             await self._conversations.update(conv)
 
         history = await self._messages.list_by_conversation(conversation_id)
         messages_payload = [{"role": m.role, "content": m.content} for m in history]
 
-        # Resolve repo_url / branch para o agente poder clonar o workspace correcto
-        repo_url = ""
-        branch = "main"
-        if conv.env_slug and self._repo_envs:
-            env = await self._repo_envs.get_by_slug(conv.env_slug)
-            if env:
-                repo_url = env.repo_url
-                branch = env.branch
-
-        # base_branch: branch de origem da sessão (selecionado pelo utilizador na UI)
-        # Se não definido, usa a branch configurada no ambiente
-        base_branch = conv.base_branch or branch
+        # base_branch: branch de origem da sessão (selecionado pelo utilizador na UI).
+        # Vazio significa "usar o branch canónico de repo_environments",
+        # resolvido internamente pelo EnvironmentManager.
+        base_branch = conv.base_branch or ""
 
         pipeline_body = {
             "user_id": str(user_id),
             "conversation_id": str(conversation_id),
             "user": {"id": str(user_id)},
             "env_slug": conv.env_slug or "default",
-            "repo_url": repo_url,
-            "branch": branch,
             "base_branch": base_branch,
         }
 
@@ -244,8 +227,8 @@ class StreamMessage:
         self,
         content: str,
         model_id: str,
-        messages_payload: list[dict],  # type: ignore[type-arg]
-        pipeline_body: dict,  # type: ignore[type-arg]
+        messages_payload: list[dict],
+        pipeline_body: dict,
         conversation_id: uuid.UUID,
     ) -> AsyncGenerator[bytes, None]:
         accumulated_text: list[str] = []
