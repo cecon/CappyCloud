@@ -11,6 +11,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 import pytest
+import pytest_asyncio
 from app.adapters.secondary.persistence.sqlalchemy_conversation_repo import (
     SQLAlchemyConversationRepository,
 )
@@ -36,7 +37,7 @@ from tests.conftest import (
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="module")
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def sqlite_engine():  # type: ignore[no-untyped-def]
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
