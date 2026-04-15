@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
+import re
 from collections.abc import Generator
 from queue import Empty, Queue
 from typing import Optional
@@ -75,39 +77,14 @@ def _user_id_from_body(body: dict) -> str:
     return str(raw)
 
 
-def _format_action(action: PendingAction) -> str:
-    """
-    Render an ActionRequired event as a clean chat message with visible choices.
-    """
-    lines = ["\n\n---\n"]
+def _sse(payload: dict) -> str:
+    """Format a dict as a single SSE data line."""
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
-    if action.is_confirmation:
-        lines.append("**O agente precisa da sua confirmação:**\n")
-        lines.append(f"> {action.question}\n\n")
-        lines.append("Responda:\n")
-        lines.append("- **`sim`** — prosseguir\n")
-        lines.append("- **`não`** — cancelar\n")
 
-    else:
-        lines.append("**O agente precisa de mais informações:**\n")
-        import re
-        clean_q = re.sub(r"\s*\[[^\]]+\]", "", action.question).strip()
-        lines.append(f"> {clean_q}\n")
-
-        if action.choices:
-            lines.append("\nEscolha uma das opções:\n\n")
-            for i, choice in enumerate(action.choices, 1):
-                lines.append(f"**{i}.** {choice}\n")
-            lines.append(
-                "\n_Digite o número ou o nome da opção (ex: `1` ou `"
-                + action.choices[0]
-                + "`)_\n"
-            )
-        else:
-            lines.append("\nDigite sua resposta na caixa abaixo.\n")
-
-    lines.append("\n---\n")
-    return "".join(lines)
+def _clean_question(question: str) -> str:
+    """Remove bracket-formatted choices from question string."""
+    return re.sub(r"\s*\[[^\]]+\]", "", question).strip()
 
 
 class Pipeline:
@@ -224,11 +201,11 @@ class Pipeline:
                     timeout=180,
                 )
             except TimeoutError as exc:
-                yield f"**Timeout ao iniciar o agente.** {exc}\n"
+                yield _sse({"type": "error", "message": f"Timeout ao iniciar o agente. {exc}"})
                 return
             except Exception as exc:
                 log.exception("Falha ao criar sandbox")
-                yield f"**Erro ao iniciar o agente:** {exc}\n"
+                yield _sse({"type": "error", "message": f"Erro ao iniciar o agente: {exc}"})
                 return
 
             session = GrpcSession(
@@ -241,7 +218,7 @@ class Pipeline:
                 self._run(session.start(user_message), timeout=30)
             except Exception as exc:
                 log.exception("Falha ao iniciar sessão gRPC")
-                yield f"**Erro ao conectar ao agente:** {exc}\n"
+                yield _sse({"type": "error", "message": f"Erro ao conectar ao agente: {exc}"})
                 return
 
             self._sessions[session_key] = session
@@ -257,19 +234,21 @@ class Pipeline:
             try:
                 event_type, data = out_q.get(timeout=300)
             except Empty:
-                yield "\n\n**Timeout:** agente sem resposta por 5 minutos.\n"
+                yield _sse({"type": "error", "message": "Timeout: agente sem resposta por 5 minutos."})
                 break
 
             if event_type is _DONE:
                 if isinstance(data, str):
-                    yield f"\n\n**Erro do agente:** {data}\n"
+                    yield _sse({"type": "error", "message": f"Erro do agente: {data}"})
                     did_yield = True
                 elif not did_yield:
-                    # gRPC enviou `done` sem nenhum `text_chunk` — o stream ficava vazio e a BD sem mensagem do assistente
-                    yield (
-                        "**O agente não devolveu texto.** "
-                        "Confirma `OPENROUTER_API_KEY`, o modelo e se o sandbox está a correr; vê os logs do container do agente.\n"
-                    )
+                    yield _sse({
+                        "type": "error",
+                        "message": (
+                            "O agente não devolveu texto. "
+                            "Confirma OPENROUTER_API_KEY, o modelo e se o sandbox está a correr."
+                        ),
+                    })
                     did_yield = True
                 if session_key in self._sessions:
                     del self._sessions[session_key]
@@ -277,16 +256,28 @@ class Pipeline:
 
             elif event_type == "text":
                 did_yield = True
-                yield data
+                yield _sse({"type": "text", "content": data})
+
+            elif event_type == "tool_start":
+                yield _sse({"type": "tool_start", **data})
+
+            elif event_type == "tool_result":
+                yield _sse({"type": "tool_result", **data})
 
             elif event_type == "action":
                 action: PendingAction = data
                 did_yield = True
-                yield _format_action(action)
+                yield _sse({
+                    "type": "action_required",
+                    "prompt_id": action.prompt_id,
+                    "question": _clean_question(action.question),
+                    "action_type": action.action_type,
+                    "choices": action.choices,
+                })
                 break
 
             elif event_type == "timeout":
-                yield "\n\n**Timeout:** agente demorou muito para responder.\n"
+                yield _sse({"type": "error", "message": "Timeout: agente demorou muito para responder."})
                 break
 
     async def _gc_loop(self) -> None:

@@ -141,6 +141,34 @@ export type ChatMessage = {
   created_at: string
 }
 
+export interface ToolStartEvent {
+  name: string
+  input: string
+  id: string
+}
+
+export interface ToolResultEvent {
+  name: string
+  output: string
+  is_error: boolean
+  id: string
+}
+
+export interface ActionRequiredEvent {
+  prompt_id: string
+  question: string
+  action_type: number // 0 = confirm (sim/não), 1 = request_info (choices ou free-text)
+  choices: string[] | null
+}
+
+export interface StreamHandlers {
+  onText(accumulated: string): void
+  onToolStart(tool: ToolStartEvent): void
+  onToolResult(tool: ToolResultEvent): void
+  onActionRequired(action: ActionRequiredEvent): void
+  onError(message: string): void
+}
+
 export async function fetchConversations(token: string): Promise<Conversation[]> {
   const res = await fetch('/api/conversations', {
     headers: { Authorization: `Bearer ${token}` },
@@ -171,14 +199,15 @@ export async function fetchMessages(token: string, conversationId: string): Prom
 }
 
 /**
- * Envia mensagem e invoca `onChunk` com texto acumulado conforme o stream chega.
+ * Envia mensagem e processa o stream SSE JSON com handlers tipados.
+ * O backend envia eventos no formato: data: {"type":"...","..."}\n\n
  */
 export async function streamAssistantReply(
   token: string,
   conversationId: string,
   content: string,
-  onChunk: (accumulated: string) => void
-): Promise<string> {
+  handlers: StreamHandlers
+): Promise<void> {
   const res = await fetch(`/api/conversations/${conversationId}/messages/stream`, {
     method: 'POST',
     headers: {
@@ -193,12 +222,57 @@ export async function streamAssistantReply(
   }
   const reader = res.body!.getReader()
   const dec = new TextDecoder()
-  let acc = ''
+  let buf = ''
+  let accText = ''
+
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
-    acc += dec.decode(value, { stream: true })
-    onChunk(acc)
+    buf += dec.decode(value, { stream: true })
+
+    // Process all complete SSE lines; keep any partial line in buf
+    const lines = buf.split('\n')
+    buf = lines.pop() ?? ''
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
+      try {
+        const evt = JSON.parse(line.slice(6)) as Record<string, unknown>
+        switch (evt.type) {
+          case 'text':
+            accText += (evt.content as string) ?? ''
+            handlers.onText(accText)
+            break
+          case 'tool_start':
+            handlers.onToolStart({
+              name: evt.name as string,
+              input: (evt.input as string) ?? '',
+              id: evt.id as string,
+            })
+            break
+          case 'tool_result':
+            handlers.onToolResult({
+              name: evt.name as string,
+              output: (evt.output as string) ?? '',
+              is_error: (evt.is_error as boolean) ?? false,
+              id: evt.id as string,
+            })
+            break
+          case 'action_required':
+            handlers.onActionRequired({
+              prompt_id: evt.prompt_id as string,
+              question: evt.question as string,
+              action_type: (evt.action_type as number) ?? 0,
+              choices: (evt.choices as string[] | null) ?? null,
+            })
+            break
+          case 'error':
+            handlers.onError((evt.message as string) ?? 'Erro desconhecido')
+            break
+        }
+      } catch {
+        // Ignore malformed SSE lines
+      }
+    }
   }
-  return acc
 }

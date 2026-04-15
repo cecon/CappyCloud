@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from typing import Annotated
 
@@ -126,7 +127,7 @@ async def stream_message(
     pipeline = request.app.state.pipeline
 
     async def body_iter():
-        accumulated: list[str] = []
+        accumulated_text: list[str] = []
 
         gen = pipeline.pipe(
             body.content,
@@ -138,10 +139,18 @@ async def stream_message(
             chunk = await asyncio.to_thread(_next_chunk, gen)
             if chunk is None:
                 break
-            accumulated.append(chunk)
+            # Extract only text content for DB storage
+            line = chunk.strip()
+            if line.startswith("data: "):
+                try:
+                    evt = json.loads(line[6:])
+                    if evt.get("type") == "text":
+                        accumulated_text.append(evt.get("content", ""))
+                except Exception:
+                    pass
             yield chunk.encode("utf-8")
 
-        assistant_text = "".join(accumulated).strip()
+        assistant_text = "".join(accumulated_text).strip()
         if assistant_text:
             async with async_session_factory() as s2:
                 s2.add(
@@ -153,4 +162,11 @@ async def stream_message(
                 )
                 await s2.commit()
 
-    return StreamingResponse(body_iter(), media_type="text/plain; charset=utf-8")
+    return StreamingResponse(
+        body_iter(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

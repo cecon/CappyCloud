@@ -1,0 +1,91 @@
+/* ── Keyframe animations ─────────────────────────────────────── */
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: translateY(0); }
+  40%           { transform: translateY(-6px); }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+/* ── Message bubble ──────────────────────────────────────────── */
+
+.message {
+  animation: fadeInUp 0.25s ease both;
+}
+
+/* ── Thinking dots ───────────────────────────────────────────── */
+
+.thinkingDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--mantine-color-teal-4);
+  animation: bounce 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.thinkingDot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.thinkingDot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* ── Tool card spinner ───────────────────────────────────────── */
+
+.spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--mantine-color-teal-8);
+  border-top-color: var(--mantine-color-teal-4);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ── Tool card ───────────────────────────────────────────────── */
+
+.toolCard {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.toolCard:hover {
+  box-shadow: 0 0 0 1px var(--mantine-color-dark-3);
+}
+
+.toolHeader {
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+
+.toolHeader:hover {
+  background: var(--mantine-color-dark-6) !important;
+}
+
+/* ── Action required card ────────────────────────────────────── */
+
+.actionCard {
+  animation: fadeInUp 0.3s ease both;
+}
+
+.actionButton {
+  transition: transform 0.1s ease, opacity 0.15s ease;
+}
+
+.actionButton:active {
+  transform: scale(0.97);
+}

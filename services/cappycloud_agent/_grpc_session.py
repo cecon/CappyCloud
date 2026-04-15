@@ -163,8 +163,8 @@ class GrpcSession:
                 if event_type == "text":
                     out_q.put(("text", data))
 
-                elif event_type == "tool_error":
-                    out_q.put(("text", f"\n> ⚠️ Erro na ferramenta: {data}\n"))
+                elif event_type in ("tool_start", "tool_result"):
+                    out_q.put((event_type, data))
 
                 elif event_type == "action_required":
                     # Pause — caller must call send_input() to continue
@@ -218,12 +218,22 @@ class GrpcSession:
                     await self._out_queue.put(("text", msg.text_chunk.text))
 
                 elif event == "tool_start":
-                    log.info("[%s] Tool: %s", self._session_id, msg.tool_start.tool_name)
+                    ts = msg.tool_start
+                    log.info("[%s] Tool: %s", self._session_id, ts.tool_name)
+                    await self._out_queue.put(("tool_start", {
+                        "name": ts.tool_name,
+                        "input": ts.arguments_json,
+                        "id": ts.tool_use_id,
+                    }))
 
                 elif event == "tool_result":
                     tr = msg.tool_result
-                    if tr.is_error:
-                        await self._out_queue.put(("tool_error", tr.output))
+                    await self._out_queue.put(("tool_result", {
+                        "name": tr.tool_name,
+                        "output": tr.output,
+                        "is_error": tr.is_error,
+                        "id": tr.tool_use_id,
+                    }))
 
                 elif event == "action_required":
                     ar = msg.action_required

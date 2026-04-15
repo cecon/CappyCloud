@@ -1,10 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   AppShell,
   Burger,
   Button,
   Group,
-  Loader,
   ScrollArea,
   Stack,
   Text,
@@ -20,23 +19,43 @@ import {
   getToken,
   setToken,
   streamAssistantReply,
+  type ActionRequiredEvent,
   type ChatMessage,
   type Conversation,
 } from '../api'
+import { ActionRequiredCard } from '../components/ActionRequiredCard'
+import { ThinkingIndicator } from '../components/ThinkingIndicator'
+import { ToolCallCard, type ToolCallState } from '../components/ToolCallCard'
+import styles from '../components/chat.module.css'
 
 /**
  * UI principal: lista de conversas e chat com streaming do agente.
+ * Suporta tool calls animados, HITL (confirmação/opções), e animações de digitação.
  */
 export function ChatPage() {
   const token = getToken()!
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure()
+
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
-  const [pendingAssistant, setPendingAssistant] = useState('')
   const [loading, setLoading] = useState(true)
+
+  // Streaming state
+  const [pendingText, setPendingText] = useState('')
+  const [pendingTools, setPendingTools] = useState<ToolCallState[]>([])
+  const [pendingAction, setPendingAction] = useState<ActionRequiredEvent | null>(null)
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll to bottom when messages or pending state change
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+    }
+  }, [messages, pendingText, pendingTools, pendingAction, streaming])
 
   useEffect(() => {
     let cancelled = false
@@ -76,13 +95,15 @@ export function ChatPage() {
     setMessages([])
   }
 
-  async function handleSend() {
-    const text = input.trim()
+  async function handleSend(textOverride?: string) {
+    const text = (textOverride ?? input).trim()
     if (!text || !activeId || streaming) return
 
-    setInput('')
+    if (!textOverride) setInput('')
     setStreaming(true)
-    setPendingAssistant('')
+    setPendingText('')
+    setPendingTools([])
+    setPendingAction(null)
 
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
@@ -93,12 +114,48 @@ export function ChatPage() {
     setMessages((m) => [...m, userMsg])
 
     try {
-      await streamAssistantReply(token, activeId, text, (acc) => {
-        setPendingAssistant(acc)
+      await streamAssistantReply(token, activeId, text, {
+        onText(accumulated) {
+          setPendingText(accumulated)
+        },
+        onToolStart(tool) {
+          setPendingTools((prev) => [
+            ...prev,
+            { id: tool.id, name: tool.name, input: tool.input, done: false },
+          ])
+        },
+        onToolResult(result) {
+          setPendingTools((prev) =>
+            prev.map((t) =>
+              t.id === result.id
+                ? { ...t, output: result.output, isError: result.is_error, done: true }
+                : t
+            )
+          )
+        },
+        onActionRequired(action) {
+          setPendingAction(action)
+        },
+        onError(message) {
+          setMessages((m) => [
+            ...m,
+            {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: `**Erro:** ${message}`,
+              created_at: new Date().toISOString(),
+            },
+          ])
+        },
       })
-      setPendingAssistant('')
-      const msgs = await fetchMessages(token, activeId)
-      setMessages(msgs)
+
+      // Stream ended — if no pending action, reload messages from DB
+      if (!pendingAction) {
+        setPendingText('')
+        setPendingTools([])
+        const msgs = await fetchMessages(token, activeId)
+        setMessages(msgs)
+      }
     } catch (e) {
       setMessages((m) => [
         ...m,
@@ -114,17 +171,23 @@ export function ChatPage() {
     }
   }
 
+  function handleActionReply(reply: string) {
+    // Send as a normal message — backend routes to send_input() if pending action exists
+    handleSend(reply)
+  }
+
   function logout() {
     setToken(null)
     window.location.reload()
   }
 
   const activeTitle = conversations.find((c) => c.id === activeId)?.title ?? 'Conversa'
+  const showThinking = streaming && !pendingText && pendingTools.every((t) => t.done) && !pendingAction
 
   if (loading) {
     return (
       <Group justify="center" p="xl">
-        <Loader />
+        <ThinkingIndicator />
       </Group>
     )
   }
@@ -150,6 +213,7 @@ export function ChatPage() {
           </Button>
         </Group>
       </AppShell.Header>
+
       <AppShell.Navbar p="md">
         <Button fullWidth mb="sm" onClick={handleNewChat}>
           Nova conversa
@@ -174,40 +238,75 @@ export function ChatPage() {
           </Stack>
         </ScrollArea>
       </AppShell.Navbar>
+
       <AppShell.Main>
         <Title order={5} mb="md">
           {activeTitle}
         </Title>
+
         {!activeId ? (
           <Text c="dimmed">Crie uma conversa para começar.</Text>
         ) : (
           <>
-            <ScrollArea h="calc(100vh - 220px)" mb="md" type="auto">
+            <ScrollArea
+              h="calc(100vh - 220px)"
+              mb="md"
+              type="auto"
+              viewportRef={scrollRef}
+            >
               <Stack gap="md">
+                {/* Stored messages */}
                 {messages.map((m) => (
                   <PaperMessage key={m.id} role={m.role} content={m.content} />
                 ))}
-                {streaming && !pendingAssistant && (
-                  <Group gap="xs">
-                    <Loader size="sm" />
-                    <Text size="sm" c="dimmed">
-                      A pensar…
-                    </Text>
-                  </Group>
-                )}
-                {streaming && pendingAssistant && (
-                  <PaperMessage role="assistant" content={pendingAssistant} />
+
+                {/* Live streaming area */}
+                {streaming && (
+                  <Stack gap="xs">
+                    {/* Tool call cards */}
+                    {pendingTools.map((tool) => (
+                      <ToolCallCard key={tool.id} tool={tool} />
+                    ))}
+
+                    {/* Thinking indicator — shown while waiting for first output */}
+                    {showThinking && <ThinkingIndicator />}
+
+                    {/* Action required card (HITL) */}
+                    {pendingAction && (
+                      <ActionRequiredCard
+                        action={pendingAction}
+                        onReply={handleActionReply}
+                      />
+                    )}
+
+                    {/* Streaming text */}
+                    {pendingText && (
+                      <PaperMessage role="assistant" content={pendingText} />
+                    )}
+                  </Stack>
                 )}
               </Stack>
             </ScrollArea>
+
             <Textarea
               placeholder="Mensagem ao agente… (URLs de repo Git são detetadas automaticamente)"
               minRows={3}
               value={input}
               onChange={(e) => setInput(e.currentTarget.value)}
-              disabled={streaming}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !streaming) {
+                  e.preventDefault()
+                  handleSend()
+                }
+              }}
+              disabled={streaming && !pendingAction}
             />
-            <Button mt="sm" onClick={handleSend} loading={streaming} disabled={!input.trim()}>
+            <Button
+              mt="sm"
+              onClick={() => handleSend()}
+              loading={streaming && !pendingAction}
+              disabled={(!input.trim() && !pendingAction) || (streaming && !pendingAction)}
+            >
               Enviar
             </Button>
           </>
@@ -221,6 +320,7 @@ function PaperMessage({ role, content }: { role: string; content: string }) {
   const isUser = role === 'user'
   return (
     <div
+      className={styles.message}
       style={{
         alignSelf: isUser ? 'flex-end' : 'flex-start',
         maxWidth: '90%',
