@@ -93,6 +93,7 @@ class EnvironmentManager:
         env_slug: str,
         repo_url: str = "",
         branch: str = "main",
+        base_branch: str = "",
     ) -> SandboxRecord:
         """Return a SandboxRecord for the given session, creating the environment
         container and/or the git worktree as needed.
@@ -113,7 +114,9 @@ class EnvironmentManager:
                 )
                 await self._store.delete(user_id, chat_id)
 
-        return await self._create_worktree_session(user_id, chat_id, env_slug, env)
+        return await self._create_worktree_session(
+            user_id, chat_id, env_slug, env, base_branch=base_branch or branch
+        )
 
     async def destroy_session(self, user_id: str, chat_id: str) -> None:
         """Remove the worktree for a session (prune from git + delete record)."""
@@ -208,6 +211,31 @@ class EnvironmentManager:
         if env:
             status = self._container_status(env.container_id)
             if status == "running":
+                # Verifica se o IP no Redis ainda é válido (pode ter mudado após restart manual)
+                try:
+                    container = self._client.containers.get(env.container_id)
+                    container.reload()
+                    networks = container.attrs.get("NetworkSettings", {}).get("Networks", {})
+                    current_ip = networks.get(self._network, {}).get("IPAddress", "")
+                    if current_ip and current_ip != env.container_ip:
+                        log.warning(
+                            "Container %s (%s) IP changed %s → %s — updating store",
+                            env.container_id[:12],
+                            env_slug,
+                            env.container_ip,
+                            current_ip,
+                        )
+                        await self._store.update_env_ip(env_slug, current_ip)
+                        env = EnvironmentRecord(
+                            env_slug=env.env_slug,
+                            container_id=env.container_id,
+                            container_ip=current_ip,
+                            repo_url=env.repo_url,
+                            branch=env.branch,
+                            status="running",
+                        )
+                except Exception:
+                    pass
                 return env
             elif status in ("exited", "created", "paused"):
                 log.info(
@@ -327,6 +355,7 @@ class EnvironmentManager:
                 "GRPC_PORT": str(self._grpc_port),
                 "GIT_AUTH_TOKEN": self._git_auth_token,
                 "CODE_INDEXER_URL": self._code_indexer_url,
+                "CAPPY_USER_ID": env_slug,
             },
             network=self._network,
             labels={
@@ -382,23 +411,25 @@ class EnvironmentManager:
         chat_id: str,
         env_slug: str,
         env: EnvironmentRecord,
+        base_branch: str = "main",
     ) -> SandboxRecord:
         """Create a git worktree for a new conversation and return its SandboxRecord."""
         session_id = chat_id.replace("-", "")[:16]
         worktree_path = f"/repos/{env_slug}/sessions/{session_id}"
 
         log.info(
-            "Creating worktree session %r for %s/%s (env=%s)",
+            "Creating worktree session %r for %s/%s (env=%s, base_branch=%s)",
             worktree_path,
             user_id,
             chat_id,
             env_slug,
+            base_branch,
         )
 
         try:
             container = self._client.containers.get(env.container_id)
             exit_code, output = container.exec_run(
-                ["/session_start.sh", env_slug, session_id, worktree_path],
+                ["/session_start.sh", env_slug, session_id, worktree_path, base_branch],
             )
             output_str = output.decode("utf-8", errors="replace") if output else ""
             if exit_code != 0:
@@ -440,7 +471,7 @@ class EnvironmentManager:
                 await client.post(
                     f"{self._code_indexer_url}/index",
                     json={
-                        "env_slug": env_slug,
+                        "user_id": env_slug,
                         "container_id": env.container_id,
                         "workspace_path": f"/repos/{env_slug}",
                     },

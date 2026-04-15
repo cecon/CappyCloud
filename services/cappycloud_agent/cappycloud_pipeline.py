@@ -76,6 +76,24 @@ def _env_slug_from_body(body: dict) -> str:
     return str(body.get("env_slug") or "default")
 
 
+def _repo_url_from_body(body: dict) -> str:
+    """Resolve repo URL from body (passed by the API use case)."""
+    return str(body.get("repo_url") or "")
+
+
+def _branch_from_body(body: dict) -> str:
+    """Resolve branch from body, defaulting to 'main'."""
+    return str(body.get("branch") or "main")
+
+
+def _base_branch_from_body(body: dict) -> str:
+    """Resolve base branch for the session worktree (selected by user in UI).
+
+    Falls back to the environment branch if not explicitly set.
+    """
+    return str(body.get("base_branch") or body.get("branch") or "main")
+
+
 def _sse(payload: dict) -> str:
     """Format a dict as a single SSE data line."""
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
@@ -200,6 +218,9 @@ class Pipeline:
         user_id = _user_id_from_body(body)
         chat_id = _chat_id_from_body(body, messages)
         env_slug = _env_slug_from_body(body)
+        repo_url = _repo_url_from_body(body)
+        branch = _branch_from_body(body)
+        base_branch = _base_branch_from_body(body)
         session_key = (user_id, chat_id)
 
         log.info(
@@ -231,6 +252,9 @@ class Pipeline:
                         user_id=user_id,
                         chat_id=chat_id,
                         env_slug=env_slug,
+                        repo_url=repo_url,
+                        branch=branch,
+                        base_branch=base_branch,
                     ),
                     timeout=180,
                 )

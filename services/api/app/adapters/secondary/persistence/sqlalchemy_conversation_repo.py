@@ -48,6 +48,7 @@ class SQLAlchemyConversationRepository(ConversationRepository):
             user_id=conversation.user_id,
             title=conversation.title,
             environment_id=conversation.environment_id,
+            base_branch=conversation.base_branch,
         )
         self._session.add(orm)
         await self._session.commit()
@@ -84,4 +85,5 @@ class SQLAlchemyConversationRepository(ConversationRepository):
             updated_at=row.updated_at,
             environment_id=row.environment_id,
             env_slug=env_slug,
+            base_branch=row.base_branch,
         )

@@ -61,16 +61,35 @@ mkdir -p "${MAIN_REPO}" "/repos/${ENV_SLUG}/sessions"
 if [ -n "${WORKSPACE_REPO}" ]; then
     CLEAN_REPO=$(echo "${WORKSPACE_REPO}" | sed 's|https://[^@]*@|https://|')
 
+    # Monta URL autenticada diretamente para evitar dependência de insteadOf no clone
+    if [ -n "${GIT_AUTH_TOKEN}" ]; then
+        AUTH_REPO=$(echo "${CLEAN_REPO}" | sed "s|https://dev.azure.com|https://pat:${GIT_AUTH_TOKEN}@dev.azure.com|")
+    else
+        AUTH_REPO="${CLEAN_REPO}"
+    fi
+
     if [ -d "${MAIN_REPO}/.git" ]; then
         echo "Workspace already cloned — running git pull..."
         cd "${MAIN_REPO}" && git pull --ff-only 2>&1 || echo "WARNING: git pull failed — continuing."
     else
         echo "Cloning ${CLEAN_REPO} (branch=${WORKSPACE_BRANCH}) into ${MAIN_REPO}..."
-        if git clone --depth=1 --branch "${WORKSPACE_BRANCH}" "${CLEAN_REPO}" "${MAIN_REPO}" 2>&1 \
-            || git clone --depth=1 "${CLEAN_REPO}" "${MAIN_REPO}" 2>&1; then
+        CLONE_OK=0
+        for attempt in 1 2 3; do
+            echo "[clone attempt ${attempt}/3]"
+            if git clone --depth=1 --branch "${WORKSPACE_BRANCH}" "${AUTH_REPO}" "${MAIN_REPO}" 2>&1; then
+                CLONE_OK=1
+                break
+            fi
+            if git clone --depth=1 "${AUTH_REPO}" "${MAIN_REPO}" 2>&1; then
+                CLONE_OK=1
+                break
+            fi
+            [ "${attempt}" -lt 3 ] && sleep 3
+        done
+        if [ "${CLONE_OK}" -eq 1 ]; then
             echo "Clone successful."
         else
-            echo "WARNING: git clone failed — starting with empty workspace."
+            echo "WARNING: git clone failed after 3 attempts — starting with empty workspace."
         fi
     fi
 else

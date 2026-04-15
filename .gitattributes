@@ -1,0 +1,26 @@
+# Força LF em todos os shell scripts para evitar CRLF no Linux (docker cp, etc.)
+*.sh        text eol=lf
+*.bash      text eol=lf
+Dockerfile  text eol=lf
+
+# Padrão para demais arquivos de texto
+*.py        text eol=lf
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.js        text eol=lf
+*.json      text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.md        text eol=lf
+*.sql       text eol=lf
+*.proto     text eol=lf
+*.css       text eol=lf
+*.html      text eol=lf
+*.env*      text eol=lf
+
+# Binários — sem conversão
+*.png       binary
+*.jpg       binary
+*.ico       binary
+*.woff2     binary
+*.ttf       binary

@@ -35,3 +35,10 @@ async def init_db() -> None:
                 "REFERENCES repo_environments(id) ON DELETE SET NULL"
             )
         )
+        # Migration incremental: branch de origem selecionada pelo utilizador para a sessão
+        await conn.execute(
+            text(
+                "ALTER TABLE conversations "
+                "ADD COLUMN IF NOT EXISTS base_branch VARCHAR(255)"
+            )
+        )

@@ -321,6 +321,37 @@
   opacity: 0.7;
 }
 
+/* ─ Ambiente da sessão ativa (acima do footer) ─ */
+
+.activeEnvBanner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 8px 1rem 6px;
+  border-top: 1px solid rgba(72, 72, 75, 0.1);
+}
+
+.activeEnvMeta {
+  display: flex;
+  flex-direction: column;
+}
+
+.activeEnvLabel {
+  font-size: 0.5625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--cc-on-surface-variant);
+  opacity: 0.5;
+}
+
+.activeEnvValue {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--cc-on-surface);
+  font-family: 'Space Grotesk', sans-serif;
+}
+
 /* ─ Sidebar footer ─ */
 
 .sidebarFooter {
@@ -362,6 +393,100 @@
   cursor: pointer;
   width: 100%;
   height: 100%;
+}
+
+/* ── Session picker rows (novo design: repositório + branch) ── */
+.sessionPickerRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 5px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  margin-bottom: 2px;
+}
+
+.sessionPickerRow:hover:not(.sessionPickerDisabled) {
+  background: var(--cc-surface-high);
+}
+
+.sessionPickerDisabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.sessionPickerIcon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid var(--cc-surface-highest);
+  flex-shrink: 0;
+}
+
+.sessionPickerIcon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sessionPickerBranchIcon {
+  font-size: 1rem;
+  color: var(--cc-secondary);
+  opacity: 0.7;
+  width: 28px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.sessionPickerMeta {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.sessionPickerLabel {
+  font-size: 0.5rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--cc-on-surface-variant);
+  opacity: 0.6;
+  line-height: 1.2;
+}
+
+.sessionPickerValue {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--cc-on-surface);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.branchInput {
+  font-size: 0.6875rem;
+  font-family: 'Geist Mono', monospace;
+  color: var(--cc-secondary);
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+  width: 100%;
+  letter-spacing: 0.01em;
+}
+
+.branchInput::placeholder {
+  color: var(--cc-on-surface-variant);
+  opacity: 0.5;
+}
+
+.branchInput:disabled {
+  cursor: default;
 }
 
 .projectAvatar {
@@ -761,9 +886,9 @@
 .chatTitleBar {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: space-between;
   padding: 10px 1.25rem 8px;
-  border-bottom: none;
+  border-bottom: 1px solid rgba(72, 72, 75, 0.08);
   background: var(--cc-surface);
   flex-shrink: 0;
 }
@@ -774,6 +899,40 @@
   font-weight: 600;
   color: var(--cc-on-surface);
   letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.chatTitleEnv {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--cc-surface-high);
+  border: 1px solid rgba(72, 72, 75, 0.1);
+  flex-shrink: 0;
+  margin-left: 0.75rem;
+}
+
+.chatTitleEnvActive {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--cc-secondary);
+  font-family: 'Inter', sans-serif;
+  white-space: nowrap;
+}
+
+.chatTitleEnvEmpty {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--cc-on-surface-variant);
+  font-family: 'Inter', sans-serif;
+  opacity: 0.6;
+  white-space: nowrap;
 }
 
 .messageArea {
@@ -804,7 +963,7 @@
 /* ─ Chat input bar ─ */
 
 .chatInputBar {
-  padding: 10px 1rem 12px;
+  padding: 10px 1rem 8px;
   flex-shrink: 0;
   background: var(--cc-surface);
 }
@@ -814,9 +973,10 @@
   align-items: flex-end;
   gap: 8px;
   background: var(--cc-surface-low);
-  border-radius: 6px;
+  border-radius: 6px 6px 0 0;
   padding: 8px 10px;
   border: 1px solid rgba(72, 72, 75, 0.08);
+  border-bottom: none;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
@@ -825,12 +985,92 @@
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.08);
 }
 
-.boltIconSm {
-  color: var(--cc-primary);
-  font-size: 1rem;
-  opacity: 0.7;
-  margin-bottom: 3px;
+/* Status bar abaixo do textarea: seletor de repo + branch */
+.chatContextBar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--cc-surface-low);
+  border: 1px solid rgba(72, 72, 75, 0.08);
+  border-top: 1px solid rgba(72, 72, 75, 0.06);
+  border-radius: 0 0 6px 6px;
+  padding: 3px 8px;
+}
+
+.chatContextPill {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  min-width: 0;
+}
+
+.chatContextPill:hover {
+  background: var(--cc-surface-high);
+}
+
+.chatContextIcon {
+  font-size: 0.75rem;
+  color: var(--cc-on-surface-variant);
+  opacity: 0.55;
   flex-shrink: 0;
+}
+
+.chatContextText {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--cc-on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.chatContextChevron {
+  font-size: 0.6875rem;
+  color: var(--cc-on-surface-variant);
+  opacity: 0.4;
+  flex-shrink: 0;
+}
+
+.chatContextSep {
+  font-size: 0.625rem;
+  color: var(--cc-on-surface-variant);
+  opacity: 0.25;
+  padding: 0 1px;
+  flex-shrink: 0;
+}
+
+.chatContextSelect {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+
+.chatContextBranchInput {
+  font-size: 0.6875rem;
+  font-family: 'Geist Mono', monospace;
+  color: var(--cc-secondary);
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+  min-width: 48px;
+  max-width: 140px;
+  width: auto;
+  letter-spacing: 0.01em;
+}
+
+.chatContextBranchInput::placeholder {
+  color: var(--cc-on-surface-variant);
+  opacity: 0.4;
 }
 
 .chatTextarea {

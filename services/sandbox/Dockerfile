@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         unzip \
         ripgrep \
+        jq \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Install Bun (required to build openclaude) ───────────────

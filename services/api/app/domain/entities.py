@@ -45,6 +45,7 @@ class Conversation:
     updated_at: datetime = field(default_factory=_utcnow)
     environment_id: Optional[uuid.UUID] = None
     env_slug: Optional[str] = None
+    base_branch: Optional[str] = None
 
 
 @dataclass

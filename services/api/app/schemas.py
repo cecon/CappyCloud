@@ -92,6 +92,7 @@ class ConversationCreate(BaseModel):
 
     title: str | None = Field(default="Nova conversa", max_length=512)
     environment_id: Optional[uuid.UUID] = None
+    base_branch: Optional[str] = Field(default=None, max_length=255)
 
 
 class ConversationOut(BaseModel):
@@ -103,6 +104,7 @@ class ConversationOut(BaseModel):
     updated_at: datetime
     environment_id: Optional[uuid.UUID] = None
     env_slug: Optional[str] = None
+    base_branch: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

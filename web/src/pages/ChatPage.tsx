@@ -66,6 +66,7 @@ export function ChatPage() {
 
   const [envs, setEnvs] = useState<RepoEnv[]>([])
   const [selectedEnvId, setSelectedEnvId] = useState<string | null>(null)
+  const [selectedBranch, setSelectedBranch] = useState<string>('')
 
   const [pendingText, setPendingText] = useState('')
   const [pendingTools, setPendingTools] = useState<ToolCallState[]>([])
@@ -110,7 +111,7 @@ export function ChatPage() {
   }, [activeId, token])
 
   async function handleNewChat() {
-    const c = await createConversation(token, selectedEnvId)
+    const c = await createConversation(token, selectedEnvId, selectedBranch || null)
     setConversations((prev) => [c, ...prev])
     setActiveId(c.id)
     setMessages([])
@@ -120,7 +121,7 @@ export function ChatPage() {
   /** Cria conversa e envia a mensagem inicial de uma vez */
   async function handleNewChatWithMessage(text: string) {
     if (!text.trim()) return
-    const c = await createConversation(token, selectedEnvId)
+    const c = await createConversation(token, selectedEnvId, selectedBranch || null)
     setConversations((prev) => [c, ...prev])
     setActiveId(c.id)
     setMessages([])
@@ -270,6 +271,12 @@ export function ChatPage() {
     streaming && !pendingText && pendingTools.every((t) => t.done) && !pendingAction
 
   const selectedEnv = envs.find((e) => e.id === selectedEnvId)
+
+  // Quando o ambiente selecionado muda, resetar selectedBranch para o branch padrão do env
+  useEffect(() => {
+    setSelectedBranch(selectedEnv?.branch ?? '')
+  }, [selectedEnvId, selectedEnv?.branch])
+
   const groups = groupConversations(conversations)
 
   if (loading) {
@@ -362,30 +369,46 @@ export function ChatPage() {
             ))}
           </div>
 
-          {/* Sidebar footer — seletor de ambiente */}
+          {/* Sessão ativa — ambiente em uso */}
+          {activeId && (
+            <div className={styles.activeEnvBanner}>
+              <span className={styles.icon} style={{ fontSize: '0.875rem', color: activeEnvSlug ? 'var(--cc-secondary)' : 'var(--cc-on-surface-variant)' }}>
+                {activeEnvSlug ? 'check_circle' : 'radio_button_unchecked'}
+              </span>
+              <div className={styles.activeEnvMeta}>
+                <span className={styles.activeEnvLabel}>Sessão atual</span>
+                <span className={styles.activeEnvValue}>
+                  {activeEnvSlug
+                    ? envs.find(e => e.slug === activeEnvSlug)?.name ?? activeEnvSlug
+                    : 'Sem ambiente'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Sidebar footer — seletor de ambiente e branch */}
           <div className={styles.sidebarFooter}>
-            <p className={styles.footerLabel}>Ambiente da próxima sessão</p>
-            <div className={styles.envSelector}>
-              <div className={styles.projectAvatar}>
+            <p className={styles.footerLabel}>Próxima sessão</p>
+
+            {/* Seletor de repositório */}
+            <div className={styles.sessionPickerRow}>
+              <div className={styles.sessionPickerIcon}>
                 <img src="/capybara.png" alt="" />
               </div>
-              <div className={styles.projectMeta}>
-                <span className={styles.projectName}>
+              <div className={styles.sessionPickerMeta}>
+                <span className={styles.sessionPickerLabel}>Repositório</span>
+                <span className={styles.sessionPickerValue}>
                   {selectedEnv?.name ?? 'Sem ambiente'}
-                </span>
-                <span className={styles.projectBranch}>
-                  {selectedEnv ? `${selectedEnv.slug} · ${selectedEnv.branch}` : 'sandbox'}
                 </span>
               </div>
               <span className={styles.icon} style={{ fontSize: '1rem', opacity: 0.4, marginLeft: 'auto' }}>
                 expand_more
               </span>
-              {/* select nativo invisível por cima */}
               <select
                 className={styles.envSelectorNative}
                 value={selectedEnvId ?? ''}
                 onChange={(e) => setSelectedEnvId(e.target.value || null)}
-                title="Selecionar ambiente"
+                title="Selecionar repositório"
               >
                 <option value="">Sem ambiente</option>
                 {envs.map((e) => (
@@ -394,6 +417,26 @@ export function ChatPage() {
                   </option>
                 ))}
               </select>
+            </div>
+
+            {/* Seletor de branch */}
+            <div className={`${styles.sessionPickerRow} ${!selectedEnvId ? styles.sessionPickerDisabled : ''}`}>
+              <span className={`${styles.icon} ${styles.sessionPickerBranchIcon}`}>
+                fork_right
+              </span>
+              <div className={styles.sessionPickerMeta}>
+                <span className={styles.sessionPickerLabel}>Branch de origem</span>
+                <input
+                  className={styles.branchInput}
+                  type="text"
+                  value={selectedBranch}
+                  onChange={(e) => setSelectedBranch(e.target.value)}
+                  placeholder={selectedEnv?.branch ?? 'main'}
+                  disabled={!selectedEnvId}
+                  spellCheck={false}
+                  title="Branch base para a sessão"
+                />
+              </div>
             </div>
           </div>
         </aside>
@@ -409,6 +452,7 @@ export function ChatPage() {
             envs={envs}
             selectedEnvId={selectedEnvId}
             setSelectedEnvId={setSelectedEnvId}
+            selectedBranch={selectedBranch}
             streaming={streaming}
           />
           ) : (
@@ -425,7 +469,12 @@ export function ChatPage() {
               onSend={() => handleSend()}
               onActionReply={handleActionReply}
               activeEnvSlug={activeEnvSlug}
+              envs={envs}
               activeTitle={activeConv?.title ?? 'Conversa'}
+              selectedEnvId={selectedEnvId}
+              setSelectedEnvId={setSelectedEnvId}
+              selectedBranch={selectedBranch}
+              setSelectedBranch={setSelectedBranch}
             />
           )}
         </main>
@@ -445,12 +494,13 @@ interface EmptyStateProps {
   envs: RepoEnv[]
   selectedEnvId: string | null
   setSelectedEnvId: (id: string | null) => void
+  selectedBranch: string
   streaming: boolean
 }
 
 function EmptyState({
   input, setInput, inputRef, onExecute,
-  envs, selectedEnvId, setSelectedEnvId, streaming,
+  envs, selectedEnvId, setSelectedEnvId, selectedBranch, streaming,
 }: EmptyStateProps) {
   const selectedEnv = envs.find((e) => e.id === selectedEnvId)
 
@@ -541,9 +591,9 @@ function EmptyState({
         {selectedEnv && (
           <div className={styles.contextPill}>
             <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
-              account_tree
+              fork_right
             </span>
-            <span className={styles.contextPillLabel}>{selectedEnv.branch}</span>
+            <span className={styles.contextPillLabel}>{selectedBranch || selectedEnv.branch}</span>
           </div>
         )}
 
@@ -609,12 +659,18 @@ interface ActiveChatProps {
   onActionReply: (r: string) => void
   activeEnvSlug: string | null
   activeTitle: string
+  envs: RepoEnv[]
+  selectedEnvId: string | null
+  setSelectedEnvId: (id: string | null) => void
+  selectedBranch: string
+  setSelectedBranch: (v: string) => void
 }
 
 function ActiveChat({
   messages, pendingText, pendingTools, pendingAction,
   showThinking, streaming, input, setInput, inputRef,
-  onSend, onActionReply, activeEnvSlug, activeTitle,
+  onSend, onActionReply, activeEnvSlug, activeTitle, envs,
+  selectedEnvId, setSelectedEnvId, selectedBranch, setSelectedBranch,
 }: ActiveChatProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -629,9 +685,16 @@ function ActiveChat({
       {/* Chat title bar */}
       <div className={styles.chatTitleBar}>
         <span className={styles.chatTitle}>{activeTitle}</span>
-        {activeEnvSlug && (
-          <Badge size="xs" variant="light" color="blue">{activeEnvSlug}</Badge>
-        )}
+        <div className={styles.chatTitleEnv}>
+          <span className={styles.icon} style={{ fontSize: '0.875rem', color: activeEnvSlug ? 'var(--cc-secondary)' : 'var(--cc-on-surface-variant)', opacity: activeEnvSlug ? 1 : 0.4 }}>
+            {activeEnvSlug ? 'inventory_2' : 'inventory_2'}
+          </span>
+          <span className={activeEnvSlug ? styles.chatTitleEnvActive : styles.chatTitleEnvEmpty}>
+            {activeEnvSlug
+              ? (envs.find(e => e.slug === activeEnvSlug)?.name ?? activeEnvSlug)
+              : 'Sem ambiente'}
+          </span>
+        </div>
       </div>
 
       {/* Messages */}
@@ -660,7 +723,6 @@ function ActiveChat({
       {/* Compact input bar */}
       <div className={styles.chatInputBar}>
         <div className={styles.chatInputWrapper}>
-          <span className={`${styles.icon} ${styles.boltIconSm}`}>bolt</span>
           <textarea
             ref={inputRef}
             className={styles.chatTextarea}
@@ -683,6 +745,47 @@ function ActiveChat({
           >
             <span className={styles.icon}>keyboard_return</span>
           </button>
+        </div>
+
+        {/* Context status bar — repo + branch selector */}
+        <div className={styles.chatContextBar}>
+          {/* Repo selector */}
+          <div className={styles.chatContextPill}>
+            <span className={`${styles.icon} ${styles.chatContextIcon}`}>inventory_2</span>
+            <span className={styles.chatContextText}>
+              {envs.find(e => e.id === selectedEnvId)?.name ?? 'Sem ambiente'}
+            </span>
+            <span className={`${styles.icon} ${styles.chatContextChevron}`}>expand_more</span>
+            <select
+              className={styles.chatContextSelect}
+              value={selectedEnvId ?? ''}
+              onChange={(e) => setSelectedEnvId(e.target.value || null)}
+              title="Selecionar repositório"
+            >
+              <option value="">Sem ambiente</option>
+              {envs.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name} ({e.slug})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <span className={styles.chatContextSep}>›</span>
+
+          {/* Branch selector */}
+          <div className={styles.chatContextPill}>
+            <span className={`${styles.icon} ${styles.chatContextIcon}`}>fork_right</span>
+            <input
+              className={styles.chatContextBranchInput}
+              type="text"
+              value={selectedBranch}
+              onChange={(e) => setSelectedBranch(e.target.value)}
+              placeholder={envs.find(e => e.id === selectedEnvId)?.branch ?? 'main'}
+              spellCheck={false}
+              title="Branch de origem da próxima sessão"
+            />
+          </div>
         </div>
       </div>
     </div>

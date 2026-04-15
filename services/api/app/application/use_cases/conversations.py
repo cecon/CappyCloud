@@ -113,12 +113,14 @@ class CreateConversation:
         user_id: uuid.UUID,
         title: str | None = None,
         environment_id: Optional[uuid.UUID] = None,
+        base_branch: Optional[str] = None,
     ) -> Conversation:
         conv = Conversation(
             id=uuid.uuid4(),
             user_id=user_id,
             title=title or _DEFAULT_TITLE,
             environment_id=environment_id,
+            base_branch=base_branch,
         )
         return await self._conversations.save(conv)
 
@@ -170,10 +172,12 @@ class StreamMessage:
         conversations: ConversationRepository,
         messages: MessageRepository,
         agent: AgentPort,
+        repo_envs: RepoEnvironmentRepository | None = None,
     ) -> None:
         self._conversations = conversations
         self._messages = messages
         self._agent = agent
+        self._repo_envs = repo_envs
 
     async def execute(
         self,
@@ -208,11 +212,28 @@ class StreamMessage:
 
         history = await self._messages.list_by_conversation(conversation_id)
         messages_payload = [{"role": m.role, "content": m.content} for m in history]
+
+        # Resolve repo_url / branch para o agente poder clonar o workspace correcto
+        repo_url = ""
+        branch = "main"
+        if conv.env_slug and self._repo_envs:
+            env = await self._repo_envs.get_by_slug(conv.env_slug)
+            if env:
+                repo_url = env.repo_url
+                branch = env.branch
+
+        # base_branch: branch de origem da sessão (selecionado pelo utilizador na UI)
+        # Se não definido, usa a branch configurada no ambiente
+        base_branch = conv.base_branch or branch
+
         pipeline_body = {
             "user_id": str(user_id),
             "conversation_id": str(conversation_id),
             "user": {"id": str(user_id)},
             "env_slug": conv.env_slug or "default",
+            "repo_url": repo_url,
+            "branch": branch,
+            "base_branch": base_branch,
         }
 
         return self._stream_chunks(

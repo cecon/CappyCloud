@@ -134,6 +134,7 @@ export type Conversation = {
   updated_at: string
   environment_id: string | null
   env_slug: string | null
+  base_branch: string | null
 }
 
 export type ChatMessage = {
@@ -181,7 +182,8 @@ export async function fetchConversations(token: string): Promise<Conversation[]>
 
 export async function createConversation(
   token: string,
-  environmentId?: string | null
+  environmentId?: string | null,
+  baseBranch?: string | null
 ): Promise<Conversation> {
   const res = await fetch('/api/conversations', {
     method: 'POST',
@@ -189,7 +191,10 @@ export async function createConversation(
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ environment_id: environmentId ?? null }),
+    body: JSON.stringify({
+      environment_id: environmentId ?? null,
+      base_branch: baseBranch ?? null,
+    }),
   })
   if (!res.ok) throw new Error('Não foi possível criar conversa')
   return res.json()

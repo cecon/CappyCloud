@@ -25,16 +25,20 @@ if [ -z "$USER_ID" ]; then
     exit 1
 fi
 
+_json_pretty() {
+    node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{console.log(JSON.stringify(JSON.parse(d),null,2))}catch(e){process.stdout.write(d)}})"
+}
+
 _post() {
     local endpoint="$1"
     local body="$2"
     curl -s -X POST "${BASE_URL}${endpoint}" \
         -H "Content-Type: application/json" \
-        -d "$body" | python3 -m json.tool
+        -d "$body" | _json_pretty
 }
 
 _status() {
-    curl -s "${BASE_URL}/index/${USER_ID}" | python3 -m json.tool
+    curl -s "${BASE_URL}/index/${USER_ID}" | _json_pretty
 }
 
 CMD="${1:-}"

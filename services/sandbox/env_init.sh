@@ -59,11 +59,19 @@ git config --global user.email "${GIT_USER_EMAIL:-agent@cappycloud.local}"
 git config --global user.name "${GIT_USER_NAME:-CappyCloud Agent}"
 
 # ── Create workspace structure ────────────────────────────────
-mkdir -p "${MAIN_REPO}" "/repos/${ENV_SLUG}/sessions"
+mkdir -p "${MAIN_REPO}"
 
 # ── Clone or update base repo into /repos/<slug>/ ────────────
 if [ -n "${WORKSPACE_REPO}" ]; then
     CLEAN_REPO=$(echo "${WORKSPACE_REPO}" | sed 's|https://[^@]*@|https://|')
+
+    # Monta URL autenticada diretamente para evitar dependência de insteadOf no clone inicial
+    if [ -n "${GIT_AUTH_TOKEN}" ]; then
+        AUTH_REPO=$(echo "${CLEAN_REPO}" | sed "s|https://dev.azure.com|https://pat:${GIT_AUTH_TOKEN}@dev.azure.com|" | \
+            sed "s|https://github.com|https://x-token:${GIT_AUTH_TOKEN}@github.com|")
+    else
+        AUTH_REPO="${CLEAN_REPO}"
+    fi
 
     if [ -d "${MAIN_REPO}/.git" ]; then
         echo "Base repo already present — pulling latest..."
@@ -71,11 +79,21 @@ if [ -n "${WORKSPACE_REPO}" ]; then
             || echo "WARNING: git pull failed — continuing with existing code."
     else
         echo "Cloning ${CLEAN_REPO} (branch=${WORKSPACE_BRANCH}) into ${MAIN_REPO}..."
-        if git clone --depth=1 --branch "${WORKSPACE_BRANCH}" "${CLEAN_REPO}" "${MAIN_REPO}" 2>&1 \
-            || git clone --depth=1 "${CLEAN_REPO}" "${MAIN_REPO}" 2>&1; then
+        CLONE_OK=0
+        for attempt in 1 2 3; do
+            echo "[clone attempt ${attempt}/3]"
+            if git clone --depth=1 --branch "${WORKSPACE_BRANCH}" "${AUTH_REPO}" "${MAIN_REPO}" 2>&1; then
+                CLONE_OK=1; break
+            fi
+            if git clone --depth=1 "${AUTH_REPO}" "${MAIN_REPO}" 2>&1; then
+                CLONE_OK=1; break
+            fi
+            [ "${attempt}" -lt 3 ] && echo "Retrying in 3s..." && sleep 3
+        done
+        if [ "${CLONE_OK}" -eq 1 ]; then
             echo "Clone successful."
         else
-            echo "WARNING: git clone failed — initialising empty workspace."
+            echo "WARNING: git clone failed after 3 attempts — initialising empty workspace."
         fi
     fi
 else
@@ -95,6 +113,9 @@ if [ -f /app/CLAUDE.md ]; then
     cp /app/CLAUDE.md "${MAIN_REPO}/CLAUDE.md"
     echo "CLAUDE.md injected into ${MAIN_REPO}."
 fi
+
+# ── Garante pasta de worktrees ────────────────────────────────
+mkdir -p "/repos/${ENV_SLUG}/sessions"
 
 # ── Export provider env vars for openclaude ──────────────────
 export CLAUDE_CODE_USE_OPENAI="${CLAUDE_CODE_USE_OPENAI}"

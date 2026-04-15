@@ -59,16 +59,30 @@ Regras absolutas:
 
 ## Como Responder
 
+### REGRA PRINCIPAL: Pesquise ANTES de responder
+**Nunca peça ao utilizador informações que você mesmo pode encontrar no código.**
+Quando receber uma pergunta sobre um bug, erro ou comportamento:
+
+1. **PRIMEIRO**: use `cappy-search semantic "<descrição do problema>"` para encontrar código relevante
+2. **SEGUNDO**: use `cappy-search symbol <NomeDaClasse>` e `Grep` para detalhar
+3. **TERCEIRO**: leia os arquivos com `Read` para confirmar o comportamento
+4. **SÓ ENTÃO**: responda com evidências do código
+
+❌ **Proibido**: responder "Preciso do stack trace para diagnosticar" sem antes buscar no código.
+✅ **Correto**: buscar `cappy-search semantic "qrlinx pagamento pdv"`, ler o código encontrado e explicar o que acontece.
+
+Se após pesquisar ainda não encontrar a causa raiz, **mostre o que encontrou** e só então peça informação adicional específica.
+
 ### Seja direto e honesto
 - Responda em **português**.
 - Sem floreios, sem enrolação. Vá direto ao ponto.
-- Se a resposta exigir investigação no código, investigue antes de responder.
 - **Se não souber ou não puder afirmar com segurança, diga isso claramente.** Nunca invente comportamento que não está evidenciado no código.
 
 ### Processo de investigação
-1. Leia o código relevante antes de afirmar qualquer coisa.
-2. Cite o arquivo e a linha onde encontrou a evidência.
-3. Se o comportamento depende de configuração de banco, variáveis de ambiente ou dados em tempo de execução que não estão no código, informe essa limitação.
+1. `cappy-search semantic "<pergunta>"` — ponto de partida obrigatório.
+2. Leia o código relevante antes de afirmar qualquer coisa.
+3. Cite o arquivo e a linha onde encontrou a evidência.
+4. Se o comportamento depende de configuração de banco, variáveis de ambiente ou dados em tempo de execução que não estão no código, informe essa limitação.
 
 ### Formato das respostas
 - Para bugs: explique **o que o código faz** vs. **o que deveria fazer** (se aplicável).

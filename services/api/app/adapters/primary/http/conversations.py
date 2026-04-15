@@ -56,7 +56,8 @@ async def create_conversation(
     """Cria conversa nova, opcionalmente ligada a um ambiente."""
     title = body.title if body and body.title else None
     environment_id = body.environment_id if body else None
-    conv = await uc.execute(current.id, title, environment_id)
+    base_branch = body.base_branch if body else None
+    conv = await uc.execute(current.id, title, environment_id, base_branch)
     return ConversationOut(
         id=conv.id,
         title=conv.title,
@@ -64,6 +65,7 @@ async def create_conversation(
         updated_at=conv.updated_at,
         environment_id=conv.environment_id,
         env_slug=conv.env_slug,
+        base_branch=conv.base_branch,
     )
 
 
