@@ -56,9 +56,7 @@ class InMemoryConversationRepository(ConversationRepository):
             reverse=True,
         )
 
-    async def get(
-        self, conversation_id: uuid.UUID, user_id: uuid.UUID
-    ) -> Conversation | None:
+    async def get(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> Conversation | None:
         conv = self._store.get(conversation_id)
         if conv and conv.user_id == user_id:
             return conv
@@ -79,9 +77,7 @@ class InMemoryMessageRepository(MessageRepository):
     def __init__(self) -> None:
         self._store: list[Message] = []
 
-    async def list_by_conversation(
-        self, conversation_id: uuid.UUID
-    ) -> list[Message]:
+    async def list_by_conversation(self, conversation_id: uuid.UUID) -> list[Message]:
         return sorted(
             [m for m in self._store if m.conversation_id == conversation_id],
             key=lambda m: m.created_at,

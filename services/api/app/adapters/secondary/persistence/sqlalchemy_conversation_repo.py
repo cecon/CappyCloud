@@ -28,9 +28,7 @@ class SQLAlchemyConversationRepository(ConversationRepository):
         )
         return [self._to_entity(row) for row in result.scalars().all()]
 
-    async def get(
-        self, conversation_id: uuid.UUID, user_id: uuid.UUID
-    ) -> ConvEntity | None:
+    async def get(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> ConvEntity | None:
         result = await self._session.execute(
             select(ConvORM)
             .where(
@@ -54,9 +52,7 @@ class SQLAlchemyConversationRepository(ConversationRepository):
         await self._session.commit()
         await self._session.refresh(orm)
         await self._session.execute(
-            select(ConvORM)
-            .where(ConvORM.id == orm.id)
-            .options(selectinload(ConvORM.environment))
+            select(ConvORM).where(ConvORM.id == orm.id).options(selectinload(ConvORM.environment))
         )
         return self._to_entity(orm)
 

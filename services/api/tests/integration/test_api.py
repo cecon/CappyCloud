@@ -118,9 +118,7 @@ class TestAuthEndpoints:
             data={"username": "me@test.com", "password": "password123"},
         )
         token = login.json()["access_token"]
-        r = await client.get(
-            "/api/auth/me", headers={"Authorization": f"Bearer {token}"}
-        )
+        r = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 200
         assert r.json()["email"] == "me@test.com"
 
@@ -161,14 +159,10 @@ class TestConversationEndpoints:
         self, client: AsyncClient, auth_headers: dict[str, str]
     ) -> None:
         fake_id = "00000000-0000-0000-0000-000000000000"
-        r = await client.get(
-            f"/api/conversations/{fake_id}/messages", headers=auth_headers
-        )
+        r = await client.get(f"/api/conversations/{fake_id}/messages", headers=auth_headers)
         assert r.status_code == 404
 
-    async def test_stream_message(
-        self, client: AsyncClient, auth_headers: dict[str, str]
-    ) -> None:
+    async def test_stream_message(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
         conv_r = await client.post(
             "/api/conversations",
             json={"title": "Stream chat"},

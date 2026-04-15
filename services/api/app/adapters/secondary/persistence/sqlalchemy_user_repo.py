@@ -23,9 +23,7 @@ class SQLAlchemyUserRepository(UserRepository):
         return self._to_entity(row) if row else None
 
     async def get_by_email(self, email: str) -> UserEntity | None:
-        result = await self._session.execute(
-            select(UserORM).where(UserORM.email == email)
-        )
+        result = await self._session.execute(select(UserORM).where(UserORM.email == email))
         row = result.scalar_one_or_none()
         return self._to_entity(row) if row else None
 

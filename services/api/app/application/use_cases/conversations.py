@@ -9,7 +9,6 @@ import asyncio
 import json
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Optional
 
 from app.domain.entities import Conversation, Message, RepoEnvironment
 from app.ports.agent import AgentPort
@@ -23,7 +22,7 @@ _TITLE_MAX_LEN = 80
 _DEFAULT_TITLE = "Nova conversa"
 
 
-def _next_chunk(gen):  # type: ignore[no-untyped-def]
+def _next_chunk(gen):
     """Pull one chunk from a synchronous generator (for asyncio.to_thread)."""
     try:
         return next(gen)
@@ -112,8 +111,8 @@ class CreateConversation:
         self,
         user_id: uuid.UUID,
         title: str | None = None,
-        environment_id: Optional[uuid.UUID] = None,
-        base_branch: Optional[str] = None,
+        environment_id: uuid.UUID | None = None,
+        base_branch: str | None = None,
     ) -> Conversation:
         conv = Conversation(
             id=uuid.uuid4(),
@@ -136,9 +135,7 @@ class ListMessages:
         self._conversations = conversations
         self._messages = messages
 
-    async def execute(
-        self, conversation_id: uuid.UUID, user_id: uuid.UUID
-    ) -> list[Message]:
+    async def execute(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> list[Message]:
         """Return messages for conversation.
 
         Raises:
@@ -203,9 +200,7 @@ class StreamMessage:
         )
 
         if conv.title == _DEFAULT_TITLE:
-            conv.title = content[:_TITLE_MAX_LEN] + (
-                "…" if len(content) > _TITLE_MAX_LEN else ""
-            )
+            conv.title = content[:_TITLE_MAX_LEN] + ("…" if len(content) > _TITLE_MAX_LEN else "")
             await self._conversations.update(conv)
 
         history = await self._messages.list_by_conversation(conversation_id)
@@ -232,8 +227,8 @@ class StreamMessage:
         self,
         content: str,
         model_id: str,
-        messages_payload: list[dict],  # type: ignore[type-arg]
-        pipeline_body: dict,  # type: ignore[type-arg]
+        messages_payload: list[dict],
+        pipeline_body: dict,
         conversation_id: uuid.UUID,
     ) -> AsyncGenerator[bytes, None]:
         accumulated_text: list[str] = []

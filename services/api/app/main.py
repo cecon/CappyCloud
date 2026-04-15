@@ -24,7 +24,7 @@ logging.basicConfig(
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):  # type: ignore[type-arg]
+async def lifespan(app: FastAPI):
     """Arranca o pipeline do agente e inicializa a base de dados."""
     from app.adapters.secondary.agent.pipeline_adapter import PipelineAdapter
 
@@ -51,8 +51,11 @@ def _pt_validation_msg(err: dict[str, Any]) -> str:
 
     if typ == "missing":
         return f"Campo em falta: {loc_s or 'pedido'}."
-    if loc and loc[-1] == "email" and "password" not in msg.lower() and (
-        "@" in msg or "email" in msg.lower()
+    if (
+        loc
+        and loc[-1] == "email"
+        and "password" not in msg.lower()
+        and ("@" in msg or "email" in msg.lower())
     ):
         return "Email inválido. Use um endereço completo (ex.: nome@servidor.com)."
     if loc and loc[-1] == "password":
@@ -71,11 +74,13 @@ async def validation_exception_handler(
     out = []
     for e in exc.errors():
         row = dict(e) if isinstance(e, dict) else {"msg": str(e)}
-        out.append({
-            "type": row.get("type"),
-            "loc": list(row.get("loc", ())),
-            "msg": _pt_validation_msg(row),
-        })
+        out.append(
+            {
+                "type": row.get("type"),
+                "loc": list(row.get("loc", ())),
+                "msg": _pt_validation_msg(row),
+            }
+        )
     return JSONResponse(status_code=422, content={"detail": out})
 
 

@@ -21,12 +21,12 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def hash_password(plain: str) -> str:
     """Gera hash bcrypt da password."""
-    return pwd_context.hash(plain)
+    return str(pwd_context.hash(plain))
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     """Verifica password contra hash."""
-    return pwd_context.verify(plain, hashed)
+    return bool(pwd_context.verify(plain, hashed))
 
 
 def create_access_token(subject: str, extra: dict[str, Any] | None = None) -> str:
@@ -36,14 +36,15 @@ def create_access_token(subject: str, extra: dict[str, Any] | None = None) -> st
     payload: dict[str, Any] = {"sub": subject, "exp": expire}
     if extra:
         payload.update(extra)
-    return jwt.encode(payload, s.jwt_secret, algorithm=s.jwt_algorithm)
+    return str(jwt.encode(payload, s.jwt_secret, algorithm=s.jwt_algorithm))
 
 
 def decode_token(token: str) -> dict[str, Any]:
     """Decodifica e valida JWT. Raises ValueError se inválido."""
     s = get_settings()
     try:
-        return jwt.decode(token, s.jwt_secret, algorithms=[s.jwt_algorithm])
+        result: dict[str, Any] = jwt.decode(token, s.jwt_secret, algorithms=[s.jwt_algorithm])
+        return result
     except JWTError as exc:
         raise ValueError("Token inválido ou expirado.") from exc
 

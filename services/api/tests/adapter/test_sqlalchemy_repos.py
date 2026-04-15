@@ -77,9 +77,7 @@ class TestUserRepositoryContract:
         assert found.id == saved.id
         assert found.email == "a@b.com"
 
-    async def test_get_by_id_returns_none_for_missing(
-        self, user_repo_impl: UserRepository
-    ) -> None:
+    async def test_get_by_id_returns_none_for_missing(self, user_repo_impl: UserRepository) -> None:
         assert await user_repo_impl.get_by_id(uuid.uuid4()) is None
 
     async def test_save_and_get_by_email(self, user_repo_impl: UserRepository) -> None:
@@ -166,9 +164,7 @@ async def msg_repo_impl(
 class TestMessageRepositoryContract:
     async def test_save_and_list(self, msg_repo_impl: MessageRepository) -> None:
         conv_id = uuid.uuid4()
-        msg = Message(
-            id=uuid.uuid4(), conversation_id=conv_id, role="user", content="Olá"
-        )
+        msg = Message(id=uuid.uuid4(), conversation_id=conv_id, role="user", content="Olá")
         await msg_repo_impl.save(msg)
         msgs = await msg_repo_impl.list_by_conversation(conv_id)
         assert len(msgs) >= 1

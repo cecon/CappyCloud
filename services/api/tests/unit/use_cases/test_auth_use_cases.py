@@ -63,16 +63,12 @@ class TestLoginUser:
         token = await uc.execute("login@test.com", "goodpassword")
         assert token == f"token:{user_id}"
 
-    async def test_wrong_password_raises(
-        self, uc_with_user: tuple[LoginUser, str]
-    ) -> None:
+    async def test_wrong_password_raises(self, uc_with_user: tuple[LoginUser, str]) -> None:
         uc, _ = uc_with_user
         with pytest.raises(PermissionError, match="inválidas"):
             await uc.execute("login@test.com", "wrongpassword")
 
-    async def test_unknown_email_raises(
-        self, uc_with_user: tuple[LoginUser, str]
-    ) -> None:
+    async def test_unknown_email_raises(self, uc_with_user: tuple[LoginUser, str]) -> None:
         uc, _ = uc_with_user
         with pytest.raises(PermissionError, match="inválidas"):
             await uc.execute("nobody@test.com", "goodpassword")
@@ -96,16 +92,12 @@ class TestGetCurrentUser:
         uc = GetCurrentUser(repo, tokens)
         return uc, str(user.id)
 
-    async def test_valid_token_returns_user(
-        self, uc_with_user: tuple[GetCurrentUser, str]
-    ) -> None:
+    async def test_valid_token_returns_user(self, uc_with_user: tuple[GetCurrentUser, str]) -> None:
         uc, user_id = uc_with_user
         user = await uc.execute(f"token:{user_id}")
         assert str(user.id) == user_id
 
-    async def test_invalid_token_raises(
-        self, uc_with_user: tuple[GetCurrentUser, str]
-    ) -> None:
+    async def test_invalid_token_raises(self, uc_with_user: tuple[GetCurrentUser, str]) -> None:
         uc, _ = uc_with_user
         with pytest.raises(PermissionError, match="inválido"):
             await uc.execute("bad-token")

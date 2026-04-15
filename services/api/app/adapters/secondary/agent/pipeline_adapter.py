@@ -7,6 +7,7 @@ Routers and use cases depend only on AgentPort; they never import Pipeline direc
 from __future__ import annotations
 
 from collections.abc import Generator
+from typing import cast
 
 from app.ports.agent import AgentPort
 
@@ -26,11 +27,12 @@ class PipelineAdapter(AgentPort):
         self,
         user_message: str,
         model_id: str,
-        messages: list[dict],  # type: ignore[type-arg]
-        body: dict,  # type: ignore[type-arg]
+        messages: list[dict],
+        body: dict,
     ) -> Generator[str, None, None]:
         """Delegate streaming to the underlying Pipeline.pipe()."""
-        return self._pipeline.pipe(user_message, model_id, messages, body)
+        result = self._pipeline.pipe(user_message, model_id, messages, body)
+        return cast(Generator[str, None, None], result)
 
     async def on_startup(self) -> None:
         """Initialise the Pipeline (connects to Docker, Redis, PostgreSQL)."""
@@ -40,9 +42,9 @@ class PipelineAdapter(AgentPort):
         """Gracefully shut down the Pipeline and its background tasks."""
         await self._pipeline.on_shutdown()
 
-    def get_env_status(self, env_slug: str) -> dict:  # type: ignore[type-arg]
+    def get_env_status(self, env_slug: str) -> dict[str, object]:
         """Delegate environment status query to the underlying Pipeline."""
-        return self._pipeline.get_env_status(env_slug)  # type: ignore[no-any-return]
+        return cast(dict[str, object], self._pipeline.get_env_status(env_slug))
 
     def wake_env(self, env_slug: str) -> None:
         """Delegate environment wake to the underlying Pipeline."""

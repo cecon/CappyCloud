@@ -19,22 +19,16 @@ class SQLAlchemyRepoEnvironmentRepository(RepoEnvironmentRepository):
         self._session = session
 
     async def list_all(self) -> list[RepoEnvEntity]:
-        result = await self._session.execute(
-            select(RepoEnvORM).order_by(RepoEnvORM.name)
-        )
+        result = await self._session.execute(select(RepoEnvORM).order_by(RepoEnvORM.name))
         return [self._to_entity(row) for row in result.scalars().all()]
 
     async def get(self, env_id: uuid.UUID) -> RepoEnvEntity | None:
-        result = await self._session.execute(
-            select(RepoEnvORM).where(RepoEnvORM.id == env_id)
-        )
+        result = await self._session.execute(select(RepoEnvORM).where(RepoEnvORM.id == env_id))
         row = result.scalar_one_or_none()
         return self._to_entity(row) if row else None
 
     async def get_by_slug(self, slug: str) -> RepoEnvEntity | None:
-        result = await self._session.execute(
-            select(RepoEnvORM).where(RepoEnvORM.slug == slug)
-        )
+        result = await self._session.execute(select(RepoEnvORM).where(RepoEnvORM.slug == slug))
         row = result.scalar_one_or_none()
         return self._to_entity(row) if row else None
 
@@ -52,9 +46,7 @@ class SQLAlchemyRepoEnvironmentRepository(RepoEnvironmentRepository):
         return self._to_entity(orm)
 
     async def delete(self, env_id: uuid.UUID) -> None:
-        result = await self._session.execute(
-            select(RepoEnvORM).where(RepoEnvORM.id == env_id)
-        )
+        result = await self._session.execute(select(RepoEnvORM).where(RepoEnvORM.id == env_id))
         row = result.scalar_one_or_none()
         if row:
             await self._session.delete(row)
