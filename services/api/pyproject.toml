@@ -62,6 +62,14 @@ source = ["app"]
 omit = [
     "app/infrastructure/orm_models.py",
     "app/routers/*",
+    # Legacy backward-compat shims — pure re-exports, no logic to test
+    "app/config.py",
+    "app/database.py",
+    "app/deps.py",
+    "app/models.py",
+    "app/security.py",
+    # Wraps external cappycloud_agent package (not available in test env)
+    "app/adapters/secondary/agent/pipeline_adapter.py",
 ]
 
 [tool.coverage.report]
