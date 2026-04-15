@@ -431,8 +431,12 @@ class EnvironmentManager:
     # ── Helpers ───────────────────────────────────────────────────
 
     async def _trigger_indexing(self, user_id: str) -> None:
-        """Dispara indexação do workspace via code-indexer (fire-and-forget)."""
-        if not self._code_indexer_url or not self._workspace_repo:
+        """Dispara indexação headless do workspace via code-indexer (fire-and-forget)."""
+        if not self._code_indexer_url:
+            return
+        env = await self._store.get_env(user_id)
+        if not env or not env.container_id:
+            log.debug("Indexação ignorada — sem container para user=%s", user_id)
             return
         try:
             async with httpx.AsyncClient(timeout=10) as client:
@@ -440,11 +444,12 @@ class EnvironmentManager:
                     f"{self._code_indexer_url}/index",
                     json={
                         "user_id": user_id,
-                        "repo_url": self._workspace_repo,
-                        "git_auth_token": self._git_auth_token,
+                        "container_id": env.container_id,
+                        "workspace_path": "/workspace/main",
                     },
                 )
-            log.info("Indexação disparada para user=%s", user_id)
+            log.info("Indexação headless disparada para user=%s  container=%s",
+                     user_id, env.container_id[:12])
         except Exception as exc:
             log.warning("Falha ao disparar indexação para %s: %s", user_id, exc)
 
