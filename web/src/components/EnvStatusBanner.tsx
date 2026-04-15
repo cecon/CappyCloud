@@ -19,13 +19,15 @@ const messages: Record<Exclude<EnvStatus, 'running'>, string> = {
 export function EnvStatusBanner({ status }: Props) {
   const [visible, setVisible] = useState(true)
 
-  // Auto-hide 2 seconds after environment becomes running
+  // Auto-hide 2 seconds after environment becomes running;
+  // reset visibility (via timeout) when status goes back to non-running.
   useEffect(() => {
     if (status === 'running') {
       const t = setTimeout(() => setVisible(false), 2000)
       return () => clearTimeout(t)
     }
-    setVisible(true)
+    const t = setTimeout(() => setVisible(true), 0)
+    return () => clearTimeout(t)
   }, [status])
 
   if (!visible) return null
