@@ -1,0 +1,35 @@
+diff --git a/src/tools/GrepTool/GrepTool.ts b/src/tools/GrepTool/GrepTool.ts
+index 9bdd024..56b47dc 100644
+--- a/src/tools/GrepTool/GrepTool.ts
++++ b/src/tools/GrepTool/GrepTool.ts
+@@ -68,6 +68,9 @@ const inputSchema = lazySchema(() =>
+     '-n': semanticBoolean(z.boolean().optional()).describe(
+       'Show line numbers in output (rg -n). Requires output_mode: "content", ignored otherwise. Defaults to true.',
+     ),
++    n: semanticBoolean(z.boolean().optional()).describe(
++      'Alias for -n (line numbers). Some models send `n` instead of `-n`.',
++    ),
+     '-i': semanticBoolean(z.boolean().optional()).describe(
+       'Case insensitive search (rg -i)',
+     ),
+@@ -318,7 +321,8 @@ export const GrepTool = buildTool({
+       '-A': context_after,
+       '-C': context_c,
+       context,
+-      '-n': show_line_numbers = true,
++      '-n': show_line_numbers_dash,
++      n: show_line_numbers_n,
+       '-i': case_insensitive = false,
+       head_limit,
+       offset = 0,
+@@ -326,6 +330,10 @@ export const GrepTool = buildTool({
+     },
+     { abortController, getAppState },
+   ) {
++    const show_line_numbers =
++      show_line_numbers_n !== undefined
++        ? show_line_numbers_n
++        : (show_line_numbers_dash ?? true)
+     const absolutePath = path ? expandPath(path) : getCwd()
+     const args = ['--hidden']
+ 

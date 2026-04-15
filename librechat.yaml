@@ -1,0 +1,21 @@
+# CappyCloud — configuração LibreChat
+# Documentação: https://www.librechat.ai/docs/configuration/librechat_yaml
+
+version: 1.3.8
+
+cache: true
+
+interface:
+  customWelcome: "Bem-vindo ao CappyCloud. Escolha o modelo **CappyCloud Agent** para iniciar."
+
+endpoints:
+  custom:
+    - name: "CappyCloud"
+      apiKey: "${PIPELINES_API_KEY}"
+      baseURL: "http://pipelines:9099/v1"
+      models:
+        default:
+          - "cappycloud_pipeline"
+        fetch: false
+      titleConvo: false
+      modelDisplayLabel: "CappyCloud Agent"

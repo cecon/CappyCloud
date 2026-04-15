@@ -1,0 +1,16 @@
+# Overrides só da API (uvicorn --reload + código montado). Opcional para backend hot reload.
+#
+# UI com HMR está no serviço `web-dev` em docker-compose.yml (profile `dev`).
+#
+# Exemplo:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev up postgres redis api web-dev
+
+services:
+  api:
+    environment:
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:38081,http://127.0.0.1:38081}
+    volumes:
+      - ./services/api/app:/app/app
+      - ./services/cappycloud_agent:/app/cappycloud_agent
+    command:
+      ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload"]
