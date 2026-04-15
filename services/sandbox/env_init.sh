@@ -36,11 +36,12 @@ echo "Provider: OpenRouter  model=${OPENAI_MODEL}"
 
 # ── Configure git authentication ─────────────────────────────
 if [ -n "${GIT_AUTH_TOKEN}" ]; then
-    git config --global url."https://:${GIT_AUTH_TOKEN}@dev.azure.com".insteadOf \
+    # Azure DevOps — a non-empty username ('pat') is required for Basic auth to work
+    git config --global url."https://pat:${GIT_AUTH_TOKEN}@dev.azure.com".insteadOf \
         "https://dev.azure.com"
 
     if [ -n "${AZURE_ORG:-}" ]; then
-        git config --global url."https://:${GIT_AUTH_TOKEN}@dev.azure.com/${AZURE_ORG}".insteadOf \
+        git config --global url."https://pat:${GIT_AUTH_TOKEN}@dev.azure.com/${AZURE_ORG}".insteadOf \
             "https://${AZURE_ORG}@dev.azure.com/${AZURE_ORG}"
     fi
 

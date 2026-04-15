@@ -39,8 +39,8 @@ echo "Provider: OpenRouter  model=${OPENAI_MODEL}"
 # the PAT before they reach the server. This works regardless of whether
 # the original URL contains an embedded username (user@host).
 if [ -n "${GIT_AUTH_TOKEN}" ]; then
-    # Azure DevOps — rewrite both the plain URL and the user-embedded form
-    git config --global url."https://:${GIT_AUTH_TOKEN}@dev.azure.com".insteadOf \
+    # Azure DevOps — a non-empty username ('pat') is required for Basic auth to work
+    git config --global url."https://pat:${GIT_AUTH_TOKEN}@dev.azure.com".insteadOf \
         "https://dev.azure.com"
 
     # Handle URLs with embedded username: https://anyuser@dev.azure.com/...
@@ -48,7 +48,7 @@ if [ -n "${GIT_AUTH_TOKEN}" ]; then
     # lookup, so the rule above already covers them. But add an explicit
     # per-org rule just in case:
     if [ -n "${AZURE_ORG:-}" ]; then
-        git config --global url."https://:${GIT_AUTH_TOKEN}@dev.azure.com/${AZURE_ORG}".insteadOf \
+        git config --global url."https://pat:${GIT_AUTH_TOKEN}@dev.azure.com/${AZURE_ORG}".insteadOf \
             "https://${AZURE_ORG}@dev.azure.com/${AZURE_ORG}"
     fi
 

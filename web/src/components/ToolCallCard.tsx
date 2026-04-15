@@ -86,7 +86,7 @@ export function ToolCallCard({ tool }: Props) {
       </div>
 
       {/* Collapsible detail */}
-      <Collapse in={open && tool.done}>
+      <Collapse expanded={open && tool.done}>
         <div style={{ padding: '8px 12px', background: 'var(--mantine-color-dark-8)' }}>
           {inputDisplay && (
             <>

@@ -27,6 +27,7 @@ class EnvironmentRecord:
     container_id: str
     container_ip: str
     workspace_repo: str = ""
+    status: str = "running"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -63,6 +64,7 @@ CREATE TABLE IF NOT EXISTS cappy_environments (
     container_id TEXT NOT NULL,
     container_ip TEXT NOT NULL,
     workspace_repo TEXT DEFAULT '',
+    status       TEXT DEFAULT 'running',
     created_at   TIMESTAMPTZ DEFAULT NOW(),
     last_active  TIMESTAMPTZ DEFAULT NOW()
 );
@@ -85,6 +87,7 @@ CREATE TABLE IF NOT EXISTS cappy_sessions (
 # Ensure worktree_path column exists on pre-existing deployments
 _MIGRATE = """
 ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS worktree_path TEXT DEFAULT '';
+ALTER TABLE cappy_environments ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'running';
 """
 
 
@@ -153,18 +156,20 @@ class SessionStore:
             await conn.execute(
                 """
                 INSERT INTO cappy_environments
-                    (user_id, container_id, container_ip, workspace_repo)
-                VALUES ($1, $2, $3, $4)
+                    (user_id, container_id, container_ip, workspace_repo, status)
+                VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (user_id) DO UPDATE
                     SET container_id   = EXCLUDED.container_id,
                         container_ip   = EXCLUDED.container_ip,
                         workspace_repo = EXCLUDED.workspace_repo,
+                        status         = EXCLUDED.status,
                         last_active    = NOW()
                 """,
                 record.user_id,
                 record.container_id,
                 record.container_ip,
                 record.workspace_repo,
+                record.status,
             )
 
     async def delete_env(self, user_id: str) -> None:
@@ -175,6 +180,50 @@ class SessionStore:
                 "DELETE FROM cappy_environments WHERE user_id=$1",
                 user_id,
             )
+
+    async def update_env_status(self, user_id: str, status: str) -> None:
+        """Update environment status in Redis and PostgreSQL."""
+        key = self._env_key(user_id)
+        raw = await self._redis.get(key)
+        if raw:
+            data = json.loads(raw)
+            data["status"] = status
+            await self._redis.set(key, json.dumps(data))
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE cappy_environments SET status=$1, last_active=NOW() WHERE user_id=$2",
+                status,
+                user_id,
+            )
+
+    async def update_env_ip(self, user_id: str, container_ip: str) -> None:
+        """Update container IP after a restart (Redis + PostgreSQL)."""
+        key = self._env_key(user_id)
+        raw = await self._redis.get(key)
+        if raw:
+            data = json.loads(raw)
+            data["container_ip"] = container_ip
+            await self._redis.set(key, json.dumps(data))
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE cappy_environments SET container_ip=$1, last_active=NOW() WHERE user_id=$2",
+                container_ip,
+                user_id,
+            )
+
+    async def list_idle_environments(self, env_idle_ttl: int) -> list[dict]:
+        """Return environment DB rows idle longer than env_idle_ttl seconds and still 'running'."""
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT user_id, container_id
+                FROM   cappy_environments
+                WHERE  status = 'running'
+                  AND  last_active < NOW() - make_interval(secs => $1)
+                """,
+                float(env_idle_ttl),
+            )
+        return [dict(r) for r in rows]
 
     # ── Session CRUD ─────────────────────────────────────────────
 

@@ -128,6 +128,7 @@ async def stream_message(
 
     async def body_iter():
         accumulated_text: list[str] = []
+        accumulated_error: list[str] = []
 
         gen = pipeline.pipe(
             body.content,
@@ -139,13 +140,15 @@ async def stream_message(
             chunk = await asyncio.to_thread(_next_chunk, gen)
             if chunk is None:
                 break
-            # Extract only text content for DB storage
+            # Extract text and error content for DB storage
             line = chunk.strip()
             if line.startswith("data: "):
                 try:
                     evt = json.loads(line[6:])
                     if evt.get("type") == "text":
                         accumulated_text.append(evt.get("content", ""))
+                    elif evt.get("type") == "error":
+                        accumulated_error.append(evt.get("message", ""))
                 except Exception:
                     pass
             yield chunk.encode("utf-8")
@@ -158,6 +161,18 @@ async def stream_message(
                         conversation_id=conversation_id,
                         role="assistant",
                         content=assistant_text,
+                    )
+                )
+                await s2.commit()
+        elif accumulated_error:
+            # Save error as assistant message so it persists in the chat
+            error_content = "**Erro:** " + " ".join(accumulated_error)
+            async with async_session_factory() as s2:
+                s2.add(
+                    Message(
+                        conversation_id=conversation_id,
+                        role="assistant",
+                        content=error_content,
                     )
                 )
                 await s2.commit()

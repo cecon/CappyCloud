@@ -276,3 +276,43 @@ export async function streamAssistantReply(
     }
   }
 }
+
+// ── Environment lifecycle ─────────────────────────────────────────────────────
+
+export type EnvStatus = 'none' | 'stopped' | 'starting' | 'running'
+
+export interface EnvironmentStatusResponse {
+  status: EnvStatus
+  container_id: string | null
+}
+
+/**
+ * Returns the current status of the user's sandbox environment.
+ */
+export async function getEnvironmentStatus(token: string): Promise<EnvironmentStatusResponse> {
+  try {
+    const res = await fetch('/api/environments/status', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return { status: 'none', container_id: null }
+    return res.json()
+  } catch {
+    return { status: 'none', container_id: null }
+  }
+}
+
+/**
+ * Triggers environment creation or restart in the background (fire-and-forget).
+ * Poll getEnvironmentStatus() until status === 'running'.
+ */
+export async function wakeEnvironment(token: string): Promise<void> {
+  try {
+    await fetch('/api/environments/wake', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  } catch {
+    // Ignore network errors — the pipeline will create the env on first message anyway
+  }
+}
+

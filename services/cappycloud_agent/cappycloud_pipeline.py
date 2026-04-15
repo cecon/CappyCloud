@@ -96,6 +96,7 @@ class Pipeline:
         DOCKER_NETWORK: str = Field(default="cappycloud_net")
         SANDBOX_GRPC_PORT: int = Field(default=50051)
         SANDBOX_IDLE_TIMEOUT: int = Field(default=1800)
+        ENV_IDLE_TIMEOUT: int = Field(default=3600)
         REDIS_URL: str = Field(default="redis://redis:6379")
         DATABASE_URL: str = Field(default="")
 
@@ -112,6 +113,7 @@ class Pipeline:
             DOCKER_NETWORK=os.getenv("DOCKER_NETWORK", "cappycloud_net"),
             SANDBOX_GRPC_PORT=int(os.getenv("SANDBOX_GRPC_PORT", "50051")),
             SANDBOX_IDLE_TIMEOUT=int(os.getenv("SANDBOX_IDLE_TIMEOUT", "1800")),
+            ENV_IDLE_TIMEOUT=int(os.getenv("ENV_IDLE_TIMEOUT", "3600")),
             REDIS_URL=os.getenv("REDIS_URL", "redis://redis:6379"),
             DATABASE_URL=_agent_database_url(),
         )
@@ -166,6 +168,28 @@ class Pipeline:
         if self._loop is None:
             raise RuntimeError("Pipeline not started")
         return asyncio.run_coroutine_threadsafe(coro, self._loop).result(timeout=timeout)
+
+    def get_env_status(self, user_id: str) -> dict:
+        """
+        Return the current environment status for a user.
+
+        Returns dict: { status: 'none'|'stopped'|'starting'|'running', container_id: str|None }
+        """
+        if self._env_manager is None:
+            return {"status": "none", "container_id": None}
+        return self._run(self._env_manager.get_env_status(user_id), timeout=30)
+
+    def wake_env(self, user_id: str) -> None:
+        """
+        Trigger environment creation or restart in the background event loop.
+        Returns immediately; the environment will be ready when get_env_status returns 'running'.
+        """
+        if self._loop is None or self._env_manager is None:
+            return
+        asyncio.run_coroutine_threadsafe(
+            self._env_manager._get_or_create_env(user_id),
+            self._loop,
+        )
 
     def pipe(
         self,
@@ -273,15 +297,17 @@ class Pipeline:
 
             elif event_type == "action":
                 action: PendingAction = data
-                did_yield = True
-                yield _sse({
-                    "type": "action_required",
-                    "prompt_id": action.prompt_id,
-                    "question": _clean_question(action.question),
-                    "action_type": action.action_type,
-                    "choices": action.choices,
-                })
-                break
+                # Auto-approve all actions — headless mode, no human confirmation needed
+                log.info(
+                    "[%s] Auto-approving action: %s",
+                    session_key,
+                    action.question[:80],
+                )
+                self._run(session.send_input("yes"), timeout=10)
+                # Resume draining — the session is still alive
+                asyncio.run_coroutine_threadsafe(
+                    session.drain_to(out_q), self._loop
+                )
 
             elif event_type == "timeout":
                 yield _sse({"type": "error", "message": "Timeout: agente demorou muito para responder."})
@@ -296,6 +322,7 @@ class Pipeline:
                     await self._sessions.pop(k).close()
                 if self._env_manager:
                     await self._env_manager.gc_expired()
+                    await self._env_manager.gc_idle_envs(self.valves.ENV_IDLE_TIMEOUT)
             except asyncio.CancelledError:
                 break
             except Exception:

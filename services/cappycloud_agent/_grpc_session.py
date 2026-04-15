@@ -209,6 +209,7 @@ class GrpcSession:
                 yield item
 
         streamed_text = False
+        received_done = False
         try:
             async for msg in stub.Chat(_requests()):
                 event = msg.WhichOneof("event")
@@ -254,12 +255,26 @@ class GrpcSession:
                     if full and not streamed_text:
                         await self._out_queue.put(("text", full))
                         streamed_text = True
+                    # 0 tokens + no text = LLM API call never happened (rate limit / quota)
+                    if not streamed_text and done.prompt_tokens == 0 and done.completion_tokens == 0:
+                        log.warning(
+                            "[%s] Done with 0 tokens and no text — LLM call likely failed (rate limit or quota)",
+                            self._session_id,
+                        )
+                        await self._out_queue.put((
+                            "error",
+                            "O modelo não gerou resposta (possível rate limit do OpenRouter). "
+                            "Aguarda alguns segundos e tenta novamente, ou altera o modelo em OPENROUTER_MODEL.",
+                        ))
+                        received_done = True
+                        return
                     log.info(
                         "[%s] Done — prompt_tokens=%d completion_tokens=%d",
                         self._session_id,
                         done.prompt_tokens,
                         done.completion_tokens,
                     )
+                    received_done = True
                     await self._out_queue.put(("done", None))
                     return
 
@@ -270,8 +285,14 @@ class GrpcSession:
                         msg.error.code,
                         msg.error.message,
                     )
+                    received_done = True
                     await self._out_queue.put(("error", msg.error.message))
                     return
+
+            # gRPC stream closed without a done/error event (e.g. rate limit or server crash)
+            if not received_done:
+                log.warning("[%s] gRPC stream ended without done/error event", self._session_id)
+                await self._out_queue.put(("error", "O agente encerrou a conexão inesperadamente (possível rate limit ou timeout do modelo)."))
 
         except grpc.aio.AioRpcError as exc:
             log.error("[%s] gRPC error: %s", self._session_id, exc.details())

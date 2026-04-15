@@ -70,6 +70,29 @@ class EnvironmentManager:
 
     # ── Public API ───────────────────────────────────────────────
 
+    async def get_env_status(self, user_id: str) -> dict:
+        """
+        Return current environment status for a user.
+
+        Checks both the DB record and the actual Docker container state.
+        Returns a dict: { status, container_id }.
+        """
+        env = await self._store.get_env(user_id)
+        if not env:
+            return {"status": "none", "container_id": None}
+
+        docker_status = await asyncio.to_thread(self._container_status, env.container_id)
+        if docker_status == "running":
+            status = "running"
+        elif docker_status in ("exited", "created", "paused"):
+            status = "stopped"
+        elif docker_status == "starting":
+            status = "starting"
+        else:
+            status = "none"
+
+        return {"status": status, "container_id": env.container_id}
+
     async def get_or_create_session(
         self,
         user_id: str,
@@ -130,6 +153,39 @@ class EnvironmentManager:
 
         await self._store.delete(user_id, chat_id)
 
+    async def stop_env(self, user_id: str) -> None:
+        """Stop (but do not remove) the persistent environment container for a user."""
+        env = await self._store.get_env(user_id)
+        if not env:
+            return
+
+        try:
+            container = self._client.containers.get(env.container_id)
+            if container.status == "running":
+                container.stop(timeout=10)
+                log.info(
+                    "Stopped environment container %s for %s (idle)",
+                    env.container_id[:12],
+                    user_id,
+                )
+        except docker.errors.NotFound:
+            log.debug("Environment container for %s already gone", user_id)
+        except Exception as exc:
+            log.error("Error stopping environment for %s: %s", user_id, exc)
+        finally:
+            await self._store.update_env_status(user_id, "stopped")
+
+    async def gc_idle_envs(self, env_idle_ttl: int) -> None:
+        """Stop environment containers that have been idle longer than env_idle_ttl seconds."""
+        idle = await self._store.list_idle_environments(env_idle_ttl)
+        for row in idle:
+            log.info(
+                "GC: stopping idle environment for user %s (container %s)",
+                row["user_id"],
+                row["container_id"][:12],
+            )
+            await self.stop_env(row["user_id"])
+
     async def destroy_env(self, user_id: str) -> None:
         """Stop and remove the persistent environment container for a user."""
         env = await self._store.get_env(user_id)
@@ -161,17 +217,74 @@ class EnvironmentManager:
         env = await self._store.get_env(user_id)
 
         if env:
-            if self._container_running(env.container_id):
+            status = self._container_status(env.container_id)
+            if status == "running":
                 return env
-            else:
-                log.warning(
-                    "Environment container %s for %s gone — recreating",
+            elif status in ("exited", "created", "paused"):
+                log.info(
+                    "Environment container %s for %s is %s — restarting",
                     env.container_id[:12],
                     user_id,
+                    status,
+                )
+                return await self._restart_env_container(user_id, env)
+            else:
+                # missing or unknown state — recreate
+                log.warning(
+                    "Environment container %s for %s gone (status=%r) — recreating",
+                    env.container_id[:12],
+                    user_id,
+                    status,
                 )
                 await self._store.delete_env(user_id)
 
         return await self._create_env_container(user_id)
+
+    async def _restart_env_container(self, user_id: str, env: EnvironmentRecord) -> EnvironmentRecord:
+        """Start a stopped container, refresh its IP, update the store and wait for gRPC."""
+        await self._store.update_env_status(user_id, "starting")
+        try:
+            container = self._client.containers.get(env.container_id)
+            container.start()
+            log.info("Started stopped container %s for user %s", env.container_id[:12], user_id)
+        except docker.errors.NotFound:
+            log.warning("Container %s missing on restart — recreating for %s", env.container_id[:12], user_id)
+            await self._store.delete_env(user_id)
+            return await self._create_env_container(user_id)
+
+        # Re-read IP (may change after restart on some Docker setups)
+        container_ip = ""
+        for attempt in range(10):
+            container.reload()
+            networks = container.attrs.get("NetworkSettings", {}).get("Networks", {})
+            container_ip = networks.get(self._network, {}).get("IPAddress", "")
+            if container_ip:
+                break
+            log.debug("Waiting for IP after restart (attempt %d/10)…", attempt + 1)
+            import time
+            time.sleep(1)
+
+        if not container_ip:
+            container.remove(force=True)
+            await self._store.delete_env(user_id)
+            raise RuntimeError(
+                f"Container {env.container_id[:12]} has no IP after restart on network {self._network!r}."
+            )
+
+        await self._store.update_env_ip(user_id, container_ip)
+        await self._store.update_env_status(user_id, "running")
+
+        # Return updated record
+        updated_env = EnvironmentRecord(
+            user_id=env.user_id,
+            container_id=env.container_id,
+            container_ip=container_ip,
+            workspace_repo=env.workspace_repo,
+            status="running",
+        )
+
+        await self._wait_for_grpc(container_ip, self._grpc_port)
+        return updated_env
 
     async def _create_env_container(self, user_id: str) -> EnvironmentRecord:
         """Create a persistent environment container for a user."""
@@ -250,6 +363,7 @@ class EnvironmentManager:
             container_id=container.id,
             container_ip=container_ip,
             workspace_repo=self._workspace_repo,
+            status="running",
         )
         await self._store.save_env(env_record)
 
@@ -315,6 +429,14 @@ class EnvironmentManager:
             return c.status == "running"
         except docker.errors.NotFound:
             return False
+
+    def _container_status(self, container_id: str) -> str:
+        """Return 'running', 'exited', or 'missing' for a container."""
+        try:
+            c = self._client.containers.get(container_id)
+            return c.status  # 'running', 'exited', 'created', etc.
+        except docker.errors.NotFound:
+            return "missing"
 
     async def _worktree_exists(self, container_id: str, worktree_path: str) -> bool:
         """Check whether a worktree directory exists inside the container."""

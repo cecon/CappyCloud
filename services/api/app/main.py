@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -11,8 +12,13 @@ from fastapi.responses import JSONResponse
 
 from app.config import cors_origins_list, get_settings
 from app.database import init_db
-from app.routers import auth, conversations
+from app.routers import auth, conversations, environments
 from cappycloud_agent import Pipeline
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 
 
 @asynccontextmanager
@@ -83,6 +89,7 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(conversations.router, prefix="/api")
+app.include_router(environments.router, prefix="/api")
 
 
 @app.get("/health")

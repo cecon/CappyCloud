@@ -16,14 +16,18 @@ import {
   createConversation,
   fetchConversations,
   fetchMessages,
+  getEnvironmentStatus,
   getToken,
   setToken,
   streamAssistantReply,
+  wakeEnvironment,
   type ActionRequiredEvent,
   type ChatMessage,
   type Conversation,
+  type EnvStatus,
 } from '../api'
 import { ActionRequiredCard } from '../components/ActionRequiredCard'
+import { EnvStatusBanner } from '../components/EnvStatusBanner'
 import { ThinkingIndicator } from '../components/ThinkingIndicator'
 import { ToolCallCard, type ToolCallState } from '../components/ToolCallCard'
 import styles from '../components/chat.module.css'
@@ -43,6 +47,10 @@ export function ChatPage() {
   const [streaming, setStreaming] = useState(false)
   const [loading, setLoading] = useState(true)
 
+  // Environment lifecycle state
+  const [envStatus, setEnvStatus] = useState<EnvStatus>('none')
+  const envPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
   // Streaming state
   const [pendingText, setPendingText] = useState('')
   const [pendingTools, setPendingTools] = useState<ToolCallState[]>([])
@@ -56,6 +64,48 @@ export function ChatPage() {
       scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
     }
   }, [messages, pendingText, pendingTools, pendingAction, streaming])
+
+  // On mount: check environment status and pre-warm if needed
+  useEffect(() => {
+    let cancelled = false
+
+    async function checkAndWakeEnv() {
+      const result = await getEnvironmentStatus(token)
+      if (cancelled) return
+      setEnvStatus(result.status)
+
+      if (result.status !== 'running') {
+        await wakeEnvironment(token)
+        if (!cancelled) setEnvStatus('starting')
+        startEnvPolling()
+      }
+    }
+
+    checkAndWakeEnv()
+    return () => {
+      cancelled = true
+      stopEnvPolling()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
+
+  function startEnvPolling() {
+    if (envPollRef.current) return
+    envPollRef.current = setInterval(async () => {
+      const result = await getEnvironmentStatus(token)
+      setEnvStatus(result.status)
+      if (result.status === 'running') {
+        stopEnvPolling()
+      }
+    }, 3000)
+  }
+
+  function stopEnvPolling() {
+    if (envPollRef.current) {
+      clearInterval(envPollRef.current)
+      envPollRef.current = null
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -149,13 +199,11 @@ export function ChatPage() {
         },
       })
 
-      // Stream ended — if no pending action, reload messages from DB
-      if (!pendingAction) {
-        setPendingText('')
-        setPendingTools([])
-        const msgs = await fetchMessages(token, activeId)
-        setMessages(msgs)
-      }
+      // Stream ended — reload messages from DB (includes both text and error responses)
+      setPendingText('')
+      setPendingTools([])
+      const msgs = await fetchMessages(token, activeId)
+      setMessages(msgs)
     } catch (e) {
       setMessages((m) => [
         ...m,
@@ -248,6 +296,7 @@ export function ChatPage() {
           <Text c="dimmed">Crie uma conversa para começar.</Text>
         ) : (
           <>
+            <EnvStatusBanner status={envStatus} />
             <ScrollArea
               h="calc(100vh - 220px)"
               mb="md"
@@ -271,19 +320,19 @@ export function ChatPage() {
                     {/* Thinking indicator — shown while waiting for first output */}
                     {showThinking && <ThinkingIndicator />}
 
-                    {/* Action required card (HITL) */}
-                    {pendingAction && (
-                      <ActionRequiredCard
-                        action={pendingAction}
-                        onReply={handleActionReply}
-                      />
-                    )}
-
                     {/* Streaming text */}
                     {pendingText && (
                       <PaperMessage role="assistant" content={pendingText} />
                     )}
                   </Stack>
+                )}
+
+                {/* Action required card — shown outside streaming so persists after stream ends */}
+                {pendingAction && (
+                  <ActionRequiredCard
+                    action={pendingAction}
+                    onReply={handleActionReply}
+                  />
                 )}
               </Stack>
             </ScrollArea>
