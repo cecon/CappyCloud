@@ -64,4 +64,9 @@ COPY session_start.sh /session_start.sh
 RUN sed -i 's/\r//' /env_init.sh /session_start.sh \
     && chmod +x /env_init.sh /session_start.sh
 
+# ── cappy-search CLI (wraps o Code Indexer HTTP API) ──────────
+COPY cappy-search /usr/local/bin/cappy-search
+RUN sed -i 's/\r//' /usr/local/bin/cappy-search \
+    && chmod +x /usr/local/bin/cappy-search
+
 ENTRYPOINT ["/env_init.sh"]

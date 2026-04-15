@@ -21,6 +21,7 @@ from typing import Optional
 
 import docker
 import docker.errors
+import httpx
 
 from ._session_store import EnvironmentRecord, SandboxRecord, SessionStore
 
@@ -57,6 +58,7 @@ class EnvironmentManager:
         openrouter_model: str,
         workspace_repo: str = "",
         git_auth_token: str = "",
+        code_indexer_url: str = "",
     ) -> None:
         self._store = session_store
         self._image = sandbox_image
@@ -66,6 +68,7 @@ class EnvironmentManager:
         self._model = openrouter_model
         self._workspace_repo = _normalize_repo_url(workspace_repo) if workspace_repo else ""
         self._git_auth_token = git_auth_token
+        self._code_indexer_url = code_indexer_url.rstrip("/")
         self._client = docker.from_env()
 
     # ── Public API ───────────────────────────────────────────────
@@ -284,6 +287,7 @@ class EnvironmentManager:
         )
 
         await self._wait_for_grpc(container_ip, self._grpc_port)
+        asyncio.create_task(self._trigger_indexing(user_id))
         return updated_env
 
     async def _create_env_container(self, user_id: str) -> EnvironmentRecord:
@@ -324,6 +328,8 @@ class EnvironmentManager:
                 "GRPC_HOST": "0.0.0.0",
                 "GRPC_PORT": str(self._grpc_port),
                 "GIT_AUTH_TOKEN": self._git_auth_token,
+                "CODE_INDEXER_URL": self._code_indexer_url,
+                "CAPPY_USER_ID": user_id,
             },
             network=self._network,
             labels={
@@ -369,6 +375,7 @@ class EnvironmentManager:
 
         # Wait until the gRPC server is accepting connections
         await self._wait_for_grpc(container_ip, self._grpc_port)
+        asyncio.create_task(self._trigger_indexing(user_id))
 
         return env_record
 
@@ -422,6 +429,24 @@ class EnvironmentManager:
         return record
 
     # ── Helpers ───────────────────────────────────────────────────
+
+    async def _trigger_indexing(self, user_id: str) -> None:
+        """Dispara indexação do workspace via code-indexer (fire-and-forget)."""
+        if not self._code_indexer_url or not self._workspace_repo:
+            return
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.post(
+                    f"{self._code_indexer_url}/index",
+                    json={
+                        "user_id": user_id,
+                        "repo_url": self._workspace_repo,
+                        "git_auth_token": self._git_auth_token,
+                    },
+                )
+            log.info("Indexação disparada para user=%s", user_id)
+        except Exception as exc:
+            log.warning("Falha ao disparar indexação para %s: %s", user_id, exc)
 
     def _container_running(self, container_id: str) -> bool:
         try:

@@ -1,0 +1,20 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+pydantic-settings==2.9.1
+# PostgreSQL + pgvector
+asyncpg==0.30.0
+psycopg2-binary==2.9.10
+pgvector==0.4.0
+# Neo4j graph database
+neo4j==5.28.1
+# Embeddings (local, CPU, ~80 MB)
+sentence-transformers==4.1.0
+# Tree-sitter AST parsing
+tree-sitter==0.24.0
+tree-sitter-python==0.23.6
+tree-sitter-javascript==0.23.1
+tree-sitter-typescript==0.23.2
+# Git operations
+gitpython==3.1.44
+# HTTP client (health checks, etc.)
+httpx==0.28.1

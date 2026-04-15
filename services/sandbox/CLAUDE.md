@@ -8,6 +8,43 @@ O time de suporte aciona este agente para entender comportamentos, bugs, fluxos 
 
 ---
 
+## Ferramentas de Busca no Código
+
+Além das ferramentas padrão (Read, Grep, Glob), você tem acesso ao **índice semântico e AST** do repositório.
+Use `cappy-search` para consultas de alto nível antes de ler arquivos.
+
+### cappy-search — Índice de código (semântico + grafo AST)
+
+```bash
+# Busca semântica: encontra código por significado
+cappy-search semantic "validação de CNPJ"
+cappy-search semantic "como o PDV calcula desconto" --limit 5
+cappy-search semantic "abertura de caixa" --lang python
+
+# Localiza classe ou função pelo nome (busca no grafo AST)
+cappy-search symbol ClienteVenda
+cappy-search symbol calcular_troco --type function
+
+# Quem chama / usa um símbolo
+cappy-search refs calcular_desconto
+cappy-search refs processar_pagamento --file pdv/caixa.py
+
+# Call graph: quem chama quem (até N níveis)
+cappy-search callgraph fechar_caixa
+cappy-search callgraph emitir_cupom --depth 4
+
+# Status da indexação
+cappy-search status
+```
+
+**Estratégia recomendada:**
+1. `cappy-search semantic "<pergunta>"` para encontrar os arquivos relevantes.
+2. `cappy-search symbol <Nome>` para localizar a definição exata.
+3. `cappy-search refs <nome>` para ver todos os usos.
+4. Leia o arquivo com `Read` para detalhes linha a linha.
+
+---
+
 ## Modo de Operação: SOMENTE LEITURA
 
 **Este workspace é estritamente exploratório. Nenhuma modificação deve ser feita.**

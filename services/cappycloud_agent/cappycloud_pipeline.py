@@ -99,6 +99,7 @@ class Pipeline:
         ENV_IDLE_TIMEOUT: int = Field(default=3600)
         REDIS_URL: str = Field(default="redis://redis:6379")
         DATABASE_URL: str = Field(default="")
+        CODE_INDEXER_URL: str = Field(default="")
 
     def __init__(self) -> None:
         self.name = "CappyCloud Agent"
@@ -116,6 +117,7 @@ class Pipeline:
             ENV_IDLE_TIMEOUT=int(os.getenv("ENV_IDLE_TIMEOUT", "3600")),
             REDIS_URL=os.getenv("REDIS_URL", "redis://redis:6379"),
             DATABASE_URL=_agent_database_url(),
+            CODE_INDEXER_URL=os.getenv("CODE_INDEXER_URL", ""),
         )
 
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -146,6 +148,7 @@ class Pipeline:
             openrouter_model=self.valves.OPENROUTER_MODEL,
             workspace_repo=self.valves.WORKSPACE_REPO,
             git_auth_token=self.valves.GIT_AUTH_TOKEN,
+            code_indexer_url=self.valves.CODE_INDEXER_URL,
         )
 
         self._gc_task = asyncio.create_task(self._gc_loop())

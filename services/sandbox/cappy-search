@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# ──────────────────────────────────────────────────────────────
+# cappy-search — busca semântica e AST no índice do código
+#
+# Requer: CODE_INDEXER_URL e CAPPY_USER_ID no ambiente.
+#
+# Uso:
+#   cappy-search semantic "validação de email"
+#   cappy-search semantic "como funciona o login" --limit 5
+#   cappy-search symbol MyClass
+#   cappy-search symbol sendEmail --type function
+#   cappy-search refs sendEmail
+#   cappy-search refs sendEmail --file utils/mail.py
+#   cappy-search callgraph main
+#   cappy-search callgraph processOrder --depth 4
+#   cappy-search status
+# ──────────────────────────────────────────────────────────────
+set -euo pipefail
+
+BASE_URL="${CODE_INDEXER_URL:-http://code-indexer:8000}"
+USER_ID="${CAPPY_USER_ID:-}"
+
+if [ -z "$USER_ID" ]; then
+    echo "Erro: CAPPY_USER_ID não definido." >&2
+    exit 1
+fi
+
+_post() {
+    local endpoint="$1"
+    local body="$2"
+    curl -s -X POST "${BASE_URL}${endpoint}" \
+        -H "Content-Type: application/json" \
+        -d "$body" | python3 -m json.tool
+}
+
+_status() {
+    curl -s "${BASE_URL}/index/${USER_ID}" | python3 -m json.tool
+}
+
+CMD="${1:-}"
+shift || true
+
+case "$CMD" in
+    semantic)
+        QUERY="${1:?Uso: cappy-search semantic <query> [--limit N] [--lang python]}"
+        LIMIT=10
+        LANG=""
+        shift
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --limit) LIMIT="$2"; shift 2 ;;
+                --lang)  LANG="$2"; shift 2 ;;
+                *) shift ;;
+            esac
+        done
+        LANG_FIELD=""
+        [ -n "$LANG" ] && LANG_FIELD=", \"language\": \"${LANG}\""
+        _post "/search/semantic" \
+            "{\"user_id\":\"${USER_ID}\",\"query\":\"${QUERY}\",\"limit\":${LIMIT}${LANG_FIELD}}"
+        ;;
+
+    symbol)
+        SYM="${1:?Uso: cappy-search symbol <nome> [--type all|function|class|method]}"
+        TYPE="all"
+        shift
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --type) TYPE="$2"; shift 2 ;;
+                *) shift ;;
+            esac
+        done
+        _post "/search/symbol" \
+            "{\"user_id\":\"${USER_ID}\",\"symbol\":\"${SYM}\",\"symbol_type\":\"${TYPE}\"}"
+        ;;
+
+    refs)
+        SYM="${1:?Uso: cappy-search refs <símbolo> [--file caminho]}"
+        FILE=""
+        shift
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --file) FILE="$2"; shift 2 ;;
+                *) shift ;;
+            esac
+        done
+        FILE_FIELD=""
+        [ -n "$FILE" ] && FILE_FIELD=", \"file_path\": \"${FILE}\""
+        _post "/search/references" \
+            "{\"user_id\":\"${USER_ID}\",\"symbol\":\"${SYM}\"${FILE_FIELD}}"
+        ;;
+
+    callgraph)
+        FN="${1:?Uso: cappy-search callgraph <função> [--depth N]}"
+        DEPTH=3
+        shift
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --depth) DEPTH="$2"; shift 2 ;;
+                *) shift ;;
+            esac
+        done
+        _post "/search/callgraph" \
+            "{\"user_id\":\"${USER_ID}\",\"function\":\"${FN}\",\"depth\":${DEPTH}}"
+        ;;
+
+    status)
+        _status
+        ;;
+
+    *)
+        echo "Uso: cappy-search <comando> [opções]"
+        echo ""
+        echo "Comandos:"
+        echo "  semantic  <query> [--limit N] [--lang python|javascript|typescript]"
+        echo "  symbol    <nome>  [--type all|function|class|method]"
+        echo "  refs      <nome>  [--file caminho/relativo.py]"
+        echo "  callgraph <fn>    [--depth N]"
+        echo "  status"
+        exit 1
+        ;;
+esac
