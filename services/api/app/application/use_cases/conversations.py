@@ -9,7 +9,6 @@ import asyncio
 import json
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Optional
 
 from app.domain.entities import Conversation, Message
 from app.ports.agent import AgentPort
@@ -126,7 +125,7 @@ class StreamMessage:
         user_id: uuid.UUID,
         content: str,
         model_id: str = "cappycloud",
-        cursor: Optional[int] = None,
+        cursor: int | None = None,
     ) -> AsyncGenerator[bytes, None]:
         """Validate ownership, inject diff comments, persist user msg, stream events.
 
@@ -180,8 +179,9 @@ class StreamMessage:
         Returns the augmented prompt string.
         """
         try:
-            from app.infrastructure.database import async_session_factory
             from sqlalchemy import text
+
+            from app.infrastructure.database import async_session_factory
 
             async with async_session_factory() as session:
                 rows = await session.execute(

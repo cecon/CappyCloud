@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Generator
-from typing import Optional
 
 
 class AgentPort(ABC):
@@ -40,11 +39,11 @@ class AgentPort(ABC):
         self,
         prompt: str,
         env_slug: str,
-        conversation_id: Optional[str] = None,
+        conversation_id: str | None = None,
         triggered_by: str = "system",
-        trigger_payload: Optional[dict] = None,
+        trigger_payload: dict | None = None,
         base_branch: str = "",
-    ) -> Optional[str]:
+    ) -> str | None:
         """Dispatch an agent task and return the task_id.
 
         Unlike pipe(), this is fire-and-forget: it creates the task in the DB
