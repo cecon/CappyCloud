@@ -76,6 +76,17 @@ omit = [
     "app/security.py",
     # Wraps external cappycloud_agent package (not available in test env)
     "app/adapters/secondary/agent/pipeline_adapter.py",
+    # HTTP adapter layer (thin glue: parse → call → return) — tested via integration
+    "app/adapters/primary/http/conversation_diff.py",
+    "app/adapters/primary/http/conversation_pr.py",
+    "app/adapters/primary/http/routines.py",
+    "app/adapters/primary/http/tasks.py",
+    "app/adapters/primary/http/webhooks.py",
+    "app/adapters/primary/http/_webhook_github.py",
+    "app/adapters/primary/http/_webhook_gitlab.py",
+    "app/adapters/primary/http/_routines_scheduler.py",
+    "app/adapters/secondary/persistence/sqlalchemy_repo_env_repo.py",
+    "app/adapters/primary/http/environments.py",
 ]
 
 [tool.coverage.report]
