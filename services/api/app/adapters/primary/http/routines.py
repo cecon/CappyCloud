@@ -12,6 +12,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.primary.http._routines_scheduler import (
+    register_routine_schedules,
+    unregister_routine_schedules,
+)
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
 from app.domain.entities import User
 
@@ -20,11 +24,7 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/routines", tags=["routines"])
 
 
-# ── Schemas ───────────────────────────────────────────────────────────────────
-
-
 class TriggerConfig(BaseModel):
-    """Trigger de uma routine."""
     type: str = Field(description="schedule | api | github")
     config: dict = Field(default_factory=dict)
 
@@ -48,7 +48,17 @@ class RoutineOut(BaseModel):
     last_run_at: Optional[str]
 
 
-# ── CRUD ──────────────────────────────────────────────────────────────────────
+def _row_to_out(r) -> RoutineOut:
+    return RoutineOut(
+        id=str(r.id),
+        name=r.name,
+        prompt=r.prompt,
+        env_slug=r.env_slug,
+        triggers=r.triggers if isinstance(r.triggers, list) else json.loads(r.triggers or "[]"),
+        enabled=r.enabled,
+        created_at=r.created_at.isoformat(),
+        last_run_at=r.last_run_at.isoformat() if r.last_run_at else None,
+    )
 
 
 @router.get("", response_model=list[RoutineOut])
@@ -63,19 +73,7 @@ async def list_routines(
         ),
         {"uid": str(current.id)},
     )
-    return [
-        RoutineOut(
-            id=str(r.id),
-            name=r.name,
-            prompt=r.prompt,
-            env_slug=r.env_slug,
-            triggers=r.triggers if isinstance(r.triggers, list) else json.loads(r.triggers or "[]"),
-            enabled=r.enabled,
-            created_at=r.created_at.isoformat(),
-            last_run_at=r.last_run_at.isoformat() if r.last_run_at else None,
-        )
-        for r in rows.fetchall()
-    ]
+    return [_row_to_out(r) for r in rows.fetchall()]
 
 
 @router.post("", response_model=RoutineOut, status_code=status.HTTP_201_CREATED)
@@ -93,20 +91,13 @@ async def create_routine(
             "VALUES (:id, :name, :prompt, :slug, :triggers::jsonb, :enabled, :uid)"
         ),
         {
-            "id": rid,
-            "name": body.name,
-            "prompt": body.prompt,
-            "slug": body.env_slug,
-            "triggers": triggers_json,
-            "enabled": body.enabled,
-            "uid": str(current.id),
+            "id": rid, "name": body.name, "prompt": body.prompt,
+            "slug": body.env_slug, "triggers": triggers_json,
+            "enabled": body.enabled, "uid": str(current.id),
         },
     )
     await db.commit()
-
-    # Register schedule triggers in APScheduler
-    _register_routine_schedules(request, rid, body)
-
+    register_routine_schedules(request, rid, body)
     row = await db.execute(
         text(
             "SELECT id, name, prompt, env_slug, triggers, enabled, created_at, last_run_at "
@@ -114,17 +105,7 @@ async def create_routine(
         ),
         {"id": rid},
     )
-    r = row.fetchone()
-    return RoutineOut(
-        id=str(r.id),
-        name=r.name,
-        prompt=r.prompt,
-        env_slug=r.env_slug,
-        triggers=r.triggers if isinstance(r.triggers, list) else json.loads(r.triggers or "[]"),
-        enabled=r.enabled,
-        created_at=r.created_at.isoformat(),
-        last_run_at=None,
-    )
+    return _row_to_out(row.fetchone())
 
 
 @router.get("/{routine_id}", response_model=RoutineOut)
@@ -143,16 +124,7 @@ async def get_routine(
     r = row.fetchone()
     if not r:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Routine não encontrada.")
-    return RoutineOut(
-        id=str(r.id),
-        name=r.name,
-        prompt=r.prompt,
-        env_slug=r.env_slug,
-        triggers=r.triggers if isinstance(r.triggers, list) else json.loads(r.triggers or "[]"),
-        enabled=r.enabled,
-        created_at=r.created_at.isoformat(),
-        last_run_at=r.last_run_at.isoformat() if r.last_run_at else None,
-    )
+    return _row_to_out(r)
 
 
 @router.put("/{routine_id}", response_model=RoutineOut)
@@ -171,23 +143,16 @@ async def update_routine(
             "WHERE id=:id AND created_by=:uid RETURNING id"
         ),
         {
-            "id": routine_id,
-            "uid": str(current.id),
-            "name": body.name,
-            "prompt": body.prompt,
-            "slug": body.env_slug,
-            "triggers": triggers_json,
-            "enabled": body.enabled,
+            "id": routine_id, "uid": str(current.id),
+            "name": body.name, "prompt": body.prompt,
+            "slug": body.env_slug, "triggers": triggers_json, "enabled": body.enabled,
         },
     )
     if not result.fetchone():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Routine não encontrada.")
     await db.commit()
-
-    # Re-register schedule triggers
-    _unregister_routine_schedules(request, routine_id)
-    _register_routine_schedules(request, routine_id, body)
-
+    unregister_routine_schedules(request, routine_id)
+    register_routine_schedules(request, routine_id, body)
     return await get_routine(routine_id, current, db)
 
 
@@ -205,10 +170,7 @@ async def delete_routine(
     if not result.fetchone():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Routine não encontrada.")
     await db.commit()
-    _unregister_routine_schedules(request, routine_id)
-
-
-# ── Manual trigger ────────────────────────────────────────────────────────────
+    unregister_routine_schedules(request, routine_id)
 
 
 @router.post("/{routine_id}/run")
@@ -218,8 +180,7 @@ async def run_routine(
     db: Annotated[AsyncSession, Depends(get_db_session)],
     request: Request,
 ) -> dict:
-    """Disparo manual de uma routine pelo utilizador autenticado."""
-    return await _fire_routine(routine_id, "manual", db, request, user_id=str(current.id))
+    return await _fire_routine(routine_id, "manual", db, request)
 
 
 @router.post("/{routine_id}/fire")
@@ -227,11 +188,9 @@ async def fire_routine_api(
     routine_id: str,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db_session)],
-    x_cappy_token: Annotated[str | None, None] = None,
 ) -> dict:
     """Disparo por API token (Bearer) — não requer sessão de utilizador."""
     import hashlib
-    import os
 
     auth = request.headers.get("Authorization", "")
     token = auth.removeprefix("Bearer ").strip()
@@ -240,16 +199,18 @@ async def fire_routine_api(
 
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     row = await db.execute(
-        text("SELECT id FROM routines WHERE id = :rid AND api_token_hash = :hash AND enabled = TRUE"),
+        text(
+            "SELECT id FROM routines "
+            "WHERE id = :rid AND api_token_hash = :hash AND enabled = TRUE"
+        ),
         {"rid": routine_id, "hash": token_hash},
     )
     if not row.fetchone():
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token inválido ou routine inativa.")
-
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token inválido ou routine inativa.",
+        )
     return await _fire_routine(routine_id, "api", db, request)
-
-
-# ── Run history ───────────────────────────────────────────────────────────────
 
 
 @router.get("/{routine_id}/runs")
@@ -258,7 +219,6 @@ async def list_routine_runs(
     current: Annotated[User, Depends(get_authenticated_user)],
     db: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> list[dict]:
-    # Verify ownership
     row = await db.execute(
         text("SELECT id FROM routines WHERE id = :rid AND created_by = :uid"),
         {"rid": routine_id, "uid": str(current.id)},
@@ -285,20 +245,14 @@ async def list_routine_runs(
     ]
 
 
-# ── Internal helpers ──────────────────────────────────────────────────────────
-
-
 async def _fire_routine(
     routine_id: str,
     triggered_by: str,
     db: AsyncSession,
     request: Request,
-    user_id: Optional[str] = None,
 ) -> dict:
     row = await db.execute(
-        text(
-            "SELECT id, prompt, env_slug, enabled FROM routines WHERE id = :rid"
-        ),
+        text("SELECT id, prompt, env_slug, enabled FROM routines WHERE id = :rid"),
         {"rid": routine_id},
     )
     r = row.fetchone()
@@ -319,86 +273,17 @@ async def _fire_routine(
     except Exception as exc:
         log.error("Routine %s dispatch failed: %s", routine_id, exc)
 
-    # Record run
     run_id = str(_uuid.uuid4())
     await db.execute(
         text(
             "INSERT INTO routine_runs (id, routine_id, task_id, triggered_by, status) "
             "VALUES (:id, :rid, :tid::uuid, :tby, 'pending')"
         ),
-        {
-            "id": run_id,
-            "rid": routine_id,
-            "tid": task_id,
-            "tby": triggered_by,
-        },
+        {"id": run_id, "rid": routine_id, "tid": task_id, "tby": triggered_by},
     )
     await db.execute(
         text("UPDATE routines SET last_run_at = NOW() WHERE id = :rid"),
         {"rid": routine_id},
     )
     await db.commit()
-
     return {"run_id": run_id, "task_id": task_id, "routine_id": routine_id}
-
-
-def _register_routine_schedules(request: Request, routine_id: str, body: RoutineIn) -> None:
-    """Registra triggers do tipo 'schedule' no APScheduler."""
-    try:
-        scheduler = request.app.state.scheduler
-    except AttributeError:
-        return
-
-    for t in body.triggers:
-        if t.type == "schedule":
-            cron_expr = t.config.get("cron", "")
-            if not cron_expr:
-                continue
-            try:
-                from apscheduler.triggers.cron import CronTrigger
-
-                parts = cron_expr.split()
-                job_id = f"routine_{routine_id}_{parts}"
-
-                async def _run(rid=routine_id, prompt=body.prompt, env_slug=body.env_slug):
-                    from app.infrastructure.database import async_session_factory
-                    async with async_session_factory() as db_sess:
-                        try:
-                            agent = request.app.state.agent
-                            await agent.dispatch(
-                                prompt=prompt,
-                                env_slug=env_slug,
-                                triggered_by="schedule",
-                                trigger_payload={"routine_id": rid},
-                            )
-                            run_id = str(_uuid.uuid4())
-                            await db_sess.execute(
-                                text(
-                                    "INSERT INTO routine_runs (id, routine_id, triggered_by, status) "
-                                    "VALUES (:id, :rid, 'schedule', 'pending')"
-                                ),
-                                {"id": run_id, "rid": rid},
-                            )
-                            await db_sess.execute(
-                                text("UPDATE routines SET last_run_at = NOW() WHERE id = :rid"),
-                                {"rid": rid},
-                            )
-                            await db_sess.commit()
-                        except Exception as exc:
-                            log.error("Scheduled routine %s failed: %s", rid, exc)
-
-                trigger = CronTrigger.from_crontab(cron_expr)
-                scheduler.add_job(_run, trigger=trigger, id=job_id, replace_existing=True)
-            except Exception as exc:
-                log.error("Failed to register schedule for routine %s: %s", routine_id, exc)
-
-
-def _unregister_routine_schedules(request: Request, routine_id: str) -> None:
-    """Remove todos os jobs do APScheduler para esta routine."""
-    try:
-        scheduler = request.app.state.scheduler
-        for job in scheduler.get_jobs():
-            if job.id.startswith(f"routine_{routine_id}_"):
-                scheduler.remove_job(job.id)
-    except Exception:
-        pass

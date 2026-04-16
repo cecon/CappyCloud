@@ -1,7 +1,7 @@
 """add_agent_and_cicd_tables
 
 Revision ID: 974e4129244e
-Revises: 
+Revises:
 Create Date: 2026-04-16 00:37:03.224340
 
 """

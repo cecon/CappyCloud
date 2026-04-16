@@ -8,6 +8,10 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = []
 
+# Explicit package discovery: only include 'app', never 'alembic' or 'tests'
+[tool.setuptools.packages.find]
+include = ["app*"]
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
@@ -35,6 +39,7 @@ ignore = []
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]  # assert allowed in tests
+"alembic/versions/**" = ["E501", "W291", "W293"]  # migration files: generated, no strict formatting
 
 [tool.ruff.format]
 quote-style = "double"
