@@ -90,7 +90,7 @@ async def dispatch_task(
                 {"tid": task_id, "eid": cicd_event_id},
             )
             await db.commit()
-        return task_id
+        return task_id if isinstance(task_id, str) else None
     except Exception as exc:
         log.error("Erro ao fazer dispatch de task via webhook: %s", exc)
         return None

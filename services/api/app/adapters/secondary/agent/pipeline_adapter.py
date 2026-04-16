@@ -47,7 +47,7 @@ class PipelineAdapter(AgentPort):
         dispatcher = self._pipeline._dispatcher
         if dispatcher is None:
             return None
-        return await dispatcher.dispatch(
+        result = await dispatcher.dispatch(
             prompt=prompt,
             env_slug=env_slug,
             conversation_id=conversation_id,
@@ -55,6 +55,7 @@ class PipelineAdapter(AgentPort):
             trigger_payload=trigger_payload or {},
             base_branch=base_branch,
         )
+        return result if isinstance(result, str) else None
 
     async def on_startup(self) -> None:
         """Initialise the Pipeline (connects to Docker, Redis, PostgreSQL)."""
