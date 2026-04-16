@@ -21,6 +21,8 @@ RUN python -m grpc_tools.protoc \
 
 COPY services/cappycloud_agent /app/cappycloud_agent
 COPY services/api/app /app/app
+COPY services/api/alembic.ini /app/alembic.ini
+COPY services/api/alembic /app/alembic
 
 ENV PYTHONPATH=/app
 
