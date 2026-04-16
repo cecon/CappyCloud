@@ -1,24 +1,20 @@
-"""Environments HTTP adapter — CRUD de ambientes globais + status de containers.
+"""Environments HTTP adapter — CRUD de ambientes de repositório.
 
 Endpoints:
   GET  /environments          → lista todos os ambientes
   POST /environments          → cria ambiente novo
   GET  /environments/{id}     → detalhe de um ambiente
-  DELETE /environments/{id}   → apaga ambiente (para container se a correr)
-  GET  /environments/{id}/status → status do container Docker
-  POST /environments/{id}/wake   → inicia container (fire-and-forget)
+  DELETE /environments/{id}   → apaga o registo do ambiente no banco
 """
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.adapters.primary.http.deps import (
-    get_agent,
     get_authenticated_user,
     get_create_repo_env_uc,
     get_delete_repo_env_uc,
@@ -31,7 +27,6 @@ from app.application.use_cases.repo_environments import (
     ListRepoEnvironments,
 )
 from app.domain.entities import User
-from app.ports.agent import AgentPort
 from app.ports.repositories import RepoEnvironmentRepository
 from app.schemas import RepoEnvCreate, RepoEnvOut
 
@@ -90,45 +85,8 @@ async def delete_environment(
     current: Annotated[User, Depends(get_authenticated_user)],
     uc: Annotated[DeleteRepoEnvironment, Depends(get_delete_repo_env_uc)],
 ) -> None:
-    """Remove um ambiente e para o container Docker se estiver a correr."""
+    """Remove o registo do ambiente do banco de dados."""
     try:
         await uc.execute(env_id)
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-
-
-@router.get("/{env_id}/status")
-async def get_environment_status(
-    env_id: uuid.UUID,
-    current: Annotated[User, Depends(get_authenticated_user)],
-    repo: Annotated[RepoEnvironmentRepository, Depends(get_repo_env_repo)],
-    agent: Annotated[AgentPort, Depends(get_agent)],
-) -> dict[str, object]:
-    """Devolve o estado actual do container Docker para o ambiente."""
-    env = await repo.get(env_id)
-    if not env:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Ambiente não encontrado."
-        )
-    return await asyncio.get_event_loop().run_in_executor(None, agent.get_env_status, env.slug)
-
-
-@router.post("/{env_id}/wake")
-async def wake_environment(
-    env_id: uuid.UUID,
-    current: Annotated[User, Depends(get_authenticated_user)],
-    repo: Annotated[RepoEnvironmentRepository, Depends(get_repo_env_repo)],
-    agent: Annotated[AgentPort, Depends(get_agent)],
-) -> dict[str, object]:
-    """Inicia (ou reinicia) o container do ambiente (fire-and-forget).
-
-    Devolve imediatamente. Faz polling a ``GET /environments/{id}/status``
-    até status ser ``running``.
-    """
-    env = await repo.get(env_id)
-    if not env:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Ambiente não encontrado."
-        )
-    agent.wake_env(env.slug)
-    return {"status": "starting"}

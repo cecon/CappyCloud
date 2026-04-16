@@ -72,7 +72,6 @@ class TaskDispatcher:
     async def dispatch(
         self,
         prompt: str,
-        env_slug: str,
         conversation_id: Optional[str] = None,
         triggered_by: str = "user",
         trigger_payload: Optional[dict] = None,
@@ -86,13 +85,12 @@ class TaskDispatcher:
         await self._insert_task(
             task_id=task_id,
             conversation_id=conversation_id,
-            env_slug=env_slug,
             prompt=prompt,
             triggered_by=triggered_by,
             trigger_payload=trigger_payload or {},
         )
         asyncio.create_task(
-            self._launch_runner(task_id, prompt, env_slug, conversation_id, base_branch),
+            self._launch_runner(task_id, prompt, conversation_id, base_branch),
             name=f"dispatch-{task_id[:8]}",
         )
         return task_id
@@ -175,11 +173,10 @@ class TaskDispatcher:
         self,
         task_id: str,
         prompt: str,
-        env_slug: str,
         conversation_id: Optional[str],
         base_branch: str,
     ) -> None:
-        """Cria o ambiente, inicia a GrpcSession e arranca o TaskRunner."""
+        """Cria o worktree, inicia a GrpcSession e arranca o TaskRunner."""
         user_id = conversation_id or "system"
         chat_id = task_id
 
@@ -187,7 +184,6 @@ class TaskDispatcher:
             sandbox = await self._env_manager.get_or_create_session(
                 user_id=user_id,
                 chat_id=chat_id,
-                env_slug=env_slug,
                 base_branch=base_branch,
             )
         except Exception as exc:
@@ -196,10 +192,10 @@ class TaskDispatcher:
             await self._insert_error_event(task_id, str(exc))
             return
 
-        working_directory = sandbox.worktree_path or f"/repos/{env_slug}"
+        working_directory = sandbox.worktree_path or "/repos/default"
 
         session = GrpcSession(
-            container_ip=sandbox.container_ip,
+            container_ip=sandbox.grpc_host,
             grpc_port=sandbox.grpc_port,
             session_id=f"{user_id}:{chat_id}",
             model=self._model,
@@ -226,7 +222,7 @@ class TaskDispatcher:
         runner = TaskRunner(task_id=task_id, session=session, db_url=self._db_url)
         self._runners[task_id] = runner
         await runner.start()
-        log.info("[Dispatcher] TaskRunner started for task %s (env=%s)", task_id[:8], env_slug)
+        log.info("[Dispatcher] TaskRunner started for task %s", task_id[:8])
 
     async def _reconnect_orphaned_tasks(self) -> None:
         """Marca como error tasks que ficaram running/paused após restart.
@@ -252,7 +248,6 @@ class TaskDispatcher:
         self,
         task_id: str,
         conversation_id: Optional[str],
-        env_slug: str,
         prompt: str,
         triggered_by: str,
         trigger_payload: dict,
@@ -268,7 +263,7 @@ class TaskDispatcher:
             """,
             task_id,
             conversation_id,
-            env_slug,
+            "default",
             prompt,
             triggered_by,
             json.dumps(trigger_payload),

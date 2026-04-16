@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +23,6 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 async def get_conversation_status(
     conversation_id: uuid.UUID,
     current: Annotated[User, Depends(get_authenticated_user)],
-    request: Request,
     db: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> dict:
     """Estado actual do agente para esta conversa.
@@ -58,23 +57,7 @@ async def get_conversation_status(
         ev = ev_row.fetchone()
         cursor = ev.max_id if ev else None
 
-    env_status = "unknown"
-    try:
-        agent = request.app.state.agent
-        env_slug_row = await db.execute(
-            text(
-                "SELECT re.slug FROM conversations c "
-                "JOIN repo_environments re ON re.id = c.environment_id "
-                "WHERE c.id = :cid"
-            ),
-            {"cid": str(conversation_id)},
-        )
-        slug_row = env_slug_row.fetchone()
-        if slug_row:
-            env_info = agent.get_env_status(slug_row.slug)
-            env_status = env_info.get("status", "unknown")
-    except Exception:
-        pass
+    env_status = "running"
 
     return {
         "env_status": env_status,
@@ -97,10 +80,9 @@ async def get_conversation_diff(
     """Diff do worktree actual em relação ao branch base."""
     row = await db.execute(
         text(
-            "SELECT cs.worktree_path, c.base_branch, re.slug AS env_slug "
+            "SELECT cs.worktree_path, c.base_branch "
             "FROM conversations c "
             "LEFT JOIN cappy_sessions cs ON cs.chat_id = c.id::text "
-            "LEFT JOIN repo_environments re ON re.id = c.environment_id "
             "WHERE c.id = :cid AND c.user_id = :uid"
         ),
         {"cid": str(conversation_id), "uid": str(current.id)},
@@ -110,22 +92,14 @@ async def get_conversation_diff(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada")
 
     base_branch = conv.base_branch or "main"
-    if not conv.worktree_path or not conv.env_slug:
-        return {"base_branch": base_branch, "stats": {"added": 0, "removed": 0}, "files": []}
-
-    env_row = await db.execute(
-        text("SELECT container_id FROM cappy_env_containers WHERE env_slug = :slug"),
-        {"slug": conv.env_slug},
-    )
-    env = env_row.fetchone()
-    if not env:
+    if not conv.worktree_path:
         return {"base_branch": base_branch, "stats": {"added": 0, "removed": 0}, "files": []}
 
     try:
         import docker
 
         client = docker.from_env()
-        container = client.containers.get(env.container_id)
+        container = client.containers.get("cappycloud-sandbox")
         _, output = container.exec_run(
             ["git", "-C", conv.worktree_path, "diff", f"{base_branch}..HEAD"],
         )

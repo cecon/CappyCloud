@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 
 from app.domain.entities import RepoEnvironment
-from app.ports.agent import AgentPort
 from app.ports.repositories import RepoEnvironmentRepository
 
 
@@ -51,14 +50,11 @@ class DeleteRepoEnvironment:
     def __init__(
         self,
         repo_envs: RepoEnvironmentRepository,
-        agent: AgentPort,
     ) -> None:
         self._repo_envs = repo_envs
-        self._agent = agent
 
     async def execute(self, env_id: uuid.UUID) -> None:
         env = await self._repo_envs.get(env_id)
         if not env:
             raise LookupError("Ambiente não encontrado.")
-        self._agent.destroy_env(env.slug)
         await self._repo_envs.delete(env_id)

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Burger,
-  Button,
   ScrollArea,
   Stack,
   Text,
@@ -13,6 +12,7 @@ import remarkGfm from 'remark-gfm'
 import {
   cancelConversation,
   createConversation,
+  createConversationPr,
   fetchConversationDiff,
   fetchConversations,
   fetchMessages,
@@ -79,6 +79,11 @@ export function ChatPage() {
   const [diff, setDiff] = useState<ConversationDiff | null>(null)
   const [diffLoading, setDiffLoading] = useState(false)
 
+  const [diffStats, setDiffStats] = useState<{ added: number; removed: number } | null>(null)
+  const [prLoading, setPrLoading] = useState(false)
+  const [prUrl, setPrUrl] = useState<string | null>(null)
+  const [headBranch, setHeadBranch] = useState<string | null>(null)
+
   const abortControllerRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -111,6 +116,9 @@ export function ChatPage() {
   useEffect(() => {
     if (!activeId) return
     let cancelled = false
+    setDiffStats(null)
+    setPrUrl(null)
+    setHeadBranch(null)
     ;(async () => {
       const msgs = await fetchMessages(token, activeId)
       if (!cancelled) setMessages(msgs)
@@ -123,6 +131,20 @@ export function ChatPage() {
     if (activeId) await cancelConversation(token, activeId)
     setStreaming(false)
     setPendingAction(null)
+  }
+
+  async function handleCreatePr() {
+    if (!activeId) return
+    setPrLoading(true)
+    try {
+      const result = await createConversationPr(token, activeId)
+      setPrUrl(result.pr_url)
+      setHeadBranch(result.head_branch)
+    } catch {
+      // silently fail — user can retry
+    } finally {
+      setPrLoading(false)
+    }
   }
 
   async function handleOpenDiff() {
@@ -230,6 +252,7 @@ export function ChatPage() {
     } finally {
       setStreaming(false)
       abortControllerRef.current = null
+      fetchConversationDiff(token, c.id).then((d) => setDiffStats(d.stats)).catch(() => {})
     }
   }
 
@@ -307,6 +330,7 @@ export function ChatPage() {
     } finally {
       setStreaming(false)
       abortControllerRef.current = null
+      if (activeId) fetchConversationDiff(token, activeId).then((d) => setDiffStats(d.stats)).catch(() => {})
     }
   }
 
@@ -341,46 +365,25 @@ export function ChatPage() {
 
   return (
     <div className={styles.shell}>
-      {/* ── Top Bar ────────────────────────────────────────────── */}
-      <header className={styles.topbar}>
-        <div className={styles.topbarLeft}>
-          <Burger
-            opened={mobileOpened}
-            onClick={toggleMobile}
-            size="sm"
-            color="var(--cc-on-surface-variant)"
-            hiddenFrom="sm"
-          />
-          <img src="/capybara.png" alt="" className={styles.topbarLogo} />
-          <span className={styles.topbarTitle}>CappyCloud</span>
-          <span className={styles.topbarBadge}>Beta</span>
-        </div>
-        <div className={styles.topbarRight}>
-          <Button
-            component={Link}
-            to="/environments"
-            variant="subtle"
-            size="xs"
-            color="gray"
-            className={styles.topbarBtn}
-          >
-            Ambientes
-          </Button>
-          <button className={styles.topbarIconBtn} onClick={logout} title="Sair">
-            <span className={styles.icon}>logout</span>
-          </button>
-        </div>
-      </header>
-
       <div className={styles.body}>
         {/* ── Sidebar ──────────────────────────────────────────── */}
         <aside className={`${styles.sidebar} ${mobileOpened ? styles.sidebarOpen : ''}`}>
           {/* Sidebar header */}
           <div className={styles.sidebarHead}>
-            <div>
-              <div className={styles.sidebarTitle}>CappyCloud</div>
-              <div className={styles.sidebarSubtitle}>Research Preview</div>
+            <div className={styles.sidebarHeadLeft}>
+              <img src="/capybara.png" alt="" className={styles.sidebarLogo} />
+              <div>
+                <div className={styles.sidebarTitle}>CappyCloud</div>
+                <div className={styles.sidebarSubtitle}>Research Preview</div>
+              </div>
             </div>
+            <Burger
+              opened={mobileOpened}
+              onClick={toggleMobile}
+              size="sm"
+              color="var(--cc-on-surface-variant)"
+              hiddenFrom="sm"
+            />
           </div>
 
           {/* New session button */}
@@ -421,75 +424,16 @@ export function ChatPage() {
             ))}
           </div>
 
-          {/* Sessão ativa — ambiente em uso */}
-          {activeId && (
-            <div className={styles.activeEnvBanner}>
-              <span className={styles.icon} style={{ fontSize: '0.875rem', color: activeEnvSlug ? 'var(--cc-secondary)' : 'var(--cc-on-surface-variant)' }}>
-                {activeEnvSlug ? 'check_circle' : 'radio_button_unchecked'}
-              </span>
-              <div className={styles.activeEnvMeta}>
-                <span className={styles.activeEnvLabel}>Sessão atual</span>
-                <span className={styles.activeEnvValue}>
-                  {activeEnvSlug
-                    ? envs.find(e => e.slug === activeEnvSlug)?.name ?? activeEnvSlug
-                    : 'Sem ambiente'}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Sidebar footer — seletor de ambiente e branch */}
-          <div className={styles.sidebarFooter}>
-            <p className={styles.footerLabel}>Próxima sessão</p>
-
-            {/* Seletor de repositório */}
-            <div className={styles.sessionPickerRow}>
-              <div className={styles.sessionPickerIcon}>
-                <img src="/capybara.png" alt="" />
-              </div>
-              <div className={styles.sessionPickerMeta}>
-                <span className={styles.sessionPickerLabel}>Repositório</span>
-                <span className={styles.sessionPickerValue}>
-                  {selectedEnv?.name ?? 'Sem ambiente'}
-                </span>
-              </div>
-              <span className={styles.icon} style={{ fontSize: '1rem', opacity: 0.4, marginLeft: 'auto' }}>
-                expand_more
-              </span>
-              <select
-                className={styles.envSelectorNative}
-                value={selectedEnvId ?? ''}
-                onChange={(e) => setSelectedEnvId(e.target.value || null)}
-                title="Selecionar repositório"
-              >
-                <option value="">Sem ambiente</option>
-                {envs.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.name} ({e.slug})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Seletor de branch */}
-            <div className={`${styles.sessionPickerRow} ${!selectedEnvId ? styles.sessionPickerDisabled : ''}`}>
-              <span className={`${styles.icon} ${styles.sessionPickerBranchIcon}`}>
-                fork_right
-              </span>
-              <div className={styles.sessionPickerMeta}>
-                <span className={styles.sessionPickerLabel}>Branch de origem</span>
-                <input
-                  className={styles.branchInput}
-                  type="text"
-                  value={selectedBranch}
-                  onChange={(e) => setSelectedBranch(e.target.value)}
-                  placeholder={selectedEnv?.branch ?? 'main'}
-                  disabled={!selectedEnvId}
-                  spellCheck={false}
-                  title="Branch base para a sessão"
-                />
-              </div>
-            </div>
+          {/* Sidebar bottom nav */}
+          <div className={styles.sidebarNav}>
+            <Link to="/environments" className={styles.sidebarNavItem}>
+              <span className={styles.icon}>inventory_2</span>
+              <span>Ambientes</span>
+            </Link>
+            <button className={styles.sidebarNavItem} onClick={logout} title="Sair">
+              <span className={styles.icon}>logout</span>
+              <span>Sair</span>
+            </button>
           </div>
         </aside>
 
@@ -522,6 +466,13 @@ export function ChatPage() {
               onStop={handleStop}
               onActionReply={handleActionReply}
               activeEnvSlug={activeEnvSlug}
+              activeEnvName={envs.find(e => e.slug === activeEnvSlug)?.name ?? null}
+              activeBaseBranch={activeConv?.base_branch ?? null}
+              diffStats={diffStats}
+              prLoading={prLoading}
+              prUrl={prUrl}
+              headBranch={headBranch}
+              onCreatePr={handleCreatePr}
               envs={envs}
               activeTitle={activeConv?.title ?? 'Conversa'}
               selectedEnvId={selectedEnvId}
@@ -619,48 +570,64 @@ function EmptyState({
         </div>
       </div>
 
-      {/* Context Bar — igual ao Stitch */}
+      {/* Context Bar — repo à esquerda, env à direita */}
       <div className={styles.contextBar}>
-        {/* Env pill — select nativo embutido */}
-        <div className={styles.contextPill} title="Selecionar ambiente">
-          <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
-            inventory_2
-          </span>
-          <span className={styles.contextPillLabel}>
-            {selectedEnv?.name ?? 'Sem ambiente'}
-          </span>
-          <span className={styles.icon} style={{ fontSize: '0.75rem', opacity: 0.35 }}>
-            expand_more
-          </span>
-          <select
-            className={styles.contextPillSelect}
-            value={selectedEnvId ?? ''}
-            onChange={(e) => setSelectedEnvId(e.target.value || null)}
-            title="Selecionar ambiente"
-          >
-            <option value="">Sem ambiente</option>
-            {envs.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name} ({e.slug})
-              </option>
-            ))}
-          </select>
+        <div className={styles.contextBarLeft}>
+          {/* Repo + branch pill */}
+          {selectedEnv ? (
+            <div className={styles.contextPill}>
+              <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
+                source
+              </span>
+              <span className={styles.contextPillLabel}>
+                {selectedEnv.name}
+              </span>
+              <span className={styles.contextPillSep} />
+              <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
+                fork_right
+              </span>
+              <span className={styles.contextPillLabel}>{selectedBranch || selectedEnv.branch}</span>
+            </div>
+          ) : (
+            <div className={`${styles.contextPill} ${styles.contextPillEmpty}`}>
+              <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.5 }}>
+                source
+              </span>
+              <span className={styles.contextPillLabel} style={{ opacity: 0.5 }}>Selecionar repo…</span>
+            </div>
+          )}
+          <Link to="/environments" className={styles.contextPillAdd} title="Adicionar ambiente">
+            <span className={styles.icon} style={{ fontSize: '1rem' }}>add</span>
+          </Link>
         </div>
 
-        {/* Branch pill */}
-        {selectedEnv && (
-          <div className={styles.contextPill}>
+        <div className={styles.contextBarRight}>
+          {/* Env pill */}
+          <div className={styles.contextPill} title="Selecionar ambiente">
             <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
-              fork_right
+              inventory_2
             </span>
-            <span className={styles.contextPillLabel}>{selectedBranch || selectedEnv.branch}</span>
+            <span className={styles.contextPillLabel}>
+              {selectedEnv?.name ?? 'Sem ambiente'}
+            </span>
+            <span className={styles.icon} style={{ fontSize: '0.75rem', opacity: 0.35 }}>
+              expand_more
+            </span>
+            <select
+              className={styles.contextPillSelect}
+              value={selectedEnvId ?? ''}
+              onChange={(e) => setSelectedEnvId(e.target.value || null)}
+              title="Selecionar ambiente"
+            >
+              <option value="">Sem ambiente</option>
+              {envs.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name} ({e.slug})
+                </option>
+              ))}
+            </select>
           </div>
-        )}
-
-        {/* Add env */}
-        <Link to="/environments" className={styles.contextPillAdd} title="Adicionar ambiente">
-          <span className={styles.icon} style={{ fontSize: '1rem' }}>add</span>
-        </Link>
+        </div>
       </div>
 
       {/* Quick Actions */}
@@ -719,6 +686,13 @@ interface ActiveChatProps {
   onStop: () => void
   onActionReply: (r: string) => void
   activeEnvSlug: string | null
+  activeEnvName: string | null
+  activeBaseBranch: string | null
+  diffStats: { added: number; removed: number } | null
+  prLoading: boolean
+  prUrl: string | null
+  headBranch: string | null
+  onCreatePr: () => void
   activeTitle: string
   envs: RepoEnv[]
   selectedEnvId: string | null
@@ -737,8 +711,11 @@ interface ActiveChatProps {
 function ActiveChat({
   messages, pendingText, pendingTools, pendingAction,
   showThinking, streaming, input, setInput, inputRef,
-  onSend, onStop, onActionReply, activeEnvSlug, activeTitle, envs,
-  selectedEnvId, setSelectedEnvId, selectedBranch, setSelectedBranch,
+  onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch,
+  diffStats, prLoading, prUrl, headBranch, onCreatePr,
+  activeTitle: _activeTitle, envs: _envs,
+  selectedEnvId: _selectedEnvId, setSelectedEnvId: _setSelectedEnvId,
+  selectedBranch: _selectedBranch, setSelectedBranch: _setSelectedBranch,
   token, conversationId, sidePanel, diff, diffLoading, onOpenDiff, onToggleFiles,
 }: ActiveChatProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -751,45 +728,66 @@ function ActiveChat({
 
   return (
     <div className={styles.activeChat}>
-      {/* Chat title bar */}
-      <div className={styles.chatTitleBar}>
-        <span className={styles.chatTitle}>{activeTitle}</span>
-        <div className={styles.chatTitleEnv}>
-          <span className={styles.icon} style={{ fontSize: '0.875rem', color: activeEnvSlug ? 'var(--cc-secondary)' : 'var(--cc-on-surface-variant)', opacity: activeEnvSlug ? 1 : 0.4 }}>
-            inventory_2
-          </span>
-          <span className={activeEnvSlug ? styles.chatTitleEnvActive : styles.chatTitleEnvEmpty}>
-            {activeEnvSlug
-              ? (envs.find(e => e.slug === activeEnvSlug)?.name ?? activeEnvSlug)
-              : 'Sem ambiente'}
-          </span>
-        </div>
-        {/* Panel buttons */}
-        <div className={styles.chatTitleActions}>
-          {activeEnvSlug && (
-            <>
+      {/* Session header — env + branch + diff stats + Criar PR */}
+      {activeEnvSlug && (
+        <div className={styles.sessionHeader}>
+          <div className={styles.sessionHeaderLeft}>
+            <span className={`${styles.icon} ${styles.sessionHeaderIcon}`}>source</span>
+            <span className={styles.sessionHeaderEnv}>{activeEnvName ?? activeEnvSlug}</span>
+            {activeBaseBranch && (
+              <>
+                <span className={styles.sessionHeaderArrow}>›</span>
+                <span className={styles.sessionHeaderBranch}>
+                  {headBranch ?? activeBaseBranch}
+                </span>
+              </>
+            )}
+          </div>
+          <div className={styles.sessionHeaderRight}>
+            {diffStats && (diffStats.added > 0 || diffStats.removed > 0) && (
+              <>
+                <span className={styles.diffAdded}>+{diffStats.added}</span>
+                <span className={styles.diffRemoved}>-{diffStats.removed}</span>
+                {prUrl ? (
+                  <a
+                    href={prUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={styles.prLink}
+                  >
+                    <span className={`${styles.icon}`} style={{ fontSize: '0.875rem' }}>open_in_new</span>
+                    Ver PR
+                  </a>
+                ) : (
+                  <button
+                    className={styles.createPrBtn}
+                    onClick={onCreatePr}
+                    disabled={prLoading || streaming}
+                  >
+                    {prLoading ? 'Criando…' : 'Criar PR'}
+                  </button>
+                )}
+              </>
+            )}
+            <div className={styles.sessionHeaderPanelBtns}>
               <button
-                className={`${styles.panelBtn} ${sidePanel === 'files' ? styles.panelBtnActive : ''}`}
+                className={`${styles.chatContextIconBtn} ${sidePanel === 'files' ? styles.chatContextIconBtnActive : ''}`}
                 onClick={onToggleFiles}
                 title="Explorador de ficheiros"
               >
                 <span className={styles.icon}>folder_open</span>
-                <span>Ficheiros</span>
               </button>
               <button
-                className={`${styles.panelBtn} ${sidePanel === 'diff' ? styles.panelBtnActive : ''}`}
+                className={`${styles.chatContextIconBtn} ${sidePanel === 'diff' ? styles.chatContextIconBtnActive : ''}`}
                 onClick={onOpenDiff}
                 title="Ver diff"
               >
                 <span className={styles.icon}>difference</span>
-                <span>Diff</span>
               </button>
-            </>
-          )}
+            </div>
+          </div>
         </div>
-      </div>
-
-      {/* Body: messages + optional side panel */}
+      )}
       <div className={styles.chatBody}>
         {/* Messages column */}
         <div className={styles.chatMessages}>
@@ -866,44 +864,13 @@ function ActiveChat({
           )}
         </div>
 
-        {/* Context status bar — repo + branch selector */}
+        {/* Context status bar — env read-only */}
         <div className={styles.chatContextBar}>
-          {/* Repo selector */}
           <div className={styles.chatContextPill}>
             <span className={`${styles.icon} ${styles.chatContextIcon}`}>inventory_2</span>
             <span className={styles.chatContextText}>
-              {envs.find(e => e.id === selectedEnvId)?.name ?? 'Sem ambiente'}
+              {activeEnvName ?? activeEnvSlug ?? 'Sem ambiente'}
             </span>
-            <span className={`${styles.icon} ${styles.chatContextChevron}`}>expand_more</span>
-            <select
-              className={styles.chatContextSelect}
-              value={selectedEnvId ?? ''}
-              onChange={(e) => setSelectedEnvId(e.target.value || null)}
-              title="Selecionar repositório"
-            >
-              <option value="">Sem ambiente</option>
-              {envs.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.name} ({e.slug})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <span className={styles.chatContextSep}>›</span>
-
-          {/* Branch selector */}
-          <div className={styles.chatContextPill}>
-            <span className={`${styles.icon} ${styles.chatContextIcon}`}>fork_right</span>
-            <input
-              className={styles.chatContextBranchInput}
-              type="text"
-              value={selectedBranch}
-              onChange={(e) => setSelectedBranch(e.target.value)}
-              placeholder={envs.find(e => e.id === selectedEnvId)?.branch ?? 'main'}
-              spellCheck={false}
-              title="Branch de origem da próxima sessão"
-            />
           </div>
         </div>
       </div>

@@ -485,3 +485,31 @@ export async function fetchConversationFile(
   if (!res.ok) throw new Error('Erro ao ler ficheiro')
   return res.json()
 }
+
+// ── Pull Request ──────────────────────────────────────────────────────────────
+
+export interface CreatePrResult {
+  pr_url: string
+  pr_number: number
+  head_branch: string
+}
+
+export async function createConversationPr(
+  token: string,
+  conversationId: string,
+  title?: string
+): Promise<CreatePrResult> {
+  const res = await fetch(`/api/conversations/${conversationId}/create-pr`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ title: title ?? null }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar PR')
+  }
+  return res.json()
+}

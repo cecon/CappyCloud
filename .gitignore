@@ -18,6 +18,7 @@ htmlcov/
 
 # Node / frontend
 web/node_modules/
+web/.pnpm-store/
 web/dist/
 npm-debug.log*
 .pnpm-debug.log*

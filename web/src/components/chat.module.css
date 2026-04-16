@@ -40,7 +40,6 @@
 
 .shell {
   display: flex;
-  flex-direction: column;
   height: 100vh;
   overflow: hidden;
   background: var(--cc-surface);
@@ -55,87 +54,15 @@
 }
 
 /* ─────────────────────────────────────────────────────────────
-   Top Bar
+   Top Bar — removido; estilos mantidos como fallback vazio
    ───────────────────────────────────────────────────────────── */
-
-.topbar {
-  height: 48px;
-  background: var(--cc-surface-low);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 1rem;
-  flex-shrink: 0;
-  z-index: 50;
-}
-
-.topbarLeft {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-}
-
-.topbarLogo {
-  width: 26px;
-  height: 26px;
-  object-fit: contain;
-  border-radius: 4px;
-}
-
-.topbarTitle {
-  font-family: 'Space Grotesk', sans-serif;
-  font-weight: 700;
-  font-size: 0.9375rem;
-  letter-spacing: -0.02em;
-  color: var(--cc-on-surface);
-}
-
-.topbarBadge {
-  padding: 1px 6px;
-  border-radius: 2px;
-  background: var(--cc-surface-high);
-  font-size: 0.5625rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--cc-on-surface-variant);
-  border: 1px solid rgba(72, 72, 75, 0.2);
-}
-
-.topbarRight {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.topbarBtn {
-  font-size: 0.75rem;
-  color: var(--cc-on-surface-variant) !important;
-}
-
-.topbarIconBtn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--cc-on-surface-variant);
-  padding: 6px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.topbarIconBtn:hover {
-  background: var(--cc-surface-high);
-  color: var(--cc-on-surface);
-}
 
 /* ─────────────────────────────────────────────────────────────
    Sidebar
    ───────────────────────────────────────────────────────────── */
 
 .sidebar {
-  width: 280px;
+  width: 260px;
   background: var(--cc-surface-low);
   display: flex;
   flex-direction: column;
@@ -149,10 +76,25 @@
 }
 
 .sidebarHead {
-  padding: 1.25rem 1.25rem 0.75rem;
+  padding: 1rem 1rem 0.75rem;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.sidebarHeadLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.sidebarLogo {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  border-radius: 4px;
+  flex-shrink: 0;
 }
 
 .sidebarTitle {
@@ -321,205 +263,48 @@
   opacity: 0.7;
 }
 
-/* ─ Ambiente da sessão ativa (acima do footer) ─ */
+/* ─ Sidebar bottom nav (Ambientes + Logout) ─ */
 
-.activeEnvBanner {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 8px 1rem 6px;
+.sidebarNav {
+  padding: 0.5rem 0.75rem;
   border-top: 1px solid rgba(72, 72, 75, 0.1);
-}
-
-.activeEnvMeta {
   display: flex;
   flex-direction: column;
+  gap: 1px;
+  flex-shrink: 0;
 }
 
-.activeEnvLabel {
-  font-size: 0.5625rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--cc-on-surface-variant);
-  opacity: 0.5;
-}
-
-.activeEnvValue {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--cc-on-surface);
-  font-family: 'Space Grotesk', sans-serif;
-}
-
-/* ─ Sidebar footer ─ */
-
-.sidebarFooter {
-  padding: 0.75rem 1rem;
-  background: var(--cc-surface-low);
-  border-top: 1px solid rgba(72, 72, 75, 0.12);
-}
-
-.footerLabel {
-  font-size: 0.5625rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--cc-on-surface-variant);
-  opacity: 0.5;
-  margin: 0 0 6px 0;
-}
-
-/* seletor de ambiente — pill clicável com select nativo por baixo */
-.envSelector {
-  position: relative;
+.sidebarNavItem {
   display: flex;
   align-items: center;
   gap: 0.625rem;
-  padding: 6px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.12s ease;
-}
-
-.envSelector:hover {
-  background: var(--cc-surface-high);
-}
-
-.envSelectorNative {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
   width: 100%;
-  height: 100%;
-}
-
-/* ── Session picker rows (novo design: repositório + branch) ── */
-.sessionPickerRow {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 5px 6px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.12s ease;
-  margin-bottom: 2px;
-}
-
-.sessionPickerRow:hover:not(.sessionPickerDisabled) {
-  background: var(--cc-surface-high);
-}
-
-.sessionPickerDisabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.sessionPickerIcon {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  overflow: hidden;
-  border: 2px solid var(--cc-surface-highest);
-  flex-shrink: 0;
-}
-
-.sessionPickerIcon img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.sessionPickerBranchIcon {
-  font-size: 1rem;
-  color: var(--cc-secondary);
-  opacity: 0.7;
-  width: 28px;
-  text-align: center;
-  flex-shrink: 0;
-}
-
-.sessionPickerMeta {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-}
-
-.sessionPickerLabel {
-  font-size: 0.5rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--cc-on-surface-variant);
-  opacity: 0.6;
-  line-height: 1.2;
-}
-
-.sessionPickerValue {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--cc-on-surface);
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.branchInput {
-  font-size: 0.6875rem;
-  font-family: 'Geist Mono', monospace;
-  color: var(--cc-secondary);
-  background: transparent;
+  padding: 7px 10px;
+  background: none;
   border: none;
-  outline: none;
-  padding: 0;
-  width: 100%;
-  letter-spacing: 0.01em;
-}
-
-.branchInput::placeholder {
+  border-radius: 5px;
+  cursor: pointer;
   color: var(--cc-on-surface-variant);
-  opacity: 0.5;
-}
-
-.branchInput:disabled {
-  cursor: default;
-}
-
-.projectAvatar {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  overflow: hidden;
-  border: 2px solid var(--cc-surface-highest);
-  flex-shrink: 0;
-}
-
-.projectAvatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.projectMeta {
-  display: flex;
-  flex-direction: column;
-}
-
-.projectName {
+  font-family: 'Inter', sans-serif;
   font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--cc-on-surface);
-  letter-spacing: -0.01em;
+  font-weight: 500;
+  text-align: left;
+  text-decoration: none;
+  transition: background 0.1s ease, color 0.1s ease;
 }
 
-.projectBranch {
-  font-size: 0.625rem;
-  color: var(--cc-on-surface-variant);
-  font-family: 'Geist Mono', monospace;
+.sidebarNavItem .icon {
+  font-size: 0.9375rem;
+  opacity: 0.6;
+}
+
+.sidebarNavItem:hover {
+  background: var(--cc-surface-high);
+  color: var(--cc-on-surface);
+}
+
+.sidebarNavItem:hover .icon {
+  opacity: 1;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -761,9 +546,10 @@
 .contextBar {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 0.5rem;
   margin-top: -1rem;
+  flex-wrap: wrap;
 }
 
 .contextPill {
@@ -881,58 +667,6 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-
-.chatTitleBar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 1.25rem 8px;
-  border-bottom: 1px solid rgba(72, 72, 75, 0.08);
-  background: var(--cc-surface);
-  flex-shrink: 0;
-}
-
-.chatTitle {
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--cc-on-surface);
-  letter-spacing: -0.01em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-}
-
-.chatTitleEnv {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--cc-surface-high);
-  border: 1px solid rgba(72, 72, 75, 0.1);
-  flex-shrink: 0;
-  margin-left: 0.75rem;
-}
-
-.chatTitleEnvActive {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: var(--cc-secondary);
-  font-family: 'Inter', sans-serif;
-  white-space: nowrap;
-}
-
-.chatTitleEnvEmpty {
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: var(--cc-on-surface-variant);
-  font-family: 'Inter', sans-serif;
-  opacity: 0.6;
-  white-space: nowrap;
 }
 
 .messageArea {
@@ -1216,45 +950,50 @@
 }
 
 /* ─────────────────────────────────────────────────────────────
-   Title bar action buttons (diff, files)
+   Panel action buttons in context bar (diff, files)
    ───────────────────────────────────────────────────────────── */
 
-.chatTitleActions {
+.chatContextPanelBtns {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  margin-left: 0.5rem;
-  flex-shrink: 0;
+  gap: 1px;
+  margin-left: auto;
 }
 
-.panelBtn {
+.chatContextIconBtn {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.2rem 0.6rem;
+  justify-content: center;
+  padding: 3px 5px;
   border-radius: 4px;
-  border: 1px solid var(--cc-outline-variant);
+  border: none;
   background: none;
   color: var(--cc-on-surface-variant);
-  font-size: 0.75rem;
-  font-family: 'Inter', sans-serif;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  transition: background 0.1s, color 0.1s;
 }
 
-.panelBtn:hover {
+.chatContextIconBtn .icon {
+  font-size: 0.9375rem;
+  opacity: 0.55;
+}
+
+.chatContextIconBtn:hover {
   background: var(--cc-surface-high);
   color: var(--cc-on-surface);
 }
 
-.panelBtn .icon {
-  font-size: 0.875rem;
+.chatContextIconBtn:hover .icon {
+  opacity: 1;
 }
 
-.panelBtnActive {
-  background: rgba(59, 130, 246, 0.12);
-  border-color: rgba(59, 130, 246, 0.35);
+.chatContextIconBtnActive {
   color: var(--cc-primary);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.chatContextIconBtnActive .icon {
+  opacity: 1;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -1396,3 +1135,163 @@
 
 .convItem       { }
 .convItemActive { }
+
+/* ─────────────────────────────────────────────────────────────
+   Context bar — empty state split layout
+   ───────────────────────────────────────────────────────────── */
+
+.contextBarLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.contextBarRight {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.contextPillSep {
+  width: 1px;
+  height: 0.875rem;
+  background: var(--cc-outline-variant);
+  opacity: 0.5;
+  margin: 0 0.1rem;
+}
+
+.contextPillEmpty {
+  opacity: 0.6;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Session header — above messages in active chat
+   ───────────────────────────────────────────────────────────── */
+
+.sessionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid var(--cc-outline-variant);
+  background: var(--cc-surface);
+  min-height: 36px;
+  flex-shrink: 0;
+}
+
+.sessionHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--cc-on-surface-variant);
+  overflow: hidden;
+}
+
+.sessionHeaderIcon {
+  font-size: 0.875rem !important;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.sessionHeaderEnv {
+  font-weight: 500;
+  color: var(--cc-on-surface);
+  white-space: nowrap;
+}
+
+.sessionHeaderArrow {
+  opacity: 0.4;
+  font-size: 0.75rem;
+}
+
+.sessionHeaderBranch {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.75rem;
+  color: var(--cc-primary);
+  background: rgba(59, 130, 246, 0.08);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.sessionHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.diffAdded {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #22c55e;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.diffRemoved {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #ef4444;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.createPrBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--cc-primary);
+  background: transparent;
+  color: var(--cc-primary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  line-height: 1;
+}
+
+.createPrBtn:hover:not(:disabled) {
+  background: var(--cc-primary);
+  color: #fff;
+}
+
+.createPrBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.prLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid #22c55e;
+  background: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.prLink:hover {
+  background: rgba(34, 197, 94, 0.2);
+}
+
+.sessionHeaderPanelBtns {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: 0.25rem;
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--cc-outline-variant);
+}

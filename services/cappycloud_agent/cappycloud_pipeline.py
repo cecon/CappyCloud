@@ -2,8 +2,8 @@
 CappyCloud Agent Pipeline — DB-backed, UI-independent agent lifecycle.
 
 Key behaviours:
-  - Each env_slug maps to ONE persistent environment container.
-  - Each (user_id, chat_id) gets its own git worktree inside the env container.
+  - One fixed environment container (cappycloud-sandbox) always running.
+  - Each (user_id, chat_id) gets its own git worktree inside the sandbox.
   - Agent execution is managed by TaskDispatcher + TaskRunner, fully decoupled from HTTP.
   - pipe() dispatches a task and streams agent_events from the DB with SSE cursor.
 """
@@ -42,11 +42,9 @@ class Pipeline:
         OPENROUTER_API_KEY: str = Field(default="")
         OPENROUTER_MODEL: str = Field(default="anthropic/claude-3.5-sonnet")
         GIT_AUTH_TOKEN: str = Field(default="")
-        SANDBOX_IMAGE: str = Field(default="cappycloud-sandbox:latest")
-        DOCKER_NETWORK: str = Field(default="cappycloud_net")
+        SANDBOX_HOST: str = Field(default="cappycloud-sandbox")
         SANDBOX_GRPC_PORT: int = Field(default=50051)
         SANDBOX_IDLE_TIMEOUT: int = Field(default=1800)
-        ENV_IDLE_TIMEOUT: int = Field(default=3600)
         REDIS_URL: str = Field(default="redis://redis:6379")
         DATABASE_URL: str = Field(default="")
         CODE_INDEXER_URL: str = Field(default="")
@@ -57,11 +55,9 @@ class Pipeline:
             OPENROUTER_API_KEY=os.getenv("OPENROUTER_API_KEY", ""),
             OPENROUTER_MODEL=os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet"),
             GIT_AUTH_TOKEN=os.getenv("GIT_AUTH_TOKEN", ""),
-            SANDBOX_IMAGE=os.getenv("SANDBOX_IMAGE", "cappycloud-sandbox:latest"),
-            DOCKER_NETWORK=os.getenv("DOCKER_NETWORK", "cappycloud_net"),
+            SANDBOX_HOST=os.getenv("SANDBOX_HOST", "cappycloud-sandbox"),
             SANDBOX_GRPC_PORT=int(os.getenv("SANDBOX_GRPC_PORT", "50051")),
             SANDBOX_IDLE_TIMEOUT=int(os.getenv("SANDBOX_IDLE_TIMEOUT", "1800")),
-            ENV_IDLE_TIMEOUT=int(os.getenv("ENV_IDLE_TIMEOUT", "3600")),
             REDIS_URL=os.getenv("REDIS_URL", "redis://redis:6379"),
             DATABASE_URL=_db_url(),
             CODE_INDEXER_URL=os.getenv("CODE_INDEXER_URL", ""),
@@ -83,14 +79,12 @@ class Pipeline:
         await self._store.connect()
         self._env_manager = EnvironmentManager(
             session_store=self._store,
-            sandbox_image=self.valves.SANDBOX_IMAGE,
-            docker_network=self.valves.DOCKER_NETWORK,
+            sandbox_host=self.valves.SANDBOX_HOST,
             sandbox_grpc_port=self.valves.SANDBOX_GRPC_PORT,
-            openrouter_api_key=self.valves.OPENROUTER_API_KEY,
-            openrouter_model=self.valves.OPENROUTER_MODEL,
             git_auth_token=self.valves.GIT_AUTH_TOKEN,
             code_indexer_url=self.valves.CODE_INDEXER_URL,
         )
+        self._env_manager.resolve_container()
         self._dispatcher = TaskDispatcher(
             env_manager=self._env_manager,
             session_store=self._store,
@@ -114,23 +108,6 @@ class Pipeline:
             raise RuntimeError("Pipeline not started")
         return asyncio.run_coroutine_threadsafe(coro, self._loop).result(timeout=timeout)
 
-    def get_env_status(self, env_slug: str) -> dict:
-        if self._env_manager is None:
-            return {"status": "none", "container_id": None}
-        return self._run(self._env_manager.get_env_status(env_slug), timeout=30)
-
-    def wake_env(self, env_slug: str) -> None:
-        if self._loop and self._env_manager:
-            asyncio.run_coroutine_threadsafe(
-                self._env_manager._get_or_create_env(env_slug), self._loop
-            )
-
-    def destroy_env(self, env_slug: str) -> None:
-        if self._loop and self._env_manager:
-            asyncio.run_coroutine_threadsafe(
-                self._env_manager.destroy_env(env_slug), self._loop
-            )
-
     def cancel_conversation(self, conversation_id: str) -> bool:
         if self._dispatcher is None:
             return False
@@ -148,7 +125,6 @@ class Pipeline:
             return
 
         conversation_id = str(body.get("conversation_id") or "")
-        env_slug = str(body.get("env_slug") or "default")
         base_branch = str(body.get("base_branch") or "")
         cursor = body.get("cursor")
         try:
@@ -169,7 +145,6 @@ class Pipeline:
             task_id = self._run(
                 self._dispatcher.dispatch(
                     prompt=user_message,
-                    env_slug=env_slug,
                     conversation_id=conversation_id or None,
                     triggered_by="user",
                     base_branch=base_branch,
@@ -238,7 +213,6 @@ class Pipeline:
                     await self._dispatcher.gc()
                 if self._env_manager:
                     await self._env_manager.gc_expired()
-                    await self._env_manager.gc_idle_envs(self.valves.ENV_IDLE_TIMEOUT)
             except asyncio.CancelledError:
                 break
             except Exception:

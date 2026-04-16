@@ -27,10 +27,11 @@ message ClientMessage {
 
 message ChatRequest {
   string message = 1;
-  string working_directory = 2; // Where the agent should execute commands
-  reserved 3;                   // Reserved to prevent accidental reuse
+  string working_directory = 2;
+  reserved 3;
   optional string model = 4;
-  string session_id = 5;        // Non-empty = cross-stream session persistence
+  string session_id = 5;
+  string request_id = 6;        // Client-generated UUID for distributed tracing
 }
 
 message UserInput {
@@ -46,13 +47,14 @@ message CancelSignal {
 // MESSAGES FROM SERVER (Output / Events)
 // ---------------------------------------------------------
 message ServerMessage {
+  string request_id = 7;  // Echoes ChatRequest.request_id for log correlation
   oneof event {
-    TextChunk      text_chunk      = 1; // Chunk of text from LLM
-    ToolCallStart  tool_start      = 2; // Agent started using a tool
-    ToolCallResult tool_result     = 3; // Tool returned a result
-    ActionRequired action_required = 4; // Agent requires human intervention
-    FinalResponse  done            = 5; // Generation successfully completed
-    ErrorResponse  error           = 6; // A critical error occurred
+    TextChunk      text_chunk      = 1;
+    ToolCallStart  tool_start      = 2;
+    ToolCallResult tool_result     = 3;
+    ActionRequired action_required = 4;
+    FinalResponse  done            = 5;
+    ErrorResponse  error           = 6;
   }
 }
 
@@ -67,9 +69,9 @@ message ToolCallStart {
 }
 
 message ToolCallResult {
-  string tool_name  = 1;
-  string output     = 2; // stdout/stderr or file contents
-  bool   is_error   = 3; // Did the command itself fail
+  string tool_name   = 1;
+  bytes  output      = 2;
+  bool   is_error    = 3;
   string tool_use_id = 4;
 }
 
@@ -77,16 +79,18 @@ message ActionRequired {
   string prompt_id = 1;
   string question  = 2;
   enum ActionType {
-    CONFIRM_COMMAND     = 0;
-    REQUEST_INFORMATION = 1;
+    ACTION_TYPE_UNSPECIFIED = 0;
+    CONFIRM_COMMAND         = 1;
+    REQUEST_INFORMATION     = 2;
   }
   ActionType type = 3;
+  optional string tool_use_id = 4;
 }
 
 message FinalResponse {
-  string full_text         = 1;
-  int32  prompt_tokens     = 2;
-  int32  completion_tokens = 3;
+  reserved 1;  // was full_text; client accumulates TextChunks instead
+  uint32 prompt_tokens     = 2;
+  uint32 completion_tokens = 3;
 }
 
 message ErrorResponse {

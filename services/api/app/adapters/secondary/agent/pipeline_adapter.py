@@ -37,7 +37,7 @@ class PipelineAdapter(AgentPort):
     async def dispatch(
         self,
         prompt: str,
-        env_slug: str,
+        env_slug: str = "default",
         conversation_id: str | None = None,
         triggered_by: str = "system",
         trigger_payload: dict | None = None,
@@ -49,7 +49,6 @@ class PipelineAdapter(AgentPort):
             return None
         result = await dispatcher.dispatch(
             prompt=prompt,
-            env_slug=env_slug,
             conversation_id=conversation_id,
             triggered_by=triggered_by,
             trigger_payload=trigger_payload or {},
@@ -64,18 +63,6 @@ class PipelineAdapter(AgentPort):
     async def on_shutdown(self) -> None:
         """Gracefully shut down the Pipeline and its background tasks."""
         await self._pipeline.on_shutdown()
-
-    def get_env_status(self, env_slug: str) -> dict[str, object]:
-        """Delegate environment status query to the underlying Pipeline."""
-        return cast(dict[str, object], self._pipeline.get_env_status(env_slug))
-
-    def wake_env(self, env_slug: str) -> None:
-        """Delegate environment wake to the underlying Pipeline."""
-        self._pipeline.wake_env(env_slug)
-
-    def destroy_env(self, env_slug: str) -> None:
-        """Delegate environment destruction to the underlying Pipeline."""
-        self._pipeline.destroy_env(env_slug)
 
     def cancel_conversation(self, conversation_id: str) -> bool:
         """Delegate conversation cancel to the underlying Pipeline."""

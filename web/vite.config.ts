@@ -12,13 +12,10 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       port: 5173,
-      /** Acessível em todas as interfaces (útil no Windows / preview do IDE). */
       host: true,
-      /**
-       * No Docker com bind mount (sobretudo Windows), o watch nativo pode falhar;
-       * defina `VITE_DEV_POLLING=true` no compose de dev.
-       */
-      watch: env.VITE_DEV_POLLING === 'true' ? { usePolling: true } : undefined,
+      watch: {
+        ignored: ['**/.pnpm-store/**'],
+      },
       proxy: {
         '/api': {
           target: apiTarget,

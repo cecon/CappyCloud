@@ -194,6 +194,5 @@ def get_create_repo_env_uc(
 
 def get_delete_repo_env_uc(
     repo_envs: Annotated[RepoEnvironmentRepository, Depends(get_repo_env_repo)],
-    agent: Annotated[AgentPort, Depends(get_agent)],
 ) -> DeleteRepoEnvironment:
-    return DeleteRepoEnvironment(repo_envs, agent)
+    return DeleteRepoEnvironment(repo_envs)

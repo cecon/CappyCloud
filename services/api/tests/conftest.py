@@ -143,7 +143,7 @@ class FakeAgent(AgentPort):
     async def dispatch(  # type: ignore[override]
         self,
         prompt: str,
-        env_slug: str,
+        env_slug: str = "default",
         conversation_id: Any = None,
         triggered_by: str = "system",
         trigger_payload: Any = None,
@@ -155,15 +155,6 @@ class FakeAgent(AgentPort):
         pass
 
     async def on_shutdown(self) -> None:
-        pass
-
-    def get_env_status(self, user_id: str) -> dict:  # type: ignore[type-arg]
-        return {"status": "running"}
-
-    def wake_env(self, user_id: str) -> None:
-        pass
-
-    def destroy_env(self, env_slug: str) -> None:
         pass
 
     def cancel_conversation(self, conversation_id: str) -> bool:

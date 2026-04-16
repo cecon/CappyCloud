@@ -52,13 +52,12 @@ async def _get_worktree_container(
     user_id: str,
     db: AsyncSession,
 ) -> tuple[str, str]:
-    """Retorna (container_id, worktree_path) para a conversa ou lança 404/503."""
+    """Retorna (container_name, worktree_path) para a conversa ou lança 404."""
     row = await db.execute(
         text(
-            "SELECT cs.worktree_path, re.slug AS env_slug "
+            "SELECT cs.worktree_path "
             "FROM conversations c "
             "LEFT JOIN cappy_sessions cs ON cs.chat_id = c.id::text "
-            "LEFT JOIN repo_environments re ON re.id = c.environment_id "
             "WHERE c.id = :cid AND c.user_id = :uid"
         ),
         {"cid": str(conversation_id), "uid": user_id},
@@ -66,23 +65,12 @@ async def _get_worktree_container(
     conv = row.fetchone()
     if not conv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada")
-    if not conv.worktree_path or not conv.env_slug:
+    if not conv.worktree_path:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Sem worktree activa para esta conversa",
         )
-
-    env_row = await db.execute(
-        text("SELECT container_id FROM cappy_env_containers WHERE env_slug = :slug"),
-        {"slug": conv.env_slug},
-    )
-    env = env_row.fetchone()
-    if not env:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Ambiente não está a correr",
-        )
-    return env.container_id, conv.worktree_path
+    return "cappycloud-sandbox", conv.worktree_path
 
 
 # ── File listing ──────────────────────────────────────────────────────────────

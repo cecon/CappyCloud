@@ -44,7 +44,7 @@ async def create_pull_request(
 
     row = await db.execute(
         text(
-            "SELECT cs.worktree_path, c.base_branch, re.slug AS env_slug, re.repo_url "
+            "SELECT cs.worktree_path, c.base_branch, re.repo_url "
             "FROM conversations c "
             "LEFT JOIN cappy_sessions cs ON cs.chat_id = c.id::text "
             "LEFT JOIN repo_environments re ON re.id = c.environment_id "
@@ -58,17 +58,7 @@ async def create_pull_request(
             status_code=status.HTTP_404_NOT_FOUND, detail="Conversa ou worktree não encontrado."
         )
 
-    env_row = await db.execute(
-        text("SELECT container_id FROM cappy_env_containers WHERE env_slug = :slug"),
-        {"slug": conv.env_slug},
-    )
-    env = env_row.fetchone()
-    if not env:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Ambiente não encontrado."
-        )
-
-    head_branch = _get_current_branch(env.container_id, conv.worktree_path)
+    head_branch = _get_current_branch("cappycloud-sandbox", conv.worktree_path)
 
     m = re.search(r"github\.com[:/](.+?/.+?)(?:\.git)?$", conv.repo_url or "")
     if not m:
