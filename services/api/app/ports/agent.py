@@ -95,3 +95,13 @@ class AgentPort(ABC):
         Args:
             env_slug: Unique identifier (slug) of the repo environment.
         """
+
+    @abstractmethod
+    def cancel_conversation(self, conversation_id: str) -> bool:
+        """Cancel the active task for a conversation.
+
+        Returns True if there was a running task to cancel.
+
+        Args:
+            conversation_id: UUID of the conversation whose task to cancel.
+        """

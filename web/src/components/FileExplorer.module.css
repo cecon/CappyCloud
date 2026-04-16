@@ -1,0 +1,173 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--cc-surface);
+  overflow: hidden;
+}
+
+.loading,
+.error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 1rem;
+}
+
+/* ── Tree ──────────────────────────────────────────────────── */
+
+.tree {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 50%;
+  border-bottom: 1px solid var(--cc-outline-variant);
+}
+
+.treeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.75rem;
+  background: var(--cc-surface-variant);
+  border-bottom: 1px solid var(--cc-outline-variant);
+  flex-shrink: 0;
+}
+
+.treeScroll {
+  flex: 1;
+  overflow: auto;
+}
+
+.treeItem {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.2rem 0.5rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--cc-on-surface);
+  font-size: 0.8rem;
+  transition: background 0.1s;
+}
+
+.treeItem:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+.treeItemActive {
+  background: rgba(var(--cc-primary-rgb, 99,102,241), 0.15) !important;
+  color: var(--cc-primary);
+}
+
+.treeDir {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.2rem 0.5rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--cc-on-surface-variant);
+  font-size: 0.8rem;
+  transition: background 0.1s;
+}
+
+.treeDir:hover {
+  background: rgba(255,255,255,0.04);
+}
+
+.treeChevron {
+  font-size: 0.55rem;
+  width: 0.75rem;
+  flex-shrink: 0;
+  color: var(--cc-on-surface-variant);
+}
+
+.treeIcon {
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.treeLabel {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'Inter', sans-serif;
+}
+
+/* ── Viewer ────────────────────────────────────────────────── */
+
+.viewer {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.viewerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 0.75rem;
+  background: var(--cc-surface-variant);
+  border-bottom: 1px solid var(--cc-outline-variant);
+  flex-shrink: 0;
+  gap: 0.5rem;
+}
+
+.viewerPath {
+  font-size: 0.75rem;
+  color: var(--cc-on-surface);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewerClose {
+  background: none;
+  border: none;
+  color: var(--cc-on-surface-variant);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.25rem;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.viewerClose:hover {
+  background: rgba(255,255,255,0.08);
+  color: var(--cc-on-surface);
+}
+
+.viewerScroll {
+  flex: 1;
+  overflow: auto;
+}
+
+.fileLoading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.fileContent {
+  padding: 0.75rem;
+  margin: 0;
+  font-family: 'JetBrains Mono', 'Fira Mono', monospace;
+  font-size: 0.78rem;
+  color: var(--cc-on-surface);
+  white-space: pre;
+  tab-size: 2;
+  line-height: 1.55;
+}

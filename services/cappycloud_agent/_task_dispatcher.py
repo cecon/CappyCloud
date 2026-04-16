@@ -143,6 +143,22 @@ class TaskDispatcher:
             return True
         return False
 
+    async def cancel_task(self, task_id: str) -> bool:
+        """Cancela uma task em execução. Retorna True se havia algo a cancelar."""
+        runner = self._runners.pop(task_id, None)
+        if runner:
+            await runner.close()
+        await self._update_task_status(task_id, "error")
+        await self._insert_error_event(task_id, "Tarefa cancelada pelo utilizador.")
+        return True
+
+    async def cancel_for_conversation(self, conversation_id: str) -> bool:
+        """Cancela a task activa da conversa. Retorna True se havia algo a cancelar."""
+        task_id = await self.get_active_task_id(conversation_id)
+        if not task_id:
+            return False
+        return await self.cancel_task(task_id)
+
     # ── GC ────────────────────────────────────────────────────────
 
     async def gc(self) -> None:

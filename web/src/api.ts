@@ -170,6 +170,7 @@ export interface StreamHandlers {
   onToolResult(tool: ToolResultEvent): void
   onActionRequired(action: ActionRequiredEvent): void
   onError(message: string): void
+  signal?: AbortSignal
 }
 
 export async function fetchConversations(token: string): Promise<Conversation[]> {
@@ -218,6 +219,7 @@ export async function streamAssistantReply(
   content: string,
   handlers: StreamHandlers
 ): Promise<void> {
+  const { signal, ...eventHandlers } = handlers
   const res = await fetch(`/api/conversations/${conversationId}/messages/stream`, {
     method: 'POST',
     headers: {
@@ -225,6 +227,7 @@ export async function streamAssistantReply(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ content }),
+    signal,
   })
   if (!res.ok) {
     const err = await res.text()
@@ -251,17 +254,17 @@ export async function streamAssistantReply(
         switch (evt.type) {
           case 'text':
             accText += (evt.content as string) ?? ''
-            handlers.onText(accText)
+            eventHandlers.onText(accText)
             break
           case 'tool_start':
-            handlers.onToolStart({
+            eventHandlers.onToolStart({
               name: evt.name as string,
               input: (evt.input as string) ?? '',
               id: evt.id as string,
             })
             break
           case 'tool_result':
-            handlers.onToolResult({
+            eventHandlers.onToolResult({
               name: evt.name as string,
               output: (evt.output as string) ?? '',
               is_error: (evt.is_error as boolean) ?? false,
@@ -269,7 +272,7 @@ export async function streamAssistantReply(
             })
             break
           case 'action_required':
-            handlers.onActionRequired({
+            eventHandlers.onActionRequired({
               prompt_id: evt.prompt_id as string,
               question: evt.question as string,
               action_type: (evt.action_type as number) ?? 0,
@@ -277,7 +280,7 @@ export async function streamAssistantReply(
             })
             break
           case 'error':
-            handlers.onError((evt.message as string) ?? 'Erro desconhecido')
+            eventHandlers.onError((evt.message as string) ?? 'Erro desconhecido')
             break
         }
       } catch {
@@ -402,4 +405,83 @@ export async function getEnvironmentStatus(_token: string): Promise<EnvironmentS
  */
 export async function wakeEnvironment(_token: string): Promise<void> {
   // no-op — environments are now per-slug, not per-user
+}
+
+// ── Conversation cancel ───────────────────────────────────────────────────────
+
+export async function cancelConversation(token: string, conversationId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/conversations/${conversationId}/cancel`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return false
+    const data = (await res.json()) as { cancelled: boolean }
+    return data.cancelled ?? false
+  } catch {
+    return false
+  }
+}
+
+// ── Diff ──────────────────────────────────────────────────────────────────────
+
+export interface DiffLine {
+  type: 'add' | 'remove' | 'context'
+  content: string
+}
+
+export interface DiffHunk {
+  old_start: number
+  new_start: number
+  lines: DiffLine[]
+}
+
+export interface DiffFile {
+  path: string
+  added: number
+  removed: number
+  hunks: DiffHunk[]
+}
+
+export interface ConversationDiff {
+  base_branch: string
+  stats: { added: number; removed: number }
+  files: DiffFile[]
+}
+
+export async function fetchConversationDiff(
+  token: string,
+  conversationId: string
+): Promise<ConversationDiff> {
+  const res = await fetch(`/api/conversations/${conversationId}/diff`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error('Erro ao carregar diff')
+  return res.json()
+}
+
+// ── File explorer ─────────────────────────────────────────────────────────────
+
+export async function fetchConversationFiles(
+  token: string,
+  conversationId: string
+): Promise<{ worktree_path: string; files: string[] }> {
+  const res = await fetch(`/api/conversations/${conversationId}/files`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error('Erro ao listar ficheiros')
+  return res.json()
+}
+
+export async function fetchConversationFile(
+  token: string,
+  conversationId: string,
+  path: string
+): Promise<{ path: string; content: string }> {
+  const res = await fetch(
+    `/api/conversations/${conversationId}/file?path=${encodeURIComponent(path)}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  )
+  if (!res.ok) throw new Error('Erro ao ler ficheiro')
+  return res.json()
 }

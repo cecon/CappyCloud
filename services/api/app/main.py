@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 
 from app.adapters.primary.http import auth as auth_router
 from app.adapters.primary.http import conversation_diff as conv_diff_router
+from app.adapters.primary.http import conversation_files as conv_files_router
 from app.adapters.primary.http import conversation_pr as conv_pr_router
 from app.adapters.primary.http import conversations as conv_router
 from app.adapters.primary.http import environments as env_router
@@ -110,6 +111,7 @@ app.add_middleware(
 app.include_router(auth_router.router, prefix="/api")
 app.include_router(conv_router.router, prefix="/api")
 app.include_router(conv_diff_router.router, prefix="/api")
+app.include_router(conv_files_router.router, prefix="/api")
 app.include_router(conv_pr_router.router, prefix="/api")
 app.include_router(env_router.router, prefix="/api")
 app.include_router(routines_router.router, prefix="/api")

@@ -131,6 +131,11 @@ class Pipeline:
                 self._env_manager.destroy_env(env_slug), self._loop
             )
 
+    def cancel_conversation(self, conversation_id: str) -> bool:
+        if self._dispatcher is None:
+            return False
+        return self._run(self._dispatcher.cancel_for_conversation(conversation_id), timeout=15)
+
     def pipe(
         self,
         user_message: str,

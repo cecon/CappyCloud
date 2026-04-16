@@ -8,8 +8,12 @@ import {
   Text,
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import {
+  cancelConversation,
   createConversation,
+  fetchConversationDiff,
   fetchConversations,
   fetchMessages,
   fetchRepoEnvironments,
@@ -19,9 +23,12 @@ import {
   type ActionRequiredEvent,
   type ChatMessage,
   type Conversation,
+  type ConversationDiff,
   type RepoEnv,
 } from '../api'
 import { ActionRequiredCard } from '../components/ActionRequiredCard'
+import { DiffViewer } from '../components/DiffViewer'
+import { FileExplorer } from '../components/FileExplorer'
 import { ThinkingIndicator } from '../components/ThinkingIndicator'
 import { ToolCallCard, type ToolCallState } from '../components/ToolCallCard'
 import styles from '../components/chat.module.css'
@@ -68,6 +75,11 @@ export function ChatPage() {
   const [pendingTools, setPendingTools] = useState<ToolCallState[]>([])
   const [pendingAction, setPendingAction] = useState<ActionRequiredEvent | null>(null)
 
+  const [sidePanel, setSidePanel] = useState<'none' | 'diff' | 'files'>('none')
+  const [diff, setDiff] = useState<ConversationDiff | null>(null)
+  const [diffLoading, setDiffLoading] = useState(false)
+
+  const abortControllerRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -106,6 +118,32 @@ export function ChatPage() {
     return () => { cancelled = true }
   }, [activeId, token])
 
+  async function handleStop() {
+    abortControllerRef.current?.abort()
+    if (activeId) await cancelConversation(token, activeId)
+    setStreaming(false)
+    setPendingAction(null)
+  }
+
+  async function handleOpenDiff() {
+    if (!activeId) return
+    if (sidePanel === 'diff') { setSidePanel('none'); return }
+    setSidePanel('diff')
+    setDiffLoading(true)
+    try {
+      const d = await fetchConversationDiff(token, activeId)
+      setDiff(d)
+    } catch {
+      setDiff(null)
+    } finally {
+      setDiffLoading(false)
+    }
+  }
+
+  function handleToggleFiles() {
+    setSidePanel((p) => p === 'files' ? 'none' : 'files')
+  }
+
   async function handleNewChat() {
     const c = await createConversation(token, selectedEnvId, selectedBranch || null)
     setConversations((prev) => [c, ...prev])
@@ -127,6 +165,9 @@ export function ChatPage() {
     setPendingText('')
     setPendingTools([])
     setPendingAction(null)
+
+    const ctrl = new AbortController()
+    abortControllerRef.current = ctrl
 
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
@@ -166,23 +207,29 @@ export function ChatPage() {
             },
           ])
         },
+        signal: ctrl.signal,
       })
       setPendingText('')
       setPendingTools([])
       const msgs = await fetchMessages(token, c.id)
       setMessages(msgs)
     } catch (e) {
-      setMessages((m) => [
-        ...m,
-        {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          content: `**Erro:** ${e instanceof Error ? e.message : String(e)}`,
-          created_at: new Date().toISOString(),
-        },
-      ])
+      if (e instanceof Error && e.name === 'AbortError') {
+        // Cancelled by user — silently finalize
+      } else {
+        setMessages((m) => [
+          ...m,
+          {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: `**Erro:** ${e instanceof Error ? e.message : String(e)}`,
+            created_at: new Date().toISOString(),
+          },
+        ])
+      }
     } finally {
       setStreaming(false)
+      abortControllerRef.current = null
     }
   }
 
@@ -195,6 +242,9 @@ export function ChatPage() {
     setPendingText('')
     setPendingTools([])
     setPendingAction(null)
+
+    const ctrl = new AbortController()
+    abortControllerRef.current = ctrl
 
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
@@ -234,23 +284,29 @@ export function ChatPage() {
             },
           ])
         },
+        signal: ctrl.signal,
       })
       setPendingText('')
       setPendingTools([])
       const msgs = await fetchMessages(token, activeId)
       setMessages(msgs)
     } catch (e) {
-      setMessages((m) => [
-        ...m,
-        {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          content: `**Erro:** ${e instanceof Error ? e.message : String(e)}`,
-          created_at: new Date().toISOString(),
-        },
-      ])
+      if (e instanceof Error && e.name === 'AbortError') {
+        // Cancelled by user — silently finalize
+      } else {
+        setMessages((m) => [
+          ...m,
+          {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: `**Erro:** ${e instanceof Error ? e.message : String(e)}`,
+            created_at: new Date().toISOString(),
+          },
+        ])
+      }
     } finally {
       setStreaming(false)
+      abortControllerRef.current = null
     }
   }
 
@@ -463,6 +519,7 @@ export function ChatPage() {
               setInput={setInput}
               inputRef={inputRef}
               onSend={() => handleSend()}
+              onStop={handleStop}
               onActionReply={handleActionReply}
               activeEnvSlug={activeEnvSlug}
               envs={envs}
@@ -471,6 +528,13 @@ export function ChatPage() {
               setSelectedEnvId={setSelectedEnvId}
               selectedBranch={selectedBranch}
               setSelectedBranch={setSelectedBranch}
+              token={token}
+              conversationId={activeId!}
+              sidePanel={sidePanel}
+              diff={diff}
+              diffLoading={diffLoading}
+              onOpenDiff={handleOpenDiff}
+              onToggleFiles={handleToggleFiles}
             />
           )}
         </main>
@@ -652,6 +716,7 @@ interface ActiveChatProps {
   setInput: (v: string) => void
   inputRef: React.RefObject<HTMLTextAreaElement>
   onSend: () => void
+  onStop: () => void
   onActionReply: (r: string) => void
   activeEnvSlug: string | null
   activeTitle: string
@@ -660,13 +725,21 @@ interface ActiveChatProps {
   setSelectedEnvId: (id: string | null) => void
   selectedBranch: string
   setSelectedBranch: (v: string) => void
+  token: string
+  conversationId: string
+  sidePanel: 'none' | 'diff' | 'files'
+  diff: ConversationDiff | null
+  diffLoading: boolean
+  onOpenDiff: () => void
+  onToggleFiles: () => void
 }
 
 function ActiveChat({
   messages, pendingText, pendingTools, pendingAction,
   showThinking, streaming, input, setInput, inputRef,
-  onSend, onActionReply, activeEnvSlug, activeTitle, envs,
+  onSend, onStop, onActionReply, activeEnvSlug, activeTitle, envs,
   selectedEnvId, setSelectedEnvId, selectedBranch, setSelectedBranch,
+  token, conversationId, sidePanel, diff, diffLoading, onOpenDiff, onToggleFiles,
 }: ActiveChatProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -683,7 +756,7 @@ function ActiveChat({
         <span className={styles.chatTitle}>{activeTitle}</span>
         <div className={styles.chatTitleEnv}>
           <span className={styles.icon} style={{ fontSize: '0.875rem', color: activeEnvSlug ? 'var(--cc-secondary)' : 'var(--cc-on-surface-variant)', opacity: activeEnvSlug ? 1 : 0.4 }}>
-            {activeEnvSlug ? 'inventory_2' : 'inventory_2'}
+            inventory_2
           </span>
           <span className={activeEnvSlug ? styles.chatTitleEnvActive : styles.chatTitleEnvEmpty}>
             {activeEnvSlug
@@ -691,30 +764,74 @@ function ActiveChat({
               : 'Sem ambiente'}
           </span>
         </div>
+        {/* Panel buttons */}
+        <div className={styles.chatTitleActions}>
+          {activeEnvSlug && (
+            <>
+              <button
+                className={`${styles.panelBtn} ${sidePanel === 'files' ? styles.panelBtnActive : ''}`}
+                onClick={onToggleFiles}
+                title="Explorador de ficheiros"
+              >
+                <span className={styles.icon}>folder_open</span>
+                <span>Ficheiros</span>
+              </button>
+              <button
+                className={`${styles.panelBtn} ${sidePanel === 'diff' ? styles.panelBtnActive : ''}`}
+                onClick={onOpenDiff}
+                title="Ver diff"
+              >
+                <span className={styles.icon}>difference</span>
+                <span>Diff</span>
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Messages */}
-      <ScrollArea className={styles.messageArea} viewportRef={scrollRef} type="auto">
-        <Stack gap="sm" p="md">
-          {messages.map((m) => (
-            <PaperMessage key={m.id} role={m.role} content={m.content} />
-          ))}
-
-          {streaming && (
-            <Stack gap="xs">
-              {pendingTools.map((tool) => (
-                <ToolCallCard key={tool.id} tool={tool} />
+      {/* Body: messages + optional side panel */}
+      <div className={styles.chatBody}>
+        {/* Messages column */}
+        <div className={styles.chatMessages}>
+          <ScrollArea className={styles.messageArea} viewportRef={scrollRef} type="auto">
+            <Stack gap="sm" p="md">
+              {messages.map((m) => (
+                <PaperMessage key={m.id} role={m.role} content={m.content} />
               ))}
-              {showThinking && <ThinkingIndicator />}
-              {pendingText && <PaperMessage role="assistant" content={pendingText} />}
-            </Stack>
-          )}
 
-          {pendingAction && (
-            <ActionRequiredCard action={pendingAction} onReply={onActionReply} />
-          )}
-        </Stack>
-      </ScrollArea>
+              {streaming && (
+                <Stack gap="xs">
+                  {pendingTools.map((tool) => (
+                    <ToolCallCard key={tool.id} tool={tool} />
+                  ))}
+                  {showThinking && <ThinkingIndicator />}
+                  {pendingText && <PaperMessage role="assistant" content={pendingText} />}
+                </Stack>
+              )}
+
+              {pendingAction && (
+                <ActionRequiredCard action={pendingAction} onReply={onActionReply} />
+              )}
+            </Stack>
+          </ScrollArea>
+        </div>
+
+        {/* Side panel */}
+        {sidePanel !== 'none' && (
+          <div className={styles.sidePanel}>
+            {sidePanel === 'diff' && (
+              diffLoading
+                ? <div className={styles.sidePanelLoading}><Text size="xs" c="dimmed">A carregar diff…</Text></div>
+                : diff
+                  ? <DiffViewer diff={diff} />
+                  : <div className={styles.sidePanelLoading}><Text size="xs" c="dimmed">Sem diff disponível</Text></div>
+            )}
+            {sidePanel === 'files' && (
+              <FileExplorer token={token} conversationId={conversationId} />
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Compact input bar */}
       <div className={styles.chatInputBar}>
@@ -734,6 +851,11 @@ function ActiveChat({
             }}
             disabled={streaming && !pendingAction}
           />
+          {streaming ? (
+            <button className={styles.stopBtn} onClick={onStop} title="Parar agente">
+              <span className={styles.icon}>stop</span>
+            </button>
+          ) : (
           <button
             className={styles.sendBtn}
             onClick={onSend}
@@ -741,6 +863,7 @@ function ActiveChat({
           >
             <span className={styles.icon}>keyboard_return</span>
           </button>
+          )}
         </div>
 
         {/* Context status bar — repo + branch selector */}
@@ -809,17 +932,23 @@ function PaperMessage({ role, content }: { role: string; content: string }) {
       >
         {isUser ? 'Tu' : 'Agente'}
       </Text>
-      <Text
-        size="sm"
-        style={{
-          color: isUser ? '#fff' : 'var(--cc-on-surface)',
-          fontFamily: 'Inter, sans-serif',
-          lineHeight: 1.6,
-          whiteSpace: 'pre-wrap',
-        }}
-      >
-        {content}
-      </Text>
+      {isUser ? (
+        <Text
+          size="sm"
+          style={{
+            color: '#fff',
+            fontFamily: 'Inter, sans-serif',
+            lineHeight: 1.6,
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          {content}
+        </Text>
+      ) : (
+        <div className={styles.markdownBody}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+        </div>
+      )}
     </div>
   )
 }

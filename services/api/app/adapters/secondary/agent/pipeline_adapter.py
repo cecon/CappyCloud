@@ -76,3 +76,8 @@ class PipelineAdapter(AgentPort):
     def destroy_env(self, env_slug: str) -> None:
         """Delegate environment destruction to the underlying Pipeline."""
         self._pipeline.destroy_env(env_slug)
+
+    def cancel_conversation(self, conversation_id: str) -> bool:
+        """Delegate conversation cancel to the underlying Pipeline."""
+        result = self._pipeline.cancel_conversation(conversation_id)
+        return bool(result)

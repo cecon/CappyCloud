@@ -79,6 +79,7 @@ omit = [
     "app/adapters/secondary/agent/pipeline_adapter.py",
     # HTTP adapter layer (thin glue: parse → call → return) — tested via integration
     "app/adapters/primary/http/conversation_diff.py",
+    "app/adapters/primary/http/conversation_files.py",
     "app/adapters/primary/http/conversation_pr.py",
     "app/adapters/primary/http/routines.py",
     "app/adapters/primary/http/tasks.py",

@@ -166,6 +166,9 @@ class FakeAgent(AgentPort):
     def destroy_env(self, env_slug: str) -> None:
         pass
 
+    def cancel_conversation(self, conversation_id: str) -> bool:
+        return False
+
 
 # ---------------------------------------------------------------------------
 # Pytest Fixtures
