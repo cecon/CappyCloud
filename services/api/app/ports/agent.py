@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Generator
+from typing import Optional
 
 
 class AgentPort(ABC):
@@ -32,6 +33,30 @@ class AgentPort(ABC):
             model_id: Identifier for the model/pipeline variant.
             messages: Full conversation history as role/content dicts.
             body: Request metadata (user_id, conversation_id, env_slug, etc.).
+        """
+
+    @abstractmethod
+    async def dispatch(
+        self,
+        prompt: str,
+        env_slug: str,
+        conversation_id: Optional[str] = None,
+        triggered_by: str = "system",
+        trigger_payload: Optional[dict] = None,
+        base_branch: str = "",
+    ) -> Optional[str]:
+        """Dispatch an agent task and return the task_id.
+
+        Unlike pipe(), this is fire-and-forget: it creates the task in the DB
+        and starts execution in the background. Returns task_id or None.
+
+        Args:
+            prompt: The instruction/question for the agent.
+            env_slug: Target environment slug.
+            conversation_id: Optional conversation to associate the task with.
+            triggered_by: Source of the trigger (user/github/gitlab/routine/schedule).
+            trigger_payload: Additional metadata about the trigger.
+            base_branch: Git base branch override (empty = use repo default).
         """
 
     @abstractmethod
@@ -71,3 +96,4 @@ class AgentPort(ABC):
         Args:
             env_slug: Unique identifier (slug) of the repo environment.
         """
+

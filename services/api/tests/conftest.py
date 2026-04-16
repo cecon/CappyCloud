@@ -140,6 +140,17 @@ class FakeAgent(AgentPort):
         done = json.dumps({"type": "done"})
         yield f"data: {done}\n\n"
 
+    async def dispatch(  # type: ignore[override]
+        self,
+        prompt: str,
+        env_slug: str,
+        conversation_id: Any = None,
+        triggered_by: str = "system",
+        trigger_payload: Any = None,
+        base_branch: str = "",
+    ) -> str:
+        return str(uuid.uuid4())
+
     async def on_startup(self) -> None:
         pass
 

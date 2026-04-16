@@ -22,6 +22,13 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:5173,http://localhost:38081"
 
+    # GitHub integration
+    github_token: str = ""
+    github_webhook_secret: str = ""
+
+    # GitLab integration
+    gitlab_webhook_secret: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

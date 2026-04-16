@@ -9,6 +9,7 @@ import asyncio
 import json
 import uuid
 from collections.abc import AsyncGenerator
+from typing import Optional
 
 from app.domain.entities import Conversation, Message
 from app.ports.agent import AgentPort
@@ -93,15 +94,19 @@ class StreamMessage:
 
     Responsibilities:
     1. Verify conversation ownership.
-    2. Persist the user message.
-    3. Optionally auto-title the conversation.
-    4. Load history and call the agent (passing env_slug if set).
-    5. Yield SSE bytes to the HTTP layer.
-    6. Persist the accumulated assistant response after streaming.
+    2. Collect unbundled diff_comments and inject into the prompt.
+    3. Persist the user message.
+    4. Optionally auto-title the conversation.
+    5. Call agent.pipe() — which dispatches a TaskRunner and streams agent_events.
+    6. Yield SSE bytes to the HTTP layer.
+    7. Persist the accumulated assistant response after streaming.
+
+    The SSE stream includes a `cursor` field on each event (the agent_event.id).
+    Clients that reconnect pass `cursor` so they receive only unseen events.
 
     Usage::
 
-        stream = await use_case.execute(conv_id, user_id, content)
+        stream = await use_case.execute(conv_id, user_id, content, cursor=last_event_id)
         return StreamingResponse(stream, media_type="text/event-stream")
     """
 
@@ -121,8 +126,9 @@ class StreamMessage:
         user_id: uuid.UUID,
         content: str,
         model_id: str = "cappycloud",
+        cursor: Optional[int] = None,
     ) -> AsyncGenerator[bytes, None]:
-        """Validate ownership, persist user msg, return streaming async generator.
+        """Validate ownership, inject diff comments, persist user msg, stream events.
 
         Raises:
             LookupError: if conversation not found or not owned by user.
@@ -131,12 +137,15 @@ class StreamMessage:
         if not conv:
             raise LookupError("Conversa não encontrada.")
 
+        # Collect and bundle pending diff_comments into the prompt
+        injected_prompt = await self._inject_diff_comments(conversation_id, content)
+
         await self._messages.save(
             Message(
                 id=uuid.uuid4(),
                 conversation_id=conv.id,
                 role="user",
-                content=content,
+                content=content,  # store original, not the injected version
             )
         )
 
@@ -147,9 +156,6 @@ class StreamMessage:
         history = await self._messages.list_by_conversation(conversation_id)
         messages_payload = [{"role": m.role, "content": m.content} for m in history]
 
-        # base_branch: branch de origem da sessão (selecionado pelo utilizador na UI).
-        # Vazio significa "usar o branch canónico de repo_environments",
-        # resolvido internamente pelo EnvironmentManager.
         base_branch = conv.base_branch or ""
 
         pipeline_body = {
@@ -158,11 +164,56 @@ class StreamMessage:
             "user": {"id": str(user_id)},
             "env_slug": conv.env_slug or "default",
             "base_branch": base_branch,
+            "cursor": cursor,  # passed through to pipe() for SSE resumption
         }
 
         return self._stream_chunks(
-            content, model_id, messages_payload, pipeline_body, conversation_id
+            injected_prompt, model_id, messages_payload, pipeline_body, conversation_id
         )
+
+    async def _inject_diff_comments(
+        self, conversation_id: uuid.UUID, content: str
+    ) -> str:
+        """Fetch unbundled diff_comments and prepend them to the prompt.
+
+        After fetching, marks them as bundled so they are not injected again.
+        Returns the augmented prompt string.
+        """
+        try:
+            from app.infrastructure.database import async_session_factory
+            from sqlalchemy import text
+
+            async with async_session_factory() as session:
+                rows = await session.execute(
+                    text(
+                        "SELECT id, file_path, line, content FROM diff_comments "
+                        "WHERE conversation_id = :cid AND bundled_at IS NULL "
+                        "ORDER BY file_path, line"
+                    ),
+                    {"cid": str(conversation_id)},
+                )
+                comments = rows.fetchall()
+                if not comments:
+                    return content
+
+                lines = []
+                for row in comments:
+                    lines.append(f"at `{row.file_path}:{row.line}`: {row.content}")
+
+                ids = [str(row.id) for row in comments]
+                id_list = ", ".join(f"'{i}'" for i in ids)
+                await session.execute(
+                    text(
+                        f"UPDATE diff_comments SET bundled_at = NOW() WHERE id IN ({id_list})"
+                    )
+                )
+                await session.commit()
+
+                injected = "\n".join(lines) + "\n\n" + content
+                return injected
+        except Exception:
+            # Never block the message if diff_comments injection fails
+            return content
 
     async def _stream_chunks(
         self,
@@ -212,3 +263,4 @@ class StreamMessage:
                     content=error_content,
                 )
             )
+

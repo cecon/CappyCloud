@@ -7,7 +7,7 @@ Routers and use cases depend only on AgentPort; they never import Pipeline direc
 from __future__ import annotations
 
 from collections.abc import Generator
-from typing import cast
+from typing import Optional, cast
 
 from app.ports.agent import AgentPort
 
@@ -34,6 +34,28 @@ class PipelineAdapter(AgentPort):
         result = self._pipeline.pipe(user_message, model_id, messages, body)
         return cast(Generator[str, None, None], result)
 
+    async def dispatch(
+        self,
+        prompt: str,
+        env_slug: str,
+        conversation_id: Optional[str] = None,
+        triggered_by: str = "system",
+        trigger_payload: Optional[dict] = None,
+        base_branch: str = "",
+    ) -> Optional[str]:
+        """Dispatch a task via the TaskDispatcher and return task_id."""
+        dispatcher = self._pipeline._dispatcher
+        if dispatcher is None:
+            return None
+        return await dispatcher.dispatch(
+            prompt=prompt,
+            env_slug=env_slug,
+            conversation_id=conversation_id,
+            triggered_by=triggered_by,
+            trigger_payload=trigger_payload or {},
+            base_branch=base_branch,
+        )
+
     async def on_startup(self) -> None:
         """Initialise the Pipeline (connects to Docker, Redis, PostgreSQL)."""
         await self._pipeline.on_startup()
@@ -53,3 +75,4 @@ class PipelineAdapter(AgentPort):
     def destroy_env(self, env_slug: str) -> None:
         """Delegate environment destruction to the underlying Pipeline."""
         self._pipeline.destroy_env(env_slug)
+
