@@ -549,7 +549,7 @@ export function ChatPage() {
 interface EmptyStateProps {
   input: string
   setInput: (v: string) => void
-  inputRef: React.RefObject<HTMLTextAreaElement>
+  inputRef: React.RefObject<HTMLTextAreaElement | null>
   onExecute: (text: string) => void
   envs: RepoEnv[]
   selectedEnvId: string | null
@@ -714,7 +714,7 @@ interface ActiveChatProps {
   streaming: boolean
   input: string
   setInput: (v: string) => void
-  inputRef: React.RefObject<HTMLTextAreaElement>
+  inputRef: React.RefObject<HTMLTextAreaElement | null>
   onSend: () => void
   onStop: () => void
   onActionReply: (r: string) => void
