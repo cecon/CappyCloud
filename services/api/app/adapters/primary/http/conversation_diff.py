@@ -35,7 +35,7 @@ async def get_conversation_status(
         {"cid": str(conversation_id), "uid": str(current.id)},
     )
     if not conv_row.fetchone():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada")
 
     task_row = await db.execute(
         text(
@@ -107,7 +107,7 @@ async def get_conversation_diff(
     )
     conv = row.fetchone()
     if not conv:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada")
 
     base_branch = conv.base_branch or "main"
     if not conv.worktree_path or not conv.env_slug:
@@ -219,7 +219,7 @@ async def add_diff_comment(
         {"cid": str(conversation_id), "uid": str(current.id)},
     )
     if not conv_row.fetchone():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada")
 
     comment_id = str(_uuid.uuid4())
     await db.execute(
@@ -247,7 +247,7 @@ async def list_diff_comments(
         {"cid": str(conversation_id), "uid": str(current.id)},
     )
     if not conv_row.fetchone():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada")
 
     q = (
         "SELECT id, file_path, line, content, bundled_at, created_at "

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def register_routine_schedules(request: "Request", routine_id: str, body: "RoutineIn") -> None:
+def register_routine_schedules(request: Request, routine_id: str, body: RoutineIn) -> None:
     """Registra triggers do tipo 'schedule' no APScheduler."""
     try:
         scheduler = request.app.state.scheduler
@@ -74,7 +74,7 @@ def register_routine_schedules(request: "Request", routine_id: str, body: "Routi
             log.error("Failed to register schedule for routine %s: %s", routine_id, exc)
 
 
-def unregister_routine_schedules(request: "Request", routine_id: str) -> None:
+def unregister_routine_schedules(request: Request, routine_id: str) -> None:
     """Remove todos os jobs do APScheduler para esta routine."""
     try:
         scheduler = request.app.state.scheduler

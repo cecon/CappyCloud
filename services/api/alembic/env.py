@@ -15,7 +15,7 @@ from sqlalchemy.pool import NullPool
 # Make sure 'app' package is importable when running alembic from services/api/
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.infrastructure.orm_models import Base  # noqa: E402
+from app.infrastructure.orm_models import Base
 
 config = context.config
 
