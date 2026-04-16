@@ -50,7 +50,7 @@ class AgentTask(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    conversation: Mapped["Conversation | None"] = relationship(  # type: ignore[name-defined]
+    conversation: Mapped["Conversation | None"] = relationship(
         "Conversation", back_populates="agent_tasks"
     )
     events: Mapped[list[AgentEvent]] = relationship(
@@ -117,7 +117,7 @@ class DiffComment(Base):
     bundled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    conversation: Mapped["Conversation"] = relationship(  # type: ignore[name-defined]
+    conversation: Mapped["Conversation"] = relationship(
         "Conversation", back_populates="diff_comments"
     )
 
@@ -147,12 +147,10 @@ class Routine(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    environment: Mapped["RepoEnvironment"] = relationship(  # type: ignore[name-defined]
+    environment: Mapped["RepoEnvironment"] = relationship(
         "RepoEnvironment", back_populates="routines"
     )
-    created_by_user: Mapped["User"] = relationship(  # type: ignore[name-defined]
-        "User", back_populates="routines"
-    )
+    created_by_user: Mapped["User"] = relationship("User", back_populates="routines")
     runs: Mapped[list[RoutineRun]] = relationship(
         "RoutineRun", back_populates="routine", cascade="all, delete-orphan"
     )
@@ -199,6 +197,6 @@ class PrSubscription(Base):
     auto_fix_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    conversation: Mapped["Conversation"] = relationship(  # type: ignore[name-defined]
+    conversation: Mapped["Conversation"] = relationship(
         "Conversation", back_populates="pr_subscriptions"
     )

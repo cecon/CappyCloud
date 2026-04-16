@@ -82,9 +82,7 @@ class RepoEnvironment(Base):
     conversations: Mapped[list[Conversation]] = relationship(
         "Conversation", back_populates="environment"
     )
-    routines: Mapped[list["Routine"]] = relationship(  # type: ignore[name-defined]
-        "Routine", back_populates="environment"
-    )
+    routines: Mapped[list["Routine"]] = relationship("Routine", back_populates="environment")
 
 
 class User(Base):
@@ -100,7 +98,7 @@ class User(Base):
     conversations: Mapped[list[Conversation]] = relationship(
         "Conversation", back_populates="user", cascade="all, delete-orphan"
     )
-    routines: Mapped[list["Routine"]] = relationship(  # type: ignore[name-defined]
+    routines: Mapped[list["Routine"]] = relationship(
         "Routine", back_populates="created_by_user", cascade="all, delete-orphan"
     )
 
@@ -136,13 +134,13 @@ class Conversation(Base):
     messages: Mapped[list[Message]] = relationship(
         "Message", back_populates="conversation", cascade="all, delete-orphan"
     )
-    agent_tasks: Mapped[list["AgentTask"]] = relationship(  # type: ignore[name-defined]
+    agent_tasks: Mapped[list["AgentTask"]] = relationship(
         "AgentTask", back_populates="conversation", cascade="all, delete-orphan"
     )
-    diff_comments: Mapped[list["DiffComment"]] = relationship(  # type: ignore[name-defined]
+    diff_comments: Mapped[list["DiffComment"]] = relationship(
         "DiffComment", back_populates="conversation", cascade="all, delete-orphan"
     )
-    pr_subscriptions: Mapped[list["PrSubscription"]] = relationship(  # type: ignore[name-defined]
+    pr_subscriptions: Mapped[list["PrSubscription"]] = relationship(
         "PrSubscription", back_populates="conversation", cascade="all, delete-orphan"
     )
 
