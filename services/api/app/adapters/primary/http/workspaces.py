@@ -63,8 +63,10 @@ async def list_branches(slug: str) -> BranchesOut:
 
     try:
         result = subprocess.run(
-            ["docker", "exec", _SANDBOX_CONTAINER,
-             "git", "-C", repo_path, "branch", "-r", "--format=%(refname:short)"],
+            [
+                "docker", "exec", _SANDBOX_CONTAINER,
+                "git", "-C", repo_path, "branch", "-r", "--format=%(refname:short)",
+            ],
             capture_output=True,
             text=True,
             timeout=15,
