@@ -516,20 +516,20 @@ function EmptyState({
   selectedBranch, setSelectedBranch, token,
 }: EmptyStateProps) {
   const [branches, setBranches] = useState<string[]>([])
-  const [branchesLoading, setBranchesLoading] = useState(false)
+  const [loadedSlug, setLoadedSlug] = useState('')
+  const branchesLoading = !!selectedSlug && loadedSlug !== selectedSlug
 
-  // Busca branches quando o repo muda
   useEffect(() => {
     if (!selectedSlug) return
     let cancelled = false
-    setBranchesLoading(true)
     fetchBranches(token, selectedSlug).then(({ branches: list, default: def }) => {
       if (cancelled) return
       setBranches(list)
+      setLoadedSlug(selectedSlug)
       setSelectedBranch((prev) => (list.includes(prev) ? prev : def))
-    }).finally(() => { if (!cancelled) setBranchesLoading(false) })
+    })
     return () => { cancelled = true }
-  }, [selectedSlug, token])
+  }, [selectedSlug, token, setSelectedBranch])
 
   function handleKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey && !streaming) {

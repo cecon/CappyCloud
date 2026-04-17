@@ -1,17 +1,4 @@
-"""
-Persistent, resumable gRPC session for a single (user_id, chat_id).
-
-Runs the openclaude bidirectional gRPC stream as a long-lived asyncio Task.
-The session is PAUSED when an ActionRequired event arrives, and RESUMED
-when the user provides their answer via the next pipe() call.
-
-Lifecycle:
-  1. GrpcSession.start(message)     → seeds the request queue, starts the Task
-  2. GrpcSession.drain_to(q)        → called by pipe() to stream output into a Queue
-  3. ActionRequired arrives          → drain_to() stops; session stays alive, paused
-  4. GrpcSession.send_input(reply)  → user answered; resumes the Task
-  5. GrpcSession.send_message(msg)  → new conversation turn (no pending action)
-  6. done / error event             → Task ends; session marked dead
+"""Persistent, resumable gRPC session for a single (user_id, chat_id).
 
 Generated stubs (openclaude_pb2) must be on PYTHONPATH (e.g. /app in Docker).
 """
@@ -20,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
 from queue import Queue
 from typing import Optional
 
@@ -28,38 +14,11 @@ import grpc.aio
 import openclaude_pb2  # type: ignore[import-not-found]
 import openclaude_pb2_grpc  # type: ignore[import-not-found]
 
+from ._grpc_helpers import PendingAction, connect_with_retry, parse_choices
+
 log = logging.getLogger(__name__)
 
-# Sentinel placed in the output queue to signal end-of-stream
 _DONE = object()
-
-
-@dataclass
-class PendingAction:
-    """An ActionRequired event that needs a user response before the stream continues."""
-
-    prompt_id: str
-    question: str
-    action_type: int  # 0 = CONFIRM_COMMAND (yes/no), 1 = REQUEST_INFORMATION (free text)
-    choices: list[str] | None = None  # Parsed options when question contains [A / B / C]
-
-    @property
-    def is_confirmation(self) -> bool:
-        return self.action_type == 0
-
-
-def _parse_choices(question: str) -> list[str] | None:
-    """
-    Extract bracket-formatted choices from a question string.
-
-    Example: "Qual módulo? [PDV / Financeiro / Relatórios]" → ["PDV", "Financeiro", "Relatórios"]
-    """
-    import re
-    m = re.search(r"\[([^\]]+)\]", question)
-    if not m:
-        return None
-    parts = [c.strip() for c in re.split(r"/|,|\|", m.group(1)) if c.strip()]
-    return parts if len(parts) > 1 else None
 
 
 class GrpcSession:
@@ -91,47 +50,8 @@ class GrpcSession:
     # ── Startup ──────────────────────────────────────────────────
 
     async def start(self, message: str) -> None:
-        """Open the gRPC channel, seed the first ChatRequest, launch the Task.
-
-        Retries the channel connection up to _CONNECT_RETRIES times so that
-        transient gRPC failures (e.g. sandbox restarting) do not permanently
-        break a conversation.
-        """
-        _CONNECT_RETRIES = 4
-        _RETRY_DELAY = [1.0, 2.0, 4.0]  # seconds between retries
-
-        last_exc: Exception | None = None
-        for attempt in range(_CONNECT_RETRIES):
-            try:
-                channel = grpc.aio.insecure_channel(
-                    f"{self._ip}:{self._port}",
-                    options=[
-                        ("grpc.keepalive_time_ms", 10_000),
-                        ("grpc.keepalive_timeout_ms", 5_000),
-                        ("grpc.keepalive_permit_without_calls", True),
-                    ],
-                )
-                # Probe the channel before committing to it.
-                await asyncio.wait_for(channel.channel_ready(), timeout=8.0)
-                self._channel = channel
-                break
-            except Exception as exc:
-                last_exc = exc
-                log.warning(
-                    "[%s] gRPC channel not ready (attempt %d/%d): %s",
-                    self._session_id,
-                    attempt + 1,
-                    _CONNECT_RETRIES,
-                    exc,
-                )
-                if attempt < len(_RETRY_DELAY):
-                    await asyncio.sleep(_RETRY_DELAY[attempt])
-        else:
-            raise RuntimeError(
-                f"Não foi possível conectar ao sandbox gRPC após {_CONNECT_RETRIES} "
-                f"tentativas ({self._ip}:{self._port}). Último erro: {last_exc}"
-            )
-
+        """Open the gRPC channel, seed the first ChatRequest, launch the Task."""
+        self._channel = await connect_with_retry(self._ip, self._port, self._session_id)
         stub = openclaude_pb2_grpc.AgentServiceStub(self._channel)
 
         await self._req_queue.put(
@@ -281,7 +201,7 @@ class GrpcSession:
                         prompt_id=ar.prompt_id,
                         question=ar.question,
                         action_type=ar.type,
-                        choices=_parse_choices(ar.question),
+                        choices=parse_choices(ar.question),
                     )
                     self.pending_action = action
                     await self._out_queue.put(("action_required", action))

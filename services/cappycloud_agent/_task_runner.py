@@ -22,7 +22,8 @@ from typing import Optional
 
 import asyncpg
 
-from ._grpc_session import GrpcSession, PendingAction
+from ._grpc_helpers import PendingAction
+from ._grpc_session import GrpcSession
 
 log = logging.getLogger(__name__)
 
