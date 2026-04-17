@@ -84,7 +84,7 @@ class AiModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     provider: Mapped["AiProvider"] = relationship("AiProvider", back_populates="models")
-    conversations: Mapped[list["Conversation"]] = relationship(
+    conversations: Mapped[list["Conversation"]] = relationship(  # type: ignore[name-defined]
         "Conversation", back_populates="ai_model"
     )
 
