@@ -45,6 +45,5 @@ async def init_db() -> None:
     _stdout, stderr = await result.communicate()
     if result.returncode != 0:
         raise RuntimeError(
-            f"Alembic upgrade failed (exit {result.returncode}):\n"
-            f"{stderr.decode(errors='replace')}"
+            f"Alembic upgrade failed (exit {result.returncode}):\n{stderr.decode(errors='replace')}"
         )
