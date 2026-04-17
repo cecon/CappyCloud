@@ -20,6 +20,9 @@ OPENAI_MODEL="${OPENAI_MODEL:-anthropic/claude-3.5-sonnet}"
 CLAUDE_CODE_USE_OPENAI="${CLAUDE_CODE_USE_OPENAI:-1}"
 GRPC_HOST="${GRPC_HOST:-0.0.0.0}"
 GRPC_PORT="${GRPC_PORT:-50051}"
+# Auto-aprova chamadas de ferramentas (skip do prompt action_required no gRPC).
+# Set explicitly to "0" to require manual approval per tool call.
+OPENCLAUDE_AUTO_APPROVE="${OPENCLAUDE_AUTO_APPROVE:-1}"
 WORKSPACE_REPOS="${WORKSPACE_REPOS:-}"
 WORKSPACE_BRANCH="${WORKSPACE_BRANCH:-main}"
 GIT_AUTH_TOKEN="${GIT_AUTH_TOKEN:-}"
@@ -172,6 +175,7 @@ export OPENAI_API_KEY="${OPENAI_API_KEY}"
 export OPENAI_MODEL="${OPENAI_MODEL}"
 export GRPC_HOST="${GRPC_HOST}"
 export GRPC_PORT="${GRPC_PORT}"
+export OPENCLAUDE_AUTO_APPROVE="${OPENCLAUDE_AUTO_APPROVE}"
 
 # ── Start the single openclaude gRPC server ───────────────────
 echo ""

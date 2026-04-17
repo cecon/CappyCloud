@@ -31,12 +31,17 @@ ENV PATH="/root/.bun/bin:${PATH}"
 
 # ── Clone and build openclaude from source ────────────────────
 # We clone at build time so the image is self-contained.
-# Patch: Grep tool schema accepts `n` as alias for `-n` (some models emit `n`).
+# Patches:
+#   - grep-tool-n-alias.patch: Grep tool schema accepts `n` as alias for `-n`.
+#   - auto-approve-tools.patch: gRPC server auto-allows tool calls when
+#     OPENCLAUDE_AUTO_APPROVE=1 (skips action_required prompts).
 COPY patches/grep-tool-n-alias.patch /tmp/grep-tool-n-alias.patch
+COPY patches/auto-approve-tools.patch /tmp/auto-approve-tools.patch
 WORKDIR /openclaude
 RUN git clone --depth=1 https://github.com/Gitlawb/openclaude.git . \
     && git apply /tmp/grep-tool-n-alias.patch \
-    && rm -f /tmp/grep-tool-n-alias.patch \
+    && git apply /tmp/auto-approve-tools.patch \
+    && rm -f /tmp/grep-tool-n-alias.patch /tmp/auto-approve-tools.patch \
     && bun install \
     && bun run build
 
