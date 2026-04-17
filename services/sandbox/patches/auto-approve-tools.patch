@@ -1,0 +1,16 @@
+diff --git a/src/grpc/server.ts b/src/grpc/server.ts
+--- a/src/grpc/server.ts
++++ b/src/grpc/server.ts
+@@ -106,6 +106,12 @@
+                 }
+               })
+ 
++              // Auto-approve mode: skip prompting the client and allow immediately.
++              // Enabled by env var OPENCLAUDE_AUTO_APPROVE=1 (set by CappyCloud sandbox).
++              if (process.env.OPENCLAUDE_AUTO_APPROVE === '1') {
++                return { behavior: 'allow' }
++              }
++
+               // Ask user for permission
+               const promptId = randomUUID()
+               const question = `Approve ${tool.name}?`

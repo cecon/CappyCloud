@@ -24,11 +24,26 @@ async def get_db():
 
 
 async def init_db() -> None:
-    """Aplica migrations Alembic (upgrade head) ao arrancar a aplicação."""
-    from alembic import command
-    from alembic.config import Config
+    """Aplica migrations Alembic (upgrade head) ao arrancar a aplicação.
 
-    alembic_cfg = Config(str(_ALEMBIC_INI))
-    # Override URL to pick up the runtime env var (not the placeholder in .ini)
-    alembic_cfg.set_main_option("sqlalchemy.url", settings.database_url)
-    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+    Executa via subprocess para evitar conflito entre uvloop (event loop do uvicorn)
+    e asyncio.run() dentro de asyncio.to_thread() que travava o startup.
+    """
+    import sys
+
+    result = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "alembic",
+        "-c",
+        str(_ALEMBIC_INI),
+        "upgrade",
+        "head",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _stdout, stderr = await result.communicate()
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Alembic upgrade failed (exit {result.returncode}):\n{stderr.decode(errors='replace')}"
+        )
