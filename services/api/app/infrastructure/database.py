@@ -32,11 +32,17 @@ async def init_db() -> None:
     import sys
 
     result = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "alembic", "-c", str(_ALEMBIC_INI), "upgrade", "head",
+        sys.executable,
+        "-m",
+        "alembic",
+        "-c",
+        str(_ALEMBIC_INI),
+        "upgrade",
+        "head",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await result.communicate()
+    _stdout, stderr = await result.communicate()
     if result.returncode != 0:
         raise RuntimeError(
             f"Alembic upgrade failed (exit {result.returncode}):\n"
