@@ -151,9 +151,7 @@ class TestExecute:
         with patch("httpx.AsyncClient", return_value=mock_client):
             await watchdog._execute(sandbox, "clone_repo", payload)
 
-        mock_client.post.assert_called_once_with(
-            "http://localhost:8080/repos/clone", json=payload
-        )
+        mock_client.post.assert_called_once_with("http://localhost:8080/repos/clone", json=payload)
         mock_response.raise_for_status.assert_called_once()
 
     async def test_remove_repo_calls_delete(self, watchdog: SandboxWatchdog) -> None:
@@ -188,6 +186,4 @@ class TestExecute:
         with patch("httpx.AsyncClient", return_value=mock_client):
             await watchdog._execute(sandbox, "update_git_auth", payload)
 
-        mock_client.post.assert_called_once_with(
-            "http://localhost:8080/git-auth", json=payload
-        )
+        mock_client.post.assert_called_once_with("http://localhost:8080/git-auth", json=payload)
