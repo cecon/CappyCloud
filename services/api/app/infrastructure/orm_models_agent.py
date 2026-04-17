@@ -41,6 +41,12 @@ class AgentTask(Base):
         nullable=True,
         index=True,
     )
+    sandbox_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUIDType,
+        ForeignKey("sandboxes.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     env_slug: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     session_id: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)

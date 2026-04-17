@@ -41,26 +41,24 @@ class Pipeline:
     class Valves(BaseModel):
         OPENROUTER_API_KEY: str = Field(default="")
         OPENROUTER_MODEL: str = Field(default="anthropic/claude-3.5-sonnet")
-        GIT_AUTH_TOKEN: str = Field(default="")
         SANDBOX_HOST: str = Field(default="cappycloud-sandbox")
         SANDBOX_GRPC_PORT: int = Field(default=50051)
+        SANDBOX_SESSION_PORT: int = Field(default=8080)
         SANDBOX_IDLE_TIMEOUT: int = Field(default=1800)
         REDIS_URL: str = Field(default="redis://redis:6379")
         DATABASE_URL: str = Field(default="")
-        CODE_INDEXER_URL: str = Field(default="")
 
     def __init__(self) -> None:
         self.name = "CappyCloud Agent"
         self.valves = self.Valves(
             OPENROUTER_API_KEY=os.getenv("OPENROUTER_API_KEY", ""),
             OPENROUTER_MODEL=os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet"),
-            GIT_AUTH_TOKEN=os.getenv("GIT_AUTH_TOKEN", ""),
             SANDBOX_HOST=os.getenv("SANDBOX_HOST", "cappycloud-sandbox"),
             SANDBOX_GRPC_PORT=int(os.getenv("SANDBOX_GRPC_PORT", "50051")),
+            SANDBOX_SESSION_PORT=int(os.getenv("SANDBOX_SESSION_PORT", "8080")),
             SANDBOX_IDLE_TIMEOUT=int(os.getenv("SANDBOX_IDLE_TIMEOUT", "1800")),
             REDIS_URL=os.getenv("REDIS_URL", "redis://redis:6379"),
             DATABASE_URL=_db_url(),
-            CODE_INDEXER_URL=os.getenv("CODE_INDEXER_URL", ""),
         )
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._store: Optional[SessionStore] = None
@@ -81,10 +79,8 @@ class Pipeline:
             session_store=self._store,
             sandbox_host=self.valves.SANDBOX_HOST,
             sandbox_grpc_port=self.valves.SANDBOX_GRPC_PORT,
-            git_auth_token=self.valves.GIT_AUTH_TOKEN,
-            code_indexer_url=self.valves.CODE_INDEXER_URL,
+            sandbox_session_port=self.valves.SANDBOX_SESSION_PORT,
         )
-        self._env_manager.resolve_container()
         self._dispatcher = TaskDispatcher(
             env_manager=self._env_manager,
             session_store=self._store,
@@ -125,6 +121,11 @@ class Pipeline:
             return
 
         conversation_id = str(body.get("conversation_id") or "")
+        # Multi-repo session
+        repos = body.get("repos") or []
+        session_root = str(body.get("session_root") or "")
+        sandbox_id = str(body.get("sandbox_id") or "")
+        # Legacy single-repo
         base_branch = str(body.get("base_branch") or "")
         repo_slug = str(body.get("env_slug") or "default")
         worktree_branch = str(body.get("worktree_branch") or "")
@@ -140,14 +141,17 @@ class Pipeline:
         )
         runner = self._dispatcher.get_runner(task_id) if task_id else None
 
+        dispatch_kwargs = dict(
+            repos=repos, session_root=session_root, sandbox_id=sandbox_id,
+            base_branch=base_branch, repo_slug=repo_slug,
+            worktree_branch=worktree_branch, worktree_path=worktree_path,
+        )
+
         if runner and runner.is_alive() and runner.pending_action:
             self._run(self._dispatcher.send_input(task_id, user_message), timeout=10)
         elif runner and runner.is_alive():
-            # Agent is still streaming a response — cancel it and start a new task
-            # so the user's new message replaces the in-flight request.
             log.info(
-                "pipe(): runner %s alive with no pending_action (mid-stream) — "
-                "cancelling and re-dispatching for conversation %s",
+                "pipe(): runner %s mid-stream — cancelling and re-dispatching for %s",
                 task_id[:8] if task_id else "?",
                 conversation_id[:8] if conversation_id else "?",
             )
@@ -157,10 +161,7 @@ class Pipeline:
                     prompt=user_message,
                     conversation_id=conversation_id or None,
                     triggered_by="user",
-                    base_branch=base_branch,
-                    repo_slug=repo_slug,
-                    worktree_branch=worktree_branch,
-                    worktree_path=worktree_path,
+                    **dispatch_kwargs,
                 ),
                 timeout=10,
             )
@@ -170,10 +171,7 @@ class Pipeline:
                     prompt=user_message,
                     conversation_id=conversation_id or None,
                     triggered_by="user",
-                    base_branch=base_branch,
-                    repo_slug=repo_slug,
-                    worktree_branch=worktree_branch,
-                    worktree_path=worktree_path,
+                    **dispatch_kwargs,
                 ),
                 timeout=10,
             )

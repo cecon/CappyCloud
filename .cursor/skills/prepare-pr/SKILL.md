@@ -14,7 +14,7 @@ Copie esta checklist e marque cada item:
 ```
 - [ ] 1. ruff check  (services/api)
 - [ ] 2. ruff format --check  (services/api)
-- [ ] 3. mypy app/  (no container, Python 3.12)
+- [ ] 3. mypy app/  (no container, Python 3.14)
 - [ ] 4. pytest  (no container, com env vars)
 - [ ] 5. Commit + push
 - [ ] 6. gh pr create
@@ -81,7 +81,7 @@ cd services/api && /tmp/cci_venv/bin/ruff check .
 
 ## 3. Mypy + Pytest (no container `cappycloud-api`)
 
-O Python local é 3.9 e o projeto requer 3.12. Use o container que já está rodando:
+O Python local é 3.9 e o projeto requer 3.14. Use o container que já está rodando:
 
 ```bash
 # 1) Garante deps de teste no container

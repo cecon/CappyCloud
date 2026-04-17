@@ -3,7 +3,7 @@ uvicorn[standard]==0.34.0
 pydantic-settings==2.9.1
 # PostgreSQL + pgvector
 asyncpg==0.30.0
-psycopg2-binary==2.9.10
+psycopg2-binary==2.9.11
 pgvector==0.4.0
 # Neo4j graph database
 neo4j==5.28.1

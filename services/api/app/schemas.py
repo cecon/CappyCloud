@@ -1,8 +1,4 @@
-"""Esquemas Pydantic para pedidos e respostas HTTP da API.
-
-Validators delegam a app.domain.value_objects (DRY — lógica de validação
-definida uma única vez no domínio).
-"""
+"""Esquemas Pydantic para pedidos e respostas HTTP da API."""
 
 from __future__ import annotations
 
@@ -18,8 +14,6 @@ _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{1,62}[a-z0-9]$")
 
 
 class UserCreate(BaseModel):
-    """Registo de utilizador."""
-
     email: str = Field(max_length=320)
     password: str = Field(max_length=128)
 
@@ -35,8 +29,6 @@ class UserCreate(BaseModel):
 
 
 class UserOut(BaseModel):
-    """Dados públicos do utilizador."""
-
     id: uuid.UUID
     email: str
 
@@ -44,20 +36,12 @@ class UserOut(BaseModel):
 
 
 class Token(BaseModel):
-    """Resposta OAuth2 com JWT."""
-
     access_token: str
     token_type: str = "bearer"
 
 
 class RepoEnvCreate(BaseModel):
-    """Criação de ambiente de repositório global."""
-
-    slug: str = Field(
-        min_length=3,
-        max_length=64,
-        description="Identificador curto: minúsculas, números e hífens. Ex.: meu-projeto",
-    )
+    slug: str = Field(min_length=3, max_length=64)
     name: str = Field(min_length=1, max_length=256)
     repo_url: str = Field(min_length=1, max_length=2048)
     branch: str = Field(default="main", min_length=1, max_length=256)
@@ -74,8 +58,6 @@ class RepoEnvCreate(BaseModel):
 
 
 class RepoEnvOut(BaseModel):
-    """Dados públicos de um ambiente de repositório."""
-
     id: uuid.UUID
     slug: str
     name: str
@@ -86,10 +68,46 @@ class RepoEnvOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── Sandboxes ─────────────────────────────────────────────────
+
+class SandboxOut(BaseModel):
+    """Dados públicos de uma instância sandbox."""
+
+    id: uuid.UUID
+    name: str
+    host: str
+    grpc_port: int
+    session_port: int
+    status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ── Conversations ─────────────────────────────────────────────
+
+class RepoSelection(BaseModel):
+    """Um repositório selecionado para participar da sessão.
+
+    slug        — slug do repo em WORKSPACE_REPOS (ex.: 'cappycloud')
+    alias       — nome do subdiretório em session_root (ex.: 'cappycloud-main').
+                  Se omitido, usa o slug.
+    base_branch — branch de origem do worktree (ex.: 'main', 'feat/xyz').
+                  Se omitido, usa o default do repo.
+    """
+
+    slug: str = Field(min_length=1, max_length=128)
+    alias: str | None = Field(default=None, max_length=128)
+    base_branch: str | None = Field(default=None, max_length=255)
+
+
 class ConversationCreate(BaseModel):
-    """Criação de conversa."""
+    """Criação de conversa — modelo multi-repo."""
 
     title: str | None = Field(default="Nova conversa", max_length=512)
+    sandbox_id: uuid.UUID | None = None
+    repos: list[RepoSelection] = Field(default_factory=list)
+    # Legacy single-repo (mantido para compatibilidade com clientes antigos)
     environment_id: uuid.UUID | None = None
     base_branch: str | None = Field(default=None, max_length=255)
     env_slug: str | None = Field(default=None, max_length=128)
@@ -102,6 +120,23 @@ class ConversationOut(BaseModel):
     title: str
     created_at: datetime
     updated_at: datetime
+    sandbox_id: uuid.UUID | None = None
+    ai_model_id: uuid.UUID | None = None
+    repos: list[dict] = Field(default_factory=list)
+    session_root: str | None = None
+    # Worktree state
+    worktree_exists: bool = False
+    lines_added: int = 0
+    lines_removed: int = 0
+    files_changed: int = 0
+    # PR tracking
+    pr_url: str | None = None
+    pr_status: str = "none"
+    pr_approved: bool = False
+    # CI tracking
+    ci_status: str = "unknown"
+    ci_url: str | None = None
+    # Legacy
     environment_id: uuid.UUID | None = None
     env_slug: str | None = None
     base_branch: str | None = None
@@ -111,9 +146,94 @@ class ConversationOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class MessageOut(BaseModel):
-    """Mensagem persistida."""
+# ── Platform control plane schemas ────────────────────────────
 
+class GitProviderCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    provider_type: str = Field(default="github", max_length=32)
+    base_url: str = Field(default="", max_length=2048)
+    org_or_project: str = Field(default="", max_length=512)
+    token: str = Field(default="", description="PAT em texto plano — será criptografado")
+
+
+class GitProviderOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    provider_type: str
+    base_url: str
+    org_or_project: str
+    active: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AiProviderCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    base_url: str = Field(default="https://openrouter.ai/api/v1", max_length=2048)
+    api_key: str = Field(default="", description="API key em texto plano — será criptografada")
+
+
+class AiProviderOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    base_url: str
+    active: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AiModelCreate(BaseModel):
+    provider_id: uuid.UUID
+    model_id: str = Field(min_length=1, max_length=256)
+    display_name: str = Field(min_length=1, max_length=256)
+    capabilities: list[str] = Field(default_factory=lambda: ["text"])
+    is_default: dict = Field(default_factory=dict)
+    context_window: int = Field(default=200000, ge=1)
+
+
+class AiModelOut(BaseModel):
+    id: uuid.UUID
+    provider_id: uuid.UUID
+    model_id: str
+    display_name: str
+    capabilities: list[str]
+    is_default: dict
+    context_window: int
+    active: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RepositoryCreate(BaseModel):
+    slug: str = Field(min_length=2, max_length=128)
+    name: str = Field(min_length=1, max_length=256)
+    clone_url: str = Field(min_length=1, max_length=2048)
+    default_branch: str = Field(default="main", max_length=256)
+    provider_id: uuid.UUID | None = None
+
+
+class RepositoryOut(BaseModel):
+    id: uuid.UUID
+    slug: str
+    name: str
+    clone_url: str
+    default_branch: str
+    provider_id: uuid.UUID | None = None
+    sandbox_id: uuid.UUID | None = None
+    sandbox_status: str
+    sandbox_path: str
+    last_sync_at: datetime | None = None
+    error_message: str | None = None
+    active: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class MessageOut(BaseModel):
     id: uuid.UUID
     role: str
     content: str
@@ -123,6 +243,4 @@ class MessageOut(BaseModel):
 
 
 class SendMessageBody(BaseModel):
-    """Corpo para enviar mensagem ao agente."""
-
     content: str = Field(min_length=1, max_length=1_000_000)

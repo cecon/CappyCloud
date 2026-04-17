@@ -95,7 +95,7 @@ Se após pesquisar ainda não encontrar a causa raiz, **mostre o que encontrou**
 ## Contexto do Sistema
 
 - **Produto**: CappyCloud — plataforma de agentes IA com ambientes Docker isolados por usuário
-- **Backend**: FastAPI (Python 3.12) — arquitetura hexagonal (Ports & Adapters)
+- **Backend**: FastAPI (Python 3.14) — arquitetura hexagonal (Ports & Adapters)
 - **Frontend**: React + TypeScript (Vite)
 - **Banco de dados**: PostgreSQL (SQLAlchemy async + asyncpg) + Redis (cache de sessões)
 - **Agente IA**: openclaude rodando como servidor gRPC dentro de containers Docker

@@ -22,11 +22,12 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:5173,http://localhost:38081"
 
-    # GitHub integration
-    github_token: str = ""
-    github_webhook_secret: str = ""
+    # Chave de criptografia Fernet para tokens no banco (32-byte hex ou chave Fernet base64).
+    # Gerar: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    encryption_key: str = "0" * 64  # DEVE ser sobrescrito em produção via ENCRYPTION_KEY
 
-    # GitLab integration
+    # Webhook secrets (ainda usados para validar assinaturas)
+    github_webhook_secret: str = ""
     gitlab_webhook_secret: str = ""
 
 

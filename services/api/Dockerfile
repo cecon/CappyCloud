@@ -1,7 +1,7 @@
 # Build a partir da raiz do repositório:
 #   docker build -f services/api/Dockerfile .
 
-FROM python:3.12-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 WORKDIR /app
 

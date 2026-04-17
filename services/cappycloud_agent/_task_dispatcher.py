@@ -75,6 +75,11 @@ class TaskDispatcher:
         conversation_id: Optional[str] = None,
         triggered_by: str = "user",
         trigger_payload: Optional[dict] = None,
+        # Multi-repo
+        repos: Optional[list] = None,
+        session_root: str = "",
+        sandbox_id: str = "",
+        # Legacy single-repo
         base_branch: str = "",
         repo_slug: str = "default",
         worktree_branch: str = "",
@@ -95,7 +100,9 @@ class TaskDispatcher:
         asyncio.create_task(
             self._launch_runner(
                 task_id, prompt, conversation_id,
-                base_branch, repo_slug, worktree_branch, worktree_path,
+                repos=repos or [], session_root=session_root, sandbox_id=sandbox_id,
+                base_branch=base_branch, repo_slug=repo_slug,
+                worktree_branch=worktree_branch, worktree_path=worktree_path,
             ),
             name=f"dispatch-{task_id[:8]}",
         )
@@ -180,12 +187,15 @@ class TaskDispatcher:
         task_id: str,
         prompt: str,
         conversation_id: Optional[str],
-        base_branch: str,
+        repos: list | None = None,
+        session_root: str = "",
+        sandbox_id: str = "",
+        base_branch: str = "",
         repo_slug: str = "default",
         worktree_branch: str = "",
         worktree_path: str = "",
     ) -> None:
-        """Cria o worktree, inicia a GrpcSession e arranca o TaskRunner."""
+        """Cria a sessão, inicia a GrpcSession e arranca o TaskRunner."""
         user_id = conversation_id or "system"
         chat_id = task_id
 
@@ -193,6 +203,8 @@ class TaskDispatcher:
             sandbox = await self._env_manager.get_or_create_session(
                 user_id=user_id,
                 chat_id=chat_id,
+                repos=repos or [],
+                sandbox_id=sandbox_id,
                 base_branch=base_branch,
                 repo_slug=repo_slug,
                 worktree_branch=worktree_branch,
@@ -204,7 +216,7 @@ class TaskDispatcher:
             await self._insert_error_event(task_id, str(exc))
             return
 
-        working_directory = sandbox.worktree_path or "/repos/default"
+        working_directory = sandbox.working_directory
 
         session = GrpcSession(
             container_ip=sandbox.grpc_host,

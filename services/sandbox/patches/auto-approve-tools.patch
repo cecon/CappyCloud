@@ -1,7 +1,8 @@
 diff --git a/src/grpc/server.ts b/src/grpc/server.ts
+index 69bfdf4..4f213b5 100644
 --- a/src/grpc/server.ts
 +++ b/src/grpc/server.ts
-@@ -106,6 +106,12 @@
+@@ -106,6 +106,12 @@ export class GrpcServer {
                  }
                })
  

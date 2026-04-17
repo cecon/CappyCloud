@@ -20,7 +20,11 @@ from app.adapters.primary.http import environments as env_router
 from app.adapters.primary.http import routines as routines_router
 from app.adapters.primary.http import tasks as tasks_router
 from app.adapters.primary.http import webhooks as webhooks_router
+from app.adapters.primary.http import sandboxes as sandboxes_router
 from app.adapters.primary.http import workspaces as workspaces_router
+from app.adapters.primary.http import git_providers as git_providers_router
+from app.adapters.primary.http import ai_models as ai_models_router
+from app.adapters.primary.http import repositories_admin as repos_admin_router
 from app.infrastructure.config import cors_origins_list, get_settings
 from app.infrastructure.database import init_db
 
@@ -43,7 +47,12 @@ async def lifespan(app: FastAPI):
     await agent.on_startup()
     app.state.agent = agent
 
+    from app.infrastructure.sandbox_watchdog import SandboxWatchdog
+    from app.infrastructure.database import async_session_factory
+
     scheduler = AsyncIOScheduler()
+    watchdog = SandboxWatchdog(async_session_factory)
+    scheduler.add_job(watchdog.run_once, "interval", seconds=10, id="sandbox_watchdog")
     scheduler.start()
     app.state.scheduler = scheduler
 
@@ -118,7 +127,11 @@ app.include_router(env_router.router, prefix="/api")
 app.include_router(routines_router.router, prefix="/api")
 app.include_router(tasks_router.router, prefix="/api")
 app.include_router(webhooks_router.router, prefix="/api")
+app.include_router(sandboxes_router.router, prefix="/api")
 app.include_router(workspaces_router.router, prefix="/api")
+app.include_router(git_providers_router.router, prefix="/api")
+app.include_router(ai_models_router.router, prefix="/api")
+app.include_router(repos_admin_router.router, prefix="/api")
 
 
 @app.get("/health")

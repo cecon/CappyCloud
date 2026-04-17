@@ -1,18 +1,20 @@
 """
 Session store: maps (user_id, chat_id) → worktree session metadata.
 
-Uses Redis as primary fast cache (with TTL for auto-expiry) and
-PostgreSQL as persistent record for audit / restart recovery.
+Redis — cache rápido com TTL para auto-expirar sessões ociosas.
+PostgreSQL — registro persistente para recovery após restart.
 
-The environment is now a single fixed service (cappycloud-sandbox).
-This store only manages per-conversation worktree sessions.
+SandboxRecord agora suporta sessões multi-repo:
+  - repos: lista de {slug, alias, base_branch, branch_name, worktree_path}
+  - session_root: /repos/sessions/<session_id>/  (working_directory do openclaude)
+  - sandbox_id: UUID do sandbox alocado para esta sessão
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Optional
 
 import asyncpg
@@ -23,14 +25,20 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class SandboxRecord:
-    """Represents a live worktree session for a (user_id, chat_id) pair."""
+    """Sessão ativa de worktree para um (user_id, chat_id)."""
 
     user_id: str
     chat_id: str
-    env_slug: str
-    container_id: str
     grpc_host: str
     grpc_port: int
+    # Multi-repo
+    repos: list[dict] = field(default_factory=list)
+    session_root: str = ""
+    sandbox_id: str = ""
+    sandbox_name: str = ""
+    # Legacy (single-repo) — mantidos para conversas antigas
+    env_slug: str = "default"
+    container_id: str = ""
     worktree_path: str = ""
 
     def to_dict(self) -> dict:
@@ -38,11 +46,24 @@ class SandboxRecord:
 
     @classmethod
     def from_dict(cls, data: dict) -> "SandboxRecord":
-        # Suporte a registros antigos com campo container_ip
-        if "container_ip" in data and "grpc_host" not in data:
-            data = dict(data)
-            data["grpc_host"] = data.pop("container_ip")
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+        d = dict(data)
+        # Backward compat: container_ip → grpc_host
+        if "container_ip" in d and "grpc_host" not in d:
+            d["grpc_host"] = d.pop("container_ip")
+        # Garante campos novos presentes em registros antigos
+        d.setdefault("repos", [])
+        d.setdefault("session_root", d.get("worktree_path", ""))
+        d.setdefault("sandbox_id", "")
+        d.setdefault("sandbox_name", "")
+        d.setdefault("env_slug", "default")
+        d.setdefault("container_id", "")
+        d.setdefault("worktree_path", "")
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
+    @property
+    def working_directory(self) -> str:
+        """Diretório de trabalho que o openclaude deve usar."""
+        return self.session_root or self.worktree_path or "/repos/default"
 
 
 _SCHEMA = """
@@ -50,11 +71,15 @@ CREATE TABLE IF NOT EXISTS cappy_sessions (
     id             SERIAL PRIMARY KEY,
     user_id        TEXT NOT NULL,
     chat_id        TEXT NOT NULL,
-    env_slug       TEXT NOT NULL DEFAULT 'default',
-    container_id   TEXT,
+    sandbox_id     TEXT NOT NULL DEFAULT '',
+    sandbox_name   TEXT NOT NULL DEFAULT '',
     grpc_host      TEXT,
     grpc_port      INTEGER,
-    worktree_path  TEXT DEFAULT '',
+    session_root   TEXT NOT NULL DEFAULT '',
+    repos          JSONB NOT NULL DEFAULT '[]',
+    env_slug       TEXT NOT NULL DEFAULT 'default',
+    container_id   TEXT NOT NULL DEFAULT '',
+    worktree_path  TEXT NOT NULL DEFAULT '',
     created_at     TIMESTAMPTZ DEFAULT NOW(),
     last_active    TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (user_id, chat_id)
@@ -62,9 +87,13 @@ CREATE TABLE IF NOT EXISTS cappy_sessions (
 """
 
 _MIGRATE = """
+ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS sandbox_id   TEXT NOT NULL DEFAULT '';
+ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS sandbox_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS session_root TEXT NOT NULL DEFAULT '';
+ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS repos        JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS worktree_path TEXT DEFAULT '';
-ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS env_slug TEXT DEFAULT 'default';
-ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS grpc_host TEXT;
+ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS env_slug     TEXT DEFAULT 'default';
+ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS grpc_host    TEXT;
 ALTER TABLE cappy_sessions DROP COLUMN IF EXISTS repo_url;
 DROP TABLE IF EXISTS cappy_env_containers;
 """
@@ -77,8 +106,6 @@ class SessionStore:
         self._idle_ttl = idle_ttl
         self._redis: Optional[aioredis.Redis] = None
         self._pool: Optional[asyncpg.Pool] = None
-
-    # ── Lifecycle ────────────────────────────────────────────────
 
     async def connect(self) -> None:
         self._redis = aioredis.from_url(self._redis_url, decode_responses=True)
@@ -94,18 +121,12 @@ class SessionStore:
         if self._pool:
             await self._pool.close()
 
-    # ── Redis key helpers ────────────────────────────────────────
-
     @staticmethod
-    def _session_key(user_id: str, chat_id: str) -> str:
+    def _key(user_id: str, chat_id: str) -> str:
         return f"sandbox:{user_id}:{chat_id}"
 
-    # ── Session CRUD ─────────────────────────────────────────────
-
     async def get(self, user_id: str, chat_id: str) -> Optional[SandboxRecord]:
-        """Return session record from Redis cache, or fall back to PostgreSQL."""
-        key = self._session_key(user_id, chat_id)
-
+        key = self._key(user_id, chat_id)
         raw = await self._redis.get(key)
         if raw:
             return SandboxRecord.from_dict(json.loads(raw))
@@ -113,73 +134,68 @@ class SessionStore:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM cappy_sessions WHERE user_id=$1 AND chat_id=$2",
-                user_id,
-                chat_id,
+                user_id, chat_id,
             )
         if row:
             record = SandboxRecord.from_dict(dict(row))
             await self._redis.setex(key, self._idle_ttl, json.dumps(record.to_dict()))
             return record
-
         return None
 
     async def save(self, record: SandboxRecord) -> None:
-        """Persist session record to Redis (with TTL) and PostgreSQL."""
-        key = self._session_key(record.user_id, record.chat_id)
+        key = self._key(record.user_id, record.chat_id)
         await self._redis.setex(key, self._idle_ttl, json.dumps(record.to_dict()))
 
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO cappy_sessions
-                    (user_id, chat_id, env_slug, container_id, grpc_host,
-                     grpc_port, worktree_path)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    (user_id, chat_id, sandbox_id, sandbox_name,
+                     grpc_host, grpc_port, session_root, repos,
+                     env_slug, container_id, worktree_path)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)
                 ON CONFLICT (user_id, chat_id) DO UPDATE
-                    SET env_slug      = EXCLUDED.env_slug,
-                        container_id  = EXCLUDED.container_id,
-                        grpc_host     = EXCLUDED.grpc_host,
-                        grpc_port     = EXCLUDED.grpc_port,
+                    SET sandbox_id   = EXCLUDED.sandbox_id,
+                        sandbox_name = EXCLUDED.sandbox_name,
+                        grpc_host    = EXCLUDED.grpc_host,
+                        grpc_port    = EXCLUDED.grpc_port,
+                        session_root = EXCLUDED.session_root,
+                        repos        = EXCLUDED.repos,
+                        env_slug     = EXCLUDED.env_slug,
+                        container_id = EXCLUDED.container_id,
                         worktree_path = EXCLUDED.worktree_path,
-                        last_active   = NOW()
+                        last_active  = NOW()
                 """,
-                record.user_id,
-                record.chat_id,
-                record.env_slug,
-                record.container_id,
-                record.grpc_host,
-                record.grpc_port,
-                record.worktree_path,
+                record.user_id, record.chat_id, record.sandbox_id, record.sandbox_name,
+                record.grpc_host, record.grpc_port, record.session_root,
+                json.dumps(record.repos), record.env_slug,
+                record.container_id, record.worktree_path,
             )
 
     async def refresh_ttl(self, user_id: str, chat_id: str) -> None:
-        """Reset idle TTL so the session stays alive after activity."""
-        key = self._session_key(user_id, chat_id)
+        key = self._key(user_id, chat_id)
         await self._redis.expire(key, self._idle_ttl)
         async with self._pool.acquire() as conn:
             await conn.execute(
                 "UPDATE cappy_sessions SET last_active=NOW() WHERE user_id=$1 AND chat_id=$2",
-                user_id,
-                chat_id,
+                user_id, chat_id,
             )
 
     async def delete(self, user_id: str, chat_id: str) -> None:
-        """Remove session record from both stores."""
-        key = self._session_key(user_id, chat_id)
+        key = self._key(user_id, chat_id)
         await self._redis.delete(key)
         async with self._pool.acquire() as conn:
             await conn.execute(
                 "DELETE FROM cappy_sessions WHERE user_id=$1 AND chat_id=$2",
-                user_id,
-                chat_id,
+                user_id, chat_id,
             )
 
     async def list_expired_sessions(self) -> list[dict]:
-        """Return session DB rows whose idle TTL has expired."""
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT user_id, chat_id, container_id, worktree_path, env_slug
+                SELECT user_id, chat_id, sandbox_id, session_root, repos,
+                       container_id, worktree_path, env_slug
                 FROM   cappy_sessions
                 WHERE  last_active < NOW() - make_interval(secs => $1)
                 """,

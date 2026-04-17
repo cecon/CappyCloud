@@ -11,6 +11,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     Integer,
@@ -67,6 +68,164 @@ class JSONBType(TypeDecorator):
         return dialect.type_descriptor(JSONB())
 
 
+class Sandbox(Base):
+    """Instância do container sandbox que hospeda o openclaude gRPC.
+
+    Cada linha representa um container Docker independente.
+    status: active | draining | offline
+    """
+
+    __tablename__ = "sandboxes"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    host: Mapped[str] = mapped_column(String(256), nullable=False)
+    grpc_port: Mapped[int] = mapped_column(Integer, nullable=False, default=50051)
+    session_port: Mapped[int] = mapped_column(Integer, nullable=False, default=8080)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    conversations: Mapped[list["Conversation"]] = relationship(
+        "Conversation", back_populates="sandbox"
+    )
+    sync_queue: Mapped[list["SandboxSyncQueue"]] = relationship(
+        "SandboxSyncQueue", back_populates="sandbox", cascade="all, delete-orphan"
+    )
+    repositories: Mapped[list["Repository"]] = relationship(
+        "Repository", back_populates="sandbox"
+    )
+
+
+class GitProvider(Base):
+    """Provedor de repositórios git com token PAT criptografado.
+
+    provider_type: github | azure_devops | gitlab | bitbucket
+    """
+
+    __tablename__ = "git_providers"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider_type: Mapped[str] = mapped_column(String(32), nullable=False, default="github", index=True)
+    base_url: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    org_or_project: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    token_encrypted: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    repositories: Mapped[list["Repository"]] = relationship(
+        "Repository", back_populates="provider"
+    )
+
+
+class AiProvider(Base):
+    """Provedor de modelos IA (OpenRouter, Anthropic, OpenAI…)."""
+
+    __tablename__ = "ai_providers"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    base_url: Mapped[str] = mapped_column(Text, nullable=False, default="https://openrouter.ai/api/v1")
+    api_key_encrypted: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    models: Mapped[list["AiModel"]] = relationship(
+        "AiModel", back_populates="provider", cascade="all, delete-orphan"
+    )
+
+
+class AiModel(Base):
+    """Modelo IA com capabilities e flags de default por capability.
+
+    capabilities: JSONB ['text', 'vision', 'embedding', 'video']
+    is_default:   JSONB {'text': true, 'vision': false, ...}
+    """
+
+    __tablename__ = "ai_models"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
+    provider_id: Mapped[uuid.UUID] = mapped_column(
+        UUIDType, ForeignKey("ai_providers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    model_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    capabilities: Mapped[list] = mapped_column(JSONBType, nullable=False, server_default='["text"]')
+    is_default: Mapped[dict] = mapped_column(JSONBType, nullable=False, server_default="{}")
+    context_window: Mapped[int] = mapped_column(Integer, nullable=False, default=200000)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    provider: Mapped["AiProvider"] = relationship("AiProvider", back_populates="models")
+    conversations: Mapped[list["Conversation"]] = relationship(
+        "Conversation", back_populates="ai_model"
+    )
+
+
+class Repository(Base):
+    """Repositório git com estado de sincronização no sandbox.
+
+    sandbox_status: not_cloned | cloning | cloned | error
+    """
+
+    __tablename__ = "repositories"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
+    slug: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    provider_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUIDType, ForeignKey("git_providers.id", ondelete="SET NULL"), nullable=True
+    )
+    clone_url: Mapped[str] = mapped_column(Text, nullable=False)
+    default_branch: Mapped[str] = mapped_column(String(256), nullable=False, default="main")
+    sandbox_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUIDType, ForeignKey("sandboxes.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    sandbox_status: Mapped[str] = mapped_column(String(32), nullable=False, default="not_cloned", index=True)
+    sandbox_path: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    provider: Mapped["GitProvider | None"] = relationship("GitProvider", back_populates="repositories")
+    sandbox: Mapped["Sandbox | None"] = relationship("Sandbox", back_populates="repositories")
+
+
+class SandboxSyncQueue(Base):
+    """Fila de sincronização DB → sandbox VM (watchdog).
+
+    operation: clone_repo | remove_repo | update_git_auth | reconfigure_model
+    status:    pending | processing | done | error
+    """
+
+    __tablename__ = "sandbox_sync_queue"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
+    sandbox_id: Mapped[uuid.UUID] = mapped_column(
+        UUIDType, ForeignKey("sandboxes.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    operation: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONBType, nullable=False, server_default="{}")
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
+    retries: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    sandbox: Mapped["Sandbox"] = relationship("Sandbox", back_populates="sync_queue")
+
+
 class RepoEnvironment(Base):
     """Ambiente global (repositório git) partilhado por todos os utilizadores."""
 
@@ -79,7 +238,7 @@ class RepoEnvironment(Base):
     branch: Mapped[str] = mapped_column(String(256), nullable=False, default="main")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    conversations: Mapped[list[Conversation]] = relationship(
+    conversations: Mapped[list["Conversation"]] = relationship(
         "Conversation", back_populates="environment"
     )
     routines: Mapped[list["Routine"]] = relationship("Routine", back_populates="environment")
@@ -118,11 +277,38 @@ class Conversation(Base):
         nullable=True,
         index=True,
     )
+    sandbox_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUIDType,
+        ForeignKey("sandboxes.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    ai_model_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUIDType,
+        ForeignKey("ai_models.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(512), default="Nova conversa")
+    # Multi-repo: lista de {slug, alias, base_branch, branch_name, worktree_path}
+    repos: Mapped[list] = mapped_column(JSONBType, nullable=False, server_default="[]")
+    # Diretório raiz da sessão no volume: /repos/sessions/<short_id>/
+    session_root: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Worktree state
+    worktree_exists: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    lines_added: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    lines_removed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    files_changed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # PR tracking
+    pr_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pr_status: Mapped[str] = mapped_column(String(32), nullable=False, default="none")
+    pr_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # CI tracking
+    ci_status: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    ci_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Legacy single-repo fields (mantidos para conversas existentes)
     base_branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    # Repo slug from WORKSPACE_REPOS — stored directly (no FK needed).
     env_slug: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
-    # Immutable git branch and worktree path created at conversation start.
     worktree_branch: Mapped[str | None] = mapped_column(String(512), nullable=True)
     worktree_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     github_pr_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -136,6 +322,8 @@ class Conversation(Base):
     environment: Mapped[RepoEnvironment | None] = relationship(
         "RepoEnvironment", back_populates="conversations"
     )
+    sandbox: Mapped["Sandbox | None"] = relationship("Sandbox", back_populates="conversations")
+    ai_model: Mapped["AiModel | None"] = relationship("AiModel", back_populates="conversations")
     messages: Mapped[list[Message]] = relationship(
         "Message", back_populates="conversation", cascade="all, delete-orphan"
     )
