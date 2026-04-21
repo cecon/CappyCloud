@@ -529,7 +529,7 @@ function EmptyState({
   const [loadedSlug, setLoadedSlug] = useState('')
   const branchesLoading = !!selectedSlug && loadedSlug !== selectedSlug
 
-  const repoReady = true  // auto-clone trata o caso de repo não clonado
+  // auto-clone trata o caso de repo não clonado
   const canExecute = !!selectedSlug && !!selectedBranch && !!input.trim() && !streaming
 
   useEffect(() => {
@@ -765,8 +765,8 @@ function ActiveChat({
   const [elapsedSecs, setElapsedSecs] = useState(0)
 
   useEffect(() => {
-    if (!streaming) { setElapsedSecs(0); return }
     setElapsedSecs(0)
+    if (!streaming) return
     const id = setInterval(() => setElapsedSecs((s) => s + 1), 1000)
     return () => clearInterval(id)
   }, [streaming])
