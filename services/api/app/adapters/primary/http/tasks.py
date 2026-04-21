@@ -82,7 +82,6 @@ async def trigger_task(
         agent = request.app.state.agent
         task_id = await agent.dispatch(
             prompt=body.prompt,
-            env_slug=body.env_slug,
             conversation_id=body.conversation_id,
             triggered_by=body.triggered_by or "manual",
             trigger_payload={"triggered_via": "api", "user_id": str(current.id)},

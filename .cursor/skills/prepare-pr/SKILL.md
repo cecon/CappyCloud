@@ -158,7 +158,7 @@ git push -u origin HEAD
 - `fix(ci):` — apenas para satisfazer lint/format/CI sem mudança funcional
 - `refactor(scope):` — reorganização sem mudar comportamento
 
-Scopes comuns: `api`, `sandbox`, `agent`, `code-indexer`, `frontend`, `ci`.
+Scopes comuns: `api`, `sandbox`, `agent`, `frontend`, `ci`.
 
 **Nunca** `--amend` se a branch já está no remote — crie um novo commit.
 

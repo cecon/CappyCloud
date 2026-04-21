@@ -55,7 +55,9 @@ async def _get_worktree_container(
     """Retorna (container_name, worktree_path) para a conversa ou lança 404."""
     row = await db.execute(
         text(
-            "SELECT cs.worktree_path "
+            "SELECT "
+            "  cs.session_root, "
+            "  cs.repos->0->>'worktree_path' AS worktree_path "
             "FROM conversations c "
             "LEFT JOIN cappy_sessions cs ON cs.chat_id = c.id::text "
             "WHERE c.id = :cid AND c.user_id = :uid"
@@ -65,12 +67,13 @@ async def _get_worktree_container(
     conv = row.fetchone()
     if not conv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada")
-    if not conv.worktree_path:
+    worktree = conv.worktree_path or conv.session_root
+    if not worktree:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Sem worktree activa para esta conversa",
         )
-    return "cappycloud-sandbox", conv.worktree_path
+    return "cappycloud-sandbox", worktree
 
 
 # ── File listing ──────────────────────────────────────────────────────────────

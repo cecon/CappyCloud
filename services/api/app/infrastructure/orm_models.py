@@ -106,9 +106,6 @@ class RepoEnvironment(Base):
     branch: Mapped[str] = mapped_column(String(256), nullable=False, default="main")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    conversations: Mapped[list["Conversation"]] = relationship(
-        "Conversation", back_populates="environment"
-    )
     routines: Mapped[list["Routine"]] = relationship("Routine", back_populates="environment")
 
 
@@ -139,12 +136,6 @@ class Conversation(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUIDType, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    environment_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUIDType,
-        ForeignKey("repo_environments.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
     sandbox_id: Mapped[uuid.UUID | None] = mapped_column(
         UUIDType,
         ForeignKey("sandboxes.id", ondelete="SET NULL"),
@@ -174,11 +165,6 @@ class Conversation(Base):
     # CI tracking
     ci_status: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
     ci_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Legacy single-repo fields (mantidos para conversas existentes)
-    base_branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    env_slug: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
-    worktree_branch: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    worktree_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     github_pr_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     github_repo_slug: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -187,9 +173,6 @@ class Conversation(Base):
     )
 
     user: Mapped[User] = relationship("User", back_populates="conversations")
-    environment: Mapped[RepoEnvironment | None] = relationship(
-        "RepoEnvironment", back_populates="conversations"
-    )
     sandbox: Mapped["Sandbox | None"] = relationship("Sandbox", back_populates="conversations")
     ai_model: Mapped["AiModel | None"] = relationship("AiModel", back_populates="conversations")
     messages: Mapped[list[Message]] = relationship(

@@ -47,7 +47,6 @@ def register_routine_schedules(request: Request, routine_id: str, body: RoutineI
                         agent = _request.app.state.agent
                         await agent.dispatch(
                             prompt=prompt,
-                            env_slug=env_slug,
                             triggered_by="schedule",
                             trigger_payload={"routine_id": rid},
                         )

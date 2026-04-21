@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import os
 import subprocess
-from urllib.parse import urlparse
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
+from app.domain.entities import User
+from app.infrastructure.orm_models import Repository
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -18,6 +24,7 @@ class WorkspaceOut(BaseModel):
     slug: str
     name: str
     url: str
+    sandbox_status: str
 
 
 class BranchesOut(BaseModel):
@@ -25,77 +32,96 @@ class BranchesOut(BaseModel):
     default: str
 
 
-def _parse_repos() -> list[WorkspaceOut]:
-    """Lê WORKSPACE_REPOS (vírgula-separado) e retorna lista de WorkspaceOut."""
-    raw = os.getenv("WORKSPACE_REPOS", "").strip()
-    if not raw:
-        return []
+class BranchesFromUrlBody(BaseModel):
+    clone_url: str
 
-    result: list[WorkspaceOut] = []
-    for entry in raw.split(","):
-        url = entry.strip()
-        if not url:
+
+def _parse_branches_from_ls_remote(raw_output: str) -> BranchesOut:
+    """Extrai nomes de branch da saída de `git ls-remote --heads`."""
+    branches: list[str] = []
+    for line in raw_output.splitlines():
+        parts = line.strip().split("\t")
+        if len(parts) != 2:
             continue
-        path = urlparse(url).path
-        slug = path.rstrip("/").split("/")[-1]
-        if slug.endswith(".git"):
-            slug = slug[:-4]
-        name = slug.replace("-", " ").replace("_", " ").title()
-        result.append(WorkspaceOut(slug=slug, name=name, url=url))
-
-    return result
+        ref = parts[1]  # ex.: refs/heads/main
+        if ref.startswith("refs/heads/"):
+            name = ref[len("refs/heads/") :]
+            if name and name not in branches:
+                branches.append(name)
+    if not branches:
+        branches = ["main"]
+    default = next((b for b in branches if b in ("main", "master")), branches[0])
+    return BranchesOut(branches=sorted(branches), default=default)
 
 
 @router.get("", response_model=list[WorkspaceOut])
-async def list_workspaces() -> list[WorkspaceOut]:
-    """Lista repositórios configurados em WORKSPACE_REPOS."""
-    return _parse_repos()
+async def list_workspaces(
+    _current: Annotated[User, Depends(get_authenticated_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> list[WorkspaceOut]:
+    """Lista repositórios cadastrados no banco de dados."""
+    rows = await session.execute(
+        select(Repository).where(Repository.active.is_(True)).order_by(Repository.name)
+    )
+    return [
+        WorkspaceOut(slug=r.slug, name=r.name, url=r.clone_url, sandbox_status=r.sandbox_status)
+        for r in rows.scalars()
+    ]
 
 
-@router.get("/{slug}/branches", response_model=BranchesOut)
-async def list_branches(slug: str) -> BranchesOut:
-    """Lista branches remotas do repositório slug via docker exec no sandbox."""
-    repos = _parse_repos()
-    if not any(r.slug == slug for r in repos):
-        raise HTTPException(status_code=404, detail=f"Workspace '{slug}' não encontrado.")
-
-    repo_path = f"/repos/{slug}"
-
+@router.post("/branches-from-url", response_model=BranchesOut)
+async def branches_from_url(
+    body: BranchesFromUrlBody,
+    _current: Annotated[User, Depends(get_authenticated_user)],
+) -> BranchesOut:
+    """Lista branches remotas de qualquer URL via git ls-remote no sandbox."""
     try:
-        result = subprocess.run(
+        proc = subprocess.run(
             [
                 "docker",
                 "exec",
                 _SANDBOX_CONTAINER,
                 "git",
-                "-C",
-                repo_path,
-                "branch",
-                "-r",
-                "--format=%(refname:short)",
+                "ls-remote",
+                "--heads",
+                body.clone_url,
             ],
             capture_output=True,
             text=True,
-            timeout=15,
+            timeout=30,
         )
-        raw_branches = result.stdout.strip().splitlines()
+        return _parse_branches_from_ls_remote(proc.stdout)
     except Exception:
-        raw_branches = []
+        return BranchesOut(branches=["main"], default="main")
 
-    branches: list[str] = []
-    for b in raw_branches:
-        b = b.strip()
-        if not b or "HEAD" in b:
-            continue
-        # remove "origin/" prefix
-        if b.startswith("origin/"):
-            b = b[len("origin/") :]
-        if b and b not in branches:
-            branches.append(b)
 
-    if not branches:
-        branches = ["main"]
+@router.get("/{slug}/branches", response_model=BranchesOut)
+async def list_branches(
+    slug: str,
+    _current: Annotated[User, Depends(get_authenticated_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> BranchesOut:
+    """Lista branches remotas do repositório slug via docker exec no sandbox."""
+    result = await session.execute(select(Repository).where(Repository.slug == slug))
+    repo = result.scalar_one_or_none()
+    if not repo:
+        raise HTTPException(status_code=404, detail=f"Workspace '{slug}' não encontrado.")
 
-    default = next((b for b in branches if b in ("main", "master")), branches[0])
-
-    return BranchesOut(branches=sorted(branches), default=default)
+    try:
+        proc = subprocess.run(
+            [
+                "docker",
+                "exec",
+                _SANDBOX_CONTAINER,
+                "git",
+                "ls-remote",
+                "--heads",
+                repo.clone_url,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return _parse_branches_from_ls_remote(proc.stdout)
+    except Exception:
+        return BranchesOut(branches=["main"], default="main")

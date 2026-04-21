@@ -38,11 +38,9 @@ class AgentPort(ABC):
     async def dispatch(
         self,
         prompt: str,
-        env_slug: str = "default",
         conversation_id: str | None = None,
         triggered_by: str = "system",
         trigger_payload: dict | None = None,
-        base_branch: str = "",
     ) -> str | None:
         """Dispatch an agent task and return the task_id.
 
@@ -51,11 +49,9 @@ class AgentPort(ABC):
 
         Args:
             prompt: The instruction/question for the agent.
-            env_slug: Accepted for backwards compatibility; ignored (always uses default env).
             conversation_id: Optional conversation to associate the task with.
             triggered_by: Source of the trigger (user/github/gitlab/routine/schedule).
             trigger_payload: Additional metadata about the trigger.
-            base_branch: Git base branch override (empty = use repo default).
         """
 
     @abstractmethod

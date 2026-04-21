@@ -467,6 +467,7 @@ export interface Workspace {
   slug: string
   name: string
   url: string
+  sandbox_status: string
 }
 
 export async function fetchWorkspaces(token: string): Promise<Workspace[]> {
@@ -548,5 +549,99 @@ export async function createConversationPr(
     const err = await res.json().catch(() => ({}))
     throw new Error(formatApiErrorPayload(err) || 'Falha ao criar PR')
   }
+  return res.json()
+}
+
+// ── Repositories ────────────────────────────────────────────────────────────
+
+export interface Repository {
+  id: string
+  slug: string
+  name: string
+  clone_url: string
+  default_branch: string
+  sandbox_status: string
+  active: boolean
+  created_at: string
+}
+
+export interface RepositoryCreate {
+  slug: string
+  name: string
+  clone_url: string
+  default_branch: string
+  sandbox_id?: string | null
+}
+
+export async function fetchRepositories(token: string): Promise<Repository[]> {
+  const res = await apiFetch('/api/repositories', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function createRepository(
+  token: string,
+  data: RepositoryCreate,
+): Promise<Repository> {
+  const res = await apiFetch('/api/repositories', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar repositório')
+  }
+  return res.json()
+}
+
+export async function deleteRepository(token: string, repoId: string): Promise<void> {
+  const res = await apiFetch(`/api/repositories/${repoId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error('Falha ao remover repositório')
+}
+
+export async function syncRepository(token: string, repoId: string): Promise<void> {
+  const res = await apiFetch(`/api/repositories/${repoId}/sync`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error('Falha ao enfileirar sync')
+}
+
+export async function fetchBranchesFromUrl(
+  token: string,
+  cloneUrl: string,
+): Promise<{ branches: string[]; default: string }> {
+  const res = await apiFetch('/api/workspaces/branches-from-url', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clone_url: cloneUrl }),
+  })
+  if (!res.ok) return { branches: ['main'], default: 'main' }
+  return res.json()
+}
+
+// ── Sandboxes ────────────────────────────────────────────────────────────────
+
+export interface Sandbox {
+  id: string
+  name: string
+  host: string
+  grpc_port: number
+  session_port: number
+  status: string
+  created_at: string
+}
+
+export async function fetchSandboxes(token: string): Promise<Sandbox[]> {
+  const res = await apiFetch('/api/sandboxes', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return []
   return res.json()
 }

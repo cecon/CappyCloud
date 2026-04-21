@@ -273,7 +273,6 @@ async def _fire_routine(
         agent = request.app.state.agent
         task_id = await agent.dispatch(
             prompt=r.prompt,
-            env_slug=r.env_slug,
             triggered_by=triggered_by,
             trigger_payload={"routine_id": routine_id, "triggered_by": triggered_by},
         )
