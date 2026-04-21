@@ -37,6 +37,33 @@ def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def _inject_repo_context(user_message: str, repos: list, session_root: str) -> str:
+    """Injeta comandos /add para cada worktree antes da mensagem do utilizador.
+
+    Com 1 repo: working_directory já aponta para o worktree, mas /add garante
+    que o openclaude inclui o contexto do repo mesmo se o CWD for o pai.
+    Com N repos: cada repo recebe um /add separado para que o openclaude
+    consiga navegar entre os repositórios.
+    """
+    if not repos or not session_root:
+        return user_message
+
+    add_lines: list[str] = []
+    for repo in repos:
+        alias = repo.get("alias") or repo.get("slug", "")
+        branch = repo.get("base_branch") or "main"
+        if not alias:
+            continue
+        wt_path = repo.get("worktree_path") or f"{session_root}/{alias}"
+        add_lines.append(f"/add {wt_path}")
+        log.debug("Injecting /add %s (branch=%s)", wt_path, branch)
+
+    if not add_lines:
+        return user_message
+
+    return "\n".join(add_lines) + "\n\n" + user_message
+
+
 class Pipeline:
     class Valves(BaseModel):
         OPENROUTER_API_KEY: str = Field(default="")
@@ -130,6 +157,8 @@ class Pipeline:
         except (TypeError, ValueError):
             cursor = None
 
+        prompt = _inject_repo_context(user_message, repos, session_root)
+
         task_id: Optional[str] = self._run(
             self._dispatcher.get_active_task_id(conversation_id or "__none__"), timeout=10
         )
@@ -150,7 +179,7 @@ class Pipeline:
             self._run(self._dispatcher.cancel_for_conversation(conversation_id), timeout=10)
             task_id = self._run(
                 self._dispatcher.dispatch(
-                    prompt=user_message,
+                    prompt=prompt,
                     conversation_id=conversation_id or None,
                     triggered_by="user",
                     **dispatch_kwargs,
@@ -160,7 +189,7 @@ class Pipeline:
         else:
             task_id = self._run(
                 self._dispatcher.dispatch(
-                    prompt=user_message,
+                    prompt=prompt,
                     conversation_id=conversation_id or None,
                     triggered_by="user",
                     **dispatch_kwargs,

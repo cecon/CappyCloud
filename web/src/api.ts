@@ -145,14 +145,19 @@ export async function registerRequest(email: string, password: string): Promise<
   }
 }
 
+export type RepoSelection = {
+  slug: string
+  alias?: string | null
+  base_branch?: string | null
+}
+
 export type Conversation = {
   id: string
   title: string
   created_at: string
   updated_at: string
-  environment_id: string | null
-  env_slug: string | null
-  base_branch: string | null
+  repos: RepoSelection[]
+  session_root: string | null
 }
 
 export type ChatMessage = {
@@ -201,9 +206,7 @@ export async function fetchConversations(token: string): Promise<Conversation[]>
 
 export async function createConversation(
   token: string,
-  environmentId?: string | null,
-  baseBranch?: string | null,
-  envSlug?: string | null,
+  repos: RepoSelection[] = [],
 ): Promise<Conversation> {
   const res = await apiFetch('/api/conversations', {
     method: 'POST',
@@ -211,11 +214,7 @@ export async function createConversation(
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      environment_id: environmentId ?? null,
-      base_branch: baseBranch ?? null,
-      env_slug: envSlug ?? null,
-    }),
+    body: JSON.stringify({ repos }),
   })
   if (!res.ok) throw new Error('Não foi possível criar conversa')
   return res.json()

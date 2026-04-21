@@ -56,8 +56,19 @@ class SandboxRecord:
 
     @property
     def working_directory(self) -> str:
-        """Diretório de trabalho que o openclaude deve usar."""
-        return self.session_root or "/repos/default"
+        """Diretório de trabalho que o openclaude deve usar.
+
+        - Sem repos: /repos/default
+        - 1 repo:    /repos/sessions/<id>/<alias>  (entra direto no worktree)
+        - N repos:   /repos/sessions/<id>          (Claude navega entre aliases)
+        """
+        if not self.session_root:
+            return "/repos/default"
+        if len(self.repos) == 1:
+            alias = self.repos[0].get("alias") or self.repos[0].get("slug", "")
+            if alias:
+                return f"{self.session_root}/{alias}"
+        return self.session_root
 
 
 _SCHEMA = """

@@ -191,7 +191,10 @@ export function ChatPage() {
   /** Cria conversa e envia a mensagem inicial de uma vez */
   async function handleNewChatWithMessage(text: string) {
     if (!text.trim()) return
-    const c = await createConversation(token, null, selectedBranch || null, selectedSlug || null)
+    const repos = selectedSlug
+      ? [{ slug: selectedSlug, base_branch: selectedBranch || null }]
+      : []
+    const c = await createConversation(token, repos)
     setConversations((prev) => [c, ...prev])
     setActiveId(c.id)
     setMessages([])
@@ -360,7 +363,7 @@ export function ChatPage() {
   }
 
   const activeConv = conversations.find((c) => c.id === activeId)
-  const activeEnvSlug = activeConv?.env_slug ?? null
+  const activeEnvSlug = activeConv?.repos?.[0]?.slug ?? null
   const showThinking =
     streaming && !pendingText && pendingTools.every((t) => t.done) && !pendingAction
 
@@ -425,8 +428,8 @@ export function ChatPage() {
                         chat_bubble
                       </span>
                       <span className={styles.sessionLabel}>{c.title}</span>
-                      {c.env_slug && (
-                        <span className={styles.sessionEnvDot} title={c.env_slug} />
+                      {c.repos?.[0]?.slug && (
+                        <span className={styles.sessionEnvDot} title={c.repos[0].slug} />
                       )}
                     </button>
                   ))}
@@ -480,7 +483,7 @@ export function ChatPage() {
               onActionReply={handleActionReply}
               activeEnvSlug={activeEnvSlug}
               activeEnvName={workspaces.find(w => w.slug === activeEnvSlug)?.name ?? activeEnvSlug ?? workspaces[0]?.name ?? null}
-              activeBaseBranch={activeConv?.base_branch ?? null}
+              activeBaseBranch={activeConv?.repos?.[0]?.base_branch ?? null}
               workspaces={workspaces}
               diffStats={diffStats}
               prLoading={prLoading}
