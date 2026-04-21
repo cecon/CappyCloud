@@ -570,6 +570,15 @@
   background: var(--cc-surface-highest);
 }
 
+.contextPillRequired {
+  border-color: rgba(234, 179, 8, 0.45);
+  box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.12);
+}
+
+.contextPillRequired:hover {
+  border-color: rgba(234, 179, 8, 0.65);
+}
+
 .contextPillLabel {
   font-size: 0.6875rem;
   font-weight: 500;
@@ -1009,8 +1018,19 @@
   color: #fff;
   display: flex;
   align-items: center;
+  gap: 5px;
   flex-shrink: 0;
   transition: opacity 0.15s, transform 0.1s;
+}
+
+.stopBtnTimer {
+  font-size: 0.6rem;
+  font-weight: 600;
+  font-family: 'Space Grotesk', monospace;
+  opacity: 0.8;
+  letter-spacing: 0.03em;
+  min-width: 20px;
+  text-align: left;
 }
 
 .stopBtn:hover {
@@ -1019,6 +1039,26 @@
 
 .stopBtn:active {
   transform: scale(0.95);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Streaming cursor
+   ───────────────────────────────────────────────────────────── */
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+.streamingCursor {
+  display: inline-block;
+  width: 2px;
+  height: 0.9em;
+  background: var(--cc-on-surface-variant);
+  margin-left: 2px;
+  vertical-align: middle;
+  border-radius: 1px;
+  animation: blink 1s step-start infinite;
 }
 
 /* ─────────────────────────────────────────────────────────────

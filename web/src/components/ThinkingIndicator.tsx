@@ -1,7 +1,12 @@
 import { Group, Text } from '@mantine/core'
 import styles from './chat.module.css'
 
-export function ThinkingIndicator() {
+interface ThinkingIndicatorProps {
+  /** Texto alternativo ao "A pensar…" padrão */
+  label?: string
+}
+
+export function ThinkingIndicator({ label }: ThinkingIndicatorProps = {}) {
   return (
     <Group gap="xs" align="center">
       <Group gap={5} align="center">
@@ -10,7 +15,7 @@ export function ThinkingIndicator() {
         <div className={styles.thinkingDot} />
       </Group>
       <Text size="sm" c="dimmed">
-        A pensar…
+        {label ?? 'A pensar…'}
       </Text>
     </Group>
   )

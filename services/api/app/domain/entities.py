@@ -148,7 +148,6 @@ class Conversation:
     created_at: datetime = field(default_factory=_utcnow)
     updated_at: datetime = field(default_factory=_utcnow)
     # Infra
-    environment_id: uuid.UUID | None = None
     sandbox_id: uuid.UUID | None = None
     ai_model_id: uuid.UUID | None = None
     # Multi-repo session
@@ -163,16 +162,11 @@ class Conversation:
     pr_url: str | None = None
     pr_status: str = "none"  # none | open | draft | merged | closed
     pr_approved: bool = False
-    pr_number: int | None = None  # legacy
-    github_repo_slug: str | None = None  # legacy
+    pr_number: int | None = None
+    github_repo_slug: str | None = None
     # CI tracking
     ci_status: str = "unknown"  # unknown | pending | running | passed | failed
     ci_url: str | None = None
-    # Legacy single-repo fields
-    env_slug: str | None = None
-    base_branch: str | None = None
-    worktree_branch: str | None = None
-    worktree_path: str | None = None
 
 
 @dataclass

@@ -109,10 +109,6 @@ class ConversationCreate(BaseModel):
     title: str | None = Field(default="Nova conversa", max_length=512)
     sandbox_id: uuid.UUID | None = None
     repos: list[RepoSelection] = Field(default_factory=list)
-    # Legacy single-repo (mantido para compatibilidade com clientes antigos)
-    environment_id: uuid.UUID | None = None
-    base_branch: str | None = Field(default=None, max_length=255)
-    env_slug: str | None = Field(default=None, max_length=128)
 
 
 class ConversationOut(BaseModel):
@@ -138,12 +134,6 @@ class ConversationOut(BaseModel):
     # CI tracking
     ci_status: str = "unknown"
     ci_url: str | None = None
-    # Legacy
-    environment_id: uuid.UUID | None = None
-    env_slug: str | None = None
-    base_branch: str | None = None
-    worktree_branch: str | None = None
-    worktree_path: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -216,6 +206,7 @@ class RepositoryCreate(BaseModel):
     clone_url: str = Field(min_length=1, max_length=2048)
     default_branch: str = Field(default="main", max_length=256)
     provider_id: uuid.UUID | None = None
+    sandbox_id: uuid.UUID | None = None
 
 
 class RepositoryOut(BaseModel):

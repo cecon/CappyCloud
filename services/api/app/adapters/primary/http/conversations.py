@@ -40,8 +40,9 @@ async def list_conversations(
             title=c.title,
             created_at=c.created_at,
             updated_at=c.updated_at,
-            environment_id=c.environment_id,
-            env_slug=c.env_slug,
+            sandbox_id=c.sandbox_id,
+            repos=c.repos,
+            session_root=c.session_root,
         )
         for c in convs
     ]
@@ -61,9 +62,6 @@ async def create_conversation(
         title=b.title,
         sandbox_id=b.sandbox_id,
         repos=repos_dicts,
-        environment_id=b.environment_id,
-        base_branch=b.base_branch,
-        env_slug=b.env_slug,
     )
     return ConversationOut(
         id=conv.id,
@@ -73,11 +71,6 @@ async def create_conversation(
         sandbox_id=conv.sandbox_id,
         repos=conv.repos,
         session_root=conv.session_root,
-        environment_id=conv.environment_id,
-        env_slug=conv.env_slug,
-        base_branch=conv.base_branch,
-        worktree_branch=conv.worktree_branch,
-        worktree_path=conv.worktree_path,
     )
 
 

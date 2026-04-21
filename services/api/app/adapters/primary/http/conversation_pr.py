@@ -44,10 +44,13 @@ async def create_pull_request(
 
     row = await db.execute(
         text(
-            "SELECT cs.worktree_path, c.base_branch, re.repo_url "
+            "SELECT "
+            "  cs.repos->0->>'worktree_path' AS worktree_path, "
+            "  cs.repos->0->>'base_branch'   AS base_branch, "
+            "  r.clone_url                   AS repo_url "
             "FROM conversations c "
             "LEFT JOIN cappy_sessions cs ON cs.chat_id = c.id::text "
-            "LEFT JOIN repo_environments re ON re.id = c.environment_id "
+            "LEFT JOIN repositories r ON r.slug = cs.repos->0->>'slug' "
             "WHERE c.id = :cid AND c.user_id = :uid"
         ),
         {"cid": str(conversation_id), "uid": str(current.id)},

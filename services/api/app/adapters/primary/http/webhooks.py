@@ -79,7 +79,6 @@ async def dispatch_task(
         agent = request.app.state.agent
         task_id = await agent.dispatch(
             prompt=prompt,
-            env_slug=env_slug,
             conversation_id=conversation_id,
             triggered_by=triggered_by,
             trigger_payload=trigger_payload,

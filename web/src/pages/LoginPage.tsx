@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Anchor,
@@ -27,7 +27,8 @@ export function LoginPage({ onLoggedIn }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  async function handleLogin() {
+  async function handleLogin(e?: React.FormEvent) {
+    e?.preventDefault()
     const em = email.trim().toLowerCase()
     if (!em) {
       setError('Indica o teu email.')
@@ -63,6 +64,7 @@ export function LoginPage({ onLoggedIn }: Props) {
         Agente de código com sandbox isolado — stack própria (FastAPI + React).
       </Text>
       <Paper withBorder shadow="md" p={30} radius="md">
+        <form onSubmit={handleLogin}>
         <Stack gap="md">
           {error && (
             <Text c="red" size="sm">
@@ -83,7 +85,7 @@ export function LoginPage({ onLoggedIn }: Props) {
             onChange={(e) => setPassword(e.currentTarget.value)}
             autoComplete="current-password"
           />
-          <Button loading={loading} onClick={handleLogin} fullWidth>
+          <Button type="submit" loading={loading} fullWidth>
             Entrar
           </Button>
           <Text size="sm" ta="center">
@@ -93,6 +95,7 @@ export function LoginPage({ onLoggedIn }: Props) {
             </Anchor>
           </Text>
         </Stack>
+        </form>
       </Paper>
     </Container>
   )

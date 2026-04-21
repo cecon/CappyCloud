@@ -48,15 +48,10 @@ class CreateConversation:
         title: str | None = None,
         sandbox_id: uuid.UUID | None = None,
         repos: list[dict] | None = None,
-        # Legacy single-repo params
-        environment_id: uuid.UUID | None = None,
-        base_branch: str | None = None,
-        env_slug: str | None = None,
     ) -> Conversation:
         conv_id = uuid.uuid4()
         short_id = conv_id.hex[:12]
 
-        # Build repos list with computed branch_name and worktree_path
         resolved_repos: list[dict] = []
         for r in repos or []:
             slug = r["slug"]
@@ -74,25 +69,15 @@ class CreateConversation:
                 }
             )
 
-        session_root = f"/repos/sessions/{short_id}" if resolved_repos else None
-
-        # Legacy single-repo fallback
-        legacy_slug = env_slug or "default"
-        legacy_wt_branch = f"cappy/{legacy_slug}/{short_id}" if not resolved_repos else None
-        legacy_wt_path = f"/repos/{legacy_slug}/sessions/{short_id}" if not resolved_repos else None
+        session_root = f"/repos/sessions/{short_id}"
 
         conv = Conversation(
             id=conv_id,
             user_id=user_id,
             title=title or _DEFAULT_TITLE,
-            environment_id=environment_id,
             sandbox_id=sandbox_id,
             repos=resolved_repos,
             session_root=session_root,
-            base_branch=base_branch,
-            env_slug=legacy_slug if not resolved_repos else None,
-            worktree_branch=legacy_wt_branch,
-            worktree_path=legacy_wt_path,
         )
         return await self._conversations.save(conv)
 
@@ -163,28 +148,20 @@ class StreamMessage:
         )
 
     def _build_pipeline_body(
-        self, conv: Conversation, user_id: uuid.UUID, cursor: int | None
+        self,
+        conv: Conversation,
+        user_id: uuid.UUID,
+        cursor: int | None,
     ) -> dict:
-        body: dict = {
+        return {
             "user_id": str(user_id),
             "conversation_id": str(conv.id),
             "user": {"id": str(user_id)},
             "cursor": cursor,
+            "repos": conv.repos,
+            "session_root": conv.session_root or "",
+            "sandbox_id": str(conv.sandbox_id) if conv.sandbox_id else "",
         }
-
-        if conv.repos:
-            # Multi-repo session
-            body["repos"] = conv.repos
-            body["session_root"] = conv.session_root or ""
-            body["sandbox_id"] = str(conv.sandbox_id) if conv.sandbox_id else ""
-        else:
-            # Legacy single-repo session
-            body["env_slug"] = conv.env_slug or "default"
-            body["base_branch"] = conv.base_branch or ""
-            body["worktree_branch"] = conv.worktree_branch or ""
-            body["worktree_path"] = conv.worktree_path or ""
-
-        return body
 
     async def _inject_diff_comments(self, conversation_id: uuid.UUID, content: str) -> str:
         try:

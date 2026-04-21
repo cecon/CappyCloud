@@ -80,7 +80,10 @@ async def get_conversation_diff(
     """Diff do worktree actual em relação ao branch base."""
     row = await db.execute(
         text(
-            "SELECT cs.worktree_path, c.base_branch "
+            "SELECT "
+            "  cs.session_root, "
+            "  cs.repos->0->>'worktree_path' AS worktree_path, "
+            "  cs.repos->0->>'base_branch'   AS base_branch "
             "FROM conversations c "
             "LEFT JOIN cappy_sessions cs ON cs.chat_id = c.id::text "
             "WHERE c.id = :cid AND c.user_id = :uid"
@@ -92,7 +95,8 @@ async def get_conversation_diff(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada")
 
     base_branch = conv.base_branch or "main"
-    if not conv.worktree_path:
+    worktree = conv.worktree_path or conv.session_root
+    if not worktree:
         return {"base_branch": base_branch, "stats": {"added": 0, "removed": 0}, "files": []}
 
     try:
@@ -101,7 +105,7 @@ async def get_conversation_diff(
         client = docker.from_env()
         container = client.containers.get("cappycloud-sandbox")
         _, output = container.exec_run(
-            ["git", "-C", conv.worktree_path, "diff", f"{base_branch}..HEAD"],
+            ["git", "-C", worktree, "diff", f"{base_branch}..HEAD"],
         )
         diff_text = output.decode("utf-8", errors="replace") if output else ""
     except Exception as exc:

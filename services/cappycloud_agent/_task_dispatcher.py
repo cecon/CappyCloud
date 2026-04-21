@@ -59,15 +59,9 @@ class TaskDispatcher:
         conversation_id: str | None = None,
         triggered_by: str = "user",
         trigger_payload: dict | None = None,
-        # Multi-repo
         repos: list | None = None,
         session_root: str = "",
         sandbox_id: str = "",
-        # Legacy single-repo
-        base_branch: str = "",
-        repo_slug: str = "default",
-        worktree_branch: str = "",
-        worktree_path: str = "",
     ) -> str:
         """Cria um agent_task no DB e arranca o TaskRunner correspondente.
 
@@ -85,8 +79,6 @@ class TaskDispatcher:
             self._launch_runner(
                 task_id, prompt, conversation_id,
                 repos=repos or [], session_root=session_root, sandbox_id=sandbox_id,
-                base_branch=base_branch, repo_slug=repo_slug,
-                worktree_branch=worktree_branch, worktree_path=worktree_path,
             ),
             name=f"dispatch-{task_id[:8]}",
         )
@@ -174,10 +166,6 @@ class TaskDispatcher:
         repos: list | None = None,
         session_root: str = "",
         sandbox_id: str = "",
-        base_branch: str = "",
-        repo_slug: str = "default",
-        worktree_branch: str = "",
-        worktree_path: str = "",
     ) -> None:
         """Cria a sessão, inicia a GrpcSession e arranca o TaskRunner."""
         user_id = conversation_id or "system"
@@ -189,10 +177,6 @@ class TaskDispatcher:
                 chat_id=chat_id,
                 repos=repos or [],
                 sandbox_id=sandbox_id,
-                base_branch=base_branch,
-                repo_slug=repo_slug,
-                worktree_branch=worktree_branch,
-                worktree_path=worktree_path,
             )
         except Exception as exc:
             log.exception("[Dispatcher] Falha ao criar sessão para task %s", task_id[:8])

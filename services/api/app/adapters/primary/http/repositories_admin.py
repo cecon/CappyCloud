@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
 from app.domain.entities import User
-from app.infrastructure.orm_models import Repository, SandboxSyncQueue
+from app.infrastructure.orm_models import Repository, Sandbox, SandboxSyncQueue
 from app.schemas import RepositoryCreate, RepositoryOut
 
 router = APIRouter(prefix="/repositories", tags=["repositories"])
@@ -32,6 +32,15 @@ async def create_repository(
     _current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RepositoryOut:
+    sandbox_id = body.sandbox_id
+    if sandbox_id is None:
+        row = await session.execute(
+            select(Sandbox).where(Sandbox.status == "active").order_by(Sandbox.created_at).limit(1)
+        )
+        default_sandbox = row.scalar_one_or_none()
+        if default_sandbox:
+            sandbox_id = default_sandbox.id
+
     repo = Repository(
         id=uuid.uuid4(),
         slug=body.slug,
@@ -39,6 +48,7 @@ async def create_repository(
         clone_url=body.clone_url,
         default_branch=body.default_branch,
         provider_id=body.provider_id,
+        sandbox_id=sandbox_id,
     )
     session.add(repo)
     await session.commit()

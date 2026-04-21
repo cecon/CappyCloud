@@ -163,7 +163,6 @@ async def _fire_github_routines(
                 agent = request.app.state.agent
                 await agent.dispatch(
                     prompt=row.prompt,
-                    env_slug=row.env_slug,
                     triggered_by="routine_github",
                     trigger_payload={
                         "routine_id": str(row.id),

@@ -37,11 +37,9 @@ class PipelineAdapter(AgentPort):
     async def dispatch(
         self,
         prompt: str,
-        env_slug: str = "default",
         conversation_id: str | None = None,
         triggered_by: str = "system",
         trigger_payload: dict | None = None,
-        base_branch: str = "",
     ) -> str | None:
         """Dispatch a task via the TaskDispatcher and return task_id."""
         dispatcher = self._pipeline._dispatcher
@@ -52,7 +50,6 @@ class PipelineAdapter(AgentPort):
             conversation_id=conversation_id,
             triggered_by=triggered_by,
             trigger_payload=trigger_payload or {},
-            base_branch=base_branch,
         )
         return result if isinstance(result, str) else None
 

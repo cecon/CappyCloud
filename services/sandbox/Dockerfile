@@ -34,13 +34,9 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Azure CLI + azure-devops extension ───────────────────────
-RUN curl -sL https://packages.microsoft.com/keys/microsoft.asc \
-        | gpg --dearmor > /usr/share/keyrings/microsoft.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] \
-        https://packages.microsoft.com/repos/azure-cli/ \
-        $(. /etc/os-release && echo $VERSION_CODENAME) main" \
-        > /etc/apt/sources.list.d/azure-cli.list \
-    && apt-get update && apt-get install -y --no-install-recommends azure-cli \
+# Usa o script oficial da Microsoft para garantir versão recente compatível
+# com a extensão azure-devops (o pacote Debian nativo é antigo demais).
+RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash \
     && az extension add --name azure-devops \
     && rm -rf /var/lib/apt/lists/*
 
@@ -74,10 +70,5 @@ COPY session_start.sh /session_start.sh
 COPY session_server.js /session_server.js
 RUN sed -i 's/\r//' /env_init.sh /session_start.sh \
     && chmod +x /env_init.sh /session_start.sh
-
-# ── cappy-search CLI ──────────────────────────────────────────
-COPY cappy-search /usr/local/bin/cappy-search
-RUN sed -i 's/\r//' /usr/local/bin/cappy-search \
-    && chmod +x /usr/local/bin/cappy-search
 
 ENTRYPOINT ["/env_init.sh"]

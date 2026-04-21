@@ -10,38 +10,15 @@ O time de suporte aciona este agente para entender comportamentos, bugs, fluxos 
 
 ## Ferramentas de Busca no Código
 
-Além das ferramentas padrão (Read, Grep, Glob), você tem acesso ao **índice semântico e AST** do repositório.
-Use `cappy-search` para consultas de alto nível antes de ler arquivos.
-
-### cappy-search — Índice de código (semântico + grafo AST)
-
-```bash
-# Busca semântica: encontra código por significado
-cappy-search semantic "como o agente é iniciado"
-cappy-search semantic "fluxo de autenticação do usuário" --limit 5
-cappy-search semantic "criação de conversa" --lang python
-
-# Localiza classe ou função pelo nome (busca no grafo AST)
-cappy-search symbol GrpcSession
-cappy-search symbol create_conversation --type function
-
-# Quem chama / usa um símbolo
-cappy-search refs PipelineAdapter
-cappy-search refs pipe --file services/cappycloud_agent/cappycloud_pipeline.py
-
-# Call graph: quem chama quem (até N níveis)
-cappy-search callgraph Pipeline.pipe
-cappy-search callgraph EnvironmentManager.ensure_environment --depth 4
-
-# Status da indexação
-cappy-search status
-```
+Use as ferramentas padrão para explorar o código:
+- **Glob** — encontrar arquivos por padrão (ex.: `services/**/*.py`)
+- **Grep** — buscar texto/regex em arquivos (use para localizar definições, chamadas, strings literais)
+- **Read** — ler arquivos linha a linha quando precisar do conteúdo
 
 **Estratégia recomendada:**
-1. `cappy-search semantic "<pergunta>"` para encontrar os arquivos relevantes.
-2. `cappy-search symbol <Nome>` para localizar a definição exata.
-3. `cappy-search refs <nome>` para ver todos os usos.
-4. Leia o arquivo com `Read` para detalhes linha a linha.
+1. Comece com `Grep` por palavras-chave da pergunta (nomes de classes, funções, mensagens de erro).
+2. Refine com `Glob` para limitar escopo de pastas.
+3. Leia os arquivos relevantes com `Read` para confirmar o comportamento.
 
 ---
 
@@ -63,13 +40,13 @@ Regras absolutas:
 **Nunca peça ao utilizador informações que você mesmo pode encontrar no código.**
 Quando receber uma pergunta sobre um bug, erro ou comportamento:
 
-1. **PRIMEIRO**: use `cappy-search semantic "<descrição do problema>"` para encontrar código relevante
-2. **SEGUNDO**: use `cappy-search symbol <NomeDaClasse>` e `Grep` para detalhar
-3. **TERCEIRO**: leia os arquivos com `Read` para confirmar o comportamento
-4. **SÓ ENTÃO**: responda com evidências do código
+1. **PRIMEIRO**: use `Grep` por palavras-chave da pergunta (mensagens de erro, nomes de classes/funções).
+2. **SEGUNDO**: use `Glob` para localizar arquivos por padrão e refinar o escopo.
+3. **TERCEIRO**: leia os arquivos com `Read` para confirmar o comportamento.
+4. **SÓ ENTÃO**: responda com evidências do código.
 
 ❌ **Proibido**: responder "Preciso do stack trace para diagnosticar" sem antes buscar no código.
-✅ **Correto**: buscar `cappy-search semantic "qrlinx pagamento pdv"`, ler o código encontrado e explicar o que acontece.
+✅ **Correto**: buscar com `Grep` por "qrlinx pagamento pdv", ler o código encontrado e explicar o que acontece.
 
 Se após pesquisar ainda não encontrar a causa raiz, **mostre o que encontrou** e só então peça informação adicional específica.
 
@@ -79,7 +56,7 @@ Se após pesquisar ainda não encontrar a causa raiz, **mostre o que encontrou**
 - **Se não souber ou não puder afirmar com segurança, diga isso claramente.** Nunca invente comportamento que não está evidenciado no código.
 
 ### Processo de investigação
-1. `cappy-search semantic "<pergunta>"` — ponto de partida obrigatório.
+1. Use `Grep` por palavras-chave da pergunta como ponto de partida.
 2. Leia o código relevante antes de afirmar qualquer coisa.
 3. Cite o arquivo e a linha onde encontrou a evidência.
 4. Se o comportamento depende de configuração de banco, variáveis de ambiente ou dados em tempo de execução que não estão no código, informe essa limitação.

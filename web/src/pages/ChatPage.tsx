@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Burger,
   ScrollArea,
@@ -99,17 +100,24 @@ export function ChatPage() {
     let cancelled = false
     ;(async () => {
       try {
-        const [list, wsList] = await Promise.all([
+        const [convsResult, wsList] = await Promise.allSettled([
           fetchConversations(token),
           fetchWorkspaces(token),
         ])
         if (cancelled) return
-        setConversations(list)
-        setWorkspaces(wsList)
-        if (wsList.length > 0) setSelectedSlug(wsList[0].slug)
-        if (list.length > 0) setActiveId((prev) => prev ?? list[0].id)
-      } catch (e) {
-        if (e instanceof AuthError) {
+
+        if (wsList.status === 'fulfilled') {
+          setWorkspaces(wsList.value)
+        } else if (wsList.reason instanceof AuthError) {
+          setToken(null)
+          window.location.href = '/login'
+          return
+        }
+
+        if (convsResult.status === 'fulfilled') {
+          setConversations(convsResult.value)
+          if (convsResult.value.length > 0) setActiveId((prev) => prev ?? convsResult.value[0].id)
+        } else if (convsResult.reason instanceof AuthError) {
           setToken(null)
           window.location.href = '/login'
           return
@@ -174,10 +182,8 @@ export function ChatPage() {
     setSidePanel((p) => p === 'files' ? 'none' : 'files')
   }
 
-  async function handleNewChat() {
-    const c = await createConversation(token, null, selectedBranch || null, selectedSlug || null)
-    setConversations((prev) => [c, ...prev])
-    setActiveId(c.id)
+  function handleNewChat() {
+    setActiveId(null)
     setMessages([])
     setTimeout(() => inputRef.current?.focus(), 50)
   }
@@ -431,6 +437,10 @@ export function ChatPage() {
 
           {/* Sidebar bottom nav */}
           <div className={styles.sidebarNav}>
+            <Link to="/settings" className={styles.sidebarNavItem} title="Configurações">
+              <span className={styles.icon}>settings</span>
+              <span>Configurações</span>
+            </Link>
             <button className={styles.sidebarNavItem} onClick={logout} title="Sair">
               <span className={styles.icon}>logout</span>
               <span>Sair</span>
@@ -519,6 +529,9 @@ function EmptyState({
   const [loadedSlug, setLoadedSlug] = useState('')
   const branchesLoading = !!selectedSlug && loadedSlug !== selectedSlug
 
+  const repoReady = true  // auto-clone trata o caso de repo não clonado
+  const canExecute = !!selectedSlug && !!selectedBranch && !!input.trim() && !streaming
+
   useEffect(() => {
     if (!selectedSlug) return
     let cancelled = false
@@ -534,9 +547,12 @@ function EmptyState({
   function handleKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey && !streaming) {
       e.preventDefault()
-      if (input.trim()) onExecute(input)
+      if (canExecute) onExecute(input)
     }
   }
+
+  const repoRequired = workspaces.length > 0 && !selectedSlug
+  const branchRequired = !!selectedSlug && !selectedBranch
 
   return (
     <div className={styles.emptyState}>
@@ -556,26 +572,36 @@ function EmptyState({
               <textarea
                 ref={inputRef}
                 className={styles.commandTextarea}
-                placeholder="Descreva o que o agente deve fazer…"
+                placeholder={
+                  !selectedSlug
+                    ? 'Selecione um repositório e branch antes de continuar…'
+                    : !selectedBranch
+                      ? 'Selecione uma branch antes de continuar…'
+                      : 'Descreva o que o agente deve fazer…'
+                }
                 rows={2}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKey}
+                disabled={!selectedSlug || !selectedBranch}
               />
             </div>
 
             <div className={styles.commandToolbar}>
               <div className={styles.commandToolbarLeft}>
-                <button className={styles.toolbarBtn} title="Anexar">
+                <button className={styles.toolbarBtn} title="Anexar" disabled={!selectedSlug || !selectedBranch}>
                   <span className={styles.icon}>attachment</span>
                 </button>
-                {workspaces.length > 0 && (
-                  <div className={styles.contextPill} style={{ marginLeft: '0.5rem' }}>
+                {workspaces.length > 0 ? (
+                  <div
+                    className={`${styles.contextPill} ${repoRequired ? styles.contextPillRequired : ''}`}
+                    style={{ marginLeft: '0.5rem' }}
+                  >
                     <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
                       source
                     </span>
-                    <span className={styles.contextPillLabel}>
-                      {workspaces.find(w => w.slug === selectedSlug)?.name ?? selectedSlug}
+                    <span className={styles.contextPillLabel} style={!selectedSlug ? { opacity: 0.45 } : undefined}>
+                      {workspaces.find(w => w.slug === selectedSlug)?.name ?? 'Repositório…'}
                     </span>
                     <span className={styles.icon} style={{ fontSize: '0.75rem', opacity: 0.35 }}>
                       expand_more
@@ -586,21 +612,30 @@ function EmptyState({
                       onChange={(e) => setSelectedSlug(e.target.value)}
                       title="Selecionar repositório"
                     >
+                      {!selectedSlug && (
+                        <option value="" disabled>Selecionar repositório…</option>
+                      )}
                       {workspaces.map((w) => (
-                        <option key={w.slug} value={w.slug}>
-                          {w.name}
-                        </option>
+                        <option key={w.slug} value={w.slug}>{w.name}</option>
                       ))}
                     </select>
                   </div>
+                ) : (
+                  <div className={`${styles.contextPill} ${styles.contextPillRequired}`} style={{ marginLeft: '0.5rem' }}>
+                    <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.5 }}>source</span>
+                    <span className={styles.contextPillLabel} style={{ opacity: 0.45 }}>Nenhum repositório</span>
+                  </div>
                 )}
                 {selectedSlug && (
-                  <div className={styles.contextPill} style={{ marginLeft: '0.25rem' }}>
+                  <div
+                    className={`${styles.contextPill} ${branchRequired ? styles.contextPillRequired : ''}`}
+                    style={{ marginLeft: '0.25rem' }}
+                  >
                     <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
                       fork_right
                     </span>
-                    <span className={styles.contextPillLabel}>
-                      {branchesLoading ? '…' : (selectedBranch || 'main')}
+                    <span className={styles.contextPillLabel} style={!selectedBranch ? { opacity: 0.45 } : undefined}>
+                      {branchesLoading ? '…' : (selectedBranch || 'Branch…')}
                     </span>
                     <span className={styles.icon} style={{ fontSize: '0.75rem', opacity: 0.35 }}>
                       expand_more
@@ -612,6 +647,9 @@ function EmptyState({
                       disabled={branchesLoading}
                       title="Selecionar branch"
                     >
+                      {!selectedBranch && !branchesLoading && (
+                        <option value="" disabled>Selecionar branch…</option>
+                      )}
                       {branches.map((b) => (
                         <option key={b} value={b}>{b}</option>
                       ))}
@@ -623,8 +661,13 @@ function EmptyState({
               <div className={styles.commandToolbarRight}>
                 <button
                   className={styles.executeBtn}
-                  onClick={() => onExecute(input)}
-                  disabled={!input.trim() || streaming}
+                  onClick={() => canExecute && onExecute(input)}
+                  disabled={!canExecute}
+                  title={
+                    !selectedSlug ? 'Selecione um repositório' :
+                    !selectedBranch ? 'Selecione uma branch' :
+                    !input.trim() ? 'Digite uma mensagem' : undefined
+                  }
                 >
                   <span>Executar</span>
                   <span className={styles.icon}>keyboard_return</span>
@@ -719,6 +762,14 @@ function ActiveChat({
   token, conversationId, sidePanel, diff, diffLoading, onOpenDiff, onToggleFiles,
 }: ActiveChatProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [elapsedSecs, setElapsedSecs] = useState(0)
+
+  useEffect(() => {
+    if (!streaming) { setElapsedSecs(0); return }
+    setElapsedSecs(0)
+    const id = setInterval(() => setElapsedSecs((s) => s + 1), 1000)
+    return () => clearInterval(id)
+  }, [streaming])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -802,8 +853,12 @@ function ActiveChat({
                   {pendingTools.map((tool) => (
                     <ToolCallCard key={tool.id} tool={tool} />
                   ))}
-                  {showThinking && <ThinkingIndicator />}
-                  {pendingText && <PaperMessage role="assistant" content={pendingText} />}
+                  {(showThinking || (streaming && pendingTools.some(t => !t.done))) && (
+                    <ThinkingIndicator label={pendingTools.some(t => !t.done) ? 'A executar…' : undefined} />
+                  )}
+                  {pendingText && (
+                    <PaperMessage role="assistant" content={pendingText} streaming />
+                  )}
                 </Stack>
               )}
 
@@ -852,6 +907,7 @@ function ActiveChat({
           {streaming ? (
             <button className={styles.stopBtn} onClick={onStop} title="Parar agente">
               <span className={styles.icon}>stop</span>
+              <span className={styles.stopBtnTimer}>{elapsedSecs}s</span>
             </button>
           ) : (
           <button
@@ -896,7 +952,7 @@ function ActiveChat({
 /* ────────────────────────────────────────────────────────────────
    Message bubble
    ──────────────────────────────────────────────────────────────── */
-function PaperMessage({ role, content }: { role: string; content: string }) {
+function PaperMessage({ role, content, streaming }: { role: string; content: string; streaming?: boolean }) {
   const isUser = role === 'user'
   return (
     <div className={`${styles.message} ${isUser ? styles.messageUser : styles.messageAgent}`}>
@@ -929,6 +985,7 @@ function PaperMessage({ role, content }: { role: string; content: string }) {
       ) : (
         <div className={styles.markdownBody}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          {streaming && <span className={styles.streamingCursor} aria-hidden />}
         </div>
       )}
     </div>

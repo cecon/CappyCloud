@@ -31,15 +31,10 @@ class SandboxRecord:
     chat_id: str
     grpc_host: str
     grpc_port: int
-    # Multi-repo
     repos: list[dict] = field(default_factory=list)
     session_root: str = ""
     sandbox_id: str = ""
     sandbox_name: str = ""
-    # Legacy (single-repo) — mantidos para conversas antigas
-    env_slug: str = "default"
-    container_id: str = ""
-    worktree_path: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -50,20 +45,19 @@ class SandboxRecord:
         # Backward compat: container_ip → grpc_host
         if "container_ip" in d and "grpc_host" not in d:
             d["grpc_host"] = d.pop("container_ip")
-        # Garante campos novos presentes em registros antigos
+        # Backward compat: worktree_path → session_root para registros antigos
+        if not d.get("session_root") and d.get("worktree_path"):
+            d["session_root"] = d["worktree_path"]
         d.setdefault("repos", [])
-        d.setdefault("session_root", d.get("worktree_path", ""))
+        d.setdefault("session_root", "")
         d.setdefault("sandbox_id", "")
         d.setdefault("sandbox_name", "")
-        d.setdefault("env_slug", "default")
-        d.setdefault("container_id", "")
-        d.setdefault("worktree_path", "")
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
     @property
     def working_directory(self) -> str:
         """Diretório de trabalho que o openclaude deve usar."""
-        return self.session_root or self.worktree_path or "/repos/default"
+        return self.session_root or "/repos/default"
 
 
 _SCHEMA = """
@@ -77,9 +71,6 @@ CREATE TABLE IF NOT EXISTS cappy_sessions (
     grpc_port      INTEGER,
     session_root   TEXT NOT NULL DEFAULT '',
     repos          JSONB NOT NULL DEFAULT '[]',
-    env_slug       TEXT NOT NULL DEFAULT 'default',
-    container_id   TEXT NOT NULL DEFAULT '',
-    worktree_path  TEXT NOT NULL DEFAULT '',
     created_at     TIMESTAMPTZ DEFAULT NOW(),
     last_active    TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (user_id, chat_id)
@@ -91,10 +82,11 @@ ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS sandbox_id   TEXT NOT NULL D
 ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS sandbox_name TEXT NOT NULL DEFAULT '';
 ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS session_root TEXT NOT NULL DEFAULT '';
 ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS repos        JSONB NOT NULL DEFAULT '[]';
-ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS worktree_path TEXT DEFAULT '';
-ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS env_slug     TEXT DEFAULT 'default';
 ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS grpc_host    TEXT;
 ALTER TABLE cappy_sessions DROP COLUMN IF EXISTS repo_url;
+ALTER TABLE cappy_sessions DROP COLUMN IF EXISTS env_slug;
+ALTER TABLE cappy_sessions DROP COLUMN IF EXISTS container_id;
+ALTER TABLE cappy_sessions DROP COLUMN IF EXISTS worktree_path;
 DROP TABLE IF EXISTS cappy_env_containers;
 """
 
@@ -151,9 +143,8 @@ class SessionStore:
                 """
                 INSERT INTO cappy_sessions
                     (user_id, chat_id, sandbox_id, sandbox_name,
-                     grpc_host, grpc_port, session_root, repos,
-                     env_slug, container_id, worktree_path)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)
+                     grpc_host, grpc_port, session_root, repos)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
                 ON CONFLICT (user_id, chat_id) DO UPDATE
                     SET sandbox_id   = EXCLUDED.sandbox_id,
                         sandbox_name = EXCLUDED.sandbox_name,
@@ -161,15 +152,11 @@ class SessionStore:
                         grpc_port    = EXCLUDED.grpc_port,
                         session_root = EXCLUDED.session_root,
                         repos        = EXCLUDED.repos,
-                        env_slug     = EXCLUDED.env_slug,
-                        container_id = EXCLUDED.container_id,
-                        worktree_path = EXCLUDED.worktree_path,
                         last_active  = NOW()
                 """,
                 record.user_id, record.chat_id, record.sandbox_id, record.sandbox_name,
                 record.grpc_host, record.grpc_port, record.session_root,
-                json.dumps(record.repos), record.env_slug,
-                record.container_id, record.worktree_path,
+                json.dumps(record.repos),
             )
 
     async def refresh_ttl(self, user_id: str, chat_id: str) -> None:
@@ -194,8 +181,7 @@ class SessionStore:
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT user_id, chat_id, sandbox_id, session_root, repos,
-                       container_id, worktree_path, env_slug
+                SELECT user_id, chat_id, sandbox_id, session_root, repos
                 FROM   cappy_sessions
                 WHERE  last_active < NOW() - make_interval(secs => $1)
                 """,

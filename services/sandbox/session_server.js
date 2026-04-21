@@ -25,6 +25,25 @@ const { promisify } = require('util')
 const execFileAsync = promisify(execFile)
 const PORT = parseInt(process.env.SESSION_SERVER_PORT || '8080', 10)
 
+/**
+ * Injeta tokens de autenticação na URL git antes de clonar/fazer fetch.
+ * Suporta Azure DevOps (DEVOPS_TOKEN) e GitHub (GITHUB_TOKEN).
+ * @param {string} url
+ * @returns {string}
+ */
+function injectToken(url) {
+  const devopsToken = process.env.DEVOPS_TOKEN || ''
+  const githubToken = process.env.GITHUB_TOKEN || ''
+  let result = url
+  if (devopsToken && result.includes('dev.azure.com')) {
+    result = result.replace(/https:\/\/([^@]*@)?dev\.azure\.com/, `https://pat:${devopsToken}@dev.azure.com`)
+  }
+  if (githubToken && result.includes('github.com')) {
+    result = result.replace(/https:\/\/([^@]*@)?github\.com/, `https://x-token:${githubToken}@github.com`)
+  }
+  return result
+}
+
 function json(res, status, body) {
   const payload = JSON.stringify(body)
   res.writeHead(status, {
@@ -47,8 +66,8 @@ function readBody(req) {
 }
 
 // ── Cria um worktree via session_start.sh ──────────────────────
-async function createWorktree({ slug, alias, base_branch, branch_name, worktree_path }) {
-  const args = [slug, alias, worktree_path, base_branch || '', branch_name || '']
+async function createWorktree({ slug, alias, base_branch, branch_name, worktree_path, clone_url = '' }) {
+  const args = [slug, alias, worktree_path, base_branch || '', branch_name || '', clone_url]
   const { stdout, stderr } = await execFileAsync('/session_start.sh', args, {
     env: { ...process.env },
     timeout: 60_000,
@@ -57,17 +76,12 @@ async function createWorktree({ slug, alias, base_branch, branch_name, worktree_
 }
 
 // ── Remove session_root e prune worktrees ─────────────────────
-async function destroySession({ session_root, repos, env_slug, worktree_path }) {
-  // Remove o diretório raiz da sessão (contém todos os worktrees)
-  const target = session_root || worktree_path
-  if (target) {
-    await execFileAsync('rm', ['-rf', target], { timeout: 30_000 }).catch(() => {})
+async function destroySession({ session_root, repos }) {
+  if (session_root) {
+    await execFileAsync('rm', ['-rf', session_root], { timeout: 30_000 }).catch(() => {})
   }
 
-  // Prune worktree metadata em cada repo afetado
   const slugs = new Set((repos || []).map(r => r.slug).filter(Boolean))
-  if (!session_root && env_slug) slugs.add(env_slug)
-
   for (const slug of slugs) {
     await execFileAsync(
       'git', ['-C', `/repos/${slug}`, 'worktree', 'prune'],
@@ -87,78 +101,57 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { status: 'ok' })
     }
 
-    // POST /sessions — cria sessão (multi-repo ou legacy single-repo)
+    // POST /sessions — cria sessão multi-repo
     if (req.method === 'POST' && pathname === '/sessions') {
       const body = await readBody(req)
       const {
         session_id,
         repos = [],
         session_root = '',
-        // Legacy single-repo
-        env_slug = 'default',
-        worktree_path = '',
-        worktree_branch = '',
-        base_branch = '',
       } = body
 
       if (!session_id) {
         return json(res, 400, { error: 'session_id is required' })
       }
 
+      if (!session_root) {
+        return json(res, 400, { error: 'session_root is required' })
+      }
+
       const outputs = []
 
-      if (repos.length > 0 && session_root) {
-        // ── Multi-repo: cria session_root + um worktree por repo ────
-        fs.mkdirSync(session_root, { recursive: true })
+      fs.mkdirSync(session_root, { recursive: true })
 
-        // Injeta CLAUDE.md na raiz da sessão
-        if (fs.existsSync('/app/CLAUDE.md')) {
-          fs.copyFileSync('/app/CLAUDE.md', path.join(session_root, 'CLAUDE.md'))
-        }
+      // Injeta CLAUDE.md na raiz da sessão
+      if (fs.existsSync('/app/CLAUDE.md')) {
+        fs.copyFileSync('/app/CLAUDE.md', path.join(session_root, 'CLAUDE.md'))
+      }
 
-        for (const repo of repos) {
-          const { slug, alias, base_branch: rb, branch_name } = repo
-          if (!slug || !alias) continue
-          const wt_path = path.join(session_root, alias)
-          try {
-            const out = await createWorktree({
-              slug,
-              alias,
-              base_branch: rb || base_branch || 'main',
-              branch_name: branch_name || `cappy/${slug}/${session_id}-${alias}`,
-              worktree_path: wt_path,
-            })
-            outputs.push(`[${alias}] ${out}`)
-            console.log(`[session_server] created worktree ${wt_path}`)
-          } catch (err) {
-            const msg = ((err.stdout || '') + (err.stderr || '')).trim() || err.message
-            console.error(`[session_server] failed worktree ${wt_path}: ${msg}`)
-            outputs.push(`[${alias}] ERROR: ${msg}`)
-          }
-        }
-      } else {
-        // ── Legacy single-repo ──────────────────────────────────────
-        const wt = worktree_path || `/repos/${env_slug}/sessions/${session_id}`
+      for (const repo of repos) {
+        const { slug, alias, base_branch: rb, branch_name, clone_url: rc } = repo
+        if (!slug || !alias) continue
+        const wt_path = path.join(session_root, alias)
         try {
           const out = await createWorktree({
-            slug: env_slug,
-            alias: session_id,
-            base_branch: base_branch || 'main',
-            branch_name: worktree_branch || `cappy/${env_slug}/${session_id}`,
-            worktree_path: wt,
+            slug,
+            alias,
+            base_branch: rb || 'main',
+            branch_name: branch_name || `cappy/${slug}/${session_id}-${alias}`,
+            worktree_path: wt_path,
+            clone_url: rc || '',
           })
-          outputs.push(out)
-          console.log(`[session_server] created legacy worktree ${wt}`)
+          outputs.push(`[${alias}] ${out}`)
+          console.log(`[session_server] created worktree ${wt_path}`)
         } catch (err) {
           const msg = ((err.stdout || '') + (err.stderr || '')).trim() || err.message
-          console.error(`[session_server] failed legacy worktree: ${msg}`)
-          return json(res, 500, { error: msg })
+          console.error(`[session_server] failed worktree ${wt_path}: ${msg}`)
+          outputs.push(`[${alias}] ERROR: ${msg}`)
         }
       }
 
       return json(res, 200, {
         session_id,
-        session_root: session_root || worktree_path,
+        session_root,
         output: outputs.join('\n'),
       })
     }
@@ -168,12 +161,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'DELETE' && deleteMatch) {
       const session_id = deleteMatch[1]
       const session_root = url.searchParams.get('session_root') || ''
-      const worktree_path = url.searchParams.get('worktree_path') || ''
-      const env_slug = url.searchParams.get('env_slug') || 'default'
       let repos = []
       try { repos = JSON.parse(url.searchParams.get('repos') || '[]') } catch {}
 
-      await destroySession({ session_root, repos, env_slug, worktree_path })
+      await destroySession({ session_root, repos })
       console.log(`[session_server] removed session ${session_id}`)
       return json(res, 200, { deleted: true, session_id })
     }
@@ -187,12 +178,15 @@ const server = http.createServer(async (req, res) => {
       const repoPath = `/repos/${slug}`
       try {
         if (fs.existsSync(path.join(repoPath, '.git'))) {
-          await execFileAsync('git', ['-C', repoPath, 'fetch', '--all'], { timeout: 120_000 })
+          await execFileAsync('git', ['-C', repoPath, 'fetch', '--all'], {
+            env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }, timeout: 120_000,
+          })
           console.log(`[session_server] fetched ${slug}`)
         } else {
           fs.mkdirSync(repoPath, { recursive: true })
-          await execFileAsync('git', ['clone', '--branch', default_branch, clone_url, repoPath], {
-            env: { ...process.env },
+          const authCloneUrl = injectToken(clone_url)
+          await execFileAsync('git', ['clone', '--branch', default_branch, authCloneUrl, repoPath], {
+            env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
             timeout: 300_000,
           })
           console.log(`[session_server] cloned ${slug}`)

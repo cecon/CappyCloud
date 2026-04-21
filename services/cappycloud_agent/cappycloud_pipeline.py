@@ -121,15 +121,9 @@ class Pipeline:
             return
 
         conversation_id = str(body.get("conversation_id") or "")
-        # Multi-repo session
         repos = body.get("repos") or []
         session_root = str(body.get("session_root") or "")
         sandbox_id = str(body.get("sandbox_id") or "")
-        # Legacy single-repo
-        base_branch = str(body.get("base_branch") or "")
-        repo_slug = str(body.get("env_slug") or "default")
-        worktree_branch = str(body.get("worktree_branch") or "")
-        worktree_path = str(body.get("worktree_path") or "")
         cursor = body.get("cursor")
         try:
             cursor = int(cursor) if cursor is not None else None
@@ -143,8 +137,6 @@ class Pipeline:
 
         dispatch_kwargs = dict(
             repos=repos, session_root=session_root, sandbox_id=sandbox_id,
-            base_branch=base_branch, repo_slug=repo_slug,
-            worktree_branch=worktree_branch, worktree_path=worktree_path,
         )
 
         if runner and runner.is_alive() and runner.pending_action:
