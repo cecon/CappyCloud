@@ -38,6 +38,8 @@ services:
       timeout: 5s
       retries: 5
 
+  # Clones git, worktrees, gRPC openclaude e session_server (git ls-remote, etc.).
+  # Único serviço com volume de repositórios — a API não monta /repos.
   sandbox:
     build:
       context: services/sandbox
@@ -52,11 +54,16 @@ services:
       GRPC_HOST: "0.0.0.0"
       GRPC_PORT: ${SANDBOX_GRPC_PORT:-50051}
       SESSION_SERVER_PORT: "8080"
+      # Token compartilhado para chamar a API interna (skills/search) sem JWT.
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-CHANGE_ME_internal_token}
+      API_HOST: cappycloud-api
+      API_PORT_INTERNAL: "8080"
     volumes:
       - repos_data:/repos
     networks:
       - cappycloud_net
 
+  # FastAPI: BD, JWT, orquestração. Sem git e sem volume de repos — fala com o sandbox (HTTP/gRPC).
   api:
     build:
       context: .
@@ -76,6 +83,12 @@ services:
       SANDBOX_IDLE_TIMEOUT: ${SANDBOX_IDLE_TIMEOUT:-1800}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       REDIS_URL: redis://redis:6379
+      # Embeddings (RAG): por default usa OpenRouter (mesma chave que o chat).
+      # Para usar OpenAI direto, define EMBEDDING_API_KEY + EMBEDDING_BASE_URL.
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-${OPENROUTER_API_KEY:-}}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://openrouter.ai/api/v1}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openai/text-embedding-3-small}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-CHANGE_ME_internal_token}
     networks:
       - cappycloud_net
     ports:
@@ -93,7 +106,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  repos_data:
+  repos_data: # apenas o sandbox monta isto em /repos
 
 networks:
   cappycloud_net:

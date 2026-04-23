@@ -20,19 +20,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # conversations: remover colunas single-repo legacy
-    op.drop_index("ix_conversations_env_slug", table_name="conversations", if_exists=True)
-    op.drop_index("ix_conversations_environment_id", table_name="conversations", if_exists=True)
-    op.drop_column("conversations", "environment_id")
-    op.drop_column("conversations", "base_branch")
-    op.drop_column("conversations", "env_slug")
-    op.drop_column("conversations", "worktree_branch")
-    op.drop_column("conversations", "worktree_path")
-
-    # cappy_sessions: remover colunas legacy
-    op.drop_column("cappy_sessions", "env_slug")
-    op.drop_column("cappy_sessions", "container_id")
-    op.drop_column("cappy_sessions", "worktree_path")
+    # Idempotente: bases já migradas parcialmente ou sem estas colunas não rebentam.
+    op.execute(sa.text("DROP INDEX IF EXISTS ix_conversations_env_slug"))
+    op.execute(sa.text("DROP INDEX IF EXISTS ix_conversations_environment_id"))
+    for col in ("environment_id", "base_branch", "env_slug", "worktree_branch", "worktree_path"):
+        op.execute(sa.text(f'ALTER TABLE conversations DROP COLUMN IF EXISTS "{col}"'))
+    for col in ("env_slug", "container_id", "worktree_path"):
+        op.execute(sa.text(f'ALTER TABLE cappy_sessions DROP COLUMN IF EXISTS "{col}"'))
 
 
 def downgrade() -> None:

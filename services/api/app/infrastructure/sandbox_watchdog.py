@@ -13,13 +13,14 @@ Operações suportadas:
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.infrastructure.orm_models import Sandbox, SandboxSyncQueue
+from app.infrastructure.orm_models import Repository, Sandbox, SandboxSyncQueue
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ class SandboxWatchdog:
                 await self._execute(sandbox, item.operation, item.payload)
                 item.status = "done"
                 item.last_error = None
+                await self._sync_repo_state(session, item)
             except Exception as exc:
                 item.retries += 1
                 item.last_error = str(exc)
@@ -73,8 +75,39 @@ class SandboxWatchdog:
                 log.warning(
                     "[watchdog] %s failed (retry %d): %s", item.operation, item.retries, exc
                 )
+                await self._sync_repo_state(session, item, error=str(exc)[:500])
 
         await session.commit()
+
+    async def _sync_repo_state(
+        self,
+        session: AsyncSession,
+        item: SandboxSyncQueue,
+        error: str | None = None,
+    ) -> None:
+        """Atualiza ``repositories.sandbox_status`` e ``last_sync_at`` após operação."""
+        if item.operation not in {"clone_repo", "remove_repo"}:
+            return
+        slug = (item.payload or {}).get("slug", "")
+        if not slug:
+            return
+        rows = await session.execute(select(Repository).where(Repository.slug == slug))
+        repo = rows.scalar_one_or_none()
+        if not repo:
+            return
+        if item.operation == "clone_repo":
+            if error:
+                repo.sandbox_status = "error"
+                repo.error_message = error
+            else:
+                repo.sandbox_status = "cloned"
+                repo.sandbox_path = f"/repos/{slug}"
+                repo.last_sync_at = datetime.now(UTC)
+                repo.error_message = None
+        elif item.operation == "remove_repo" and not error:
+            repo.sandbox_status = "not_cloned"
+            repo.sandbox_path = ""
+            repo.last_sync_at = datetime.now(UTC)
 
     async def _execute(self, sandbox: Sandbox, operation: str, payload: dict[str, Any]) -> None:
         base = f"http://{sandbox.host}:{sandbox.session_port}"

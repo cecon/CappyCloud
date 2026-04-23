@@ -106,11 +106,9 @@ if ! git -C "${MAIN_REPO}" rev-parse HEAD >/dev/null 2>&1; then
     git -C "${MAIN_REPO}" commit --allow-empty -m "initial"
 fi
 
-# ── Inject agent instructions ─────────────────────────────────
-if [ -f /app/CLAUDE.md ]; then
-    cp /app/CLAUDE.md "${MAIN_REPO}/CLAUDE.md"
-    echo "CLAUDE.md injected into workspace."
-fi
+# Sem injeção de CLAUDE.md no clone principal — preservamos o ficheiro
+# original do repo. O CLAUDE.md genérico do CappyCloud é só copiado para o
+# worktree de cada sessão, e apenas se o repo não tiver já um.
 
 # ── Export provider env vars for openclaude ──────────────────
 export CLAUDE_CODE_USE_OPENAI="${CLAUDE_CODE_USE_OPENAI}"
