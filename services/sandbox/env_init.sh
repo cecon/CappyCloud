@@ -125,11 +125,9 @@ clone_or_update_repo() {
         git -C "${repo_dir}" commit --allow-empty -m "init"
     fi
 
-    # Injeta CLAUDE.md
-    if [ -f /app/CLAUDE.md ]; then
-        cp /app/CLAUDE.md "${repo_dir}/CLAUDE.md"
-        echo "    CLAUDE.md injected."
-    fi
+    # Não copiamos CLAUDE.md para o clone principal — o repo pode ter o seu
+    # próprio. A injeção só acontece nos worktrees de sessão (session_start.sh)
+    # e mesmo aí só quando o repo não tem CLAUDE.md/AGENTS.md.
 
     mkdir -p "${repo_dir}/sessions"
 }
@@ -159,6 +157,11 @@ const insert = [
   "  'anthropic/claude-3-sonnet':    200_000,",
   "  'anthropic/claude-3.5-sonnet':  200_000,",
   "  'anthropic/claude-3-opus':      200_000,",
+  "  'deepseek/deepseek-v3':         65_536,",
+  "  'deepseek/deepseek-v3-0324':    65_536,",
+  "  'deepseek/deepseek-v3.2':       65_536,",
+  "  'deepseek/deepseek-chat':       65_536,",
+  "  'deepseek/deepseek-r1':         65_536,",
   "",
 ].join('\n');
 if (c.includes('openai/gpt-4o-mini')) {

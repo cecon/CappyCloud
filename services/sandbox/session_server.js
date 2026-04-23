@@ -13,6 +13,9 @@
 // Endpoints:
 //   POST   /sessions               → cria session_root + worktrees
 //   DELETE /sessions/:id           → remove session_root e faz worktree prune
+//   POST   /git/ls-remote-branches → git ls-remote --heads (URL com ou sem PAT)
+//   POST   /git/origin-head-branch → default local (symbolic-ref)
+//   POST   /git/branch-r           → git branch -r no clone /repos/...
 //   GET    /health                 → liveness probe
 // ──────────────────────────────────────────────────────────────
 
@@ -22,18 +25,27 @@ const path = require('path')
 const { execFile, execFileSync } = require('child_process')
 const { promisify } = require('util')
 
+const gitHandlers = require('./git_handlers')
+const repoHandlers = require('./repo_handlers')
+
 const execFileAsync = promisify(execFile)
 const PORT = parseInt(process.env.SESSION_SERVER_PORT || '8080', 10)
 
 /**
  * Injeta tokens de autenticação na URL git antes de clonar/fazer fetch.
- * Suporta Azure DevOps (DEVOPS_TOKEN) e GitHub (GITHUB_TOKEN).
+ * Prioridade: token explícito (do payload) > env var (DEVOPS_TOKEN/GITHUB_TOKEN).
  * @param {string} url
+ * @param {string} explicitToken - PAT recebido no payload (do banco)
+ * @param {string} providerType - github | azure_devops
  * @returns {string}
  */
-function injectToken(url) {
-  const devopsToken = process.env.DEVOPS_TOKEN || ''
-  const githubToken = process.env.GITHUB_TOKEN || ''
+function injectToken(url, explicitToken = '', providerType = '') {
+  const devopsToken = explicitToken && (providerType === 'azure_devops' || /dev\.azure\.com/.test(url))
+    ? explicitToken
+    : (process.env.DEVOPS_TOKEN || '')
+  const githubToken = explicitToken && (providerType === 'github' || /github\.com/.test(url))
+    ? explicitToken
+    : (process.env.GITHUB_TOKEN || '')
   let result = url
   if (devopsToken && result.includes('dev.azure.com')) {
     result = result.replace(/https:\/\/([^@]*@)?dev\.azure\.com/, `https://pat:${devopsToken}@dev.azure.com`)
@@ -81,7 +93,13 @@ async function destroySession({ session_root, repos }) {
     await execFileAsync('rm', ['-rf', session_root], { timeout: 30_000 }).catch(() => {})
   }
 
-  const slugs = new Set((repos || []).map(r => r.slug).filter(Boolean))
+  // repos pode vir como array, string JSON ou null/undefined.
+  let arr = repos
+  if (typeof arr === 'string') {
+    try { arr = JSON.parse(arr) } catch { arr = [] }
+  }
+  if (!Array.isArray(arr)) arr = []
+  const slugs = new Set(arr.map(r => r && r.slug).filter(Boolean))
   for (const slug of slugs) {
     await execFileAsync(
       'git', ['-C', `/repos/${slug}`, 'worktree', 'prune'],
@@ -122,8 +140,14 @@ const server = http.createServer(async (req, res) => {
 
       fs.mkdirSync(session_root, { recursive: true })
 
-      // Injeta CLAUDE.md na raiz da sessão
-      if (fs.existsSync('/app/CLAUDE.md')) {
+      // CLAUDE.md na raiz da sessão: só se não houver instruções no próprio repo
+      // (cada worktree pode ter o seu CLAUDE.md / AGENTS.md). Aqui é a raiz
+      // multi-repo, fica como descrição neutra do ambiente.
+      if (
+        !fs.existsSync(path.join(session_root, 'CLAUDE.md')) &&
+        !fs.existsSync(path.join(session_root, 'AGENTS.md')) &&
+        fs.existsSync('/app/CLAUDE.md')
+      ) {
         fs.copyFileSync('/app/CLAUDE.md', path.join(session_root, 'CLAUDE.md'))
       }
 
@@ -169,47 +193,42 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { deleted: true, session_id })
     }
 
-    // POST /repos/clone — clona ou atualiza um repo no volume
-    if (req.method === 'POST' && pathname === '/repos/clone') {
-      const { slug, clone_url, default_branch = 'main' } = await readBody(req)
-      if (!slug || !clone_url) {
-        return json(res, 400, { error: 'slug e clone_url são obrigatórios' })
-      }
-      const repoPath = `/repos/${slug}`
-      try {
-        if (fs.existsSync(path.join(repoPath, '.git'))) {
-          await execFileAsync('git', ['-C', repoPath, 'fetch', '--all'], {
-            env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }, timeout: 120_000,
-          })
-          console.log(`[session_server] fetched ${slug}`)
-        } else {
-          fs.mkdirSync(repoPath, { recursive: true })
-          const authCloneUrl = injectToken(clone_url)
-          await execFileAsync('git', ['clone', '--branch', default_branch, authCloneUrl, repoPath], {
-            env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-            timeout: 300_000,
-          })
-          console.log(`[session_server] cloned ${slug}`)
-        }
-        return json(res, 200, { cloned: true, slug, path: repoPath })
-      } catch (err) {
-        const msg = ((err.stdout || '') + (err.stderr || '')).trim() || err.message
-        console.error(`[session_server] clone failed ${slug}: ${msg}`)
-        return json(res, 500, { error: msg })
-      }
+    // /repos/clone (POST) e /repos/:slug (DELETE)
+    if (await repoHandlers.tryHandle(req, res, { json, readBody, injectToken })) {
+      return
     }
 
-    // DELETE /repos/:slug — remove repo do volume
-    const repoMatch = pathname.match(/^\/repos\/([^/]+)$/)
-    if (req.method === 'DELETE' && repoMatch) {
-      const slug = repoMatch[1]
-      const repoPath = `/repos/${slug}`
+    // /git/* handlers (ls-remote-branches, origin-head-branch, branch-r)
+    if (await gitHandlers.tryHandle(req, res, { json, readBody, injectToken })) {
+      return
+    }
+
+    // GET /skills/search?q=...&agent_id=... — proxy para a API CappyCloud
+    // O LLM (openclaude) usa este endpoint via curl/Bash para fazer RAG por demanda.
+    if (req.method === 'GET' && pathname === '/skills/search') {
+      const q = url.searchParams.get('q') || ''
+      const agentId = url.searchParams.get('agent_id') || ''
+      const limit = url.searchParams.get('limit') || '5'
+      if (!q) return json(res, 400, { error: 'q is required' })
+
+      const apiHost = process.env.API_HOST || 'cappycloud-api'
+      const apiPort = process.env.API_PORT_INTERNAL || '8080'
+      const internalToken = process.env.INTERNAL_API_TOKEN || ''
+      const params = new URLSearchParams({ q, limit })
+      if (agentId) params.set('agent_id', agentId)
+      const apiUrl = `http://${apiHost}:${apiPort}/api/skills/_search/internal?${params}`
       try {
-        await execFileAsync('rm', ['-rf', repoPath], { timeout: 60_000 })
-        console.log(`[session_server] removed repo ${slug}`)
-        return json(res, 200, { removed: true, slug })
+        const resp = await fetch(apiUrl, {
+          headers: internalToken ? { 'X-Internal-Token': internalToken } : {},
+        })
+        const text = await resp.text()
+        if (resp.status >= 400) {
+          return json(res, resp.status, { error: 'API error', detail: text.slice(0, 300) })
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        return res.end(text)
       } catch (err) {
-        return json(res, 500, { error: err.message })
+        return json(res, 502, { error: 'API unreachable', detail: err.message })
       }
     }
 

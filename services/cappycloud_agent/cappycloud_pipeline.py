@@ -19,6 +19,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from ._agent_context import build_prompt_with_agent, load_agent_context
 from ._environment_manager import EnvironmentManager
 from ._session_store import SessionStore
 from ._task_dispatcher import TaskDispatcher
@@ -35,6 +36,38 @@ def _db_url() -> str:
 
 def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _inject_repo_context(user_message: str, repos: list, session_root: str) -> str:
+    """Injeta comandos /add para cada worktree antes da mensagem do utilizador.
+
+    Apenas relevante em sessões **multi-repo** (>1 repo): cada repo recebe um
+    ``/add <path>`` para o openclaude conseguir navegar entre os repositórios.
+
+    Com 1 repo o ``working_directory`` já aponta directamente para o worktree
+    (ver ``CappySession.working_directory``), portanto não é necessário injetar
+    nada — fazê-lo confunde o openclaude e pode terminar a chamada sem invocar
+    o LLM (done com 0 tokens).
+    """
+    if not repos or not session_root:
+        return user_message
+    if len(repos) <= 1:
+        return user_message
+
+    add_lines: list[str] = []
+    for repo in repos:
+        alias = repo.get("alias") or repo.get("slug", "")
+        branch = repo.get("base_branch") or "main"
+        if not alias:
+            continue
+        wt_path = repo.get("worktree_path") or f"{session_root}/{alias}"
+        add_lines.append(f"/add {wt_path}")
+        log.debug("Injecting /add %s (branch=%s)", wt_path, branch)
+
+    if not add_lines:
+        return user_message
+
+    return "\n".join(add_lines) + "\n\n" + user_message
 
 
 class Pipeline:
@@ -124,11 +157,37 @@ class Pipeline:
         repos = body.get("repos") or []
         session_root = str(body.get("session_root") or "")
         sandbox_id = str(body.get("sandbox_id") or "")
+        agent_id = str(body.get("agent_id") or "")
         cursor = body.get("cursor")
         try:
             cursor = int(cursor) if cursor is not None else None
         except (TypeError, ValueError):
             cursor = None
+
+        # Carrega system_prompt do agente + RAG inicial (top-N skills relevantes).
+        system_prompt = ""
+        skills_top: list[dict] = []
+        if agent_id:
+            try:
+                system_prompt, skills_top = self._run(
+                    load_agent_context(self.valves.DATABASE_URL, agent_id, user_message),
+                    timeout=10,
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Falha ao carregar agent_context: %s", exc)
+
+        # URL do session_server (para o LLM chamar /skills/search via Bash quando precisar).
+        sandbox_host = os.getenv("SANDBOX_HOST", "cappycloud-sandbox")
+        sandbox_session_port = os.getenv("SANDBOX_SESSION_PORT", "8080")
+        sandbox_session_url = f"http://{sandbox_host}:{sandbox_session_port}"
+
+        prompt = build_prompt_with_agent(
+            user_message,
+            system_prompt,
+            skills_top,
+            sandbox_session_url,
+        )
+        prompt = _inject_repo_context(prompt, repos, session_root)
 
         task_id: Optional[str] = self._run(
             self._dispatcher.get_active_task_id(conversation_id or "__none__"), timeout=10
@@ -150,7 +209,7 @@ class Pipeline:
             self._run(self._dispatcher.cancel_for_conversation(conversation_id), timeout=10)
             task_id = self._run(
                 self._dispatcher.dispatch(
-                    prompt=user_message,
+                    prompt=prompt,
                     conversation_id=conversation_id or None,
                     triggered_by="user",
                     **dispatch_kwargs,
@@ -160,7 +219,7 @@ class Pipeline:
         else:
             task_id = self._run(
                 self._dispatcher.dispatch(
-                    prompt=user_message,
+                    prompt=prompt,
                     conversation_id=conversation_id or None,
                     triggered_by="user",
                     **dispatch_kwargs,

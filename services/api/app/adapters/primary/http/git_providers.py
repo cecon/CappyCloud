@@ -12,10 +12,36 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
 from app.domain.entities import User
 from app.infrastructure.encryption import get_encryptor
-from app.infrastructure.orm_models import GitProvider
+from app.infrastructure.orm_models import GitProvider, Sandbox, SandboxSyncQueue
 from app.schemas import GitProviderCreate, GitProviderOut
 
 router = APIRouter(prefix="/git-providers", tags=["git-providers"])
+
+
+async def _enqueue_git_auth_for_all_sandboxes(
+    session: AsyncSession,
+    provider: GitProvider,
+    plain_token: str,
+) -> None:
+    """Enfileira update_git_auth no sandbox_sync_queue para todos os sandboxes ativos."""
+    if not plain_token:
+        return
+    rows = await session.execute(select(Sandbox).where(Sandbox.status == "active"))
+    sandboxes = list(rows.scalars())
+    for sb in sandboxes:
+        session.add(
+            SandboxSyncQueue(
+                id=uuid.uuid4(),
+                sandbox_id=sb.id,
+                operation="update_git_auth",
+                payload={
+                    "provider_type": provider.provider_type,
+                    "token": plain_token,
+                    "base_url": provider.base_url or "",
+                },
+                priority=1,
+            )
+        )
 
 
 @router.get("", response_model=list[GitProviderOut])
@@ -43,6 +69,8 @@ async def create_git_provider(
         token_encrypted=enc.encrypt(body.token) if body.token else "",
     )
     session.add(provider)
+    await session.flush()
+    await _enqueue_git_auth_for_all_sandboxes(session, provider, body.token)
     await session.commit()
     await session.refresh(provider)
     return GitProviderOut.model_validate(provider)
@@ -59,6 +87,7 @@ async def update_token(
     if not provider:
         raise HTTPException(status_code=404, detail="Provider não encontrado")
     provider.token_encrypted = get_encryptor().encrypt(token)
+    await _enqueue_git_auth_for_all_sandboxes(session, provider, token)
     await session.commit()
     await session.refresh(provider)
     return GitProviderOut.model_validate(provider)

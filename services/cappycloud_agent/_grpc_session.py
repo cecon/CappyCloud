@@ -209,18 +209,20 @@ class GrpcSession:
                 elif event == "done":
                     done = msg.done
                     # full_text foi removido do proto (reserved 1) — o texto já foi acumulado
-                    # via text_chunk events. Se nenhum chunk chegou mas tokens = 0, é rate limit.
+                    # via text_chunk events. Se chegou done com 0 tokens e nenhum texto,
+                    # o openclaude terminou sem chamar o LLM (path inválido, /add falhou, etc.).
                     if not streamed_text and done.prompt_tokens == 0 and done.completion_tokens == 0:
                         log.warning(
-                            "[%s] Done with 0 tokens and no text — LLM call likely failed (rate limit or quota)",
+                            "[%s] Done with 0 tokens and no text — session likely failed to start "
+                            "(invalid working_directory, worktree not created, or model error)",
                             self._session_id,
                         )
                         await self._out_queue.put((
                             "error",
-                            "O modelo não respondeu (rate limit ou cota esgotada). "
-                            "Aguarde alguns segundos e tente novamente. "
-                            "Para evitar este problema, use um modelo com limite maior em OPENROUTER_MODEL "
-                            "(ex.: openai/gpt-4o-mini ou anthropic/claude-3-haiku).",
+                            "O agente não conseguiu iniciar a sessão. "
+                            "Possíveis causas: worktree não criado (branch base não existe), "
+                            "path de sessão inválido, ou erro no modelo. "
+                            "Verifique se o repositório e branch estão configurados correctamente.",
                         ))
                         received_done = True
                         return

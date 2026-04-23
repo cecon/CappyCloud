@@ -1,94 +1,144 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
+  AuthError,
   createRepository,
   deleteRepository,
   fetchBranchesFromUrl,
   fetchRepositories,
   fetchSandboxes,
   getToken,
+  setToken,
   syncRepository,
+  updateRepository,
   type Repository,
   type RepositoryCreate,
   type Sandbox,
 } from '../api'
 import styles from './settings.module.css'
 
-const EMPTY_FORM: RepositoryCreate = {
+const PROVIDER_TYPES: Array<{ value: string; label: string }> = [
+  { value: 'azure_devops', label: 'Azure DevOps' },
+  { value: 'github', label: 'GitHub' },
+  { value: 'gitlab', label: 'GitLab' },
+  { value: 'bitbucket', label: 'Bitbucket' },
+]
+
+const EMPTY_REPO_FORM: RepositoryCreate = {
   slug: '',
   name: '',
   clone_url: '',
   default_branch: 'main',
+  provider_id: null,
   sandbox_id: null,
+  pat_token: '',
+  provider_type: null,
 }
 
 /**
  * Página de configurações: gerencia repositórios disponíveis no chat.
+ * O PAT é cadastrado inline em cada repositório (cria provider implícito no backend).
  */
 export function SettingsPage() {
   const token = getToken()!
 
   const [repos, setRepos] = useState<Repository[]>([])
+  const [sandboxes, setSandboxes] = useState<Sandbox[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const [sandboxes, setSandboxes] = useState<Sandbox[]>([])
-
-  const [form, setForm] = useState<RepositoryCreate>(EMPTY_FORM)
-  const [formError, setFormError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
-
+  const [repoForm, setRepoForm] = useState<RepositoryCreate>(EMPTY_REPO_FORM)
+  const [editingRepoId, setEditingRepoId] = useState<string | null>(null)
+  const [repoFormError, setRepoFormError] = useState<string | null>(null)
+  const [savingRepo, setSavingRepo] = useState(false)
   const [availableBranches, setAvailableBranches] = useState<string[]>([])
   const [loadingBranches, setLoadingBranches] = useState(false)
-
   const [syncingId, setSyncingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
-    loadRepos()
-    fetchSandboxes(token).then((list) => {
-      setSandboxes(list)
-      if (list.length > 0) {
-        setForm((prev) => ({ ...prev, sandbox_id: list[0].id }))
-      }
-    })
+    void loadAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function loadRepos() {
+  async function loadAll() {
     setLoading(true)
     setError(null)
     try {
-      setRepos(await fetchRepositories(token))
-    } catch {
-      setError('Não foi possível carregar os repositórios.')
+      const [repoList, sandboxList] = await Promise.all([
+        fetchRepositories(token),
+        fetchSandboxes(token),
+      ])
+      setRepos(repoList)
+      setSandboxes(sandboxList)
+      if (sandboxList.length > 0) {
+        setRepoForm((prev) =>
+          prev.sandbox_id ? prev : { ...prev, sandbox_id: sandboxList[0].id },
+        )
+      }
+    } catch (err) {
+      if (err instanceof AuthError) {
+        setToken(null)
+        window.location.href = '/login'
+        return
+      }
+      setError(err instanceof Error ? err.message : 'Não foi possível carregar dados.')
     } finally {
       setLoading(false)
     }
   }
 
-  async function handleAdd(e: React.FormEvent) {
+  function resetForm() {
+    setRepoForm({ ...EMPTY_REPO_FORM, sandbox_id: sandboxes[0]?.id ?? null })
+    setEditingRepoId(null)
+    setAvailableBranches([])
+    setRepoFormError(null)
+  }
+
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault()
-    setFormError(null)
-    setSaving(true)
+    setRepoFormError(null)
+    setSavingRepo(true)
     try {
-      const created = await createRepository(token, form)
-      setRepos((prev) => [...prev, created])
-      setForm({ ...EMPTY_FORM, sandbox_id: sandboxes[0]?.id ?? null })
-      setAvailableBranches([])
+      if (editingRepoId) {
+        const updated = await updateRepository(token, editingRepoId, repoForm)
+        setRepos((prev) => prev.map((r) => (r.id === editingRepoId ? updated : r)))
+      } else {
+        const created = await createRepository(token, repoForm)
+        setRepos((prev) => [...prev, created])
+      }
+      resetForm()
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Erro desconhecido')
+      setRepoFormError(err instanceof Error ? err.message : 'Erro desconhecido')
     } finally {
-      setSaving(false)
+      setSavingRepo(false)
     }
   }
 
+  function handleEdit(r: Repository) {
+    setEditingRepoId(r.id)
+    setRepoForm({
+      slug: r.slug,
+      name: r.name,
+      clone_url: r.clone_url,
+      default_branch: r.default_branch,
+      provider_id: r.provider_id ?? null,
+      sandbox_id: r.sandbox_id ?? sandboxes[0]?.id ?? null,
+      pat_token: '',
+      provider_type: null,
+    })
+    setAvailableBranches([])
+    setRepoFormError(null)
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })
+  }
+
   async function handleLoadBranches() {
-    if (!form.clone_url) return
+    if (!repoForm.clone_url) return
     setLoadingBranches(true)
     try {
-      const result = await fetchBranchesFromUrl(token, form.clone_url)
+      const result = await fetchBranchesFromUrl(token, repoForm.clone_url)
       setAvailableBranches(result.branches)
-      setForm((prev) => ({ ...prev, default_branch: result.default }))
+      setRepoForm((prev) => ({ ...prev, default_branch: result.default }))
     } finally {
       setLoadingBranches(false)
     }
@@ -100,7 +150,7 @@ export function SettingsPage() {
       await syncRepository(token, id)
     } finally {
       setSyncingId(null)
-      await loadRepos()
+      await loadAll()
     }
   }
 
@@ -115,8 +165,8 @@ export function SettingsPage() {
     }
   }
 
-  function handleFormChange(field: keyof RepositoryCreate, value: string | null) {
-    setForm((prev) => ({ ...prev, [field]: value }))
+  function set<K extends keyof RepositoryCreate>(field: K, value: RepositoryCreate[K]) {
+    setRepoForm((prev) => ({ ...prev, [field]: value }))
   }
 
   return (
@@ -127,12 +177,20 @@ export function SettingsPage() {
           Voltar ao chat
         </Link>
         <h1 className={styles.title}>Configurações</h1>
+        <div style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
+          <Link to="/agents" className={styles.backLink}>
+            <span className={styles.icon}>support_agent</span>
+            Gerir Agentes & Skills →
+          </Link>
+        </div>
       </header>
 
+      {/* ── Lista ─────────────────────────────────────────────── */}
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Repositórios</h2>
         <p className={styles.sectionDesc}>
-          Repositórios cadastrados aqui ficam disponíveis para seleção no chat.
+          Repositórios disponíveis para seleção no chat. O PAT (token de acesso) é
+          guardado encriptado e propagado ao sandbox automaticamente.
         </p>
 
         {loading && <p className={styles.hint}>Carregando…</p>}
@@ -166,16 +224,25 @@ export function SettingsPage() {
                   </td>
                   <td>{r.default_branch}</td>
                   <td>
-                    <span className={`${styles.badge} ${styles[`badge_${r.sandbox_status}`] ?? ''}`}>
+                    <span
+                      className={`${styles.badge} ${styles[`badge_${r.sandbox_status}`] ?? ''}`}
+                    >
                       {r.sandbox_status}
                     </span>
                   </td>
                   <td className={styles.actions}>
                     <button
                       className={styles.actionBtn}
+                      onClick={() => handleEdit(r)}
+                      title="Editar"
+                    >
+                      <span className={styles.icon}>edit</span>
+                    </button>
+                    <button
+                      className={styles.actionBtn}
                       onClick={() => handleSync(r.id)}
                       disabled={syncingId === r.id}
-                      title="Sincronizar no sandbox"
+                      title="Sincronizar (clone/fetch) no sandbox"
                     >
                       <span className={styles.icon}>
                         {syncingId === r.id ? 'hourglass_empty' : 'sync'}
@@ -197,16 +264,32 @@ export function SettingsPage() {
         )}
       </section>
 
+      {/* ── Form ──────────────────────────────────────────────── */}
       <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Adicionar repositório</h2>
-        <form onSubmit={handleAdd} className={styles.form}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 className={styles.sectionTitle}>
+            {editingRepoId ? 'Editar repositório' : 'Adicionar repositório'}
+          </h2>
+          {editingRepoId && (
+            <button
+              type="button"
+              className={styles.actionBtn}
+              onClick={resetForm}
+              title="Cancelar edição"
+            >
+              <span className={styles.icon}>close</span>
+            </button>
+          )}
+        </div>
+
+        <form onSubmit={handleSave} className={styles.form}>
           <div className={styles.formRow}>
             <label className={styles.label}>
               Nome
               <input
                 className={styles.input}
-                value={form.name}
-                onChange={(e) => handleFormChange('name', e.target.value)}
+                value={repoForm.name}
+                onChange={(e) => set('name', e.target.value)}
                 placeholder="Meu Projeto"
                 required
               />
@@ -215,31 +298,66 @@ export function SettingsPage() {
               Slug
               <input
                 className={styles.input}
-                value={form.slug}
-                onChange={(e) => handleFormChange('slug', e.target.value)}
+                value={repoForm.slug}
+                onChange={(e) => set('slug', e.target.value)}
                 placeholder="meu-projeto"
                 required
               />
             </label>
           </div>
+
           <label className={styles.label}>
             URL de clone
             <input
               className={styles.input}
-              value={form.clone_url}
-              onChange={(e) => handleFormChange('clone_url', e.target.value)}
-              placeholder="https://github.com/org/repo.git"
+              value={repoForm.clone_url}
+              onChange={(e) => set('clone_url', e.target.value)}
+              placeholder="https://dev.azure.com/org/proj/_git/repo"
               required
             />
           </label>
+
+          <div className={styles.formRow}>
+            <label className={styles.label}>
+              Tipo do repositório
+              <select
+                className={styles.input}
+                value={repoForm.provider_type ?? ''}
+                onChange={(e) => set('provider_type', e.target.value || null)}
+              >
+                <option value="">— inferir pela URL —</option>
+                {PROVIDER_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={styles.label} style={{ flex: 2 }}>
+              Personal Access Token (PAT)
+              <input
+                type="password"
+                className={styles.input}
+                value={repoForm.pat_token ?? ''}
+                onChange={(e) => set('pat_token', e.target.value || null)}
+                placeholder={
+                  editingRepoId
+                    ? 'Deixe vazio para manter o token atual'
+                    : 'Cole o PAT (deixe vazio para repos públicos)'
+                }
+                autoComplete="new-password"
+              />
+            </label>
+          </div>
+
           <div className={styles.branchRow}>
             <label className={styles.label} style={{ flex: 1 }}>
               Branch padrão
               {availableBranches.length > 0 ? (
                 <select
                   className={styles.input}
-                  value={form.default_branch}
-                  onChange={(e) => handleFormChange('default_branch', e.target.value)}
+                  value={repoForm.default_branch}
+                  onChange={(e) => set('default_branch', e.target.value)}
                   required
                 >
                   {availableBranches.map((b) => (
@@ -251,8 +369,8 @@ export function SettingsPage() {
               ) : (
                 <input
                   className={styles.input}
-                  value={form.default_branch}
-                  onChange={(e) => handleFormChange('default_branch', e.target.value)}
+                  value={repoForm.default_branch}
+                  onChange={(e) => set('default_branch', e.target.value)}
                   placeholder="main"
                   required
                 />
@@ -262,7 +380,7 @@ export function SettingsPage() {
               type="button"
               className={styles.reloadBranchBtn}
               onClick={handleLoadBranches}
-              disabled={!form.clone_url || loadingBranches}
+              disabled={!repoForm.clone_url || loadingBranches}
               title="Carregar branches da URL"
             >
               <span className={`${styles.icon} ${loadingBranches ? styles.spinning : ''}`}>
@@ -270,17 +388,16 @@ export function SettingsPage() {
               </span>
             </button>
           </div>
+
           <label className={styles.label}>
             Sandbox
             <select
               className={styles.input}
-              value={form.sandbox_id ?? ''}
-              onChange={(e) => handleFormChange('sandbox_id', e.target.value || null)}
+              value={repoForm.sandbox_id ?? ''}
+              onChange={(e) => set('sandbox_id', e.target.value || null)}
               required={sandboxes.length > 0}
             >
-              {sandboxes.length === 0 && (
-                <option value="">Nenhuma sandbox disponível</option>
-              )}
+              {sandboxes.length === 0 && <option value="">Nenhuma sandbox disponível</option>}
               {sandboxes.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -289,9 +406,10 @@ export function SettingsPage() {
               ))}
             </select>
           </label>
-          {formError && <p className={styles.errorMsg}>{formError}</p>}
-          <button className={styles.submitBtn} type="submit" disabled={saving}>
-            {saving ? 'Salvando…' : 'Adicionar'}
+
+          {repoFormError && <p className={styles.errorMsg}>{repoFormError}</p>}
+          <button className={styles.submitBtn} type="submit" disabled={savingRepo}>
+            {savingRepo ? 'Salvando…' : editingRepoId ? 'Salvar alterações' : 'Adicionar'}
           </button>
         </form>
       </section>
