@@ -29,7 +29,6 @@ Routing logic in pipe():
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import os
 import sys
@@ -45,72 +44,10 @@ for _p in ("/app", "/app/pipelines"):
 
 from _docker_manager import DockerManager  # noqa: E402
 from _grpc_session import GrpcSession, PendingAction, _DONE  # noqa: E402
+from _pipeline_utils import format_action, stable_chat_id, user_id_from_body  # noqa: E402
 from _session_store import SessionStore  # noqa: E402
 
 log = logging.getLogger(__name__)
-
-
-def _stable_chat_id(messages: list[dict]) -> str:
-    """SHA-1 of the first user message → stable chat identifier."""
-    first = next(
-        (m.get("content", "") for m in messages if m.get("role") == "user"),
-        "",
-    )
-    if isinstance(first, list):
-        first = " ".join(p.get("text", "") for p in first if isinstance(p, dict))
-    return hashlib.sha1(first[:300].encode()).hexdigest()[:16]
-
-
-def _user_id_from_body(body: dict) -> str:
-    """
-    Resolve o ID do utilizador para o par (user_id, chat_id).
-
-    O Open WebUI envia ``user`` como dict com ``id``. O LibreChat pode enviar
-    ``user`` como string (ex.: ObjectId MongoDB) — nesse caso não usar ``.get``.
-    """
-    raw = body.get("user")
-    if raw is None:
-        return str(body.get("user_id") or "anonymous")
-    if isinstance(raw, dict):
-        return str(raw.get("id") or body.get("user_id") or "anonymous")
-    return str(raw)
-
-
-def _format_action(action: PendingAction) -> str:
-    """
-    Render an ActionRequired event as a clean chat message with visible choices.
-    """
-    lines = ["\n\n---\n"]
-
-    if action.is_confirmation:
-        lines.append("**O agente precisa da sua confirmação:**\n")
-        lines.append(f"> {action.question}\n\n")
-        lines.append("Responda:\n")
-        lines.append("- **`sim`** — prosseguir\n")
-        lines.append("- **`não`** — cancelar\n")
-
-    else:
-        lines.append("**O agente precisa de mais informações:**\n")
-        # Strip bracket-encoded choices from the question text for clean display
-        import re
-
-        clean_q = re.sub(r"\s*\[[^\]]+\]", "", action.question).strip()
-        lines.append(f"> {clean_q}\n")
-
-        if action.choices:
-            lines.append("\nEscolha uma das opções:\n\n")
-            for i, choice in enumerate(action.choices, 1):
-                lines.append(f"**{i}.** {choice}\n")
-            lines.append(
-                "\n_Digite o número ou o nome da opção (ex: `1` ou `"
-                + action.choices[0]
-                + "`)_\n"
-            )
-        else:
-            lines.append("\nDigite sua resposta na caixa abaixo.\n")
-
-    lines.append("\n---\n")
-    return "".join(lines)
 
 
 class Pipeline:
@@ -210,8 +147,8 @@ class Pipeline:
         messages: list,
         body: dict,
     ) -> Generator[str, None, None]:
-        user_id = _user_id_from_body(body)
-        chat_id = _stable_chat_id(messages)
+        user_id = user_id_from_body(body)
+        chat_id = stable_chat_id(messages)
         session_key = (user_id, chat_id)
 
         log.info("pipe() user=%s chat=%s msg=%r", user_id, chat_id, user_message[:80])
@@ -291,7 +228,7 @@ class Pipeline:
             elif event_type == "action":
                 # Stream paused — render choices and wait for user response
                 action: PendingAction = data
-                yield _format_action(action)
+                yield format_action(action)
                 break  # pipe() returns; next user message resumes the session
 
             elif event_type == "timeout":

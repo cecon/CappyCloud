@@ -14,7 +14,14 @@ import grpc.aio
 import openclaude_pb2  # type: ignore[import-not-found]
 import openclaude_pb2_grpc  # type: ignore[import-not-found]
 
-from ._grpc_helpers import PendingAction, connect_with_retry, parse_choices
+from ._grpc_helpers import (
+    GRPC_CONNECTION_LOST,
+    GRPC_UNEXPECTED_END,
+    SESSION_START_ERROR,
+    PendingAction,
+    connect_with_retry,
+    parse_choices,
+)
 
 log = logging.getLogger(__name__)
 
@@ -235,15 +242,7 @@ class GrpcSession:
                             "(invalid working_directory, worktree not created, or model error)",
                             self._session_id,
                         )
-                        await self._out_queue.put(
-                            (
-                                "error",
-                                "O agente não conseguiu iniciar a sessão. "
-                                "Possíveis causas: worktree não criado (branch base não existe), "
-                                "path de sessão inválido, ou erro no modelo. "
-                                "Verifique se o repositório e branch estão configurados correctamente.",
-                            )
-                        )
+                        await self._out_queue.put(("error", SESSION_START_ERROR))
                         received_done = True
                         return
                     log.info(
@@ -272,23 +271,13 @@ class GrpcSession:
                 log.warning(
                     "[%s] gRPC stream ended without done/error event", self._session_id
                 )
-                await self._out_queue.put(
-                    (
-                        "error",
-                        "O agente encerrou a conexão inesperadamente (possível rate limit ou timeout do modelo).",
-                    )
-                )
+                await self._out_queue.put(("error", GRPC_UNEXPECTED_END))
 
         except grpc.aio.AioRpcError as exc:
             details = exc.details() or str(exc)
             log.error("[%s] gRPC error: %s", self._session_id, details)
             if "Socket closed" in details or "UNAVAILABLE" in exc.code().name:
-                await self._out_queue.put(
-                    (
-                        "error",
-                        "Conexão com o sandbox perdida. Envie sua mensagem novamente para reconectar.",
-                    )
-                )
+                await self._out_queue.put(("error", GRPC_CONNECTION_LOST))
             else:
                 await self._out_queue.put(("error", details))
         except asyncio.CancelledError:

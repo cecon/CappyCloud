@@ -21,55 +21,11 @@ from pydantic import BaseModel, Field
 
 from ._agent_context import build_prompt_with_agent, load_agent_context
 from ._environment_manager import EnvironmentManager
+from ._pipeline_helpers import db_url, inject_repo_context, sse
 from ._session_store import SessionStore
 from ._task_dispatcher import TaskDispatcher
 
 log = logging.getLogger(__name__)
-
-
-def _db_url() -> str:
-    explicit = os.getenv("PIPELINE_DATABASE_URL", "").strip()
-    if explicit:
-        return explicit
-    return os.getenv("DATABASE_URL", "").replace(
-        "postgresql+asyncpg://", "postgresql://", 1
-    )
-
-
-def _sse(payload: dict) -> str:
-    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-
-
-def _inject_repo_context(user_message: str, repos: list, session_root: str) -> str:
-    """Injeta comandos /add para cada worktree antes da mensagem do utilizador.
-
-    Apenas relevante em sessões **multi-repo** (>1 repo): cada repo recebe um
-    ``/add <path>`` para o openclaude conseguir navegar entre os repositórios.
-
-    Com 1 repo o ``working_directory`` já aponta directamente para o worktree
-    (ver ``CappySession.working_directory``), portanto não é necessário injetar
-    nada — fazê-lo confunde o openclaude e pode terminar a chamada sem invocar
-    o LLM (done com 0 tokens).
-    """
-    if not repos or not session_root:
-        return user_message
-    if len(repos) <= 1:
-        return user_message
-
-    add_lines: list[str] = []
-    for repo in repos:
-        alias = repo.get("alias") or repo.get("slug", "")
-        branch = repo.get("base_branch") or "main"
-        if not alias:
-            continue
-        wt_path = repo.get("worktree_path") or f"{session_root}/{alias}"
-        add_lines.append(f"/add {wt_path}")
-        log.debug("Injecting /add %s (branch=%s)", wt_path, branch)
-
-    if not add_lines:
-        return user_message
-
-    return "\n".join(add_lines) + "\n\n" + user_message
 
 
 class Pipeline:
@@ -95,7 +51,7 @@ class Pipeline:
             SANDBOX_SESSION_PORT=int(os.getenv("SANDBOX_SESSION_PORT", "8080")),
             SANDBOX_IDLE_TIMEOUT=int(os.getenv("SANDBOX_IDLE_TIMEOUT", "1800")),
             REDIS_URL=os.getenv("REDIS_URL", "redis://redis:6379"),
-            DATABASE_URL=_db_url(),
+            DATABASE_URL=db_url(),
         )
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._store: Optional[SessionStore] = None
@@ -158,7 +114,7 @@ class Pipeline:
         body: dict,
     ) -> Generator[str, None, None]:
         if self._dispatcher is None:
-            yield _sse({"type": "error", "message": "Pipeline não inicializado."})
+            yield sse({"type": "error", "message": "Pipeline não inicializado."})
             return
 
         conversation_id = str(body.get("conversation_id") or "")
@@ -197,7 +153,7 @@ class Pipeline:
             skills_top,
             sandbox_session_url,
         )
-        prompt = _inject_repo_context(prompt, repos, session_root)
+        prompt = inject_repo_context(prompt, repos, session_root)
 
         task_id: Optional[str] = self._run(
             self._dispatcher.get_active_task_id(conversation_id or "__none__"),
@@ -299,7 +255,7 @@ class Pipeline:
             if item is None:
                 break
             event_type, data, eid = item
-            yield _sse({"type": event_type, "cursor": eid, **(data if data else {})})
+            yield sse({"type": event_type, "cursor": eid, **(data if data else {})})
 
     async def _gc_loop(self) -> None:
         while True:
