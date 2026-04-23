@@ -62,6 +62,7 @@ class TaskDispatcher:
         repos: list | None = None,
         session_root: str = "",
         sandbox_id: str = "",
+        override_model: str | None = None,
     ) -> str:
         """Cria um agent_task no DB e arranca o TaskRunner correspondente.
 
@@ -79,6 +80,7 @@ class TaskDispatcher:
             self._launch_runner(
                 task_id, prompt, conversation_id,
                 repos=repos or [], session_root=session_root, sandbox_id=sandbox_id,
+                override_model=override_model,
             ),
             name=f"dispatch-{task_id[:8]}",
         )
@@ -166,6 +168,7 @@ class TaskDispatcher:
         repos: list | None = None,
         session_root: str = "",
         sandbox_id: str = "",
+        override_model: str | None = None,
     ) -> None:
         """Cria a sessão, inicia a GrpcSession e arranca o TaskRunner."""
         user_id = conversation_id or "system"
@@ -190,7 +193,7 @@ class TaskDispatcher:
             container_ip=sandbox.grpc_host,
             grpc_port=sandbox.grpc_port,
             session_id=f"{user_id}:{chat_id}",
-            model=self._model,
+            model=override_model or self._model,
             working_directory=working_directory,
         )
 

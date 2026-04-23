@@ -196,6 +196,7 @@ class Pipeline:
 
         dispatch_kwargs = dict(
             repos=repos, session_root=session_root, sandbox_id=sandbox_id,
+            override_model=body.get("override_model"),
         )
 
         if runner and runner.is_alive() and runner.pending_action:

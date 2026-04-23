@@ -120,6 +120,7 @@ class StreamMessage:
         content: str,
         model_id: str = "cappycloud",
         cursor: int | None = None,
+        override_model: str | None = None,
     ) -> AsyncGenerator[bytes]:
         conv = await self._conversations.get(conversation_id, user_id)
         if not conv:
@@ -143,7 +144,7 @@ class StreamMessage:
         history = await self._messages.list_by_conversation(conversation_id)
         messages_payload = [{"role": m.role, "content": m.content} for m in history]
 
-        pipeline_body = self._build_pipeline_body(conv, user_id, cursor)
+        pipeline_body = self._build_pipeline_body(conv, user_id, cursor, override_model)
 
         return self._stream_chunks(
             injected_prompt, model_id, messages_payload, pipeline_body, conversation_id
@@ -154,6 +155,7 @@ class StreamMessage:
         conv: Conversation,
         user_id: uuid.UUID,
         cursor: int | None,
+        override_model: str | None = None,
     ) -> dict:
         return {
             "user_id": str(user_id),
@@ -164,6 +166,7 @@ class StreamMessage:
             "session_root": conv.session_root or "",
             "sandbox_id": str(conv.sandbox_id) if conv.sandbox_id else "",
             "agent_id": str(conv.agent_id) if conv.agent_id else "",
+            "override_model": override_model,
         }
 
     async def _inject_diff_comments(self, conversation_id: uuid.UUID, content: str) -> str:
