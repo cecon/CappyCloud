@@ -109,6 +109,7 @@ class ConversationCreate(BaseModel):
     title: str | None = Field(default="Nova conversa", max_length=512)
     sandbox_id: uuid.UUID | None = None
     repos: list[RepoSelection] = Field(default_factory=list)
+    agent_id: uuid.UUID | None = None
 
 
 class ConversationOut(BaseModel):
@@ -120,6 +121,7 @@ class ConversationOut(BaseModel):
     updated_at: datetime
     sandbox_id: uuid.UUID | None = None
     ai_model_id: uuid.UUID | None = None
+    agent_id: uuid.UUID | None = None
     repos: list[dict] = Field(default_factory=list)
     session_root: str | None = None
     # Worktree state
@@ -207,6 +209,9 @@ class RepositoryCreate(BaseModel):
     default_branch: str = Field(default="main", max_length=256)
     provider_id: uuid.UUID | None = None
     sandbox_id: uuid.UUID | None = None
+    # Inline PAT: se preenchido, cria/atualiza um provider implícito e associa.
+    pat_token: str | None = Field(default=None, max_length=4096)
+    provider_type: str | None = Field(default=None, max_length=32)
 
 
 class RepositoryOut(BaseModel):
@@ -238,3 +243,16 @@ class MessageOut(BaseModel):
 
 class SendMessageBody(BaseModel):
     content: str = Field(min_length=1, max_length=1_000_000)
+
+
+# ── Re-export schemas de Agents & Skills (definidos em ``schemas_agents``) ──
+from app.schemas_agents import (  # noqa: E402, F401
+    AgentCreate,
+    AgentOut,
+    AgentUpdate,
+    SkillCreate,
+    SkillImportFromUrlBody,
+    SkillOut,
+    SkillSearchResult,
+    SkillUpdate,
+)

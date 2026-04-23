@@ -148,6 +148,12 @@ class Conversation(Base):
         nullable=True,
         index=True,
     )
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUIDType,
+        ForeignKey("agents.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(512), default="Nova conversa")
     # Multi-repo: lista de {slug, alias, base_branch, branch_name, worktree_path}
     repos: Mapped[list] = mapped_column(JSONBType, nullable=False, server_default="[]")
@@ -217,6 +223,10 @@ from app.infrastructure.orm_models_agent import (  # noqa: F401, E402
     PrSubscription,
     Routine,
     RoutineRun,
+)
+from app.infrastructure.orm_models_agents import (  # noqa: F401, E402
+    Agent,
+    Skill,
 )
 from app.infrastructure.orm_models_platform import (  # noqa: F401, E402
     AiModel,

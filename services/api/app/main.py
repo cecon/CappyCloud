@@ -11,6 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.adapters.primary.http import agents as agents_router
 from app.adapters.primary.http import ai_models as ai_models_router
 from app.adapters.primary.http import auth as auth_router
 from app.adapters.primary.http import conversation_diff as conv_diff_router
@@ -22,6 +23,8 @@ from app.adapters.primary.http import git_providers as git_providers_router
 from app.adapters.primary.http import repositories_admin as repos_admin_router
 from app.adapters.primary.http import routines as routines_router
 from app.adapters.primary.http import sandboxes as sandboxes_router
+from app.adapters.primary.http import skills as skills_router
+from app.adapters.primary.http import skills_search as skills_search_router
 from app.adapters.primary.http import tasks as tasks_router
 from app.adapters.primary.http import webhooks as webhooks_router
 from app.adapters.primary.http import workspaces as workspaces_router
@@ -132,6 +135,9 @@ app.include_router(workspaces_router.router, prefix="/api")
 app.include_router(git_providers_router.router, prefix="/api")
 app.include_router(ai_models_router.router, prefix="/api")
 app.include_router(repos_admin_router.router, prefix="/api")
+app.include_router(agents_router.router, prefix="/api")
+app.include_router(skills_router.router, prefix="/api")
+app.include_router(skills_search_router.router, prefix="/api")
 
 
 @app.get("/health")

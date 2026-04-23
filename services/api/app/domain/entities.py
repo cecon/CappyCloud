@@ -150,6 +150,7 @@ class Conversation:
     # Infra
     sandbox_id: uuid.UUID | None = None
     ai_model_id: uuid.UUID | None = None
+    agent_id: uuid.UUID | None = None
     # Multi-repo session
     repos: list[dict] = field(default_factory=list)
     session_root: str | None = None

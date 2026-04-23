@@ -14,6 +14,7 @@ import {
   cancelConversation,
   createConversation,
   createConversationPr,
+  fetchAgents,
   fetchBranches,
   fetchConversationDiff,
   fetchConversations,
@@ -23,6 +24,7 @@ import {
   setToken,
   streamAssistantReply,
   type ActionRequiredEvent,
+  type Agent,
   type ChatMessage,
   type Conversation,
   type ConversationDiff,
@@ -72,6 +74,8 @@ export function ChatPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [selectedSlug, setSelectedSlug] = useState<string>('')
   const [selectedBranch, setSelectedBranch] = useState<string>('')
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('')
 
   const [pendingText, setPendingText] = useState('')
   const [pendingTools, setPendingTools] = useState<ToolCallState[]>([])
@@ -100,10 +104,14 @@ export function ChatPage() {
     let cancelled = false
     ;(async () => {
       try {
-        const [convsResult, wsList] = await Promise.allSettled([
+        const [convsResult, wsList, agentsList] = await Promise.allSettled([
           fetchConversations(token),
           fetchWorkspaces(token),
+          fetchAgents(token),
         ])
+        if (agentsList.status === 'fulfilled') {
+          setAgents(agentsList.value)
+        }
         if (cancelled) return
 
         if (wsList.status === 'fulfilled') {
@@ -191,7 +199,10 @@ export function ChatPage() {
   /** Cria conversa e envia a mensagem inicial de uma vez */
   async function handleNewChatWithMessage(text: string) {
     if (!text.trim()) return
-    const c = await createConversation(token, null, selectedBranch || null, selectedSlug || null)
+    const repos = selectedSlug
+      ? [{ slug: selectedSlug, base_branch: selectedBranch || null }]
+      : []
+    const c = await createConversation(token, repos, selectedAgentId || null)
     setConversations((prev) => [c, ...prev])
     setActiveId(c.id)
     setMessages([])
@@ -360,7 +371,7 @@ export function ChatPage() {
   }
 
   const activeConv = conversations.find((c) => c.id === activeId)
-  const activeEnvSlug = activeConv?.env_slug ?? null
+  const activeEnvSlug = activeConv?.repos?.[0]?.slug ?? null
   const showThinking =
     streaming && !pendingText && pendingTools.every((t) => t.done) && !pendingAction
 
@@ -425,8 +436,8 @@ export function ChatPage() {
                         chat_bubble
                       </span>
                       <span className={styles.sessionLabel}>{c.title}</span>
-                      {c.env_slug && (
-                        <span className={styles.sessionEnvDot} title={c.env_slug} />
+                      {c.repos?.[0]?.slug && (
+                        <span className={styles.sessionEnvDot} title={c.repos[0].slug} />
                       )}
                     </button>
                   ))}
@@ -437,6 +448,10 @@ export function ChatPage() {
 
           {/* Sidebar bottom nav */}
           <div className={styles.sidebarNav}>
+            <Link to="/agents" className={styles.sidebarNavItem} title="Agentes & Skills">
+              <span className={styles.icon}>support_agent</span>
+              <span>Agentes</span>
+            </Link>
             <Link to="/settings" className={styles.sidebarNavItem} title="Configurações">
               <span className={styles.icon}>settings</span>
               <span>Configurações</span>
@@ -462,6 +477,9 @@ export function ChatPage() {
             setSelectedSlug={setSelectedSlug}
             selectedBranch={selectedBranch}
             setSelectedBranch={setSelectedBranch}
+            agents={agents}
+            selectedAgentId={selectedAgentId}
+            setSelectedAgentId={setSelectedAgentId}
             token={token}
           />
           ) : (
@@ -480,7 +498,7 @@ export function ChatPage() {
               onActionReply={handleActionReply}
               activeEnvSlug={activeEnvSlug}
               activeEnvName={workspaces.find(w => w.slug === activeEnvSlug)?.name ?? activeEnvSlug ?? workspaces[0]?.name ?? null}
-              activeBaseBranch={activeConv?.base_branch ?? null}
+              activeBaseBranch={activeConv?.repos?.[0]?.base_branch ?? null}
               workspaces={workspaces}
               diffStats={diffStats}
               prLoading={prLoading}
@@ -517,13 +535,17 @@ interface EmptyStateProps {
   setSelectedSlug: (s: string) => void
   selectedBranch: string
   setSelectedBranch: (b: string) => void
+  agents: Agent[]
+  selectedAgentId: string
+  setSelectedAgentId: (id: string) => void
   token: string
 }
 
 function EmptyState({
   input, setInput, inputRef, onExecute, streaming,
   workspaces, selectedSlug, setSelectedSlug,
-  selectedBranch, setSelectedBranch, token,
+  selectedBranch, setSelectedBranch,
+  agents, selectedAgentId, setSelectedAgentId, token,
 }: EmptyStateProps) {
   const [branches, setBranches] = useState<string[]>([])
   const [loadedSlug, setLoadedSlug] = useState('')
@@ -652,6 +674,30 @@ function EmptyState({
                       )}
                       {branches.map((b) => (
                         <option key={b} value={b}>{b}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {agents.length > 0 && (
+                  <div className={styles.contextPill} style={{ marginLeft: '0.25rem' }}>
+                    <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
+                      support_agent
+                    </span>
+                    <span className={styles.contextPillLabel}>
+                      {agents.find((a) => a.id === selectedAgentId)?.name ?? 'Sem agente'}
+                    </span>
+                    <span className={styles.icon} style={{ fontSize: '0.75rem', opacity: 0.35 }}>
+                      expand_more
+                    </span>
+                    <select
+                      className={styles.contextPillSelect}
+                      value={selectedAgentId}
+                      onChange={(e) => setSelectedAgentId(e.target.value)}
+                      title="Selecionar agente"
+                    >
+                      <option value="">— sem agente (genérico) —</option>
+                      {agents.map((a) => (
+                        <option key={a.id} value={a.id}>{a.name}</option>
                       ))}
                     </select>
                   </div>
@@ -922,29 +968,29 @@ function ActiveChat({
           )}
         </div>
 
-        {/* Context status bar — repo pill */}
+        {/* Context status bar — repo + branch */}
         <div className={styles.chatContextBar}>
           <div className={styles.chatContextPill}>
             <span className={`${styles.icon} ${styles.chatContextIcon}`}>source</span>
             <span className={styles.chatContextText}>
               {activeEnvName ?? activeEnvSlug ?? workspaces[0]?.name ?? '—'}
             </span>
-            {workspaces.length > 1 && (
-              <>
-                <span className={styles.icon} style={{ fontSize: '0.75rem', opacity: 0.35 }}>expand_more</span>
-                <select
-                  className={styles.contextPillSelect}
-                  value={activeEnvSlug ?? workspaces[0]?.slug ?? ''}
-                  disabled
-                  title="Repo da conversa (definido ao criar)"
-                >
-                  {workspaces.map((w) => (
-                    <option key={w.slug} value={w.slug}>{w.name}</option>
-                  ))}
-                </select>
-              </>
-            )}
           </div>
+          {activeBaseBranch && (
+            <div className={styles.chatContextPill} style={{ marginLeft: '0.35rem' }}>
+              <span className={`${styles.icon} ${styles.chatContextIcon}`}>fork_right</span>
+              <span className={styles.chatContextText}>
+                {headBranch ?? activeBaseBranch}
+              </span>
+            </div>
+          )}
+          <span
+            className={styles.chatContextText}
+            style={{ opacity: 0.35, fontSize: '0.7rem', marginLeft: '0.5rem' }}
+            title="Para mudar repositório ou branch, crie uma Nova Sessão"
+          >
+            · fixo
+          </span>
         </div>
       </div>
     </div>

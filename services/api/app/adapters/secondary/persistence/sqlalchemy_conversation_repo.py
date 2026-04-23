@@ -40,6 +40,7 @@ class SQLAlchemyConversationRepository(ConversationRepository):
             user_id=conversation.user_id,
             title=conversation.title,
             sandbox_id=conversation.sandbox_id,
+            agent_id=conversation.agent_id,
             repos=conversation.repos,
             session_root=conversation.session_root,
         )
@@ -65,6 +66,7 @@ class SQLAlchemyConversationRepository(ConversationRepository):
             created_at=row.created_at,
             updated_at=row.updated_at,
             sandbox_id=row.sandbox_id,
+            agent_id=row.agent_id,
             repos=row.repos or [],
             session_root=row.session_root,
             worktree_exists=row.worktree_exists,
