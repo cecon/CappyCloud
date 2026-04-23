@@ -12,6 +12,7 @@ from app.ports.agent import AgentPort
 from app.ports.repositories import (
     ConversationRepository,
     MessageRepository,
+    RepositoryRepository,
 )
 
 _TITLE_MAX_LEN = 80
@@ -37,10 +38,22 @@ class ListConversations:
 
 
 class CreateConversation:
-    """Create a new conversation, setting up multi-repo session metadata."""
+    """Create a new conversation, setting up multi-repo session metadata.
 
-    def __init__(self, conversations: ConversationRepository) -> None:
+    Resolve cada ``slug`` em ``repos`` para o ``repo_id`` correspondente na
+    tabela ``repositories`` e armazena ambos no JSONB de ``Conversation.repos``.
+    Esse ``repo_id`` flui at\u00e9 ao pipeline e habilita filtros de skills por
+    reposit\u00f3rio. Se o slug n\u00e3o existir em ``repositories``, o item segue sem
+    ``repo_id`` (compatibilidade) e o pipeline cai no fallback lazy.
+    """
+
+    def __init__(
+        self,
+        conversations: ConversationRepository,
+        repositories: RepositoryRepository | None = None,
+    ) -> None:
         self._conversations = conversations
+        self._repositories = repositories
 
     async def execute(
         self,
@@ -60,6 +73,7 @@ class CreateConversation:
             base = r.get("base_branch") or "main"
             branch_name = f"cappy/{slug}/{short_id}-{alias}"
             worktree_path = f"/repos/sessions/{short_id}/{alias}"
+            repo_entity = await self._repositories.get_by_slug(slug) if self._repositories else None
             resolved_repos.append(
                 {
                     "slug": slug,
@@ -67,6 +81,7 @@ class CreateConversation:
                     "base_branch": base,
                     "branch_name": branch_name,
                     "worktree_path": worktree_path,
+                    "repo_id": str(repo_entity.id) if repo_entity else None,
                 }
             )
 
@@ -108,10 +123,12 @@ class StreamMessage:
         conversations: ConversationRepository,
         messages: MessageRepository,
         agent: AgentPort,
+        repositories: RepositoryRepository | None = None,
     ) -> None:
         self._conversations = conversations
         self._messages = messages
         self._agent = agent
+        self._repositories = repositories
 
     async def execute(
         self,
@@ -143,11 +160,34 @@ class StreamMessage:
         history = await self._messages.list_by_conversation(conversation_id)
         messages_payload = [{"role": m.role, "content": m.content} for m in history]
 
+        await self._ensure_repo_ids(conv)
         pipeline_body = self._build_pipeline_body(conv, user_id, cursor)
 
         return self._stream_chunks(
             injected_prompt, model_id, messages_payload, pipeline_body, conversation_id
         )
+
+    async def _ensure_repo_ids(self, conv: Conversation) -> None:
+        """Backfill lazy: para conversas criadas antes do commit que introduziu
+        ``repo_id`` em ``Conversation.repos``, resolve ``slug \u2192 repo_id`` no
+        momento do envio de mensagem. Persiste de volta na conversa para que
+        mensagens seguintes n\u00e3o paguem o lookup de novo.
+        """
+        if not self._repositories or not conv.repos:
+            return
+        changed = False
+        for r in conv.repos:
+            if r.get("repo_id"):
+                continue
+            slug = r.get("slug")
+            if not slug:
+                continue
+            repo_entity = await self._repositories.get_by_slug(slug)
+            if repo_entity:
+                r["repo_id"] = str(repo_entity.id)
+                changed = True
+        if changed:
+            await self._conversations.update(conv)
 
     def _build_pipeline_body(
         self,
