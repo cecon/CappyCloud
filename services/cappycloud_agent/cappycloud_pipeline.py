@@ -31,7 +31,9 @@ def _db_url() -> str:
     explicit = os.getenv("PIPELINE_DATABASE_URL", "").strip()
     if explicit:
         return explicit
-    return os.getenv("DATABASE_URL", "").replace("postgresql+asyncpg://", "postgresql://", 1)
+    return os.getenv("DATABASE_URL", "").replace(
+        "postgresql+asyncpg://", "postgresql://", 1
+    )
 
 
 def _sse(payload: dict) -> str:
@@ -85,7 +87,9 @@ class Pipeline:
         self.name = "CappyCloud Agent"
         self.valves = self.Valves(
             OPENROUTER_API_KEY=os.getenv("OPENROUTER_API_KEY", ""),
-            OPENROUTER_MODEL=os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet"),
+            OPENROUTER_MODEL=os.getenv(
+                "OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet"
+            ),
             SANDBOX_HOST=os.getenv("SANDBOX_HOST", "cappycloud-sandbox"),
             SANDBOX_GRPC_PORT=int(os.getenv("SANDBOX_GRPC_PORT", "50051")),
             SANDBOX_SESSION_PORT=int(os.getenv("SANDBOX_SESSION_PORT", "8080")),
@@ -135,12 +139,16 @@ class Pipeline:
     def _run(self, coro, timeout: float = 120):
         if self._loop is None:
             raise RuntimeError("Pipeline not started")
-        return asyncio.run_coroutine_threadsafe(coro, self._loop).result(timeout=timeout)
+        return asyncio.run_coroutine_threadsafe(coro, self._loop).result(
+            timeout=timeout
+        )
 
     def cancel_conversation(self, conversation_id: str) -> bool:
         if self._dispatcher is None:
             return False
-        return self._run(self._dispatcher.cancel_for_conversation(conversation_id), timeout=15)
+        return self._run(
+            self._dispatcher.cancel_for_conversation(conversation_id), timeout=15
+        )
 
     def pipe(
         self,
@@ -170,7 +178,9 @@ class Pipeline:
         if agent_id:
             try:
                 system_prompt, skills_top = self._run(
-                    load_agent_context(self.valves.DATABASE_URL, agent_id, user_message),
+                    load_agent_context(
+                        self.valves.DATABASE_URL, agent_id, user_message
+                    ),
                     timeout=10,
                 )
             except Exception as exc:  # noqa: BLE001
@@ -190,12 +200,15 @@ class Pipeline:
         prompt = _inject_repo_context(prompt, repos, session_root)
 
         task_id: Optional[str] = self._run(
-            self._dispatcher.get_active_task_id(conversation_id or "__none__"), timeout=10
+            self._dispatcher.get_active_task_id(conversation_id or "__none__"),
+            timeout=10,
         )
         runner = self._dispatcher.get_runner(task_id) if task_id else None
 
         dispatch_kwargs = dict(
-            repos=repos, session_root=session_root, sandbox_id=sandbox_id,
+            repos=repos,
+            session_root=session_root,
+            sandbox_id=sandbox_id,
             override_model=body.get("override_model"),
         )
 
@@ -207,7 +220,9 @@ class Pipeline:
                 task_id[:8] if task_id else "?",
                 conversation_id[:8] if conversation_id else "?",
             )
-            self._run(self._dispatcher.cancel_for_conversation(conversation_id), timeout=10)
+            self._run(
+                self._dispatcher.cancel_for_conversation(conversation_id), timeout=10
+            )
             task_id = self._run(
                 self._dispatcher.dispatch(
                     prompt=prompt,
@@ -230,7 +245,9 @@ class Pipeline:
 
         yield from self._stream_events(task_id, cursor)
 
-    def _stream_events(self, task_id: str, cursor: Optional[int]) -> Generator[str, None, None]:
+    def _stream_events(
+        self, task_id: str, cursor: Optional[int]
+    ) -> Generator[str, None, None]:
         import queue as _queue
 
         import asyncpg as _asyncpg
@@ -253,7 +270,8 @@ class Pipeline:
                         rows = await pool.fetch(
                             "SELECT id, event_type, data FROM agent_events "
                             "WHERE task_id=$1::uuid AND id>$2 ORDER BY id LIMIT 50",
-                            task_id, last_id,
+                            task_id,
+                            last_id,
                         )
                     for row in rows:
                         last_id = row["id"]
@@ -264,7 +282,9 @@ class Pipeline:
                     status_row = await pool.fetchrow(
                         "SELECT status FROM agent_tasks WHERE id=$1::uuid", task_id
                     )
-                    if (status_row and status_row["status"] in ("done", "error")) and not rows:
+                    if (
+                        status_row and status_row["status"] in ("done", "error")
+                    ) and not rows:
                         break
                     if not rows:
                         await asyncio.sleep(0.5)

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import sys
 from collections.abc import AsyncGenerator
 from typing import Optional
@@ -94,7 +93,9 @@ class GrpcBridge:
                 elif event == "tool_start":
                     # Log tool use silently — don't pollute the chat with JSON
                     ts = server_msg.tool_start
-                    log.info("Tool call: %s  args=%s", ts.tool_name, ts.arguments_json[:120])
+                    log.info(
+                        "Tool call: %s  args=%s", ts.tool_name, ts.arguments_json[:120]
+                    )
 
                 elif event == "tool_result":
                     tr = server_msg.tool_result

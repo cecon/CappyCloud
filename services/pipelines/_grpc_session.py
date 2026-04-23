@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import sys
 from dataclasses import dataclass
 from queue import Queue
@@ -44,8 +43,12 @@ class PendingAction:
 
     prompt_id: str
     question: str
-    action_type: int  # 0 = CONFIRM_COMMAND (yes/no), 1 = REQUEST_INFORMATION (free text)
-    choices: list[str] | None = None  # Parsed options when question contains [A / B / C]
+    action_type: (
+        int  # 0 = CONFIRM_COMMAND (yes/no), 1 = REQUEST_INFORMATION (free text)
+    )
+    choices: list[str] | None = (
+        None  # Parsed options when question contains [A / B / C]
+    )
 
     @property
     def is_confirmation(self) -> bool:
@@ -59,6 +62,7 @@ def _parse_choices(question: str) -> list[str] | None:
     Example: "Qual módulo? [PDV / Financeiro / Relatórios]" → ["PDV", "Financeiro", "Relatórios"]
     """
     import re
+
     m = re.search(r"\[([^\]]+)\]", question)
     if not m:
         return None
@@ -117,7 +121,9 @@ class GrpcSession:
     async def send_input(self, reply: str) -> None:
         """Reply to the pending ActionRequired event and resume the stream."""
         if not self.pending_action:
-            log.warning("[%s] send_input called but no pending action", self._session_id)
+            log.warning(
+                "[%s] send_input called but no pending action", self._session_id
+            )
             return
         await self._req_queue.put(
             openclaude_pb2.ClientMessage(
@@ -222,7 +228,9 @@ class GrpcSession:
                     await self._out_queue.put(("text", msg.text_chunk.text))
 
                 elif event == "tool_start":
-                    log.info("[%s] Tool: %s", self._session_id, msg.tool_start.tool_name)
+                    log.info(
+                        "[%s] Tool: %s", self._session_id, msg.tool_start.tool_name
+                    )
 
                 elif event == "tool_result":
                     tr = msg.tool_result

@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Optional
 
 import httpx
 
@@ -115,7 +114,9 @@ class EnvironmentManager:
             async with httpx.AsyncClient(timeout=60) as client:
                 await client.post(
                     f"{base}/sessions",
-                    json=self._session_payload(session_id, record.repos, record.session_root),
+                    json=self._session_payload(
+                        session_id, record.repos, record.session_root
+                    ),
                 )
         except Exception as exc:
             log.warning("_ensure_session non-fatal: %s", exc)
@@ -138,7 +139,11 @@ class EnvironmentManager:
 
         log.info(
             "Creating session %s for %s/%s (repos=%d, session_root=%r)",
-            session_id, user_id, chat_id, len(resolved_repos), session_root,
+            session_id,
+            user_id,
+            chat_id,
+            len(resolved_repos),
+            session_root,
         )
 
         payload = self._session_payload(session_id, resolved_repos, session_root)

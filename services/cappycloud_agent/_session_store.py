@@ -126,7 +126,8 @@ class SessionStore:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM cappy_sessions WHERE user_id=$1 AND chat_id=$2",
-                user_id, chat_id,
+                user_id,
+                chat_id,
             )
         if row:
             record = SandboxRecord.from_dict(dict(row))
@@ -154,8 +155,13 @@ class SessionStore:
                         repos        = EXCLUDED.repos,
                         last_active  = NOW()
                 """,
-                record.user_id, record.chat_id, record.sandbox_id, record.sandbox_name,
-                record.grpc_host, record.grpc_port, record.session_root,
+                record.user_id,
+                record.chat_id,
+                record.sandbox_id,
+                record.sandbox_name,
+                record.grpc_host,
+                record.grpc_port,
+                record.session_root,
                 json.dumps(record.repos),
             )
 
@@ -165,7 +171,8 @@ class SessionStore:
         async with self._pool.acquire() as conn:
             await conn.execute(
                 "UPDATE cappy_sessions SET last_active=NOW() WHERE user_id=$1 AND chat_id=$2",
-                user_id, chat_id,
+                user_id,
+                chat_id,
             )
 
     async def delete(self, user_id: str, chat_id: str) -> None:
@@ -174,7 +181,8 @@ class SessionStore:
         async with self._pool.acquire() as conn:
             await conn.execute(
                 "DELETE FROM cappy_sessions WHERE user_id=$1 AND chat_id=$2",
-                user_id, chat_id,
+                user_id,
+                chat_id,
             )
 
     async def list_expired_sessions(self) -> list[dict]:

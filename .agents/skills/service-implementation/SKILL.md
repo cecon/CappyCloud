@@ -60,4 +60,3 @@ Define o runtime onde o agente executa o código do usuário.
 Ao finalizar qualquer implementação em `services/*`, você **DEVE** ativar as seguintes habilidades para garantir a integridade do código:
 1.  **code-review**: Para validar a aderência à Arquitetura Hexagonal e padrões de código.
 2.  **vulnerability-auditor**: Para auditar possíveis falhas de segurança ou exposição de dados.
-

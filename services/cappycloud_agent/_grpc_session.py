@@ -72,7 +72,9 @@ class GrpcSession:
     async def send_input(self, reply: str) -> None:
         """Reply to the pending ActionRequired event and resume the stream."""
         if not self.pending_action:
-            log.warning("[%s] send_input called but no pending action", self._session_id)
+            log.warning(
+                "[%s] send_input called but no pending action", self._session_id
+            )
             return
         await self._req_queue.put(
             openclaude_pb2.ClientMessage(
@@ -175,25 +177,37 @@ class GrpcSession:
 
                 if event == "text_chunk":
                     streamed_text = True
-                    await self._out_queue.put(("text", {"content": msg.text_chunk.text}))
+                    await self._out_queue.put(
+                        ("text", {"content": msg.text_chunk.text})
+                    )
 
                 elif event == "tool_start":
                     ts = msg.tool_start
                     log.info("[%s] Tool: %s", self._session_id, ts.tool_name)
-                    await self._out_queue.put(("tool_start", {
-                        "name": ts.tool_name,
-                        "input": ts.arguments_json,
-                        "id": ts.tool_use_id,
-                    }))
+                    await self._out_queue.put(
+                        (
+                            "tool_start",
+                            {
+                                "name": ts.tool_name,
+                                "input": ts.arguments_json,
+                                "id": ts.tool_use_id,
+                            },
+                        )
+                    )
 
                 elif event == "tool_result":
                     tr = msg.tool_result
-                    await self._out_queue.put(("tool_result", {
-                        "name": tr.tool_name,
-                        "output": tr.output,
-                        "is_error": tr.is_error,
-                        "id": tr.tool_use_id,
-                    }))
+                    await self._out_queue.put(
+                        (
+                            "tool_result",
+                            {
+                                "name": tr.tool_name,
+                                "output": tr.output,
+                                "is_error": tr.is_error,
+                                "id": tr.tool_use_id,
+                            },
+                        )
+                    )
 
                 elif event == "action_required":
                     ar = msg.action_required
@@ -211,19 +225,25 @@ class GrpcSession:
                     # full_text foi removido do proto (reserved 1) — o texto já foi acumulado
                     # via text_chunk events. Se chegou done com 0 tokens e nenhum texto,
                     # o openclaude terminou sem chamar o LLM (path inválido, /add falhou, etc.).
-                    if not streamed_text and done.prompt_tokens == 0 and done.completion_tokens == 0:
+                    if (
+                        not streamed_text
+                        and done.prompt_tokens == 0
+                        and done.completion_tokens == 0
+                    ):
                         log.warning(
                             "[%s] Done with 0 tokens and no text — session likely failed to start "
                             "(invalid working_directory, worktree not created, or model error)",
                             self._session_id,
                         )
-                        await self._out_queue.put((
-                            "error",
-                            "O agente não conseguiu iniciar a sessão. "
-                            "Possíveis causas: worktree não criado (branch base não existe), "
-                            "path de sessão inválido, ou erro no modelo. "
-                            "Verifique se o repositório e branch estão configurados correctamente.",
-                        ))
+                        await self._out_queue.put(
+                            (
+                                "error",
+                                "O agente não conseguiu iniciar a sessão. "
+                                "Possíveis causas: worktree não criado (branch base não existe), "
+                                "path de sessão inválido, ou erro no modelo. "
+                                "Verifique se o repositório e branch estão configurados correctamente.",
+                            )
+                        )
                         received_done = True
                         return
                     log.info(
@@ -249,17 +269,26 @@ class GrpcSession:
 
             # gRPC stream closed without a done/error event (e.g. rate limit or server crash)
             if not received_done:
-                log.warning("[%s] gRPC stream ended without done/error event", self._session_id)
-                await self._out_queue.put(("error", "O agente encerrou a conexão inesperadamente (possível rate limit ou timeout do modelo)."))
+                log.warning(
+                    "[%s] gRPC stream ended without done/error event", self._session_id
+                )
+                await self._out_queue.put(
+                    (
+                        "error",
+                        "O agente encerrou a conexão inesperadamente (possível rate limit ou timeout do modelo).",
+                    )
+                )
 
         except grpc.aio.AioRpcError as exc:
             details = exc.details() or str(exc)
             log.error("[%s] gRPC error: %s", self._session_id, details)
             if "Socket closed" in details or "UNAVAILABLE" in exc.code().name:
-                await self._out_queue.put((
-                    "error",
-                    "Conexão com o sandbox perdida. Envie sua mensagem novamente para reconectar.",
-                ))
+                await self._out_queue.put(
+                    (
+                        "error",
+                        "Conexão com o sandbox perdida. Envie sua mensagem novamente para reconectar.",
+                    )
+                )
             else:
                 await self._out_queue.put(("error", details))
         except asyncio.CancelledError:

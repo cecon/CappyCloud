@@ -12,23 +12,28 @@ task_app = typer.Typer(help="Gestão de tasks de agente.")
 
 def _client():
     from cappy.main import client
+
     return client()
 
 
 def _err(msg: str) -> None:
     from cappy.main import err
+
     err(msg)
 
 
 def _print(data) -> None:
     from cappy.main import print_json
+
     print_json(data)
 
 
 @task_app.command("list")
 def task_list(
     env_slug: Optional[str] = typer.Option(None, "--env", help="Filtrar por env_slug"),
-    task_status: Optional[str] = typer.Option(None, "--status", help="Filtrar por status"),
+    task_status: Optional[str] = typer.Option(
+        None, "--status", help="Filtrar por status"
+    ),
 ) -> None:
     """Lista tasks de agente."""
     params = {k: v for k, v in [("env_slug", env_slug), ("status", task_status)] if v}
@@ -47,7 +52,8 @@ def task_trigger(
     """Dispara uma nova task de agente via CLI."""
     with _client() as c:
         resp = c.post(
-            "/api/tasks", json={"env_slug": env_slug, "prompt": prompt, "triggered_by": "manual"}
+            "/api/tasks",
+            json={"env_slug": env_slug, "prompt": prompt, "triggered_by": "manual"},
         )
         if resp.status_code not in (200, 201):
             _err(f"Erro: {resp.text}")
@@ -58,7 +64,9 @@ def task_trigger(
 @task_app.command("logs")
 def task_logs(
     task_id: str = typer.Argument(..., help="UUID da task"),
-    follow: bool = typer.Option(False, "--follow", "-f", help="Seguir eventos em tempo real"),
+    follow: bool = typer.Option(
+        False, "--follow", "-f", help="Seguir eventos em tempo real"
+    ),
 ) -> None:
     """Mostra os eventos de uma task."""
     with _client() as c:
@@ -81,7 +89,9 @@ def task_logs(
         while True:
             time.sleep(2)
             with _client() as c2:
-                resp2 = c2.get(f"/api/tasks/{task_id}/events", params={"after": last_id})
+                resp2 = c2.get(
+                    f"/api/tasks/{task_id}/events", params={"after": last_id}
+                )
                 if resp2.status_code != 200:
                     break
                 new_evs = resp2.json()

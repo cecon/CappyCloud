@@ -11,16 +11,19 @@ routine_app = typer.Typer(help="Gestão de routines (automações).")
 
 def _client():
     from cappy.main import client
+
     return client()
 
 
 def _err(msg: str) -> None:
     from cappy.main import err
+
     err(msg)
 
 
 def _print(data) -> None:
     from cappy.main import print_json
+
     print_json(data)
 
 
@@ -76,7 +79,9 @@ def routine_run(
         if resp.status_code not in (200, 201):
             _err(f"Erro: {resp.text}")
     data = resp.json()
-    typer.echo(f"✓ Run disparado: task_id={data.get('task_id')}, run_id={data.get('run_id')}")
+    typer.echo(
+        f"✓ Run disparado: task_id={data.get('task_id')}, run_id={data.get('run_id')}"
+    )
 
 
 @routine_app.command("logs")

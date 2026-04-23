@@ -53,11 +53,13 @@ async def load_agent_context(
                 _RAG_TOP_N,
             )
             for r in rows:
-                skills.append({
-                    "title": r["title"],
-                    "summary": r["summary"] or "",
-                    "source_url": r["source_url"],
-                })
+                skills.append(
+                    {
+                        "title": r["title"],
+                        "summary": r["summary"] or "",
+                        "source_url": r["source_url"],
+                    }
+                )
         return system_prompt, skills
     except Exception as exc:  # noqa: BLE001 - degrada graciosamente
         log.warning("load_agent_context falhou (agent=%s): %s", agent_id[:8], exc)

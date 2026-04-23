@@ -18,7 +18,9 @@ class PendingAction:
 
     prompt_id: str
     question: str
-    action_type: int  # 0 = CONFIRM_COMMAND (yes/no), 1 = REQUEST_INFORMATION (free text)
+    action_type: (
+        int  # 0 = CONFIRM_COMMAND (yes/no), 1 = REQUEST_INFORMATION (free text)
+    )
     choices: list[str] | None = None
 
     @property

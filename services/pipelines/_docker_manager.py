@@ -19,10 +19,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import re
 import sys
-from typing import Optional
 
 import docker
 import docker.errors
@@ -39,13 +37,13 @@ log = logging.getLogger(__name__)
 # Azure DevOps format: https://[user@]dev.azure.com/org/project/_git/repo
 _REPO_URL_RE = re.compile(
     r"https?://"
-    r"(?:[^@\s/]+@)?"            # optional embedded username (e.g. linxpostos@)
+    r"(?:[^@\s/]+@)?"  # optional embedded username (e.g. linxpostos@)
     r"(?:"
     r"github\.com|"
     r"gitlab\.com|"
     r"dev\.azure\.com"
     r")"
-    r"/[^\s\"'>]+"               # path after host
+    r"/[^\s\"'>]+"  # path after host
 )
 
 
@@ -96,7 +94,9 @@ class DockerManager:
         self._api_key = openrouter_api_key
         self._model = openrouter_model
         # Fixed repo — every sandbox clones this on startup
-        self._workspace_repo = _normalize_repo_url(workspace_repo) if workspace_repo else ""
+        self._workspace_repo = (
+            _normalize_repo_url(workspace_repo) if workspace_repo else ""
+        )
         # PAT for private repos (Azure DevOps / GitHub)
         self._git_auth_token = git_auth_token
         self._client = docker.from_env()
@@ -226,7 +226,9 @@ class DockerManager:
             log.debug(
                 "Waiting for IP on %s (attempt %d/10)…", self._network, attempt + 1
             )
-            import time; time.sleep(1)
+            import time
+
+            time.sleep(1)
 
         if not container_ip:
             # Log full network info for diagnosis

@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
 
 import asyncpg
 
@@ -78,8 +77,12 @@ class TaskDispatcher:
         )
         asyncio.create_task(
             self._launch_runner(
-                task_id, prompt, conversation_id,
-                repos=repos or [], session_root=session_root, sandbox_id=sandbox_id,
+                task_id,
+                prompt,
+                conversation_id,
+                repos=repos or [],
+                session_root=session_root,
+                sandbox_id=sandbox_id,
                 override_model=override_model,
             ),
             name=f"dispatch-{task_id[:8]}",
@@ -156,7 +159,9 @@ class TaskDispatcher:
         for tid in dead:
             runner = self._runners.pop(tid)
             await runner.close()
-        log.debug("GC: removed %d dead runners (%d active)", len(dead), len(self._runners))
+        log.debug(
+            "GC: removed %d dead runners (%d active)", len(dead), len(self._runners)
+        )
 
     # ── Internal ──────────────────────────────────────────────────
 
@@ -182,7 +187,9 @@ class TaskDispatcher:
                 sandbox_id=sandbox_id,
             )
         except Exception as exc:
-            log.exception("[Dispatcher] Falha ao criar sessão para task %s", task_id[:8])
+            log.exception(
+                "[Dispatcher] Falha ao criar sessão para task %s", task_id[:8]
+            )
             await self._update_task_status(task_id, "error")
             await self._insert_error_event(task_id, str(exc))
             return
@@ -200,7 +207,9 @@ class TaskDispatcher:
         try:
             await session.start(prompt)
         except Exception as exc:
-            log.exception("[Dispatcher] Falha ao iniciar gRPC para task %s", task_id[:8])
+            log.exception(
+                "[Dispatcher] Falha ao iniciar gRPC para task %s", task_id[:8]
+            )
             await self._update_task_status(task_id, "error")
             await self._insert_error_event(task_id, str(exc))
             await session.close()

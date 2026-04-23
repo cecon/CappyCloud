@@ -110,7 +110,13 @@ async def stream_message(
     o stream retoma a partir desse ponto sem perder eventos.
     """
     try:
-        stream = await uc.execute(conversation_id, current.id, body.content, cursor=cursor, override_model=body.model_id)
+        stream = await uc.execute(
+            conversation_id,
+            current.id,
+            body.content,
+            cursor=cursor,
+            override_model=body.model_id,
+        )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return StreamingResponse(

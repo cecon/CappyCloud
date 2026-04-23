@@ -18,5 +18,7 @@ for path in sys.argv[1:]:
 if failures:
     for path, count in failures:
         print(f"  {path}: {count} linhas (máximo {MAX_LINES})")
-    print(f"\n{len(failures)} arquivo(s) excedem {MAX_LINES} linhas. Refatore antes de commitar.")
+    print(
+        f"\n{len(failures)} arquivo(s) excedem {MAX_LINES} linhas. Refatore antes de commitar."
+    )
     sys.exit(1)

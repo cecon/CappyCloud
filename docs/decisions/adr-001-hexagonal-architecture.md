@@ -1,7 +1,7 @@
 # ADR-001 — Arquitetura Hexagonal (Ports & Adapters)
 
-**Status:** Aceite  
-**Data:** 2024  
+**Status:** Aceite
+**Data:** 2024
 **Contexto:** CappyCloud — plataforma de agentes IA
 
 ---

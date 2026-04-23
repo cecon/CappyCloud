@@ -93,6 +93,7 @@ def _format_action(action: PendingAction) -> str:
         lines.append("**O agente precisa de mais informações:**\n")
         # Strip bracket-encoded choices from the question text for clean display
         import re
+
         clean_q = re.sub(r"\s*\[[^\]]+\]", "", action.question).strip()
         lines.append(f"> {clean_q}\n")
 
@@ -196,7 +197,9 @@ class Pipeline:
     def _run(self, coro, timeout: float = 120):
         if self._loop is None:
             raise RuntimeError("Pipeline not started")
-        return asyncio.run_coroutine_threadsafe(coro, self._loop).result(timeout=timeout)
+        return asyncio.run_coroutine_threadsafe(coro, self._loop).result(
+            timeout=timeout
+        )
 
     # ── Main entry point ─────────────────────────────────────────
 
@@ -264,9 +267,7 @@ class Pipeline:
         # ── Drain output from the session ────────────────────────
         out_q: Queue = Queue()
 
-        asyncio.run_coroutine_threadsafe(
-            session.drain_to(out_q), self._loop
-        )
+        asyncio.run_coroutine_threadsafe(session.drain_to(out_q), self._loop)
 
         while True:
             try:
