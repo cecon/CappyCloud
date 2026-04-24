@@ -191,6 +191,7 @@ export interface ActionRequiredEvent {
 export interface StatusEvent {
   message: string
   stage?: 'session' | 'repository' | 'ready' | 'agent'
+  mode?: 'initializing' | 'resuming'
 }
 
 export interface StreamHandlers {
@@ -313,12 +314,14 @@ export async function streamAssistantReply(
             break
           case 'status': {
             const stage = evt.stage
+            const mode = evt.mode
             eventHandlers.onStatus({
               message: (evt.message as string) ?? 'Preparando sessão...',
               stage:
                 stage === 'session' || stage === 'repository' || stage === 'ready' || stage === 'agent'
                   ? stage
                   : undefined,
+              mode: mode === 'initializing' || mode === 'resuming' ? mode : undefined,
             })
             break
           }

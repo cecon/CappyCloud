@@ -58,6 +58,7 @@ function groupConversations(convs: Conversation[]): { label: string; items: Conv
     .map(([label, items]) => ({ label, items }))
 }
 
+type SessionMode = 'initializing' | 'resuming'
 type SessionStageKey = 'session' | 'repository' | 'ready' | 'agent'
 
 type SessionStageState = {
@@ -68,15 +69,27 @@ type SessionStageState = {
 }
 
 const SESSION_STAGES: Array<{ key: SessionStageKey; label: string }> = [
-  { key: 'session', label: 'Criar sessão do agente' },
-  { key: 'repository', label: 'Preparar repositório' },
-  { key: 'ready', label: 'Criar worktree da sessão' },
+  { key: 'session', label: 'Configurar contêiner na nuvem' },
+  { key: 'repository', label: 'Repositório clonado' },
+  { key: 'ready', label: 'Worktree da sessão criado' },
   { key: 'agent', label: 'Agente iniciado' },
 ]
 
+const RESUMED_SESSION_STAGES: Array<{ key: SessionStageKey; label: string }> = [
+  { key: 'session', label: 'Contêiner na nuvem retomado' },
+  { key: 'repository', label: 'Atualizou seu repositório' },
+  { key: 'ready', label: 'Worktree da sessão reutilizado' },
+  { key: 'agent', label: 'Agente iniciado' },
+]
+
+/** Devolve os rótulos corretos para sessão nova ou retomada. */
+function sessionStagesForMode(mode: SessionMode): Array<{ key: SessionStageKey; label: string }> {
+  return mode === 'resuming' ? RESUMED_SESSION_STAGES : SESSION_STAGES
+}
+
 /** Cria o estado inicial do checklist de inicialização da sessão. */
-function createSessionProgress(): SessionStageState[] {
-  return SESSION_STAGES.map((stage) => ({ ...stage, status: 'pending' }))
+function createSessionProgress(mode: SessionMode = 'initializing'): SessionStageState[] {
+  return sessionStagesForMode(mode).map((stage) => ({ ...stage, status: 'pending' }))
 }
 
 /** Marca etapas concluídas conforme eventos de progresso chegam do backend. */
@@ -84,17 +97,20 @@ function reduceSessionProgress(
   previous: SessionStageState[],
   event: StatusEvent,
 ): SessionStageState[] {
-  const currentIndex = SESSION_STAGES.findIndex((stage) => stage.key === event.stage)
+  const mode = event.mode ?? 'initializing'
+  const stages = sessionStagesForMode(mode)
+  const currentIndex = stages.findIndex((stage) => stage.key === event.stage)
   if (currentIndex < 0) return previous
 
   return previous.map((stage, index) => {
+    const nextStage = stages[index] ?? stage
     if (index < currentIndex || event.stage === 'agent') {
-      return { ...stage, status: 'done' }
+      return { ...stage, label: nextStage.label, status: 'done' }
     }
     if (index === currentIndex) {
-      return { ...stage, status: 'active', detail: event.message }
+      return { ...stage, label: nextStage.label, status: 'active', detail: event.message }
     }
-    return stage
+    return { ...stage, label: nextStage.label }
   })
 }
 
@@ -1133,6 +1149,10 @@ function ActiveChat({
 function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
   const [expanded, setExpanded] = useState(true)
   const completed = stages.every((stage) => stage.status === 'done')
+  const resuming = stages[0]?.label.includes('retomado')
+  const title = completed
+    ? resuming ? 'Sessão retomada' : 'Sessão inicializada'
+    : resuming ? 'Retomando sessão' : 'Inicializando sessão'
 
   return (
     <div className={styles.sessionProgressCard}>
@@ -1141,7 +1161,7 @@ function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
         className={styles.sessionProgressHeader}
         onClick={() => setExpanded((value) => !value)}
       >
-        <span>{completed ? 'Sessão inicializada' : 'Inicializando sessão'}</span>
+        <span>{title}</span>
         <span className={styles.icon}>{expanded ? 'expand_less' : 'expand_more'}</span>
       </button>
 

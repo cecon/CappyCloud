@@ -185,14 +185,16 @@ class TaskDispatcher:
     ) -> None:
         """Cria a sessão, inicia a GrpcSession e arranca o TaskRunner."""
         user_id = conversation_id or "system"
-        chat_id = task_id
+        chat_id = conversation_id or task_id
+        mode = "initializing"
 
         try:
             await insert_status_event(
                 self._pool,
                 task_id,
-                "Criando sessão do agente...",
+                "Preparando sessão do agente...",
                 "session",
+                "initializing",
             )
             if repos:
                 repo_slugs = ", ".join(
@@ -203,19 +205,24 @@ class TaskDispatcher:
                     task_id,
                     f"Preparando repositório: {repo_slugs}...",
                     "repository",
+                    "initializing",
                 )
-            sandbox = await self._env_manager.get_or_create_session(
+            lease = await self._env_manager.get_or_create_session(
                 user_id=user_id,
                 chat_id=chat_id,
                 repos=repos or [],
                 session_root=session_root,
                 sandbox_id=sandbox_id,
             )
+            sandbox = lease.record
+            mode = "initializing" if lease.created else "resuming"
+            session_message = "Sessão criada" if lease.created else "Sessão retomada"
             await insert_status_event(
                 self._pool,
                 task_id,
-                f"Sessão pronta em {sandbox.working_directory}",
+                f"{session_message} em {sandbox.working_directory}",
                 "ready",
+                mode,
             )
         except Exception as exc:
             log.exception(
@@ -241,6 +248,7 @@ class TaskDispatcher:
                 task_id,
                 "Iniciando agente...",
                 "agent",
+                mode,
             )
             await session.start(prompt)
         except Exception as exc:

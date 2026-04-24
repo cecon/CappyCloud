@@ -19,12 +19,21 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 
 import httpx
 
 from ._session_store import SandboxRecord, SessionStore
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class SessionLease:
+    """Resultado da preparação da sessão no sandbox."""
+
+    record: SandboxRecord
+    created: bool
 
 
 class EnvironmentManager:
@@ -56,7 +65,7 @@ class EnvironmentManager:
         repos: list[dict] | None = None,
         session_root: str = "",
         sandbox_id: str = "",
-    ) -> SandboxRecord:
+    ) -> SessionLease:
         """Return (or create) a SandboxRecord for the conversation.
 
         session_server.js is idempotent: if session_root already exists it
@@ -66,14 +75,17 @@ class EnvironmentManager:
         if record:
             await self._store.refresh_ttl(user_id, chat_id)
             await self._ensure_session(record)
-            return record
+            return SessionLease(record=record, created=False)
 
-        return await self._create_session(
-            user_id=user_id,
-            chat_id=chat_id,
-            repos=repos,
-            session_root=session_root,
-            sandbox_id=sandbox_id,
+        return SessionLease(
+            record=await self._create_session(
+                user_id=user_id,
+                chat_id=chat_id,
+                repos=repos,
+                session_root=session_root,
+                sandbox_id=sandbox_id,
+            ),
+            created=True,
         )
 
     async def destroy_session(self, user_id: str, chat_id: str) -> None:

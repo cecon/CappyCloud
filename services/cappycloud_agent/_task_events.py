@@ -65,6 +65,15 @@ async def insert_error_event(
 
 
 async def insert_status_event(
-    pool: asyncpg.Pool | None, task_id: str, message: str, stage: str
+    pool: asyncpg.Pool | None,
+    task_id: str,
+    message: str,
+    stage: str,
+    mode: str,
 ) -> None:
-    await insert_event(pool, task_id, "status", {"message": message, "stage": stage})
+    await insert_event(
+        pool,
+        task_id,
+        "status",
+        {"message": message, "stage": stage, "mode": mode},
+    )
