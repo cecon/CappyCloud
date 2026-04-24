@@ -9,6 +9,7 @@ __pycache__/
 *$py.class
 .Python
 .venv/
+.ruff_cache/
 venv/
 *.egg-info/
 .pytest_cache/
@@ -24,6 +25,7 @@ npm-debug.log*
 .pnpm-debug.log*
 
 # IDE / OS
+.claude/
 .idea/
 .vscode/*
 !.vscode/extensions.json
