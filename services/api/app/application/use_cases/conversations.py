@@ -10,6 +10,7 @@ from collections.abc import AsyncGenerator
 from app.application.use_cases._stream_helpers import inject_diff_comments
 from app.domain.entities import Conversation, Message
 from app.ports.agent import AgentPort
+from app.ports.agent_repository import AgentRepository
 from app.ports.repositories import (
     ConversationRepository,
     MessageRepository,
@@ -52,9 +53,11 @@ class CreateConversation:
         self,
         conversations: ConversationRepository,
         repositories: RepositoryRepository | None = None,
+        agents: AgentRepository | None = None,
     ) -> None:
         self._conversations = conversations
         self._repositories = repositories
+        self._agents = agents
 
     async def execute(
         self,
@@ -64,6 +67,12 @@ class CreateConversation:
         repos: list[dict] | None = None,
         agent_id: uuid.UUID | None = None,
     ) -> Conversation:
+        if self._agents:
+            if agent_id is None:
+                agent_id = await self._agents.get_default_id()
+            elif not await self._agents.can_user_access(user_id, agent_id):
+                raise PermissionError("Agente não encontrado ou sem permissão de acesso.")
+
         conv_id = uuid.uuid4()
         short_id = conv_id.hex[:12]
 

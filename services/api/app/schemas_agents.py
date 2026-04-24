@@ -18,6 +18,8 @@ class AgentCreate(BaseModel):
     system_prompt: str = Field(default="", max_length=100_000)
     default_model: str | None = Field(default=None, max_length=256)
     active: bool = True
+    is_private: bool = False
+    is_default: bool = False
 
 
 class AgentUpdate(BaseModel):
@@ -27,6 +29,8 @@ class AgentUpdate(BaseModel):
     system_prompt: str | None = Field(default=None, max_length=100_000)
     default_model: str | None = Field(default=None, max_length=256)
     active: bool | None = None
+    is_private: bool | None = None
+    is_default: bool | None = None
 
 
 class AgentOut(BaseModel):
@@ -38,6 +42,8 @@ class AgentOut(BaseModel):
     system_prompt: str
     default_model: str | None = None
     active: bool
+    is_private: bool = False
+    is_default: bool = False
     skills_count: int = 0
     created_at: datetime
     updated_at: datetime
