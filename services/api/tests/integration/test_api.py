@@ -13,6 +13,7 @@ from app.adapters.primary.http.deps import (
     get_msg_repo,
     get_password_service,
     get_token_service,
+    get_user_agent_profile_repo,
     get_user_repo,
 )
 from app.main import app
@@ -24,6 +25,7 @@ from tests.conftest import (
     FakeTokenService,
     InMemoryConversationRepository,
     InMemoryMessageRepository,
+    InMemoryUserAgentProfileRepository,
     InMemoryUserRepository,
 )
 
@@ -32,10 +34,12 @@ from tests.conftest import (
 async def client() -> AsyncClient:
     """HTTP client with all external dependencies replaced by in-memory fakes."""
     user_repo = InMemoryUserRepository()
+    user_agent_profile_repo = InMemoryUserAgentProfileRepository()
     conv_repo = InMemoryConversationRepository()
     msg_repo = InMemoryMessageRepository()
 
     app.dependency_overrides[get_user_repo] = lambda: user_repo
+    app.dependency_overrides[get_user_agent_profile_repo] = lambda: user_agent_profile_repo
     app.dependency_overrides[get_conv_repo] = lambda: conv_repo
     app.dependency_overrides[get_msg_repo] = lambda: msg_repo
     app.dependency_overrides[get_password_service] = lambda: FakePasswordService()

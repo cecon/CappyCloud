@@ -14,6 +14,7 @@ from app.ports.repositories import (
     ConversationRepository,
     MessageRepository,
     RepositoryRepository,
+    UserAgentProfileRepository,
 )
 
 _TITLE_MAX_LEN = 80
@@ -52,9 +53,11 @@ class CreateConversation:
         self,
         conversations: ConversationRepository,
         repositories: RepositoryRepository | None = None,
+        user_agent_profiles: UserAgentProfileRepository | None = None,
     ) -> None:
         self._conversations = conversations
         self._repositories = repositories
+        self._user_agent_profiles = user_agent_profiles
 
     async def execute(
         self,
@@ -88,12 +91,16 @@ class CreateConversation:
 
         session_root = f"/repos/sessions/{short_id}"
 
+        resolved_agent_id = agent_id
+        if resolved_agent_id is None and self._user_agent_profiles:
+            resolved_agent_id = await self._user_agent_profiles.get_default_agent_id(user_id)
+
         conv = Conversation(
             id=conv_id,
             user_id=user_id,
             title=title or _DEFAULT_TITLE,
             sandbox_id=sandbox_id,
-            agent_id=agent_id,
+            agent_id=resolved_agent_id,
             repos=resolved_repos,
             session_root=session_root,
         )

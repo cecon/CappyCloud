@@ -18,6 +18,7 @@ from app.ports.repositories import (
     ConversationRepository,
     MessageRepository,
     RepositoryRepository,
+    UserAgentProfileRepository,
     UserRepository,
 )
 from app.ports.services import PasswordService, TokenService
@@ -42,6 +43,20 @@ class InMemoryUserRepository(UserRepository):
     async def save(self, user: User) -> User:
         self._store[user.id] = user
         return user
+
+
+class InMemoryUserAgentProfileRepository(UserAgentProfileRepository):
+    """In-memory user→default agent mapping for testing."""
+
+    def __init__(self) -> None:
+        self._default_agents: dict[uuid.UUID, uuid.UUID] = {}
+
+    async def get_default_agent_id(self, user_id: uuid.UUID) -> uuid.UUID | None:
+        return self._default_agents.get(user_id)
+
+    def set_default(self, user_id: uuid.UUID, agent_id: uuid.UUID) -> None:
+        """Técnica de teste: define o agente padrão do utilizador."""
+        self._default_agents[user_id] = agent_id
 
 
 class InMemoryConversationRepository(ConversationRepository):
@@ -201,6 +216,11 @@ def conv_repo() -> InMemoryConversationRepository:
 @pytest.fixture
 def repository_repo() -> InMemoryRepositoryRepository:
     return InMemoryRepositoryRepository()
+
+
+@pytest.fixture
+def user_agent_profile_repo() -> InMemoryUserAgentProfileRepository:
+    return InMemoryUserAgentProfileRepository()
 
 
 @pytest.fixture

@@ -16,6 +16,7 @@ from tests.conftest import (
     InMemoryConversationRepository,
     InMemoryMessageRepository,
     InMemoryRepositoryRepository,
+    InMemoryUserAgentProfileRepository,
 )
 
 
@@ -115,6 +116,35 @@ class TestCreateConversation:
         conv = await uc.execute(user_id, repos=[{"slug": "nao-existe"}])
 
         assert conv.repos[0]["repo_id"] is None
+
+    async def test_uses_user_default_agent_when_not_provided(
+        self,
+        conv_repo: InMemoryConversationRepository,
+        user_id: uuid.UUID,
+    ) -> None:
+        default_agent_id = uuid.uuid4()
+        profiles = InMemoryUserAgentProfileRepository()
+        profiles.set_default(user_id, default_agent_id)
+        uc = CreateConversation(conv_repo, user_agent_profiles=profiles)
+
+        conv = await uc.execute(user_id)
+
+        assert conv.agent_id == default_agent_id
+
+    async def test_explicit_agent_overrides_user_default(
+        self,
+        conv_repo: InMemoryConversationRepository,
+        user_id: uuid.UUID,
+    ) -> None:
+        default_agent_id = uuid.uuid4()
+        explicit_agent_id = uuid.uuid4()
+        profiles = InMemoryUserAgentProfileRepository()
+        profiles.set_default(user_id, default_agent_id)
+        uc = CreateConversation(conv_repo, user_agent_profiles=profiles)
+
+        conv = await uc.execute(user_id, agent_id=explicit_agent_id)
+
+        assert conv.agent_id == explicit_agent_id
 
 
 class TestListMessages:
