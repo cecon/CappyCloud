@@ -12,6 +12,9 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.secondary.persistence.sqlalchemy_agent_repo import (
+    SQLAlchemyAgentRepository,
+)
 from app.adapters.secondary.persistence.sqlalchemy_conversation_repo import (
     SQLAlchemyConversationRepository,
 )
@@ -45,6 +48,7 @@ from app.application.use_cases.repo_environments import (
 from app.domain.entities import User
 from app.infrastructure.database import get_db
 from app.ports.agent import AgentPort
+from app.ports.agent_repository import AgentRepository
 from app.ports.repositories import (
     ConversationRepository,
     MessageRepository,
@@ -107,6 +111,12 @@ def get_repository_repo(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RepositoryRepository:
     return SQLAlchemyRepositoryRepository(session)
+
+
+def get_agent_repo(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AgentRepository:
+    return SQLAlchemyAgentRepository(session)
 
 
 # ---------------------------------------------------------------------------
@@ -185,8 +195,9 @@ def get_create_conv_uc(
     user_agent_profiles: Annotated[
         UserAgentProfileRepository, Depends(get_user_agent_profile_repo)
     ],
+    agents: Annotated[AgentRepository, Depends(get_agent_repo)],
 ) -> CreateConversation:
-    return CreateConversation(convs, repos, user_agent_profiles)
+    return CreateConversation(convs, repos, user_agent_profiles, agents)
 
 
 def get_list_msgs_uc(

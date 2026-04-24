@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 from app.domain.entities import Conversation, Message, Repository, User
 from app.ports.agent import AgentPort
+from app.ports.agent_repository import AgentRepository
 from app.ports.repositories import (
     ConversationRepository,
     MessageRepository,
@@ -153,6 +154,31 @@ class FakeTokenService(TokenService):
 
 
 # ---------------------------------------------------------------------------
+# AgentRepository Fake
+# ---------------------------------------------------------------------------
+
+
+class InMemoryAgentRepository(AgentRepository):
+    """Fake em memória para AgentRepository — usado em testes de use cases."""
+
+    def __init__(
+        self,
+        default_id: uuid.UUID | None = None,
+        private_agents: dict[uuid.UUID, uuid.UUID] | None = None,
+    ) -> None:
+        self._default_id = default_id
+        # private_agents: {agent_id: owner_id}
+        self._private: dict[uuid.UUID, uuid.UUID] = private_agents or {}
+
+    async def get_default_id(self) -> uuid.UUID | None:
+        return self._default_id
+
+    async def can_user_access(self, user_id: uuid.UUID, agent_id: uuid.UUID) -> bool:
+        owner = self._private.get(agent_id)
+        return owner is None or owner == user_id
+
+
+# ---------------------------------------------------------------------------
 # Agent Fake
 # ---------------------------------------------------------------------------
 
@@ -236,6 +262,11 @@ def password_svc() -> FakePasswordService:
 @pytest.fixture
 def token_svc() -> FakeTokenService:
     return FakeTokenService()
+
+
+@pytest.fixture
+def agent_repo() -> InMemoryAgentRepository:
+    return InMemoryAgentRepository()
 
 
 @pytest.fixture
