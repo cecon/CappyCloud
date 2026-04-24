@@ -27,6 +27,9 @@ from app.adapters.secondary.persistence.sqlalchemy_repo_env_repo import (
 from app.adapters.secondary.persistence.sqlalchemy_repository_repo import (
     SQLAlchemyRepositoryRepository,
 )
+from app.adapters.secondary.persistence.sqlalchemy_user_agent_profile_repo import (
+    SQLAlchemyUserAgentProfileRepository,
+)
 from app.adapters.secondary.persistence.sqlalchemy_user_repo import (
     SQLAlchemyUserRepository,
 )
@@ -51,6 +54,7 @@ from app.ports.repositories import (
     MessageRepository,
     RepoEnvironmentRepository,
     RepositoryRepository,
+    UserAgentProfileRepository,
     UserRepository,
 )
 from app.ports.services import PasswordService, TokenService
@@ -77,6 +81,12 @@ def get_user_repo(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> UserRepository:
     return SQLAlchemyUserRepository(session)
+
+
+def get_user_agent_profile_repo(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> UserAgentProfileRepository:
+    return SQLAlchemyUserAgentProfileRepository(session)
 
 
 def get_conv_repo(
@@ -182,9 +192,12 @@ def get_list_convs_uc(
 def get_create_conv_uc(
     convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
     repos: Annotated[RepositoryRepository, Depends(get_repository_repo)],
+    user_agent_profiles: Annotated[
+        UserAgentProfileRepository, Depends(get_user_agent_profile_repo)
+    ],
     agents: Annotated[AgentRepository, Depends(get_agent_repo)],
 ) -> CreateConversation:
-    return CreateConversation(convs, repos, agents)
+    return CreateConversation(convs, repos, user_agent_profiles, agents)
 
 
 def get_list_msgs_uc(

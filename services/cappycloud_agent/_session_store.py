@@ -57,6 +57,14 @@ class SandboxRecord:
     @property
     def working_directory(self) -> str:
         """Diretório de trabalho que o openclaude deve usar."""
+        if len(self.repos) == 1:
+            repo = self.repos[0]
+            worktree_path = repo.get("worktree_path")
+            if worktree_path:
+                return worktree_path
+            alias = repo.get("alias") or repo.get("slug")
+            if self.session_root and alias:
+                return f"{self.session_root.rstrip('/')}/{alias}"
         return self.session_root or "/repos/default"
 
 

@@ -19,6 +19,19 @@ class User:
     created_at: datetime = field(default_factory=_utcnow)
 
 
+@dataclass
+class UserAgentProfile:
+    """Vínculo entre utilizador, persona operacional e agente padrão."""
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    agent_id: uuid.UUID
+    persona: str
+    is_default: bool = True
+    created_at: datetime = field(default_factory=_utcnow)
+    updated_at: datetime = field(default_factory=_utcnow)
+
+
 # ── Platform control plane ────────────────────────────────────
 
 

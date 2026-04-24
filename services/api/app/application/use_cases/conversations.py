@@ -15,6 +15,7 @@ from app.ports.repositories import (
     ConversationRepository,
     MessageRepository,
     RepositoryRepository,
+    UserAgentProfileRepository,
 )
 
 _TITLE_MAX_LEN = 80
@@ -28,9 +29,6 @@ def _next_chunk(gen):
         return None
 
 
-# ── Conversation use cases ────────────────────────────────────
-
-
 class ListConversations:
     def __init__(self, conversations: ConversationRepository) -> None:
         self._conversations = conversations
@@ -40,23 +38,16 @@ class ListConversations:
 
 
 class CreateConversation:
-    """Create a new conversation, setting up multi-repo session metadata.
-
-    Resolve cada ``slug`` em ``repos`` para o ``repo_id`` correspondente na
-    tabela ``repositories`` e armazena ambos no JSONB de ``Conversation.repos``.
-    Esse ``repo_id`` flui at\u00e9 ao pipeline e habilita filtros de skills por
-    reposit\u00f3rio. Se o slug n\u00e3o existir em ``repositories``, o item segue sem
-    ``repo_id`` (compatibilidade) e o pipeline cai no fallback lazy.
-    """
-
     def __init__(
         self,
         conversations: ConversationRepository,
         repositories: RepositoryRepository | None = None,
+        user_agent_profiles: UserAgentProfileRepository | None = None,
         agents: AgentRepository | None = None,
     ) -> None:
         self._conversations = conversations
         self._repositories = repositories
+        self._user_agent_profiles = user_agent_profiles
         self._agents = agents
 
     async def execute(
@@ -67,11 +58,7 @@ class CreateConversation:
         repos: list[dict] | None = None,
         agent_id: uuid.UUID | None = None,
     ) -> Conversation:
-        if self._agents:
-            if agent_id is None:
-                agent_id = await self._agents.get_default_id()
-            elif not await self._agents.can_user_access(user_id, agent_id):
-                raise PermissionError("Agente não encontrado ou sem permissão de acesso.")
+        resolved_agent_id = await self._resolve_agent_id(user_id, agent_id)
 
         conv_id = uuid.uuid4()
         short_id = conv_id.hex[:12]
@@ -102,11 +89,34 @@ class CreateConversation:
             user_id=user_id,
             title=title or _DEFAULT_TITLE,
             sandbox_id=sandbox_id,
-            agent_id=agent_id,
+            agent_id=resolved_agent_id,
             repos=resolved_repos,
             session_root=session_root,
         )
         return await self._conversations.save(conv)
+
+    async def _resolve_agent_id(
+        self,
+        user_id: uuid.UUID,
+        agent_id: uuid.UUID | None,
+    ) -> uuid.UUID | None:
+        if agent_id is not None:
+            if self._agents and not await self._agents.can_user_access(user_id, agent_id):
+                raise PermissionError("Agente não encontrado ou sem permissão de acesso.")
+            return agent_id
+
+        resolved_agent_id = None
+        if self._user_agent_profiles:
+            resolved_agent_id = await self._user_agent_profiles.get_default_agent_id(user_id)
+        if resolved_agent_id is None and self._agents:
+            resolved_agent_id = await self._agents.get_default_id()
+        if (
+            resolved_agent_id is not None
+            and self._agents
+            and not await self._agents.can_user_access(user_id, resolved_agent_id)
+        ):
+            raise PermissionError("Agente não encontrado ou sem permissão de acesso.")
+        return resolved_agent_id
 
 
 class ListMessages:
@@ -126,8 +136,6 @@ class ListMessages:
 
 
 class StreamMessage:
-    """Orchestrate sending a user message and streaming the agent response."""
-
     def __init__(
         self,
         conversations: ConversationRepository,
@@ -179,11 +187,6 @@ class StreamMessage:
         )
 
     async def _ensure_repo_ids(self, conv: Conversation) -> None:
-        """Backfill lazy: resolve slug \u2192 repo_id para conversas antigas.
-
-        Persiste de volta na conversa para que mensagens seguintes n\u00e3o paguem
-        o lookup de novo.
-        """
         if not self._repositories or not conv.repos:
             return
         changed = False
@@ -201,11 +204,6 @@ class StreamMessage:
             await self._conversations.update(conv)
 
     async def _enrich_repos_for_pipeline(self, repos: list[dict]) -> list[dict]:
-        """Retorna nova lista com clone_url autenticada (token embutido).
-
-        O token N\u00c3O \u00e9 persistido na conversa \u2014 \u00e9 injetado apenas no payload
-        do pipeline para que session_start.sh consiga autenticar.
-        """
         if not self._repositories:
             return repos
         enriched: list[dict] = []

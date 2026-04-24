@@ -84,6 +84,10 @@ async function createWorktree({ slug, alias, base_branch, branch_name, worktree_
     env: { ...process.env },
     timeout: 60_000,
   })
+  const gitDir = path.join(worktree_path, '.git')
+  if (!fs.existsSync(gitDir)) {
+    throw new Error(`worktree não foi criado em ${worktree_path}`)
+  }
   return (stdout + stderr).trim()
 }
 
@@ -175,6 +179,17 @@ const server = http.createServer(async (req, res) => {
           outputs.push(`[${alias}] ERROR: ${msg}`)
           repos_created.push({ alias, branch_name: resolved_branch, worktree_path: wt_path, error: msg })
         }
+      }
+
+      const errors = repos_created.filter(r => r.error)
+      if (errors.length > 0) {
+        return json(res, 500, {
+          session_id,
+          session_root,
+          repos_created,
+          error: 'failed to create one or more repo worktrees',
+          output: outputs.join('\n'),
+        })
       }
 
       return json(res, 200, {

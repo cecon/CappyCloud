@@ -6,7 +6,18 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -49,6 +60,41 @@ class Agent(Base):
     skills: Mapped[list["Skill"]] = relationship(
         "Skill", back_populates="agent", cascade="all, delete-orphan"
     )
+    user_profiles: Mapped[list["UserAgentProfile"]] = relationship(
+        "UserAgentProfile", back_populates="agent", cascade="all, delete-orphan"
+    )
+
+
+class UserAgentProfile(Base):
+    """Associa um utilizador a uma persona e ao agente padrão correspondente."""
+
+    __tablename__ = "user_agent_profiles"
+    __table_args__ = (
+        UniqueConstraint("user_id", "persona", name="uq_user_agent_profiles_user_persona"),
+        Index(
+            "uq_user_agent_profiles_default_per_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("is_default = true"),
+            sqlite_where=text("is_default = 1"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUIDType, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        UUIDType, ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    persona: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    agent: Mapped["Agent"] = relationship("Agent", back_populates="user_profiles")
 
 
 class Skill(Base):

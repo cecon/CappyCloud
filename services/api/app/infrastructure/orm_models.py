@@ -221,6 +221,7 @@ class Message(Base):
 from app.infrastructure.orm_models_agent import (  # noqa: F401, E402
     Agent,
     Skill,
+    UserAgentProfile,
 )
 from app.infrastructure.orm_models_execution import (  # noqa: F401, E402
     AgentEvent,

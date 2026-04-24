@@ -18,17 +18,26 @@ from app.adapters.secondary.persistence.sqlalchemy_conversation_repo import (
 from app.adapters.secondary.persistence.sqlalchemy_message_repo import (
     SQLAlchemyMessageRepository,
 )
+from app.adapters.secondary.persistence.sqlalchemy_user_agent_profile_repo import (
+    SQLAlchemyUserAgentProfileRepository,
+)
 from app.adapters.secondary.persistence.sqlalchemy_user_repo import (
     SQLAlchemyUserRepository,
 )
 from app.domain.entities import Conversation, Message, User
-from app.infrastructure.orm_models import Base
-from app.ports.repositories import ConversationRepository, MessageRepository, UserRepository
+from app.infrastructure.orm_models import Agent, Base, UserAgentProfile
+from app.ports.repositories import (
+    ConversationRepository,
+    MessageRepository,
+    UserAgentProfileRepository,
+    UserRepository,
+)
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from tests.conftest import (
     InMemoryConversationRepository,
     InMemoryMessageRepository,
+    InMemoryUserAgentProfileRepository,
     InMemoryUserRepository,
 )
 
@@ -92,6 +101,60 @@ class TestUserRepositoryContract:
         self, user_repo_impl: UserRepository
     ) -> None:
         assert await user_repo_impl.get_by_email("nobody@x.com") is None
+
+
+# ---------------------------------------------------------------------------
+# UserAgentProfileRepository contract tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(params=["in_memory", "sqlite"])
+async def user_agent_profile_repo_impl(
+    request: pytest.FixtureRequest, db_session: AsyncSession
+) -> tuple[UserAgentProfileRepository, uuid.UUID, uuid.UUID]:
+    user_id = uuid.uuid4()
+    agent_id = uuid.uuid4()
+    if request.param == "in_memory":
+        repo = InMemoryUserAgentProfileRepository()
+        repo.set_default(user_id, agent_id)
+        return repo, user_id, agent_id
+
+    agent = Agent(
+        id=agent_id,
+        slug=f"agent-{agent_id.hex[:8]}",
+        name="Agente Teste",
+        description="",
+        icon="support_agent",
+        system_prompt="",
+        active=True,
+    )
+    profile = UserAgentProfile(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        agent_id=agent_id,
+        persona="rc",
+        is_default=True,
+    )
+    db_session.add(agent)
+    db_session.add(profile)
+    await db_session.commit()
+    return SQLAlchemyUserAgentProfileRepository(db_session), user_id, agent_id
+
+
+class TestUserAgentProfileRepositoryContract:
+    async def test_get_default_agent_id(
+        self,
+        user_agent_profile_repo_impl: tuple[UserAgentProfileRepository, uuid.UUID, uuid.UUID],
+    ) -> None:
+        repo, user_id, agent_id = user_agent_profile_repo_impl
+        assert await repo.get_default_agent_id(user_id) == agent_id
+
+    async def test_get_default_agent_id_returns_none_for_missing(
+        self,
+        user_agent_profile_repo_impl: tuple[UserAgentProfileRepository, uuid.UUID, uuid.UUID],
+    ) -> None:
+        repo, _, _ = user_agent_profile_repo_impl
+        assert await repo.get_default_agent_id(uuid.uuid4()) is None
 
 
 # ---------------------------------------------------------------------------

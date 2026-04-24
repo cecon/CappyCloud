@@ -28,6 +28,14 @@ class UserRepository(ABC):
         """Persist a new user and return it with any DB-generated fields."""
 
 
+class UserAgentProfileRepository(ABC):
+    """Port para resolver o agente padrão associado ao utilizador."""
+
+    @abstractmethod
+    async def get_default_agent_id(self, user_id: uuid.UUID) -> uuid.UUID | None:
+        """Retorna o agente padrão do utilizador, ou None se não houver vínculo."""
+
+
 class RepoEnvironmentRepository(ABC):
     """Port for global repo environment persistence."""
 

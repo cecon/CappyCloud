@@ -125,9 +125,8 @@ _create_worktree() {
         fi
     fi
 
-    # Fallback final: diretório vazio (o agente consegue trabalhar, sem git)
-    echo "[session_start] AVISO: worktree add falhou — criando diretório vazio."
-    mkdir -p "$worktree_path"
+    echo "[session_start] ERRO: worktree add falhou para ${branch_name}."
+    return 1
 }
 
 # ── Main: repo já clonado ─────────────────────────────────────
@@ -167,17 +166,17 @@ else
         if [ -n "$CLONE_BRANCH" ]; then
             git clone --branch "$CLONE_BRANCH" "$AUTH_URL" "$MAIN_REPO" 2>&1 \
                 || git clone "$AUTH_URL" "$MAIN_REPO" 2>&1 \
-                || { echo "[session_start] ERRO: clone falhou."; mkdir -p "$WORKTREE_PATH"; exit 0; }
+                || { echo "[session_start] ERRO: clone falhou."; exit 1; }
         else
             git clone "$AUTH_URL" "$MAIN_REPO" 2>&1 \
-                || { echo "[session_start] ERRO: clone falhou."; mkdir -p "$WORKTREE_PATH"; exit 0; }
+                || { echo "[session_start] ERRO: clone falhou."; exit 1; }
         fi
         echo "[session_start] Clone concluído."
         _create_worktree "$MAIN_REPO" "$WORKTREE_PATH" "$BRANCH_NAME" "$BASE_BRANCH"
         _push_session_branch "$WORKTREE_PATH" "$BRANCH_NAME" || true
     else
-        echo "[session_start] Sem repo em ${MAIN_REPO} e sem clone_url — diretório vazio."
-        mkdir -p "$WORKTREE_PATH"
+        echo "[session_start] ERRO: sem repo em ${MAIN_REPO} e sem clone_url."
+        exit 1
     fi
 fi
 
