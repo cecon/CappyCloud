@@ -30,7 +30,5 @@ class SQLAlchemyAgentRepository(AgentRepository):
         )
         if row is None:
             return False
-        owner = await self._session.scalar(
-            select(Agent.owner_id).where(Agent.id == agent_id)
-        )
+        owner = await self._session.scalar(select(Agent.owner_id).where(Agent.id == agent_id))
         return owner is None or owner == user_id
