@@ -413,4 +413,3 @@ The sandbox container needs time to clone the repository and start openclaude.
 Large repos may take > 90 seconds. Increase the wait in `_docker_manager.py`
 
 (`_wait_for_grpc` timeout parameter) or pre-clone in a custom sandbox image.
-

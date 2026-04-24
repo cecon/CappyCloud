@@ -85,22 +85,24 @@ async def load_agent_context(
                 _RAG_TOP_N,
             )
             for r in rows:
-                skills.append({
-                    "title": r["title"],
-                    "summary": r["summary"] or "",
-                    "source_url": r["source_url"],
-                })
+                skills.append(
+                    {
+                        "title": r["title"],
+                        "summary": r["summary"] or "",
+                        "source_url": r["source_url"],
+                    }
+                )
 
         # Skills vinculadas ao(s) repositório(s) da sessão.
         if repo_ids:
-            repo_skills = await _load_repo_skills(conn, repo_ids, user_message, _RAG_TOP_N)
-            # Deduplica por título antes de mesclar.
+            repo_skills = await _load_repo_skills(
+                conn, repo_ids, user_message, _RAG_TOP_N
+            )
             existing_titles = {s["title"] for s in skills}
             for rs in repo_skills:
                 if rs["title"] not in existing_titles:
                     skills.append(rs)
                     existing_titles.add(rs["title"])
-
         return system_prompt, skills
     except Exception as exc:  # noqa: BLE001 - degrada graciosamente
         log.warning("load_agent_context falhou (agent=%s): %s", agent_id[:8] if agent_id else "?", exc)

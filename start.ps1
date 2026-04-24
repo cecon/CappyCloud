@@ -207,4 +207,3 @@ Write-Host "  Logs ao vivo:  docker compose logs -f" -ForegroundColor DarkGray
 Write-Host "  Parar tudo:    docker compose down" -ForegroundColor DarkGray
 
 Write-Host ""
-

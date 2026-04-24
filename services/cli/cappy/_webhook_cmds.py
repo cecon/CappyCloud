@@ -9,16 +9,19 @@ webhook_app = typer.Typer(help="Utilitários de webhook.")
 
 def _client():
     from cappy.main import client
+
     return client()
 
 
 def _err(msg: str) -> None:
     from cappy.main import err
+
     err(msg)
 
 
 def _print(data) -> None:
     from cappy.main import print_json
+
     print_json(data)
 
 

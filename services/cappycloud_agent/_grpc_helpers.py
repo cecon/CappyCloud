@@ -18,7 +18,9 @@ class PendingAction:
 
     prompt_id: str
     question: str
-    action_type: int  # 0 = CONFIRM_COMMAND (yes/no), 1 = REQUEST_INFORMATION (free text)
+    action_type: (
+        int  # 0 = CONFIRM_COMMAND (yes/no), 1 = REQUEST_INFORMATION (free text)
+    )
     choices: list[str] | None = None
 
     @property
@@ -71,3 +73,17 @@ async def connect_with_retry(
         f"Não foi possível conectar ao sandbox gRPC após {retries} "
         f"tentativas ({host}:{port}). Último erro: {last_exc}"
     )
+
+
+SESSION_START_ERROR = (
+    "O agente não conseguiu iniciar a sessão. "
+    "Possíveis causas: worktree não criado (branch base não existe), "
+    "path de sessão inválido, ou erro no modelo. "
+    "Verifique se o repositório e branch estão configurados correctamente."
+)
+
+GRPC_CONNECTION_LOST = (
+    "Conexão com o sandbox perdida. Envie sua mensagem novamente para reconectar."
+)
+
+GRPC_UNEXPECTED_END = "O agente encerrou a conexão inesperadamente (possível rate limit ou timeout do modelo)."

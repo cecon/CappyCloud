@@ -138,6 +138,7 @@ class StreamMessage:
         content: str,
         model_id: str = "cappycloud",
         cursor: int | None = None,
+        override_model: str | None = None,
     ) -> AsyncGenerator[bytes]:
         conv = await self._conversations.get(conversation_id, user_id)
         if not conv:
@@ -162,7 +163,7 @@ class StreamMessage:
         messages_payload = [{"role": m.role, "content": m.content} for m in history]
 
         await self._ensure_repo_ids(conv)
-        pipeline_body = await self._build_pipeline_body(conv, user_id, cursor)
+        pipeline_body = await self._build_pipeline_body(conv, user_id, cursor, override_model)
 
         return self._stream_chunks(
             injected_prompt, model_id, messages_payload, pipeline_body, conversation_id
@@ -219,6 +220,7 @@ class StreamMessage:
         conv: Conversation,
         user_id: uuid.UUID,
         cursor: int | None,
+        override_model: str | None = None,
     ) -> dict:
         repos_for_pipeline = await self._enrich_repos_for_pipeline(conv.repos)
         return {
@@ -230,6 +232,7 @@ class StreamMessage:
             "session_root": conv.session_root or "",
             "sandbox_id": str(conv.sandbox_id) if conv.sandbox_id else "",
             "agent_id": str(conv.agent_id) if conv.agent_id else "",
+            "override_model": override_model,
         }
 
     async def _stream_chunks(

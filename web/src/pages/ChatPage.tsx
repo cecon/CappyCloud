@@ -15,6 +15,7 @@ import {
   createConversation,
   createConversationPr,
   fetchAgents,
+  fetchAiModels,
   fetchBranches,
   fetchConversationDiff,
   fetchConversations,
@@ -25,6 +26,7 @@ import {
   streamAssistantReply,
   type ActionRequiredEvent,
   type Agent,
+  type AiModel,
   type ChatMessage,
   type Conversation,
   type ConversationDiff,
@@ -76,6 +78,8 @@ export function ChatPage() {
   const [selectedBranch, setSelectedBranch] = useState<string>('')
   const [agents, setAgents] = useState<Agent[]>([])
   const [selectedAgentId, setSelectedAgentId] = useState<string>('')
+  const [models, setModels] = useState<AiModel[]>([])
+  const [selectedModelId, setSelectedModelId] = useState<string>('')
 
   const [pendingText, setPendingText] = useState('')
   const [pendingTools, setPendingTools] = useState<ToolCallState[]>([])
@@ -104,13 +108,21 @@ export function ChatPage() {
     let cancelled = false
     ;(async () => {
       try {
-        const [convsResult, wsList, agentsList] = await Promise.allSettled([
+        const [convsResult, wsList, agentsList, modelsList] = await Promise.allSettled([
           fetchConversations(token),
           fetchWorkspaces(token),
           fetchAgents(token),
+          fetchAiModels(token),
         ])
         if (agentsList.status === 'fulfilled') {
           setAgents(agentsList.value)
+        }
+        if (modelsList.status === 'fulfilled') {
+          const ms = modelsList.value
+          setModels(ms)
+          // Auto-seleciona o modelo default de texto, se existir
+          const defaultModel = ms.find((m) => m.is_default?.text)
+          if (defaultModel) setSelectedModelId(defaultModel.model_id)
         }
         if (cancelled) return
 
@@ -255,7 +267,7 @@ export function ChatPage() {
           ])
         },
         signal: ctrl.signal,
-      })
+      }, selectedModelId || null)
       setPendingText('')
       setPendingTools([])
       const msgs = await fetchMessages(token, c.id)
@@ -335,7 +347,7 @@ export function ChatPage() {
           ])
         },
         signal: ctrl.signal,
-      })
+      }, selectedModelId || null)
       setPendingText('')
       setPendingTools([])
       const msgs = await fetchMessages(token, activeId)
@@ -484,6 +496,9 @@ export function ChatPage() {
             agents={agents}
             selectedAgentId={selectedAgentId}
             setSelectedAgentId={setSelectedAgentId}
+            models={models}
+            selectedModelId={selectedModelId}
+            setSelectedModelId={setSelectedModelId}
             token={token}
           />
           ) : (
@@ -517,6 +532,9 @@ export function ChatPage() {
               diffLoading={diffLoading}
               onOpenDiff={handleOpenDiff}
               onToggleFiles={handleToggleFiles}
+              models={models}
+              selectedModelId={selectedModelId}
+              setSelectedModelId={setSelectedModelId}
             />
           )}
         </main>
@@ -542,6 +560,9 @@ interface EmptyStateProps {
   agents: Agent[]
   selectedAgentId: string
   setSelectedAgentId: (id: string) => void
+  models: AiModel[]
+  selectedModelId: string
+  setSelectedModelId: (id: string) => void
   token: string
 }
 
@@ -549,7 +570,8 @@ function EmptyState({
   input, setInput, inputRef, onExecute, streaming,
   workspaces, selectedSlug, setSelectedSlug,
   selectedBranch, setSelectedBranch,
-  agents, selectedAgentId, setSelectedAgentId, token,
+  agents, selectedAgentId, setSelectedAgentId,
+  models, selectedModelId, setSelectedModelId, token,
 }: EmptyStateProps) {
   const [branches, setBranches] = useState<string[]>([])
   const [loadedSlug, setLoadedSlug] = useState('')
@@ -706,6 +728,30 @@ function EmptyState({
                     </select>
                   </div>
                 )}
+                {models.length > 0 && (
+                  <div className={styles.contextPill} style={{ marginLeft: '0.25rem' }}>
+                    <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
+                      smart_toy
+                    </span>
+                    <span className={styles.contextPillLabel}>
+                      {models.find((m) => m.model_id === selectedModelId)?.display_name ?? 'Modelo…'}
+                    </span>
+                    <span className={styles.icon} style={{ fontSize: '0.75rem', opacity: 0.35 }}>
+                      expand_more
+                    </span>
+                    <select
+                      className={styles.contextPillSelect}
+                      value={selectedModelId}
+                      onChange={(e) => setSelectedModelId(e.target.value)}
+                      title="Selecionar modelo"
+                    >
+                      <option value="">— modelo padrão —</option>
+                      {models.map((m) => (
+                        <option key={m.id} value={m.model_id}>{m.display_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className={styles.commandToolbarRight}>
@@ -800,6 +846,9 @@ interface ActiveChatProps {
   diffLoading: boolean
   onOpenDiff: () => void
   onToggleFiles: () => void
+  models: AiModel[]
+  selectedModelId: string
+  setSelectedModelId: (id: string) => void
 }
 
 function ActiveChat({
@@ -810,6 +859,7 @@ function ActiveChat({
   diffStats, prLoading, prUrl, headBranch, onCreatePr,
   activeTitle: _activeTitle,
   token, conversationId, sidePanel, diff, diffLoading, onOpenDiff, onToggleFiles,
+  models, selectedModelId, setSelectedModelId,
 }: ActiveChatProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [elapsedSecs, setElapsedSecs] = useState(0)
@@ -986,6 +1036,29 @@ function ActiveChat({
               <span className={styles.chatContextText}>
                 {headBranch ?? activeBaseBranch}
               </span>
+            </div>
+          )}
+          {models.length > 0 && (
+            <div className={`${styles.chatContextPill} ${styles.contextPill}`} style={{ marginLeft: '0.35rem' }}>
+              <span className={`${styles.icon} ${styles.chatContextIcon}`}>smart_toy</span>
+              <span className={styles.chatContextText}>
+                {models.find((m) => m.model_id === selectedModelId)?.display_name ?? 'Padrão'}
+              </span>
+              <span className={styles.icon} style={{ fontSize: '0.65rem', opacity: 0.35 }}>
+                expand_more
+              </span>
+              <select
+                className={styles.contextPillSelect}
+                value={selectedModelId}
+                onChange={(e) => setSelectedModelId(e.target.value)}
+                title="Mudar modelo"
+                disabled={streaming}
+              >
+                <option value="">— modelo padrão —</option>
+                {models.map((m) => (
+                  <option key={m.id} value={m.model_id}>{m.display_name}</option>
+                ))}
+              </select>
             </div>
           )}
           <span

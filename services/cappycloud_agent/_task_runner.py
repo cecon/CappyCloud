@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -48,7 +47,9 @@ class TaskRunner:
     async def start(self) -> None:
         """Inicia a task de execução em background."""
         self._pool = await asyncpg.create_pool(self._db_url, min_size=1, max_size=3)
-        self._task = asyncio.create_task(self._run(), name=f"runner-{self._task_id[:8]}")
+        self._task = asyncio.create_task(
+            self._run(), name=f"runner-{self._task_id[:8]}"
+        )
 
     async def send_input(self, reply: str) -> None:
         """Repassa a resposta do utilizador ao stream gRPC pausado."""
@@ -88,7 +89,9 @@ class TaskRunner:
                         self._session._out_queue.get(), timeout=300.0
                     )
                 except asyncio.TimeoutError:
-                    await self._insert_event("timeout", {"message": "Stream silencioso por 5 min."})
+                    await self._insert_event(
+                        "timeout", {"message": "Stream silencioso por 5 min."}
+                    )
                     await self._update_task(status="error", completed_at=_now())
                     return
 

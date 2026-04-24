@@ -35,7 +35,11 @@ def load_config() -> dict:
 
 
 def get_api_url() -> str:
-    return os.getenv("CAPPY_API_URL") or load_config().get("api_url") or "http://localhost:8000"
+    return (
+        os.getenv("CAPPY_API_URL")
+        or load_config().get("api_url")
+        or "http://localhost:8000"
+    )
 
 
 def get_token() -> str:

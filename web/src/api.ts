@@ -240,16 +240,19 @@ export async function streamAssistantReply(
   token: string,
   conversationId: string,
   content: string,
-  handlers: StreamHandlers
+  handlers: StreamHandlers,
+  modelId?: string | null,
 ): Promise<void> {
   const { signal, ...eventHandlers } = handlers
+  const bodyPayload: Record<string, unknown> = { content }
+  if (modelId) bodyPayload.model_id = modelId
   const res = await apiFetch(`/api/conversations/${conversationId}/messages/stream`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify(bodyPayload),
     signal,
   })
   if (!res.ok) {
@@ -740,6 +743,28 @@ export interface Sandbox {
 
 export async function fetchSandboxes(token: string): Promise<Sandbox[]> {
   const res = await apiFetch('/api/sandboxes', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return []
+  return res.json()
+}
+
+// ── AI Models ────────────────────────────────────────────────────────────────
+
+export interface AiModel {
+  id: string
+  provider_id: string
+  model_id: string
+  display_name: string
+  capabilities: string[]
+  is_default: Record<string, boolean>
+  context_window: number
+  active: boolean
+  created_at: string
+}
+
+export async function fetchAiModels(token: string): Promise<AiModel[]> {
+  const res = await apiFetch('/api/ai-models', {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) return []

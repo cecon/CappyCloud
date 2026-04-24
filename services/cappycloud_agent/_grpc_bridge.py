@@ -76,7 +76,9 @@ class GrpcBridge:
 
                 elif event == "tool_start":
                     ts = server_msg.tool_start
-                    log.info("Tool call: %s  args=%s", ts.tool_name, ts.arguments_json[:120])
+                    log.info(
+                        "Tool call: %s  args=%s", ts.tool_name, ts.arguments_json[:120]
+                    )
 
                 elif event == "tool_result":
                     tr = server_msg.tool_result

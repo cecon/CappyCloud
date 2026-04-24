@@ -253,6 +253,14 @@ class MessageOut(BaseModel):
 
 class SendMessageBody(BaseModel):
     content: str = Field(min_length=1, max_length=1_000_000)
+    model_id: str | None = Field(
+        default=None,
+        max_length=256,
+        description=(
+            "OpenRouter model ID (ex: anthropic/claude-3.5-sonnet). "
+            "Se None, usa o default da env var."
+        ),
+    )
 
 
 # ── Re-export schemas de Agents & Skills (definidos em ``schemas_agents``) ──
