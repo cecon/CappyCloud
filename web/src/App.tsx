@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { getToken } from './api'
 import { AgentsPage } from './pages/AgentsPage'
+import { SkillsPage } from './pages/SkillsPage'
 import { ChatPage } from './pages/ChatPage'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
@@ -30,6 +31,12 @@ export default function App() {
         path="/agents"
         element={
           token ? <AgentsPage /> : <Navigate to="/login" replace />
+        }
+      />
+      <Route
+        path="/skills"
+        element={
+          token ? <SkillsPage /> : <Navigate to="/login" replace />
         }
       />
       <Route

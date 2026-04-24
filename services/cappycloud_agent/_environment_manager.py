@@ -155,11 +155,24 @@ class EnvironmentManager:
                 raise RuntimeError(
                     f"session_server returned {resp.status_code}: {resp.text}"
                 )
+            resp_data = resp.json()
         except httpx.ConnectError as exc:
             raise RuntimeError(
                 f"Cannot reach sandbox session server at {base}. "
                 "Check if cappycloud-sandbox is running."
             ) from exc
+
+        # Mescla branch_name retornado pelo session_server nos repos persistidos.
+        repos_created: list[dict] = resp_data.get("repos_created") or []
+        if repos_created:
+            by_alias = {r["alias"]: r for r in repos_created if "alias" in r}
+            for repo in resolved_repos:
+                alias = repo.get("alias") or repo.get("slug", "")
+                created = by_alias.get(alias)
+                if created and not repo.get("branch_name"):
+                    repo["branch_name"] = created["branch_name"]
+                if created and not repo.get("worktree_path"):
+                    repo["worktree_path"] = created["worktree_path"]
 
         record = SandboxRecord(
             user_id=user_id,

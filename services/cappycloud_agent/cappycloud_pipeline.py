@@ -128,21 +128,24 @@ class Pipeline:
         except (TypeError, ValueError):
             cursor = None
 
-        # Carrega system_prompt do agente + RAG inicial (top-N skills relevantes).
+        repo_ids: list[str] = [r["repo_id"] for r in repos if r.get("repo_id")]
+
         system_prompt = ""
         skills_top: list[dict] = []
-        if agent_id:
+        if agent_id or repo_ids:
             try:
                 system_prompt, skills_top = self._run(
                     load_agent_context(
-                        self.valves.DATABASE_URL, agent_id, user_message
+                        self.valves.DATABASE_URL,
+                        agent_id,
+                        user_message,
+                        repo_ids=repo_ids or None,
                     ),
                     timeout=10,
                 )
             except Exception as exc:  # noqa: BLE001
                 log.warning("Falha ao carregar agent_context: %s", exc)
 
-        # URL do session_server (para o LLM chamar /skills/search via Bash quando precisar).
         sandbox_host = os.getenv("SANDBOX_HOST", "cappycloud-sandbox")
         sandbox_session_port = os.getenv("SANDBOX_SESSION_PORT", "8080")
         sandbox_session_url = f"http://{sandbox_host}:{sandbox_session_port}"
@@ -161,12 +164,12 @@ class Pipeline:
         )
         runner = self._dispatcher.get_runner(task_id) if task_id else None
 
-        dispatch_kwargs = dict(
-            repos=repos,
-            session_root=session_root,
-            sandbox_id=sandbox_id,
-            override_model=body.get("override_model"),
-        )
+        dispatch_kwargs = {
+            "repos": repos,
+            "session_root": session_root,
+            "sandbox_id": sandbox_id,
+            "override_model": body.get("override_model"),
+        }
 
         if runner and runner.is_alive() and runner.pending_action:
             self._run(self._dispatcher.send_input(task_id, user_message), timeout=10)

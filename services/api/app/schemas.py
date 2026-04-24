@@ -85,6 +85,16 @@ class SandboxOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SandboxRegister(BaseModel):
+    """Payload de auto-registro enviado pelo container ao iniciar."""
+
+    name: str = Field(min_length=1, max_length=128)
+    host: str = Field(min_length=1, max_length=256)
+    grpc_port: int = Field(default=50051, ge=1, le=65535)
+    session_port: int = Field(default=8080, ge=1, le=65535)
+    register_token: str = Field(min_length=1, max_length=256)
+
+
 # ── Conversations ─────────────────────────────────────────────
 
 

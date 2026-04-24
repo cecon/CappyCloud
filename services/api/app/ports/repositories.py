@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from abc import ABC, abstractmethod
 
-from app.domain.entities import Conversation, Message, RepoEnvironment, User
+from app.domain.entities import Conversation, Message, RepoEnvironment, Repository, User
 
 
 class UserRepository(ABC):
@@ -50,6 +50,32 @@ class RepoEnvironmentRepository(ABC):
     @abstractmethod
     async def delete(self, env_id: uuid.UUID) -> None:
         """Remove a repo environment record."""
+
+
+class RepositoryRepository(ABC):
+    """Port para o cat\u00e1logo de reposit\u00f3rios git geridos pelo sandbox.
+
+    Distinto de :class:`RepoEnvironmentRepository` (este \u00faltimo \u00e9 legado).
+    A tabela subjacente (``repositories``) \u00e9 a fonte da verdade para slugs
+    usados no fluxo de sandbox/worktree e ser\u00e1 a ref de FK para skills
+    vinculadas a um repo.
+    """
+
+    @abstractmethod
+    async def get(self, repo_id: uuid.UUID) -> Repository | None:
+        """Retorna o reposit\u00f3rio pelo id, ou None se n\u00e3o existir."""
+
+    @abstractmethod
+    async def get_by_slug(self, slug: str) -> Repository | None:
+        """Retorna o reposit\u00f3rio pelo slug \u00fanico, ou None se n\u00e3o existir."""
+
+    @abstractmethod
+    async def get_authenticated_clone_url(self, repo_id: uuid.UUID) -> str | None:
+        """Retorna clone_url com token PAT embutido, ou None se n\u00e3o houver credencial.
+
+        Decripta o token do GitProvider associado e injeta na URL para que
+        session_start.sh consiga autenticar o clone/fetch sem env vars globais.
+        """
 
 
 class ConversationRepository(ABC):

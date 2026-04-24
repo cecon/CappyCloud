@@ -384,7 +384,10 @@ export function AgentsPage() {
           </h2>
           <p className={styles.sectionDesc}>
             Skills são pedaços de documentação que o agente consulta para responder.
-            Pode importar de uma URL (Confluence, GitHub, etc.) ou criar manual.
+            Pode importar de uma URL (Confluence, GitHub, etc.) ou criar manual.{' '}
+            <Link to="/skills" className={styles.backLink}>
+              Ver todas as skills →
+            </Link>
           </p>
 
           {/* Importar de URL */}

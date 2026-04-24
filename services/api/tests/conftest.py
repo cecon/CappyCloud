@@ -12,11 +12,12 @@ from collections.abc import Generator
 from typing import Any
 
 import pytest
-from app.domain.entities import Conversation, Message, User
+from app.domain.entities import Conversation, Message, Repository, User
 from app.ports.agent import AgentPort
 from app.ports.repositories import (
     ConversationRepository,
     MessageRepository,
+    RepositoryRepository,
     UserRepository,
 )
 from app.ports.services import PasswordService, TokenService
@@ -69,6 +70,27 @@ class InMemoryConversationRepository(ConversationRepository):
     async def update(self, conversation: Conversation) -> Conversation:
         self._store[conversation.id] = conversation
         return conversation
+
+
+class InMemoryRepositoryRepository(RepositoryRepository):
+    """In-memory repository catalog for testing."""
+
+    def __init__(self) -> None:
+        self._store: dict[uuid.UUID, Repository] = {}
+
+    async def get(self, repo_id: uuid.UUID) -> Repository | None:
+        return self._store.get(repo_id)
+
+    async def get_by_slug(self, slug: str) -> Repository | None:
+        return next((r for r in self._store.values() if r.slug == slug), None)
+
+    async def get_authenticated_clone_url(self, repo_id: uuid.UUID) -> str | None:
+        repo = self._store.get(repo_id)
+        return repo.clone_url if repo else None
+
+    def add(self, repo: Repository) -> None:
+        """T\u00e9cnica de teste: insere reposit\u00f3rio diretamente sem rota HTTP."""
+        self._store[repo.id] = repo
 
 
 class InMemoryMessageRepository(MessageRepository):
@@ -174,6 +196,11 @@ def user_repo() -> InMemoryUserRepository:
 @pytest.fixture
 def conv_repo() -> InMemoryConversationRepository:
     return InMemoryConversationRepository()
+
+
+@pytest.fixture
+def repository_repo() -> InMemoryRepositoryRepository:
+    return InMemoryRepositoryRepository()
 
 
 @pytest.fixture

@@ -137,6 +137,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       const outputs = []
+      const repos_created = []
 
       fs.mkdirSync(session_root, { recursive: true })
 
@@ -155,27 +156,31 @@ const server = http.createServer(async (req, res) => {
         const { slug, alias, base_branch: rb, branch_name, clone_url: rc } = repo
         if (!slug || !alias) continue
         const wt_path = path.join(session_root, alias)
+        const resolved_branch = branch_name || `cappy/${slug}/${session_id}-${alias}`
         try {
           const out = await createWorktree({
             slug,
             alias,
             base_branch: rb || 'main',
-            branch_name: branch_name || `cappy/${slug}/${session_id}-${alias}`,
+            branch_name: resolved_branch,
             worktree_path: wt_path,
             clone_url: rc || '',
           })
           outputs.push(`[${alias}] ${out}`)
-          console.log(`[session_server] created worktree ${wt_path}`)
+          repos_created.push({ alias, branch_name: resolved_branch, worktree_path: wt_path })
+          console.log(`[session_server] created worktree ${wt_path} on branch ${resolved_branch}`)
         } catch (err) {
           const msg = ((err.stdout || '') + (err.stderr || '')).trim() || err.message
           console.error(`[session_server] failed worktree ${wt_path}: ${msg}`)
           outputs.push(`[${alias}] ERROR: ${msg}`)
+          repos_created.push({ alias, branch_name: resolved_branch, worktree_path: wt_path, error: msg })
         }
       }
 
       return json(res, 200, {
         session_id,
         session_root,
+        repos_created,
         output: outputs.join('\n'),
       })
     }

@@ -177,10 +177,14 @@ export function SettingsPage() {
           Voltar ao chat
         </Link>
         <h1 className={styles.title}>Configurações</h1>
-        <div style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
+        <div style={{ marginTop: '0.5rem', fontSize: '0.85rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
           <Link to="/agents" className={styles.backLink}>
             <span className={styles.icon}>support_agent</span>
-            Gerir Agentes & Skills →
+            Agentes →
+          </Link>
+          <Link to="/skills" className={styles.backLink}>
+            <span className={styles.icon}>menu_book</span>
+            Skills →
           </Link>
         </div>
       </header>

@@ -19,29 +19,61 @@ log = logging.getLogger(__name__)
 _RAG_TOP_N = int(os.getenv("RAG_TOP_N", "3"))
 
 
+async def _load_repo_skills(
+    conn: asyncpg.Connection,
+    repo_ids: list[str],
+    user_message: str,
+    top_n: int,
+) -> list[dict]:
+    """Carrega skills vinculadas a repositórios específicos da sessão."""
+    if not repo_ids:
+        return []
+
+    keywords = [w for w in user_message.split() if len(w) > 4][:6]
+    pattern = f"%{keywords[0]}%" if keywords else "%"
+
+    placeholders = ", ".join(f"${i+3}::uuid" for i in range(len(repo_ids)))
+    rows = await conn.fetch(
+        f"SELECT title, summary, source_url FROM skills "
+        f"WHERE active = TRUE AND repository_id IN ({placeholders}) "
+        f"AND (title ILIKE $1 OR summary ILIKE $1 OR content ILIKE $1) "
+        f"ORDER BY title LIMIT $2",
+        pattern,
+        top_n,
+        *repo_ids,
+    )
+    return [{"title": r["title"], "summary": r["summary"] or "", "source_url": r["source_url"]}
+            for r in rows]
+
+
 async def load_agent_context(
-    db_url: str, agent_id: str, user_message: str
+    db_url: str,
+    agent_id: str,
+    user_message: str,
+    repo_ids: list[str] | None = None,
 ) -> tuple[str, list[dict]]:
     """Devolve ``(system_prompt, [{title, summary, source_url}, ...])``."""
-    if not agent_id or not db_url:
+    if not db_url:
         return "", []
 
     conn: Optional[asyncpg.Connection] = None
     try:
         conn = await asyncpg.connect(db_url)
-        agent_row = await conn.fetchrow(
-            "SELECT system_prompt FROM agents WHERE id = $1::uuid AND active = TRUE",
-            agent_id,
-        )
-        if not agent_row:
-            return "", []
 
-        system_prompt = agent_row["system_prompt"] or ""
+        system_prompt = ""
+        if agent_id:
+            agent_row = await conn.fetchrow(
+                "SELECT system_prompt FROM agents WHERE id = $1::uuid AND active = TRUE",
+                agent_id,
+            )
+            if agent_row:
+                system_prompt = agent_row["system_prompt"] or ""
 
         # Match lexical simples: a primeira palavra-chave longa da mensagem.
         keywords = [w for w in user_message.split() if len(w) > 4][:6]
         skills: list[dict] = []
-        if keywords:
+
+        if keywords and agent_id:
             pattern = f"%{keywords[0]}%"
             rows = await conn.fetch(
                 "SELECT title, summary, source_url FROM skills "
@@ -60,9 +92,20 @@ async def load_agent_context(
                         "source_url": r["source_url"],
                     }
                 )
+
+        # Skills vinculadas ao(s) repositório(s) da sessão.
+        if repo_ids:
+            repo_skills = await _load_repo_skills(
+                conn, repo_ids, user_message, _RAG_TOP_N
+            )
+            existing_titles = {s["title"] for s in skills}
+            for rs in repo_skills:
+                if rs["title"] not in existing_titles:
+                    skills.append(rs)
+                    existing_titles.add(rs["title"])
         return system_prompt, skills
     except Exception as exc:  # noqa: BLE001 - degrada graciosamente
-        log.warning("load_agent_context falhou (agent=%s): %s", agent_id[:8], exc)
+        log.warning("load_agent_context falhou (agent=%s): %s", agent_id[:8] if agent_id else "?", exc)
         return "", []
     finally:
         if conn:

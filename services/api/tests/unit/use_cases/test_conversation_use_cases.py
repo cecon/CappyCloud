@@ -9,11 +9,13 @@ from app.application.use_cases.conversations import (
     ListMessages,
     StreamMessage,
 )
+from app.domain.entities import Repository
 
 from tests.conftest import (
     FakeAgent,
     InMemoryConversationRepository,
     InMemoryMessageRepository,
+    InMemoryRepositoryRepository,
 )
 
 
@@ -80,6 +82,39 @@ class TestCreateConversation:
         uc = CreateConversation(conv_repo)
         conv = await uc.execute(user_id)
         assert isinstance(conv.id, uuid.UUID)
+
+    async def test_resolves_repo_slug_to_repo_id(
+        self,
+        conv_repo: InMemoryConversationRepository,
+        user_id: uuid.UUID,
+    ) -> None:
+        repo_catalog = InMemoryRepositoryRepository()
+        repo = Repository(
+            id=uuid.uuid4(),
+            slug="autosystem",
+            name="autosystem",
+            clone_url="https://example.com/autosystem.git",
+        )
+        repo_catalog.add(repo)
+        uc = CreateConversation(conv_repo, repo_catalog)
+
+        conv = await uc.execute(user_id, repos=[{"slug": "autosystem"}])
+
+        assert len(conv.repos) == 1
+        assert conv.repos[0]["slug"] == "autosystem"
+        assert conv.repos[0]["repo_id"] == str(repo.id)
+
+    async def test_repo_id_is_none_for_unknown_slug(
+        self,
+        conv_repo: InMemoryConversationRepository,
+        user_id: uuid.UUID,
+    ) -> None:
+        repo_catalog = InMemoryRepositoryRepository()
+        uc = CreateConversation(conv_repo, repo_catalog)
+
+        conv = await uc.execute(user_id, repos=[{"slug": "nao-existe"}])
+
+        assert conv.repos[0]["repo_id"] is None
 
 
 class TestListMessages:

@@ -110,6 +110,31 @@ fi
 # original do repo. O CLAUDE.md genérico do CappyCloud é só copiado para o
 # worktree de cada sessão, e apenas se o repo não tiver já um.
 
+# ── Auto-registro no CappyCloud API ─────────────────────────
+# O container se registra como sandbox ativo ao iniciar.
+# Requer SANDBOX_REGISTER_TOKEN e API_HOST configurados.
+SANDBOX_REGISTER_TOKEN="${SANDBOX_REGISTER_TOKEN:-}"
+SANDBOX_NAME="${SANDBOX_NAME:-cappycloud-sandbox}"
+API_HOST="${API_HOST:-cappycloud-api}"
+API_PORT_INTERNAL="${API_PORT_INTERNAL:-8080}"
+
+if [ -n "${SANDBOX_REGISTER_TOKEN}" ]; then
+    # Tenta registrar via curl — falha não-fatal (não impede o sandbox de rodar).
+    SANDBOX_HOST="${SANDBOX_HOST:-$(hostname -i 2>/dev/null || echo "${API_HOST}")}"
+    for attempt in 1 2 3 4; do
+        REGISTER_RESP=$(curl -sf -X POST \
+            "http://${API_HOST}:${API_PORT_INTERNAL}/api/sandboxes/register" \
+            -H "Content-Type: application/json" \
+            -d "{\"name\":\"${SANDBOX_NAME}\",\"host\":\"${SANDBOX_HOST}\",\"grpc_port\":${GRPC_PORT},\"session_port\":${SESSION_SERVER_PORT:-8080},\"register_token\":\"${SANDBOX_REGISTER_TOKEN}\"}" \
+            2>&1) && echo "Sandbox '${SANDBOX_NAME}' registrado (host=${SANDBOX_HOST})." && break
+        WAIT=$((attempt * 2))
+        echo "Registro falhou (tentativa ${attempt}/4) — aguardando ${WAIT}s..."
+        sleep "${WAIT}"
+    done
+else
+    echo "SANDBOX_REGISTER_TOKEN não configurado — pulando auto-registro."
+fi
+
 # ── Export provider env vars for openclaude ──────────────────
 export CLAUDE_CODE_USE_OPENAI="${CLAUDE_CODE_USE_OPENAI}"
 export OPENAI_BASE_URL="${OPENAI_BASE_URL}"

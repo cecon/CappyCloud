@@ -21,6 +21,9 @@ from app.adapters.secondary.persistence.sqlalchemy_message_repo import (
 from app.adapters.secondary.persistence.sqlalchemy_repo_env_repo import (
     SQLAlchemyRepoEnvironmentRepository,
 )
+from app.adapters.secondary.persistence.sqlalchemy_repository_repo import (
+    SQLAlchemyRepositoryRepository,
+)
 from app.adapters.secondary.persistence.sqlalchemy_user_repo import (
     SQLAlchemyUserRepository,
 )
@@ -43,6 +46,7 @@ from app.ports.repositories import (
     ConversationRepository,
     MessageRepository,
     RepoEnvironmentRepository,
+    RepositoryRepository,
     UserRepository,
 )
 from app.ports.services import PasswordService, TokenService
@@ -87,6 +91,12 @@ def get_repo_env_repo(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RepoEnvironmentRepository:
     return SQLAlchemyRepoEnvironmentRepository(session)
+
+
+def get_repository_repo(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> RepositoryRepository:
+    return SQLAlchemyRepositoryRepository(session)
 
 
 # ---------------------------------------------------------------------------
@@ -161,8 +171,9 @@ def get_list_convs_uc(
 
 def get_create_conv_uc(
     convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
+    repos: Annotated[RepositoryRepository, Depends(get_repository_repo)],
 ) -> CreateConversation:
-    return CreateConversation(convs)
+    return CreateConversation(convs, repos)
 
 
 def get_list_msgs_uc(
@@ -176,8 +187,9 @@ def get_stream_msg_uc(
     convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
     msgs: Annotated[MessageRepository, Depends(get_msg_repo)],
     agent: Annotated[AgentPort, Depends(get_agent)],
+    repos: Annotated[RepositoryRepository, Depends(get_repository_repo)],
 ) -> StreamMessage:
-    return StreamMessage(convs, msgs, agent)
+    return StreamMessage(convs, msgs, agent, repos)
 
 
 def get_list_repo_envs_uc(

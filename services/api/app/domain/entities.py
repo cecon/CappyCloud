@@ -32,6 +32,7 @@ class Sandbox:
     grpc_port: int = 50051
     session_port: int = 8080
     status: str = "active"  # active | draining | offline
+    register_token: str | None = None
     created_at: datetime = field(default_factory=_utcnow)
 
 
