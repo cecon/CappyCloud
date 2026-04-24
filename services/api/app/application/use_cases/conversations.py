@@ -163,9 +163,7 @@ class StreamMessage:
         messages_payload = [{"role": m.role, "content": m.content} for m in history]
 
         await self._ensure_repo_ids(conv)
-        pipeline_body = await self._build_pipeline_body(
-            conv, user_id, cursor, override_model
-        )
+        pipeline_body = await self._build_pipeline_body(conv, user_id, cursor, override_model)
 
         return self._stream_chunks(
             injected_prompt, model_id, messages_payload, pipeline_body, conversation_id
