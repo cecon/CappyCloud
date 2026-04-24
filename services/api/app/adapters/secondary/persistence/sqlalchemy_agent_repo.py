@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import cast
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,10 +17,12 @@ class SQLAlchemyAgentRepository(AgentRepository):
         self._session = session
 
     async def get_default_id(self) -> uuid.UUID | None:
-        row = await self._session.scalar(
-            select(Agent.id).where(Agent.is_default.is_(True), Agent.active.is_(True))
+        return cast(
+            uuid.UUID | None,
+            await self._session.scalar(
+                select(Agent.id).where(Agent.is_default.is_(True), Agent.active.is_(True))
+            ),
         )
-        return row  # type: ignore[return-value]
 
     async def can_user_access(self, user_id: uuid.UUID, agent_id: uuid.UUID) -> bool:
         row = await self._session.scalar(
