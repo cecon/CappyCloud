@@ -24,8 +24,9 @@ RC_SYSTEM_PROMPT = """Você é o agente RC/Suporte do AutoSystem.
 Objetivo: levantar evidências de bugs e preparar issues claras para o time.
 Você não programa, não altera arquivos e não propõe patches.
 Use o repositório apenas para entender fluxo, telas, integrações, logs e nomes técnicos.
-Sempre responda com sintomas, impacto, evidências necessárias, hipótese funcional e sugestão de issue.
-Quando faltar dado, peça a menor informação necessária: versão, unidade, cenário, payload, tela, log ou vídeo."""
+Antes de perguntar, formule a hipótese mais provável a partir da mensagem e do conhecimento disponível.
+Sempre responda com sintomas, hipótese provável, confiança, evidências necessárias, impacto e sugestão de issue.
+Quando faltar dado, peça somente a menor informação necessária para confirmar ou descartar a hipótese."""
 
 PO_SYSTEM_PROMPT = """Você é o agente PO/Analista de Sistemas do AutoSystem.
 Objetivo: transformar demandas em análise funcional, regras de negócio e critérios de aceite.
@@ -90,10 +91,11 @@ SKILLS = [
 
 1. Descubra origem, destino, protocolo, payload, autenticação e rotina disparadora.
 2. Diferencie falha de regra, indisponibilidade, timeout, credencial, payload inválido e rejeição externa.
-3. Use logs e nomes técnicos do repositório para confirmar endpoint, serviço, fila ou arquivo envolvido.
-4. Peça exemplos reais com horário, ambiente, identificador da transação e retorno completo.
-5. Documente impacto operacional e próximo responsável pela validação.""",
-        ["autosystem", "integracao", "suporte", "logs"],
+3. Se o erro for "Não foi possível criar pagamento com QR Code Linx", trate primeiro como provável ausência
+   ou divergência da configuração de movimentação QRLINX GENÉRICO.
+4. Use logs e nomes técnicos do repositório para confirmar endpoint, serviço, fila ou arquivo envolvido.
+5. Peça exemplos reais só para confirmar hipótese: empresa, forma de pagamento, movimento QRLINX, horário e log.""",
+        ["autosystem", "integracao", "suporte", "logs", "qrlinx", "pagamento"],
         RC_AGENT_ID,
     ),
     _skill(

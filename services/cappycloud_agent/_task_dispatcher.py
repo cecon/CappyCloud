@@ -184,6 +184,7 @@ class TaskDispatcher:
                 user_id=user_id,
                 chat_id=chat_id,
                 repos=repos or [],
+                session_root=session_root,
                 sandbox_id=sandbox_id,
             )
         except Exception as exc:
