@@ -30,6 +30,7 @@ import {
   type ChatMessage,
   type Conversation,
   type ConversationDiff,
+  type StatusEvent,
   type Workspace,
 } from '../api'
 import { ActionRequiredCard } from '../components/ActionRequiredCard'
@@ -55,6 +56,46 @@ function groupConversations(convs: Conversation[]): { label: string; items: Conv
   return Object.entries(groups)
     .filter(([, items]) => items.length > 0)
     .map(([label, items]) => ({ label, items }))
+}
+
+type SessionStageKey = 'session' | 'repository' | 'ready' | 'agent'
+
+type SessionStageState = {
+  key: SessionStageKey
+  label: string
+  detail?: string
+  status: 'pending' | 'active' | 'done'
+}
+
+const SESSION_STAGES: Array<{ key: SessionStageKey; label: string }> = [
+  { key: 'session', label: 'Criar sessão do agente' },
+  { key: 'repository', label: 'Preparar repositório' },
+  { key: 'ready', label: 'Criar worktree da sessão' },
+  { key: 'agent', label: 'Agente iniciado' },
+]
+
+/** Cria o estado inicial do checklist de inicialização da sessão. */
+function createSessionProgress(): SessionStageState[] {
+  return SESSION_STAGES.map((stage) => ({ ...stage, status: 'pending' }))
+}
+
+/** Marca etapas concluídas conforme eventos de progresso chegam do backend. */
+function reduceSessionProgress(
+  previous: SessionStageState[],
+  event: StatusEvent,
+): SessionStageState[] {
+  const currentIndex = SESSION_STAGES.findIndex((stage) => stage.key === event.stage)
+  if (currentIndex < 0) return previous
+
+  return previous.map((stage, index) => {
+    if (index < currentIndex || event.stage === 'agent') {
+      return { ...stage, status: 'done' }
+    }
+    if (index === currentIndex) {
+      return { ...stage, status: 'active', detail: event.message }
+    }
+    return stage
+  })
 }
 
 /**
@@ -84,6 +125,7 @@ export function ChatPage() {
   const [pendingText, setPendingText] = useState('')
   const [pendingTools, setPendingTools] = useState<ToolCallState[]>([])
   const [pendingAction, setPendingAction] = useState<ActionRequiredEvent | null>(null)
+  const [sessionProgress, setSessionProgress] = useState<SessionStageState[]>([])
 
   const [sidePanel, setSidePanel] = useState<'none' | 'diff' | 'files'>('none')
   const [diff, setDiff] = useState<ConversationDiff | null>(null)
@@ -102,7 +144,7 @@ export function ChatPage() {
     if (scrollRef.current) {
       scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
     }
-  }, [messages, pendingText, pendingTools, pendingAction, streaming])
+  }, [messages, pendingText, pendingTools, pendingAction, sessionProgress, streaming])
 
   useEffect(() => {
     let cancelled = false
@@ -224,6 +266,7 @@ export function ChatPage() {
     setPendingText('')
     setPendingTools([])
     setPendingAction(null)
+    setSessionProgress(createSessionProgress())
 
     const ctrl = new AbortController()
     abortControllerRef.current = ctrl
@@ -255,6 +298,9 @@ export function ChatPage() {
           )
         },
         onActionRequired(action) { setPendingAction(action) },
+        onStatus(status) {
+          setSessionProgress((prev) => reduceSessionProgress(prev.length ? prev : createSessionProgress(), status))
+        },
         onError(message) {
           setMessages((m) => [
             ...m,
@@ -304,6 +350,7 @@ export function ChatPage() {
     setPendingText('')
     setPendingTools([])
     setPendingAction(null)
+    setSessionProgress(createSessionProgress())
 
     const ctrl = new AbortController()
     abortControllerRef.current = ctrl
@@ -335,6 +382,9 @@ export function ChatPage() {
           )
         },
         onActionRequired(action) { setPendingAction(action) },
+        onStatus(status) {
+          setSessionProgress((prev) => reduceSessionProgress(prev.length ? prev : createSessionProgress(), status))
+        },
         onError(message) {
           setMessages((m) => [
             ...m,
@@ -385,7 +435,7 @@ export function ChatPage() {
   const activeConv = conversations.find((c) => c.id === activeId)
   const activeEnvSlug = activeConv?.repos?.[0]?.slug ?? null
   const showThinking =
-    streaming && !pendingText && pendingTools.every((t) => t.done) && !pendingAction
+    streaming && !pendingText && !sessionProgress.length && pendingTools.every((t) => t.done) && !pendingAction
 
   const groups = groupConversations(conversations)
 
@@ -506,6 +556,7 @@ export function ChatPage() {
               messages={messages}
               pendingText={pendingText}
               pendingTools={pendingTools}
+              sessionProgress={sessionProgress}
               pendingAction={pendingAction}
               showThinking={showThinking}
               streaming={streaming}
@@ -820,6 +871,7 @@ interface ActiveChatProps {
   messages: ChatMessage[]
   pendingText: string
   pendingTools: ToolCallState[]
+  sessionProgress: SessionStageState[]
   pendingAction: ActionRequiredEvent | null
   showThinking: boolean
   streaming: boolean
@@ -852,7 +904,7 @@ interface ActiveChatProps {
 }
 
 function ActiveChat({
-  messages, pendingText, pendingTools, pendingAction,
+  messages, pendingText, pendingTools, sessionProgress, pendingAction,
   showThinking, streaming, input, setInput, inputRef,
   onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch,
   workspaces,
@@ -877,7 +929,7 @@ function ActiveChat({
     if (scrollRef.current) {
       scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
     }
-  }, [messages, pendingText, pendingTools, pendingAction, streaming])
+  }, [messages, pendingText, pendingTools, sessionProgress, pendingAction, streaming])
 
   return (
     <div className={styles.activeChat}>
@@ -955,7 +1007,10 @@ function ActiveChat({
                   {pendingTools.map((tool) => (
                     <ToolCallCard key={tool.id} tool={tool} />
                   ))}
-                  {(showThinking || (streaming && pendingTools.some(t => !t.done))) && (
+                  {sessionProgress.length > 0 && (
+                    <SessionProgressCard stages={sessionProgress} />
+                  )}
+                  {sessionProgress.length === 0 && (showThinking || (streaming && pendingTools.some(t => !t.done))) && (
                     <ThinkingIndicator label={pendingTools.some(t => !t.done) ? 'A executar…' : undefined} />
                   )}
                   {pendingText && (
@@ -1070,6 +1125,51 @@ function ActiveChat({
           </span>
         </div>
       </div>
+    </div>
+  )
+}
+
+/** Card expansível com progresso operacional da criação da sessão. */
+function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
+  const [expanded, setExpanded] = useState(true)
+  const completed = stages.every((stage) => stage.status === 'done')
+
+  return (
+    <div className={styles.sessionProgressCard}>
+      <button
+        type="button"
+        className={styles.sessionProgressHeader}
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <span>{completed ? 'Sessão inicializada' : 'Inicializando sessão'}</span>
+        <span className={styles.icon}>{expanded ? 'expand_less' : 'expand_more'}</span>
+      </button>
+
+      {expanded && (
+        <div className={styles.sessionProgressList}>
+          {stages.map((stage) => (
+            <div key={stage.key} className={styles.sessionProgressItem}>
+              <span
+                className={`${styles.sessionProgressIcon} ${
+                  stage.status === 'done' ? styles.sessionProgressIconDone : ''
+                }`}
+              >
+                {stage.status === 'done' ? 'check_circle' : 'radio_button_unchecked'}
+              </span>
+              <div>
+                <Text size="sm" c={stage.status === 'pending' ? 'dimmed' : undefined}>
+                  {stage.label}
+                </Text>
+                {stage.detail && (
+                  <Text size="xs" c="dimmed">
+                    {stage.detail}
+                  </Text>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

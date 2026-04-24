@@ -188,11 +188,17 @@ export interface ActionRequiredEvent {
   choices: string[] | null
 }
 
+export interface StatusEvent {
+  message: string
+  stage?: 'session' | 'repository' | 'ready' | 'agent'
+}
+
 export interface StreamHandlers {
   onText(accumulated: string): void
   onToolStart(tool: ToolStartEvent): void
   onToolResult(tool: ToolResultEvent): void
   onActionRequired(action: ActionRequiredEvent): void
+  onStatus(status: StatusEvent): void
   onError(message: string): void
   signal?: AbortSignal
 }
@@ -305,6 +311,17 @@ export async function streamAssistantReply(
               choices: (evt.choices as string[] | null) ?? null,
             })
             break
+          case 'status': {
+            const stage = evt.stage
+            eventHandlers.onStatus({
+              message: (evt.message as string) ?? 'Preparando sessão...',
+              stage:
+                stage === 'session' || stage === 'repository' || stage === 'ready' || stage === 'agent'
+                  ? stage
+                  : undefined,
+            })
+            break
+          }
           case 'error':
             eventHandlers.onError((evt.message as string) ?? 'Erro desconhecido')
             break

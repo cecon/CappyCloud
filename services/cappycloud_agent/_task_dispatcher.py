@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import uuid
 
@@ -12,6 +11,12 @@ import asyncpg
 from ._environment_manager import EnvironmentManager
 from ._grpc_session import GrpcSession
 from ._session_store import SessionStore
+from ._task_events import (
+    insert_error_event,
+    insert_status_event,
+    insert_task,
+    update_task_status,
+)
 from ._task_runner import TaskRunner
 
 log = logging.getLogger(__name__)
@@ -68,12 +73,13 @@ class TaskDispatcher:
         Retorna o task_id (UUID str) para que o caller possa fazer SSE.
         """
         task_id = str(uuid.uuid4())
-        await self._insert_task(
-            task_id=task_id,
-            conversation_id=conversation_id,
-            prompt=prompt,
-            triggered_by=triggered_by,
-            trigger_payload=trigger_payload or {},
+        await insert_task(
+            self._pool,
+            task_id,
+            conversation_id,
+            prompt,
+            triggered_by,
+            trigger_payload or {},
         )
         asyncio.create_task(
             self._launch_runner(
@@ -140,8 +146,10 @@ class TaskDispatcher:
         runner = self._runners.pop(task_id, None)
         if runner:
             await runner.close()
-        await self._update_task_status(task_id, "error")
-        await self._insert_error_event(task_id, "Tarefa cancelada pelo utilizador.")
+        await update_task_status(self._pool, task_id, "error")
+        await insert_error_event(
+            self._pool, task_id, "Tarefa cancelada pelo utilizador."
+        )
         return True
 
     async def cancel_for_conversation(self, conversation_id: str) -> bool:
@@ -180,6 +188,22 @@ class TaskDispatcher:
         chat_id = task_id
 
         try:
+            await insert_status_event(
+                self._pool,
+                task_id,
+                "Criando sessão do agente...",
+                "session",
+            )
+            if repos:
+                repo_slugs = ", ".join(
+                    str(repo.get("slug") or repo.get("alias") or "?") for repo in repos
+                )
+                await insert_status_event(
+                    self._pool,
+                    task_id,
+                    f"Preparando repositório: {repo_slugs}...",
+                    "repository",
+                )
             sandbox = await self._env_manager.get_or_create_session(
                 user_id=user_id,
                 chat_id=chat_id,
@@ -187,12 +211,18 @@ class TaskDispatcher:
                 session_root=session_root,
                 sandbox_id=sandbox_id,
             )
+            await insert_status_event(
+                self._pool,
+                task_id,
+                f"Sessão pronta em {sandbox.working_directory}",
+                "ready",
+            )
         except Exception as exc:
             log.exception(
                 "[Dispatcher] Falha ao criar sessão para task %s", task_id[:8]
             )
-            await self._update_task_status(task_id, "error")
-            await self._insert_error_event(task_id, str(exc))
+            await update_task_status(self._pool, task_id, "error")
+            await insert_error_event(self._pool, task_id, str(exc))
             return
 
         working_directory = sandbox.working_directory
@@ -206,13 +236,19 @@ class TaskDispatcher:
         )
 
         try:
+            await insert_status_event(
+                self._pool,
+                task_id,
+                "Iniciando agente...",
+                "agent",
+            )
             await session.start(prompt)
         except Exception as exc:
             log.exception(
                 "[Dispatcher] Falha ao iniciar gRPC para task %s", task_id[:8]
             )
-            await self._update_task_status(task_id, "error")
-            await self._insert_error_event(task_id, str(exc))
+            await update_task_status(self._pool, task_id, "error")
+            await insert_error_event(self._pool, task_id, str(exc))
             await session.close()
             return
 
@@ -242,52 +278,10 @@ class TaskDispatcher:
         )
         for row in rows:
             task_id = str(row["id"])
-            await self._update_task_status(task_id, "error")
-            await self._insert_error_event(
+            await update_task_status(self._pool, task_id, "error")
+            await insert_error_event(
+                self._pool,
                 task_id,
                 "Serviço reiniciado — sessão interrompida. Envie uma nova mensagem para continuar.",
             )
             log.warning("[Dispatcher] Orphan task %s marked as error", task_id[:8])
-
-    async def _insert_task(
-        self,
-        task_id: str,
-        conversation_id: str | None,
-        prompt: str,
-        triggered_by: str,
-        trigger_payload: dict,
-    ) -> None:
-        if not self._pool:
-            return
-        await self._pool.execute(
-            """
-            INSERT INTO agent_tasks
-                (id, conversation_id, env_slug, prompt, triggered_by, trigger_payload)
-            VALUES
-                ($1::uuid, $2::uuid, $3, $4, $5, $6::jsonb)
-            """,
-            task_id,
-            conversation_id,
-            "default",
-            prompt,
-            triggered_by,
-            json.dumps(trigger_payload),
-        )
-
-    async def _update_task_status(self, task_id: str, status: str) -> None:
-        if not self._pool:
-            return
-        await self._pool.execute(
-            "UPDATE agent_tasks SET status=$1, last_event_at=NOW() WHERE id=$2::uuid",
-            status,
-            task_id,
-        )
-
-    async def _insert_error_event(self, task_id: str, message: str) -> None:
-        if not self._pool:
-            return
-        await self._pool.execute(
-            "INSERT INTO agent_events (task_id, event_type, data) VALUES ($1::uuid, 'error', $2::jsonb)",
-            task_id,
-            json.dumps({"message": message}),
-        )

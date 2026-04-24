@@ -1062,6 +1062,58 @@
 }
 
 /* ─────────────────────────────────────────────────────────────
+   Session progress
+   ───────────────────────────────────────────────────────────── */
+
+.sessionProgressCard {
+  align-self: flex-start;
+  max-width: 92%;
+  border: 1px solid var(--cc-outline-variant);
+  border-radius: 6px;
+  background: var(--cc-surface-container);
+  padding: 0.55rem 0.7rem;
+  animation: fadeInUp 0.2s ease both;
+}
+
+.sessionProgressHeader {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--cc-on-surface);
+  cursor: pointer;
+  font: 600 0.85rem 'Inter', sans-serif;
+}
+
+.sessionProgressList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+}
+
+.sessionProgressItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+
+.sessionProgressIcon {
+  font-family: 'Material Symbols Rounded';
+  font-size: 0.9rem;
+  line-height: 1.35;
+  color: var(--cc-on-surface-variant);
+}
+
+.sessionProgressIconDone {
+  color: var(--mantine-color-green-5);
+}
+
+/* ─────────────────────────────────────────────────────────────
    Markdown body
    ───────────────────────────────────────────────────────────── */
 
