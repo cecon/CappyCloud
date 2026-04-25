@@ -140,16 +140,43 @@ def build_prompt_with_agent(
     system_prompt: str,
     skills: list[dict],
     sandbox_session_url: str,
+    repos: list[dict] | None = None,
+    session_root: str = "",
 ) -> str:
     """Monta o prompt final colando system_prompt + top-N skills + msg do user.
 
-    Sempre inclui instrução para chamar ``GET <sandbox>/skills/search?q=...``
-    via Bash quando o LLM precisar de mais contexto (RAG por demanda).
+    Inclui também o **caminho absoluto do worktree** quando há repos
+    associados — necessário porque o openclaude por vezes executa tools
+    no CWD do servidor (``/openclaude``) em vez do worktree, e usar
+    paths absolutos resolve esse bug. Também instrui a chamar
+    ``GET <sandbox>/skills/search?q=...`` via Bash para RAG por demanda.
     """
     parts: list[str] = []
 
     if system_prompt.strip():
         parts.append("## Instruções do agente\n\n" + system_prompt.strip())
+
+    # Worktree paths absolutos — força o agente a usá-los em todos os comandos
+    # (rg, find, ls, cat) para evitar o bug de CWD do openclaude.
+    worktree_paths: list[str] = []
+    for r in repos or []:
+        wt = r.get("worktree_path")
+        if not wt and session_root:
+            alias = r.get("alias") or r.get("slug", "")
+            if alias:
+                wt = f"{session_root.rstrip('/')}/{alias}"
+        if wt:
+            worktree_paths.append(wt)
+
+    if worktree_paths:
+        # Conciso: bloco curto evita que LLMs pequenos leiam isto e respondam
+        # baseados no plano em vez de invocar tools reais.
+        wt_str = "\n".join(f"- `{p}`" for p in worktree_paths)
+        parts.append(
+            "## Worktree\n\n"
+            "Use sempre estes caminhos absolutos em Bash/Grep/Read "
+            "(não confies em `pwd`):\n" + wt_str
+        )
 
     if skills:
         kb_lines = ["## Conhecimento disponível (top resultados)"]

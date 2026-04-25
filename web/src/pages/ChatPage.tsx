@@ -273,7 +273,12 @@ export function ChatPage() {
       ? [{ slug: selectedSlug, base_branch: selectedBranch || null }]
       : []
     const c = await createConversation(token, repos, selectedAgentId || null)
-    setConversations((prev) => [c, ...prev])
+    // Update otimista do título — o backend renomeia "Nova conversa" para o
+    // início da primeira mensagem (mesma lógica de _TITLE_MAX_LEN=80).
+    const previewTitle =
+      text.length > 80 ? text.slice(0, 80) + '…' : text
+    const cWithTitle = { ...c, title: previewTitle }
+    setConversations((prev) => [cWithTitle, ...prev])
     setActiveId(c.id)
     setMessages([])
     setInput('')
@@ -378,6 +383,16 @@ export function ChatPage() {
       created_at: new Date().toISOString(),
     }
     setMessages((m) => [...m, userMsg])
+
+    // Renomeia título se ainda for o default — bate com o backend.
+    setConversations((prev) =>
+      prev.map((c) => {
+        if (c.id !== activeId) return c
+        if (c.title && c.title !== 'Nova conversa') return c
+        const previewTitle = text.length > 80 ? text.slice(0, 80) + '…' : text
+        return { ...c, title: previewTitle }
+      }),
+    )
 
     try {
       await streamAssistantReply(token, activeId, text, {
