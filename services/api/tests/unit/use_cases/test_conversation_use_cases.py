@@ -13,6 +13,7 @@ from app.domain.entities import Repository
 
 from tests.conftest import (
     FakeAgent,
+    InMemoryAgentRepository,
     InMemoryConversationRepository,
     InMemoryMessageRepository,
     InMemoryRepositoryRepository,
@@ -145,6 +146,35 @@ class TestCreateConversation:
         conv = await uc.execute(user_id, agent_id=explicit_agent_id)
 
         assert conv.agent_id == explicit_agent_id
+
+    async def test_user_default_overrides_global_default_agent(
+        self,
+        conv_repo: InMemoryConversationRepository,
+        user_id: uuid.UUID,
+    ) -> None:
+        user_default_agent_id = uuid.uuid4()
+        global_default_agent_id = uuid.uuid4()
+        profiles = InMemoryUserAgentProfileRepository()
+        profiles.set_default(user_id, user_default_agent_id)
+        agents = InMemoryAgentRepository(default_id=global_default_agent_id)
+        uc = CreateConversation(conv_repo, user_agent_profiles=profiles, agents=agents)
+
+        conv = await uc.execute(user_id)
+
+        assert conv.agent_id == user_default_agent_id
+
+    async def test_does_not_use_global_default_agent_without_user_profile(
+        self,
+        conv_repo: InMemoryConversationRepository,
+        user_id: uuid.UUID,
+    ) -> None:
+        profiles = InMemoryUserAgentProfileRepository()
+        agents = InMemoryAgentRepository(default_id=uuid.uuid4())
+        uc = CreateConversation(conv_repo, user_agent_profiles=profiles, agents=agents)
+
+        conv = await uc.execute(user_id)
+
+        assert conv.agent_id is None
 
 
 class TestListMessages:
