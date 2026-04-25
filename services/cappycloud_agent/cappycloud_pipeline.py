@@ -155,6 +155,8 @@ class Pipeline:
             system_prompt,
             skills_top,
             sandbox_session_url,
+            repos=repos,
+            session_root=session_root,
         )
         prompt = inject_repo_context(prompt, repos, session_root)
 
