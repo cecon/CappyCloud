@@ -108,8 +108,6 @@ class CreateConversation:
         resolved_agent_id = None
         if self._user_agent_profiles:
             resolved_agent_id = await self._user_agent_profiles.get_default_agent_id(user_id)
-        if resolved_agent_id is None and self._agents:
-            resolved_agent_id = await self._agents.get_default_id()
         if (
             resolved_agent_id is not None
             and self._agents
