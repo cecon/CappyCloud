@@ -274,3 +274,7 @@ from app.schemas_agents import (  # noqa: E402, F401
     SkillSearchResult,
     SkillUpdate,
 )
+from app.schemas_documents import (  # noqa: E402, F401
+    DocumentCreate,
+    DocumentOut,
+)

@@ -235,6 +235,7 @@ from app.infrastructure.orm_models_execution import (  # noqa: F401, E402
 from app.infrastructure.orm_models_platform import (  # noqa: F401, E402
     AiModel,
     AiProvider,
+    Document,
     GitProvider,
     Repository,
     SandboxSyncQueue,

@@ -12,6 +12,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -122,6 +123,10 @@ class Skill(Base):
     repository_id: Mapped[uuid.UUID | None] = mapped_column(
         UUIDType, ForeignKey("repositories.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUIDType, ForeignKey("documents.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    chunk_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     slug: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
