@@ -1,14 +1,17 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { getToken } from './api'
+import { AnalyticsPage } from './pages/AnalyticsPage'
 import { AgentsPage } from './pages/AgentsPage'
 import { SkillsPage } from './pages/SkillsPage'
 import { ChatPage } from './pages/ChatPage'
+import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
+import { RunsPage } from './pages/RunsPage'
 import { SettingsPage } from './pages/SettingsPage'
 
 /**
- * Rotas: login, registo e chat autenticado.
+ * Rotas: dashboard inicial, chat, login, registo e áreas autenticadas.
  */
 export default function App() {
   const token = getToken()
@@ -17,6 +20,12 @@ export default function App() {
     <Routes>
       <Route
         path="/"
+        element={
+          token ? <DashboardPage /> : <Navigate to="/login" replace />
+        }
+      />
+      <Route
+        path="/chat"
         element={
           token ? <ChatPage /> : <Navigate to="/login" replace />
         }
@@ -37,6 +46,18 @@ export default function App() {
         path="/skills"
         element={
           token ? <SkillsPage /> : <Navigate to="/login" replace />
+        }
+      />
+      <Route
+        path="/runs"
+        element={
+          token ? <RunsPage /> : <Navigate to="/login" replace />
+        }
+      />
+      <Route
+        path="/analytics"
+        element={
+          token ? <AnalyticsPage /> : <Navigate to="/login" replace />
         }
       />
       <Route

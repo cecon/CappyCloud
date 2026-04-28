@@ -1,0 +1,333 @@
+.page {
+  min-height: 100vh;
+  padding: 2rem;
+  color: var(--cc-on-surface);
+  background:
+    radial-gradient(circle at 15% 4%, rgba(59, 130, 246, 0.14), transparent 31%),
+    radial-gradient(circle at 90% 0%, rgba(34, 197, 94, 0.09), transparent 28%),
+    var(--cc-surface);
+}
+
+.header,
+.metricCard,
+.panel {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.016)),
+    rgba(19, 19, 21, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(18px);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 1180px;
+  margin: 0 auto 1rem;
+  padding: 1.5rem;
+  border-radius: 20px;
+}
+
+.backLink,
+.panelLink,
+.inventoryLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--cc-on-surface-variant);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.backLink:hover,
+.panelLink:hover {
+  color: var(--cc-on-surface);
+}
+
+.eyebrow {
+  display: block;
+  margin-top: 1rem;
+  color: #a7c3ff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0.35rem 0 0;
+  color: var(--cc-on-surface);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: clamp(1.9rem, 3.7vw, 3.4rem);
+  font-weight: 760;
+  letter-spacing: -0.06em;
+  line-height: 0.98;
+}
+
+.subtitle {
+  max-width: 720px;
+  margin: 0.8rem 0 0;
+  color: var(--cc-on-surface-variant);
+  font-size: 0.92rem;
+  line-height: 1.65;
+}
+
+.headerNotice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.65rem 0.8rem;
+  color: #fde68a;
+  background: rgba(234, 179, 8, 0.11);
+  border: 1px solid rgba(234, 179, 8, 0.18);
+  border-radius: 12px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.error {
+  max-width: 1180px;
+  margin: 0 auto 1rem;
+  color: var(--cc-error);
+  font-size: 0.85rem;
+}
+
+.metricGrid,
+.grid {
+  display: grid;
+  max-width: 1180px;
+  margin: 0 auto;
+  gap: 1rem;
+}
+
+.metricGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 1rem;
+}
+
+.metricCard {
+  min-height: 126px;
+  padding: 1rem;
+  border-radius: 16px;
+}
+
+.metricValue {
+  display: block;
+  color: var(--cc-on-surface);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 2.25rem;
+  font-weight: 760;
+  line-height: 1;
+}
+
+.metricLabel {
+  display: block;
+  margin-top: 0.7rem;
+  color: var(--cc-on-surface-variant);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.panel {
+  min-height: 320px;
+  padding: 1rem;
+  border-radius: 18px;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.panelTitle {
+  margin: 0;
+  color: var(--cc-on-surface);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 720;
+}
+
+.panelText,
+.muted {
+  margin: 0.25rem 0 0;
+  color: var(--cc-on-surface-variant);
+  font-size: 0.8rem;
+}
+
+.panelLink {
+  color: #a7c3ff;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.barList,
+.timelineBars,
+.inventory {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.barItem,
+.dayBar,
+.inventoryRow {
+  display: grid;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.barItem {
+  grid-template-columns: 96px minmax(0, 1fr) 42px;
+}
+
+.dayBar {
+  grid-template-columns: 72px minmax(0, 1fr) 42px;
+}
+
+.barLabel,
+.dayBar span {
+  color: var(--cc-on-surface-variant);
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+
+.barItem strong,
+.dayBar strong {
+  color: var(--cc-on-surface);
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.barTrack,
+.dayTrack {
+  height: 10px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.045);
+  border-radius: 999px;
+}
+
+.barFill,
+.dayFill {
+  height: 100%;
+  border-radius: inherit;
+}
+
+.tone_blue,
+.dayFill {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.85), rgba(96, 165, 250, 0.95));
+}
+
+.tone_green {
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.85), rgba(134, 239, 172, 0.95));
+}
+
+.tone_yellow {
+  background: linear-gradient(90deg, rgba(234, 179, 8, 0.85), rgba(253, 230, 138, 0.95));
+}
+
+.tone_red {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.85), rgba(252, 165, 165, 0.95));
+}
+
+.tone_muted {
+  background: linear-gradient(90deg, rgba(172, 170, 174, 0.5), rgba(172, 170, 174, 0.75));
+}
+
+.inventoryLink .inventoryRow {
+  transition: background 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+}
+
+.inventoryLink:hover .inventoryRow {
+  background: rgba(59, 130, 246, 0.09);
+  border-color: rgba(167, 195, 255, 0.18);
+  transform: translateY(-1px);
+}
+
+.inventoryRow {
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  padding: 0.8rem;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.045);
+  border-radius: 14px;
+}
+
+.inventoryIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  color: #a7c3ff;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.16);
+  border-radius: 11px;
+}
+
+.inventoryRow span:not(.inventoryIcon) {
+  color: var(--cc-on-surface);
+  font-size: 0.83rem;
+  font-weight: 650;
+}
+
+.inventoryRow strong {
+  color: var(--cc-on-surface);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.2rem;
+}
+
+.icon {
+  font-family: 'Material Symbols Outlined', sans-serif;
+  font-size: 1rem;
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+  line-height: 1;
+}
+
+@media (max-width: 980px) {
+  .metricGrid,
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .header {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 1rem;
+  }
+
+  .metricGrid,
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .barItem,
+  .dayBar {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+
+  .barItem strong,
+  .dayBar strong {
+    text-align: left;
+  }
+}
