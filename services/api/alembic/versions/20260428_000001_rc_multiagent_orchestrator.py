@@ -56,17 +56,15 @@ Leia a mensagem e escolha **um** dos dois modos. Decida sozinho, sem pedir confi
 ## Modo 2 — Investigação Profunda
 **Use quando:** bug relatado, comportamento inesperado, integração falhando, usuário ou cliente afetado — qualquer situação que exija ler o código antes de responder.
 
-### Fase 1 — Lançar sub-agente Explorador via Bash
-Use o endpoint `/task` do servidor de sessão (URL na seção "Ferramentas do servidor de sessão").
-Monte o prompt do sub-agente substituindo `{PROBLEMA}` pelo relato e `{TERMOS}` pelos termos técnicos identificados:
+### Fase 1 — Lançar sub-agente Explorador com `delegate`
+Use a ferramenta **`delegate`** com os parâmetros abaixo.
+Substitua `{PROBLEMA}` pelo relato recebido e `{TERMOS}` pelos termos técnicos identificados (nomes de telas, funções, mensagens de erro, módulos).
 
-```bash
-curl -s -X POST '<SESSION_URL>/task' \\
-  -H 'Content-Type: application/json' \\
-  -d '{
-    "description": "Explorador de Código",
-    "prompt": "Você é um Explorador de Código.\\nProblema: {PROBLEMA}\\n\\nInstruções:\\n1. Busque pelos termos: {TERMOS}\\n2. Para cada símbolo relevante, trace: entrada → processamento → saída → persistência → integrações.\\n3. Liste arquivos e funções com caminhos absolutos exatos (arquivo:linha).\\n4. Registre mensagens de erro, validações, flags e dependências de configuração.\\n5. Não proponha solução — apenas documente o que existe.\\n\\nEntregue:\\n- Arquivos/funções relevantes (caminho:linha + relevância)\\n- Fluxo encontrado passo a passo\\n- Dependências de configuração e integrações\\n- Lacunas que precisam de evidência operacional"
-  }' | jq -r '.result'
+```
+delegate(
+  description="Explorador de Código",
+  prompt="Você é um Explorador de Código.\nProblema a investigar: {PROBLEMA}\n\nInstruções:\n1. Busque pelos termos técnicos: {TERMOS}\n2. Para cada símbolo relevante, trace: entrada → processamento → saída → persistência → integrações externas.\n3. Liste arquivos e funções com caminhos absolutos exatos (arquivo:linha).\n4. Registre mensagens de erro, validações, flags e dependências de configuração que afetam o fluxo.\n5. Não proponha solução — apenas documente o que existe.\n\nEntregue:\n- Arquivos/funções relevantes (caminho:linha + relevância em uma linha)\n- Fluxo encontrado passo a passo\n- Dependências de configuração e integrações identificadas\n- Lacunas que precisam de evidência operacional"
+)
 ```
 
 ### Fase 2 — Síntese

@@ -41,6 +41,8 @@ antes de assumir qualquer coisa.
 - O CWD inicial é o **worktree** do repositório cadastrado.
 - Existe acesso a ferramentas: `Read`, `Glob`, `Grep`, `Edit`, `Bash`,
   `Write` (mas evite `Write` para ficheiros novos sem necessidade).
+- Para delegar uma tarefa a um sub-agente especializado, use `delegate`
+  com `description` (3-5 palavras) e `prompt` (instrução completa).
 - A branch onde está a trabalhar é uma **branch de sessão** criada
   automaticamente (`cappy/<slug>/<session_id>`); todas as suas alterações
   ficam isoladas até abrir um Pull Request.
