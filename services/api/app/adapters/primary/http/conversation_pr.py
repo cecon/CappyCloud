@@ -12,8 +12,17 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.primary.http.conversation_worktree_paths import (
+    CREATE_PR_FROM_CONVERSATION,
+    repo_url_from_create_pr_row,
+    resolve_git_paths_from_worktree_row,
+)
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
 from app.domain.entities import User
+from app.infrastructure.sandbox_worktree_client import (
+    SandboxWorktreeError,
+    resolve_head_branch_for_pr,
+)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -43,34 +52,33 @@ async def create_pull_request(
         )
 
     row = await db.execute(
-        text(
-            "SELECT "
-            "  cs.repos->0->>'worktree_path' AS worktree_path, "
-            "  cs.repos->0->>'base_branch'   AS base_branch, "
-            "  r.clone_url                   AS repo_url "
-            "FROM conversations c "
-            "LEFT JOIN cappy_sessions cs ON cs.chat_id = c.id::text "
-            "LEFT JOIN repositories r ON r.slug = cs.repos->0->>'slug' "
-            "WHERE c.id = :cid AND c.user_id = :uid"
-        ),
+        text(CREATE_PR_FROM_CONVERSATION),
         {"cid": str(conversation_id), "uid": str(current.id)},
     )
     conv = row.fetchone()
-    if not conv or not conv.worktree_path:
+    if not conv:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Conversa ou worktree não encontrado."
         )
 
-    head_branch = _get_current_branch("cappycloud-sandbox", conv.worktree_path)
+    worktree_path, _, base_branch_resolved = resolve_git_paths_from_worktree_row(
+        conv, conversation_id
+    )
+    repo_url = repo_url_from_create_pr_row(conv)
 
-    m = re.search(r"github\.com[:/](.+?/.+?)(?:\.git)?$", conv.repo_url or "")
+    try:
+        head_branch = await resolve_head_branch_for_pr(worktree_path)
+    except SandboxWorktreeError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    m = re.search(r"github\.com[:/](.+?/.+?)(?:\.git)?$", repo_url or "")
     if not m:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="URL do repositório não é um repo GitHub válido.",
         )
     owner_repo = m.group(1)
-    base = conv.base_branch or "main"
+    base = base_branch_resolved or "main"
     pr_title = pr_body.title or f"Agent changes from branch {head_branch}"
     pr_description = (
         pr_body.body or f"Changes made by CappyCloud agent in conversation {conversation_id}."
@@ -111,35 +119,6 @@ async def create_pull_request(
     )
     await db.commit()
     return {"pr_url": pr_url, "pr_number": pr_number, "head_branch": head_branch}
-
-
-def _get_current_branch(container_id: str, worktree_path: str) -> str:
-    """Obtém o branch actual do worktree via docker exec."""
-    import docker
-
-    try:
-        client = docker.from_env()
-        container = client.containers.get(container_id)
-        container.exec_run(
-            ["git", "-C", worktree_path, "push", "--set-upstream", "origin", "HEAD", "--quiet"]
-        )
-        exit_code, output = container.exec_run(
-            ["git", "-C", worktree_path, "rev-parse", "--abbrev-ref", "HEAD"]
-        )
-        branch = output.decode("utf-8", errors="replace").strip() if output else ""
-        if exit_code != 0 or not branch:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Não foi possível determinar o branch actual.",
-            )
-        return branch
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Erro ao obter branch: {exc}",
-        ) from exc
 
 
 # ── PR subscriptions ──────────────────────────────────────────────────────────

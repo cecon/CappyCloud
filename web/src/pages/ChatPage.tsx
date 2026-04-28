@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction, useEffect, useRef, useState } from 'react'
+import { Fragment, type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Burger,
@@ -7,7 +7,7 @@ import {
   Text,
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   AuthError,
@@ -24,6 +24,7 @@ import {
   getToken,
   setToken,
   streamAssistantReply,
+  errorToUserMessage,
   type ActionRequiredEvent,
   type Agent,
   type AiModel,
@@ -39,6 +40,8 @@ import { FileExplorer } from '../components/FileExplorer'
 import { ThinkingIndicator } from '../components/ThinkingIndicator'
 import { ToolCallCard, type ToolCallState } from '../components/ToolCallCard'
 import styles from '../components/chat.module.css'
+
+const STICKY_SCROLL_THRESHOLD_PX = 96
 
 /** Agrupa conversas em Today / Yesterday / Older */
 function groupConversations(convs: Conversation[]): { label: string; items: Conversation[] }[] {
@@ -68,6 +71,11 @@ type SessionStageState = {
   status: 'pending' | 'active' | 'done'
 }
 
+type SessionProgressAnchor = {
+  id: string
+  content: string
+}
+
 const SESSION_STAGES: Array<{ key: SessionStageKey; label: string }> = [
   { key: 'session', label: 'Configurar contêiner na nuvem' },
   { key: 'repository', label: 'Repositório clonado' },
@@ -76,11 +84,29 @@ const SESSION_STAGES: Array<{ key: SessionStageKey; label: string }> = [
 ]
 
 const RESUMED_SESSION_STAGES: Array<{ key: SessionStageKey; label: string }> = [
-  { key: 'session', label: 'Contêiner na nuvem retomado' },
-  { key: 'repository', label: 'Atualizou seu repositório' },
+  { key: 'session', label: 'Contêiner na nuvem reativado' },
+  { key: 'repository', label: 'Repositório sincronizado' },
   { key: 'ready', label: 'Worktree da sessão reutilizado' },
-  { key: 'agent', label: 'Agente iniciado' },
+  { key: 'agent', label: 'Agente reiniciado' },
 ]
+
+/** Customiza elementos Markdown que precisam de comportamento visual ou seguro. */
+const markdownComponents: Components = {
+  a({ href, children, ...props }) {
+    return (
+      <a href={href} target="_blank" rel="noreferrer noopener" {...props}>
+        {children}
+      </a>
+    )
+  },
+  table({ children, ...props }) {
+    return (
+      <div className={styles.markdownTableScroller}>
+        <table {...props}>{children}</table>
+      </div>
+    )
+  },
+}
 
 /** Devolve os rótulos corretos para sessão nova ou retomada. */
 function sessionStagesForMode(mode: SessionMode): Array<{ key: SessionStageKey; label: string }> {
@@ -121,11 +147,13 @@ function reduceSessionProgress(
  */
 export function ChatPage() {
   const token = getToken()!
-  const [mobileOpened, { toggle: toggleMobile }] = useDisclosure()
+  const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure()
 
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [messagesLoading, setMessagesLoading] = useState(false)
+  const [messagesError, setMessagesError] = useState<string | null>(null)
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -142,6 +170,7 @@ export function ChatPage() {
   const [pendingTools, setPendingTools] = useState<ToolCallState[]>([])
   const [pendingAction, setPendingAction] = useState<ActionRequiredEvent | null>(null)
   const [sessionProgress, setSessionProgress] = useState<SessionStageState[]>([])
+  const [sessionProgressAnchor, setSessionProgressAnchor] = useState<SessionProgressAnchor | null>(null)
 
   const [sidePanel, setSidePanel] = useState<'none' | 'diff' | 'files'>('none')
   const [diff, setDiff] = useState<ConversationDiff | null>(null)
@@ -153,14 +182,7 @@ export function ChatPage() {
   const [headBranch, setHeadBranch] = useState<string | null>(null)
 
   const abortControllerRef = useRef<AbortController | null>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-    }
-  }, [messages, pendingText, pendingTools, pendingAction, sessionProgress, streaming])
 
   useEffect(() => {
     let cancelled = false
@@ -208,14 +230,34 @@ export function ChatPage() {
   }, [token])
 
   useEffect(() => {
-    if (!activeId) return
+    if (!activeId) {
+      setMessages([])
+      setMessagesLoading(false)
+      setMessagesError(null)
+      return
+    }
     let cancelled = false
     setDiffStats(null)
+    setDiff(null)
     setPrUrl(null)
     setHeadBranch(null)
+    setMessages([])
+    setMessagesLoading(true)
+    setMessagesError(null)
     ;(async () => {
-      const msgs = await fetchMessages(token, activeId)
-      if (!cancelled) setMessages(msgs)
+      try {
+        const msgs = await fetchMessages(token, activeId)
+        if (!cancelled) setMessages(msgs)
+      } catch (e) {
+        if (e instanceof AuthError) {
+          setToken(null)
+          window.location.href = '/login'
+          return
+        }
+        if (!cancelled) setMessagesError(errorToUserMessage(e))
+      } finally {
+        if (!cancelled) setMessagesLoading(false)
+      }
     })()
     return () => { cancelled = true }
   }, [activeId, token])
@@ -263,7 +305,27 @@ export function ChatPage() {
   function handleNewChat() {
     setActiveId(null)
     setMessages([])
+    setMessagesError(null)
+    setMessagesLoading(false)
+    setSessionProgressAnchor(null)
     setTimeout(() => inputRef.current?.focus(), 50)
+  }
+
+  /** Seleciona uma conversa histórica sem deixar o streaming atual contaminar a UI. */
+  function handleSelectConversation(conversationId: string) {
+    if (conversationId === activeId) return
+    abortControllerRef.current?.abort()
+    abortControllerRef.current = null
+    setStreaming(false)
+    setPendingText('')
+    setPendingTools([])
+    setPendingAction(null)
+    setSessionProgress([])
+    setSessionProgressAnchor(null)
+    setInput('')
+    setSidePanel('none')
+    setActiveId(conversationId)
+    closeMobile()
   }
 
   /** Cria conversa e envia a mensagem inicial de uma vez */
@@ -287,7 +349,7 @@ export function ChatPage() {
     setPendingText('')
     setPendingTools([])
     setPendingAction(null)
-    setSessionProgress(createSessionProgress())
+    setSessionProgress([])
 
     const ctrl = new AbortController()
     abortControllerRef.current = ctrl
@@ -298,11 +360,14 @@ export function ChatPage() {
       content: text,
       created_at: new Date().toISOString(),
     }
+    setSessionProgressAnchor({ id: userMsg.id, content: userMsg.content })
     setMessages([userMsg])
 
     try {
       await streamAssistantReply(token, c.id, text, {
-        onText(accumulated) { setPendingText(accumulated) },
+        onText(accumulated) {
+          setPendingText(accumulated)
+        },
         onToolStart(tool) {
           setPendingTools((prev) => [
             ...prev,
@@ -320,7 +385,13 @@ export function ChatPage() {
         },
         onActionRequired(action) { setPendingAction(action) },
         onStatus(status) {
-          setSessionProgress((prev) => reduceSessionProgress(prev.length ? prev : createSessionProgress(), status))
+          const statusWithMode = { ...status, mode: status.mode ?? 'initializing' }
+          setSessionProgress((prev) =>
+            reduceSessionProgress(
+              prev.length ? prev : createSessionProgress(statusWithMode.mode),
+              statusWithMode,
+            )
+          )
         },
         onError(message) {
           setMessages((m) => [
@@ -336,7 +407,6 @@ export function ChatPage() {
         signal: ctrl.signal,
       }, selectedModelId || null)
       setPendingText('')
-      setPendingTools([])
       const msgs = await fetchMessages(token, c.id)
       setMessages(msgs)
     } catch (e) {
@@ -366,12 +436,14 @@ export function ChatPage() {
     const text = (textOverride ?? input).trim()
     if (!text || !activeId || streaming) return
 
+    const sessionMode: SessionMode = 'resuming'
+
     if (!textOverride) setInput('')
     setStreaming(true)
     setPendingText('')
     setPendingTools([])
     setPendingAction(null)
-    setSessionProgress(createSessionProgress())
+    setSessionProgress([])
 
     const ctrl = new AbortController()
     abortControllerRef.current = ctrl
@@ -382,6 +454,7 @@ export function ChatPage() {
       content: text,
       created_at: new Date().toISOString(),
     }
+    setSessionProgressAnchor({ id: userMsg.id, content: userMsg.content })
     setMessages((m) => [...m, userMsg])
 
     // Renomeia título se ainda for o default — bate com o backend.
@@ -396,7 +469,9 @@ export function ChatPage() {
 
     try {
       await streamAssistantReply(token, activeId, text, {
-        onText(accumulated) { setPendingText(accumulated) },
+        onText(accumulated) {
+          setPendingText(accumulated)
+        },
         onToolStart(tool) {
           setPendingTools((prev) => [
             ...prev,
@@ -414,7 +489,13 @@ export function ChatPage() {
         },
         onActionRequired(action) { setPendingAction(action) },
         onStatus(status) {
-          setSessionProgress((prev) => reduceSessionProgress(prev.length ? prev : createSessionProgress(), status))
+          const statusWithMode = { ...status, mode: sessionMode }
+          setSessionProgress((prev) =>
+            reduceSessionProgress(
+              prev.length ? prev : createSessionProgress(statusWithMode.mode),
+              statusWithMode,
+            )
+          )
         },
         onError(message) {
           setMessages((m) => [
@@ -430,7 +511,6 @@ export function ChatPage() {
         signal: ctrl.signal,
       }, selectedModelId || null)
       setPendingText('')
-      setPendingTools([])
       const msgs = await fetchMessages(token, activeId)
       setMessages(msgs)
     } catch (e) {
@@ -523,7 +603,7 @@ export function ChatPage() {
                     <button
                       key={c.id}
                       className={`${styles.sessionItem} ${c.id === activeId ? styles.sessionItemActive : ''}`}
-                      onClick={() => setActiveId(c.id)}
+                      onClick={() => handleSelectConversation(c.id)}
                     >
                       <span className={`${styles.icon} ${styles.sessionIcon}`}>
                         chat_bubble
@@ -597,6 +677,9 @@ export function ChatPage() {
           ) : (
             <ActiveChat
               messages={messages}
+              messagesLoading={messagesLoading}
+              messagesError={messagesError}
+              sessionProgressAnchor={sessionProgressAnchor}
               pendingText={pendingText}
               pendingTools={pendingTools}
               sessionProgress={sessionProgress}
@@ -952,6 +1035,9 @@ function QuickActionCard({ icon, iconColor, title, desc, href }: {
    ──────────────────────────────────────────────────────────────── */
 interface ActiveChatProps {
   messages: ChatMessage[]
+  messagesLoading: boolean
+  messagesError: string | null
+  sessionProgressAnchor: SessionProgressAnchor | null
   pendingText: string
   pendingTools: ToolCallState[]
   sessionProgress: SessionStageState[]
@@ -987,7 +1073,7 @@ interface ActiveChatProps {
 }
 
 function ActiveChat({
-  messages, pendingText, pendingTools, sessionProgress, pendingAction,
+  messages, messagesLoading, messagesError, sessionProgressAnchor, pendingText, pendingTools, sessionProgress, pendingAction,
   showThinking, streaming, input, setInput, inputRef,
   onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch,
   workspaces,
@@ -997,7 +1083,29 @@ function ActiveChat({
   models, selectedModelId, setSelectedModelId,
 }: ActiveChatProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const shouldStickToBottomRef = useRef(true)
   const [elapsedSecs, setElapsedSecs] = useState(0)
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false)
+
+  /** Mantém o auto-scroll apenas quando o usuário já está no fim da conversa. */
+  const updateStickyScroll = useCallback(() => {
+    const viewport = scrollRef.current
+    if (!viewport) return true
+    const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
+    const isNearBottom = distanceFromBottom <= STICKY_SCROLL_THRESHOLD_PX
+    shouldStickToBottomRef.current = isNearBottom
+    if (isNearBottom) setShowJumpToLatest(false)
+    return isNearBottom
+  }, [])
+
+  /** Volta para as mensagens novas e reativa o acompanhamento do streaming. */
+  const scrollToLatest = useCallback((behavior: ScrollBehavior = 'auto') => {
+    const viewport = scrollRef.current
+    if (!viewport) return
+    shouldStickToBottomRef.current = true
+    setShowJumpToLatest(false)
+    viewport.scrollTo({ top: viewport.scrollHeight, behavior })
+  }, [])
 
   useEffect(() => {
     if (!streaming) return
@@ -1009,34 +1117,71 @@ function ActiveChat({
   }, [streaming])
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+    shouldStickToBottomRef.current = true
+    requestAnimationFrame(() => scrollToLatest())
+  }, [conversationId, scrollToLatest])
+
+  useEffect(() => {
+    if (shouldStickToBottomRef.current) {
+      requestAnimationFrame(() => scrollToLatest())
+    } else {
+      requestAnimationFrame(() => setShowJumpToLatest(true))
     }
-  }, [messages, pendingText, pendingTools, sessionProgress, pendingAction, streaming])
+  }, [messages, pendingText, pendingTools, sessionProgress, pendingAction, streaming, scrollToLatest])
+
+  let sessionProgressAfterIndex = -1
+  if (sessionProgressAnchor) {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index]
+      if (
+        message.id === sessionProgressAnchor.id ||
+        (message.role === 'user' && message.content === sessionProgressAnchor.content)
+      ) {
+        sessionProgressAfterIndex = index
+        break
+      }
+    }
+    if (sessionProgressAfterIndex < 0) {
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        if (messages[index].role === 'user') {
+          sessionProgressAfterIndex = index
+          break
+        }
+      }
+    }
+  }
 
   return (
     <div className={styles.activeChat}>
-      {/* Session header — env + branch + diff stats + Criar PR */}
-      {activeEnvSlug && (
-        <div className={styles.sessionHeader}>
-          <div className={styles.sessionHeaderLeft}>
-            <span className={`${styles.icon} ${styles.sessionHeaderIcon}`}>source</span>
-            <span className={styles.sessionHeaderEnv}>{activeEnvName ?? activeEnvSlug}</span>
-            {activeBaseBranch && (
-              <>
-                <span className={styles.sessionHeaderArrow}>›</span>
-                <span className={styles.sessionHeaderBranch}>
-                  {headBranch ?? activeBaseBranch}
-                </span>
-              </>
-            )}
-          </div>
-          <div className={styles.sessionHeaderRight}>
-            {diffStats && (diffStats.added > 0 || diffStats.removed > 0) && (
-              <>
-                <span className={styles.diffAdded}>+{diffStats.added}</span>
-                <span className={styles.diffRemoved}>-{diffStats.removed}</span>
-                {prUrl ? (
+      {/* Session header — env + branch + diff stats + PR + painel ficheiros/diff */}
+      <div className={styles.sessionHeader}>
+        <div className={styles.sessionHeaderLeft}>
+          {activeEnvSlug ? (
+            <>
+              <span className={`${styles.icon} ${styles.sessionHeaderIcon}`}>source</span>
+              <span className={styles.sessionHeaderEnv}>{activeEnvName ?? activeEnvSlug}</span>
+              {activeBaseBranch && (
+                <>
+                  <span className={styles.sessionHeaderArrow}>›</span>
+                  <span className={styles.sessionHeaderBranch}>
+                    {headBranch ?? activeBaseBranch}
+                  </span>
+                </>
+              )}
+            </>
+          ) : (
+            <span className={styles.sessionHeaderEnv} style={{ opacity: 0.85 }}>
+              Conversa (sem repositório ligado)
+            </span>
+          )}
+        </div>
+        <div className={styles.sessionHeaderRight}>
+          {diffStats && (diffStats.added > 0 || diffStats.removed > 0) && (
+            <>
+              <span className={styles.diffAdded}>+{diffStats.added}</span>
+              <span className={styles.diffRemoved}>-{diffStats.removed}</span>
+              {activeEnvSlug && (
+                prUrl ? (
                   <a
                     href={prUrl}
                     target="_blank"
@@ -1048,51 +1193,80 @@ function ActiveChat({
                   </a>
                 ) : (
                   <button
+                    type="button"
                     className={styles.createPrBtn}
                     onClick={onCreatePr}
                     disabled={prLoading || streaming}
                   >
                     {prLoading ? 'Criando…' : 'Criar PR'}
                   </button>
-                )}
-              </>
-            )}
-            <div className={styles.sessionHeaderPanelBtns}>
-              <button
-                className={`${styles.chatContextIconBtn} ${sidePanel === 'files' ? styles.chatContextIconBtnActive : ''}`}
-                onClick={onToggleFiles}
-                title="Explorador de ficheiros"
-              >
-                <span className={styles.icon}>folder_open</span>
-              </button>
-              <button
-                className={`${styles.chatContextIconBtn} ${sidePanel === 'diff' ? styles.chatContextIconBtnActive : ''}`}
-                onClick={onOpenDiff}
-                title="Ver diff"
-              >
-                <span className={styles.icon}>difference</span>
-              </button>
-            </div>
+                )
+              )}
+            </>
+          )}
+          <div className={styles.sessionHeaderPanelBtns}>
+            <button
+              type="button"
+              className={`${styles.chatContextIconBtn} ${sidePanel === 'files' ? styles.chatContextIconBtnActive : ''}`}
+              onClick={onToggleFiles}
+              title="Explorador de ficheiros"
+            >
+              <span className={styles.icon}>folder_open</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.chatContextIconBtn} ${sidePanel === 'diff' ? styles.chatContextIconBtnActive : ''}`}
+              onClick={onOpenDiff}
+              title="Ver diff"
+            >
+              <span className={styles.icon}>difference</span>
+            </button>
           </div>
         </div>
-      )}
+      </div>
       <div className={styles.chatBody}>
         {/* Messages column */}
         <div className={styles.chatMessages}>
-          <ScrollArea className={styles.messageArea} viewportRef={scrollRef} type="auto">
+          <ScrollArea
+            className={styles.messageArea}
+            viewportRef={scrollRef}
+            type="auto"
+            onScrollPositionChange={updateStickyScroll}
+          >
             <Stack gap="sm" p="md">
-              {messages.map((m) => (
-                <PaperMessage key={m.id} role={m.role} content={m.content} />
+              {messagesLoading && (
+                <div className={styles.chatStateCard}>
+                  <ThinkingIndicator label="A carregar conversa…" />
+                </div>
+              )}
+              {messagesError && (
+                <div className={`${styles.chatStateCard} ${styles.chatStateCardError}`}>
+                  <Text size="sm" fw={600}>Não foi possível carregar esta conversa.</Text>
+                  <Text size="xs" c="dimmed">{messagesError}</Text>
+                </div>
+              )}
+              {!messagesLoading && !messagesError && messages.length === 0 && (
+                <div className={styles.chatStateCard}>
+                  <Text size="sm" c="dimmed">Esta conversa ainda não tem mensagens.</Text>
+                </div>
+              )}
+              {sessionProgress.length > 0 && sessionProgressAfterIndex < 0 && (
+                <SessionProgressCard stages={sessionProgress} />
+              )}
+              {messages.map((m, index) => (
+                <Fragment key={m.id}>
+                  <PaperMessage key={m.id} role={m.role} content={m.content} />
+                  {sessionProgress.length > 0 && index === sessionProgressAfterIndex && (
+                    <SessionProgressCard stages={sessionProgress} />
+                  )}
+                </Fragment>
+              ))}
+              {pendingTools.map((tool) => (
+                <ToolCallCard key={tool.id} tool={tool} />
               ))}
 
               {streaming && (
                 <Stack gap="xs">
-                  {pendingTools.map((tool) => (
-                    <ToolCallCard key={tool.id} tool={tool} />
-                  ))}
-                  {sessionProgress.length > 0 && (
-                    <SessionProgressCard stages={sessionProgress} />
-                  )}
                   {sessionProgress.length === 0 && (showThinking || (streaming && pendingTools.some(t => !t.done))) && (
                     <ThinkingIndicator label={pendingTools.some(t => !t.done) ? 'A executar…' : undefined} />
                   )}
@@ -1107,21 +1281,34 @@ function ActiveChat({
               )}
             </Stack>
           </ScrollArea>
+          {showJumpToLatest && (
+            <button type="button" className={styles.jumpToLatestBtn} onClick={() => scrollToLatest('smooth')}>
+              <span>Novas mensagens</span>
+              <span className={styles.icon}>south</span>
+            </button>
+          )}
         </div>
 
-        {/* Side panel */}
+        {/* Side panel — wrapper flex evita altura 0 com ScrollArea/diff */}
         {sidePanel !== 'none' && (
           <div className={styles.sidePanel}>
-            {sidePanel === 'diff' && (
-              diffLoading
-                ? <div className={styles.sidePanelLoading}><Text size="xs" c="dimmed">A carregar diff…</Text></div>
-                : diff
-                  ? <DiffViewer diff={diff} />
-                  : <div className={styles.sidePanelLoading}><Text size="xs" c="dimmed">Sem diff disponível</Text></div>
-            )}
-            {sidePanel === 'files' && (
-              <FileExplorer token={token} conversationId={conversationId} />
-            )}
+            <div className={styles.sidePanelFill} key={`${conversationId}-${sidePanel}`}>
+              {sidePanel === 'diff' && (
+                diffLoading
+                  ? <div className={styles.sidePanelLoading}><Text size="xs" c="dimmed">A carregar diff…</Text></div>
+                  : diff
+                    ? (
+                      <DiffViewer
+                        key={`${conversationId}-${diff.files.map((f) => f.path).join('|')}`}
+                        diff={diff}
+                      />
+                      )
+                    : <div className={styles.sidePanelLoading}><Text size="xs" c="dimmed">Sem diff disponível</Text></div>
+              )}
+              {sidePanel === 'files' && (
+                <FileExplorer token={token} conversationId={conversationId} />
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -1216,10 +1403,10 @@ function ActiveChat({
 function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
   const [expanded, setExpanded] = useState(true)
   const completed = stages.every((stage) => stage.status === 'done')
-  const resuming = stages[0]?.label.includes('retomado')
+  const resuming = stages[0]?.label.includes('reativado')
   const title = completed
-    ? resuming ? 'Sessão retomada' : 'Sessão inicializada'
-    : resuming ? 'Retomando sessão' : 'Inicializando sessão'
+    ? resuming ? 'Sessão reiniciada' : 'Sessão inicializada'
+    : resuming ? 'Reiniciando sessão' : 'Inicializando sessão'
 
   return (
     <div className={styles.sessionProgressCard}>
@@ -1239,9 +1426,18 @@ function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
               <span
                 className={`${styles.sessionProgressIcon} ${
                   stage.status === 'done' ? styles.sessionProgressIconDone : ''
+                } ${
+                  stage.status === 'active' ? styles.sessionProgressIconActive : ''
                 }`}
+                aria-label={
+                  stage.status === 'done'
+                    ? 'Verificado'
+                    : stage.status === 'active'
+                      ? 'Verificando'
+                      : 'Pendente'
+                }
               >
-                {stage.status === 'done' ? 'check_circle' : 'radio_button_unchecked'}
+                {stage.status === 'done' ? '✓' : ''}
               </span>
               <div>
                 <Text size="sm" c={stage.status === 'pending' ? 'dimmed' : undefined}>
@@ -1296,7 +1492,7 @@ function PaperMessage({ role, content, streaming }: { role: string; content: str
         </Text>
       ) : (
         <div className={styles.markdownBody}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{content}</ReactMarkdown>
           {streaming && <span className={styles.streamingCursor} aria-hidden />}
         </div>
       )}

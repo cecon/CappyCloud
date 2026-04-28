@@ -9,7 +9,7 @@ interface DiffViewerProps {
 
 export function DiffViewer({ diff }: DiffViewerProps) {
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(
-    () => new Set(diff.files.map((f) => f.path))
+    () => new Set(diff.files.map((f) => f.path)),
   )
 
   function toggleFile(path: string) {

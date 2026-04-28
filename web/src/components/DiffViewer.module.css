@@ -1,7 +1,9 @@
 .root {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
   background: var(--cc-surface);
   font-family: 'JetBrains Mono', 'Fira Mono', monospace;
   font-size: 0.8rem;
@@ -53,7 +55,8 @@
 
 .scroll {
   flex: 1;
-  overflow: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* ── File block ────────────────────────────────────────────── */

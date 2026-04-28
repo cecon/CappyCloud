@@ -16,6 +16,7 @@
 //   POST   /git/ls-remote-branches → git ls-remote --heads (URL com ou sem PAT)
 //   POST   /git/origin-head-branch → default local (symbolic-ref)
 //   POST   /git/branch-r           → git branch -r no clone /repos/...
+//   POST   /worktree/*              → worktree_handlers.js (ls-files, diff, PR, …)
 //   GET    /health                 → liveness probe
 // ──────────────────────────────────────────────────────────────
 
@@ -28,6 +29,7 @@ const { promisify } = require('util')
 const gitHandlers = require('./git_handlers')
 const repoHandlers = require('./repo_handlers')
 const taskHandler = require('./task_handler')
+const worktreeHandlers = require('./worktree_handlers')
 
 const execFileAsync = promisify(execFile)
 const PORT = parseInt(process.env.SESSION_SERVER_PORT || '8080', 10)
@@ -256,7 +258,9 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // POST /git-auth — reconfigura credenciais git (token atualizado no DB)
+    if (await worktreeHandlers.tryHandle(req, res, { json, readBody })) return
+
+    // POST /git-auth — reconfigura credenciais git (token actualizado no DB)
     if (req.method === 'POST' && pathname === '/git-auth') {
       const { provider_type, token, base_url } = await readBody(req)
       try {

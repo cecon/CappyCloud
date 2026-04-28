@@ -1,7 +1,9 @@
 .root {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
   background: var(--cc-surface);
   overflow: hidden;
 }
@@ -20,8 +22,9 @@
 .tree {
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  max-height: 50%;
+  flex: 0 1 45%;
+  min-height: 120px;
+  max-height: 55%;
   border-bottom: 1px solid var(--cc-outline-variant);
 }
 
