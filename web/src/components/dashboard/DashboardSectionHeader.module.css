@@ -1,0 +1,21 @@
+.root {
+  flex-shrink: 0;
+  margin: 0 0 0.65rem;
+}
+
+.title {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  color: #f8fafc;
+}
+
+.sub {
+  margin: 0.18rem 0 0;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: #64748b;
+}
