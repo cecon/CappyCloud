@@ -1297,7 +1297,12 @@ function ActiveChat({
                 diffLoading
                   ? <div className={styles.sidePanelLoading}><Text size="xs" c="dimmed">A carregar diff…</Text></div>
                   : diff
-                    ? <DiffViewer diff={diff} />
+                    ? (
+                      <DiffViewer
+                        key={`${conversationId}-${diff.files.map((f) => f.path).join('|')}`}
+                        diff={diff}
+                      />
+                      )
                     : <div className={styles.sidePanelLoading}><Text size="xs" c="dimmed">Sem diff disponível</Text></div>
               )}
               {sidePanel === 'files' && (

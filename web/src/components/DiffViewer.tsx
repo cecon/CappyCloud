@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Badge, ScrollArea, Text } from '@mantine/core'
 import type { ConversationDiff, DiffFile } from '../api'
 import styles from './DiffViewer.module.css'
@@ -9,12 +9,8 @@ interface DiffViewerProps {
 
 export function DiffViewer({ diff }: DiffViewerProps) {
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(
-    () => new Set(diff.files.map((f) => f.path))
+    () => new Set(diff.files.map((f) => f.path)),
   )
-
-  useEffect(() => {
-    setExpandedFiles(new Set(diff.files.map((f) => f.path)))
-  }, [diff])
 
   function toggleFile(path: string) {
     setExpandedFiles((prev) => {
