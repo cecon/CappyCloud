@@ -791,6 +791,66 @@ export async function fetchAiModels(token: string): Promise<AiModel[]> {
   return res.json()
 }
 
+// ── Agent Tasks / Runs ──────────────────────────────────────────────────────
+
+export interface AgentTask {
+  id: string
+  env_slug: string
+  status: 'pending' | 'running' | 'paused' | 'done' | 'error' | string
+  triggered_by: string
+  prompt: string
+  conversation_id: string | null
+  started_at: string | null
+  completed_at: string | null
+  last_event_at: string | null
+  created_at: string
+}
+
+export interface AgentTaskEvent {
+  id: number
+  event_type: string
+  data: Record<string, unknown>
+  created_at: string
+}
+
+/**
+ * Lista execuções recentes do agente, com filtros opcionais por status e ambiente.
+ */
+export async function fetchAgentTasks(
+  token: string,
+  options: { status?: string; envSlug?: string; limit?: number } = {},
+): Promise<AgentTask[]> {
+  const params = new URLSearchParams()
+  if (options.status) params.set('status', options.status)
+  if (options.envSlug) params.set('env_slug', options.envSlug)
+  if (options.limit) params.set('limit', String(options.limit))
+  const suffix = params.toString() ? `?${params.toString()}` : ''
+  const res = await apiFetch(`/api/tasks${suffix}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return []
+  return res.json()
+}
+
+/**
+ * Carrega eventos persistidos de uma execução do agente.
+ */
+export async function fetchAgentTaskEvents(
+  token: string,
+  taskId: string,
+  options: { after?: number; limit?: number } = {},
+): Promise<AgentTaskEvent[]> {
+  const params = new URLSearchParams()
+  if (options.after !== undefined) params.set('after', String(options.after))
+  if (options.limit) params.set('limit', String(options.limit))
+  const suffix = params.toString() ? `?${params.toString()}` : ''
+  const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/events${suffix}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error('Não foi possível carregar eventos da execução')
+  return res.json()
+}
+
 // ── Agents & Skills ──────────────────────────────────────────────────────────
 
 export interface Agent {

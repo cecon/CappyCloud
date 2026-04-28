@@ -172,7 +172,7 @@ export function SettingsPage() {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <Link to="/" className={styles.backLink}>
+        <Link to="/chat" className={styles.backLink}>
           <span className={styles.icon}>arrow_back</span>
           Voltar ao chat
         </Link>

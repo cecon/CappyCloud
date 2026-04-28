@@ -541,9 +541,21 @@ export function ChatPage() {
 
           {/* Sidebar bottom nav */}
           <div className={styles.sidebarNav}>
+            <Link to="/" className={styles.sidebarNavItem} title="Dashboard">
+              <span className={styles.icon}>dashboard</span>
+              <span>Dashboard</span>
+            </Link>
             <Link to="/agents" className={styles.sidebarNavItem} title="Agentes">
               <span className={styles.icon}>support_agent</span>
               <span>Agentes</span>
+            </Link>
+            <Link to="/runs" className={styles.sidebarNavItem} title="Runs">
+              <span className={styles.icon}>history</span>
+              <span>Runs</span>
+            </Link>
+            <Link to="/analytics" className={styles.sidebarNavItem} title="Analytics">
+              <span className={styles.icon}>analytics</span>
+              <span>Analytics</span>
             </Link>
             <Link to="/skills" className={styles.sidebarNavItem} title="Skills">
               <span className={styles.icon}>menu_book</span>
@@ -683,14 +695,43 @@ function EmptyState({
 
   const repoRequired = workspaces.length > 0 && !selectedSlug
   const branchRequired = !!selectedSlug && !selectedBranch
+  const selectedWorkspaceName =
+    workspaces.find((workspace) => workspace.slug === selectedSlug)?.name ?? 'Escolha o repositório'
+  const selectedAgentName =
+    agents.find((agent) => agent.id === selectedAgentId)?.name ?? 'Agente genérico'
+  const selectedModelName =
+    models.find((model) => model.model_id === selectedModelId)?.display_name ?? 'Modelo padrão'
 
   return (
     <div className={styles.emptyState}>
-      {/* Mascot */}
-      <div className={styles.mascotWrapper}>
-        <img src="/capybara.png" alt="CappyCloud" className={styles.mascot} />
-        <div className={styles.mascotGlow} />
-      </div>
+      <section className={styles.welcomePanel}>
+        <div className={styles.mascotWrapper}>
+          <img src="/capybara.png" alt="CappyCloud" className={styles.mascot} />
+          <div className={styles.mascotGlow} />
+        </div>
+        <div className={styles.welcomeCopy}>
+          <span className={styles.welcomeEyebrow}>CappyCloud Command Center</span>
+          <h1 className={styles.welcomeTitle}>Orquestre agentes de código na nuvem.</h1>
+          <p className={styles.welcomeText}>
+            Escolha o contexto, descreva a tarefa e acompanhe execução, ferramentas,
+            diff e PR a partir de uma única superfície.
+          </p>
+        </div>
+        <div className={styles.welcomeMetrics} aria-label="Resumo da sessão">
+          <div className={styles.metricCard}>
+            <span className={styles.metricValue}>{workspaces.length}</span>
+            <span className={styles.metricLabel}>repositórios</span>
+          </div>
+          <div className={styles.metricCard}>
+            <span className={styles.metricValue}>{agents.length}</span>
+            <span className={styles.metricLabel}>agentes</span>
+          </div>
+          <div className={styles.metricCard}>
+            <span className={styles.metricValue}>{models.length || 1}</span>
+            <span className={styles.metricLabel}>modelos</span>
+          </div>
+        </div>
+      </section>
 
       {/* Premium Command Bar */}
       <div className={styles.commandBarWrapper}>
@@ -859,32 +900,35 @@ function EmptyState({
       {/* Quick Actions */}
       <div className={styles.quickActions}>
         <QuickActionCard
-          icon="terminal"
+          icon="source"
           iconColor="var(--cc-secondary)"
-          title="Terminal Local"
-          desc="Acesse o shell nativo com atalhos contextuais."
+          title={selectedWorkspaceName}
+          desc="Sessões isoladas por worktree, prontas para diff e PR."
+          href="/settings"
         />
         <QuickActionCard
-          icon="search_check"
+          icon="support_agent"
           iconColor="var(--cc-primary)"
-          title="Auditoria de Código"
-          desc="Escaneie vulnerabilidades e dívida arquitetural."
+          title={selectedAgentName}
+          desc="Perfis com system prompt e skills para orientar o comportamento."
+          href="/agents"
         />
         <QuickActionCard
-          icon="history"
+          icon="smart_toy"
           iconColor="var(--cc-error)"
-          title="Replay de Sessão"
-          desc="Revise decisões arquiteturais anteriores."
+          title={selectedModelName}
+          desc="Modelo selecionado para novas execuções do agente."
         />
       </div>
     </div>
   )
 }
 
-function QuickActionCard({ icon, iconColor, title, desc }: {
-  icon: string; iconColor: string; title: string; desc: string
+/** Renderiza um atalho contextual da tela inicial do agente. */
+function QuickActionCard({ icon, iconColor, title, desc, href }: {
+  icon: string; iconColor: string; title: string; desc: string; href?: string
 }) {
-  return (
+  const content = (
     <div className={styles.quickCard}>
       <div className={styles.quickCardHeader}>
         <span className={styles.icon} style={{ color: iconColor }}>{icon}</span>
@@ -892,6 +936,14 @@ function QuickActionCard({ icon, iconColor, title, desc }: {
       </div>
       <p className={styles.quickCardDesc}>{desc}</p>
     </div>
+  )
+
+  if (!href) return content
+
+  return (
+    <Link to={href} className={styles.quickCardLink}>
+      {content}
+    </Link>
   )
 }
 
