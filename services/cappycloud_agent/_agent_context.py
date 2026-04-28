@@ -193,10 +193,20 @@ def build_prompt_with_agent(
 
     if sandbox_session_url:
         parts.append(
-            "## Como aprofundar\n\n"
+            "## Ferramentas do servidor de sessão\n\n"
+            "### Busca de documentação\n"
             "Para consultar mais documentação relevante, executa via Bash:\n"
             f"`curl -s '{sandbox_session_url}/skills/search?q=<termo>'`\n"
-            "(retorna JSON com slug/title/summary/content das skills mais próximas)."
+            "(retorna JSON com slug/title/summary/content das skills mais próximas).\n\n"
+            "### Sub-agente de investigação\n"
+            "Para delegar uma investigação a um sub-agente especializado, executa via Bash:\n"
+            "```bash\n"
+            f"curl -s -X POST '{sandbox_session_url}/task' \\\n"
+            "  -H 'Content-Type: application/json' \\\n"
+            "  -d '{\"description\":\"<título>\",\"prompt\":\"<instrução completa>\"}'\n"
+            "```\n"
+            "O campo `result` da resposta contém o texto produzido pelo sub-agente.\n"
+            "Use `jq -r '.result'` para extrair apenas o texto."
         )
 
     parts.append("## Mensagem do utilizador\n\n" + user_message)
