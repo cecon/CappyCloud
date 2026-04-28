@@ -590,6 +590,33 @@ export function ChatPage() {
             </button>
           </div>
 
+          <nav className={styles.sidebarNav} aria-label="Áreas do produto">
+            <Link to="/" className={styles.sidebarNavItem} title="Dashboard">
+              <span className={styles.icon}>dashboard</span>
+              <span>Dashboard</span>
+            </Link>
+            <Link to="/agents" className={styles.sidebarNavItem} title="Agentes">
+              <span className={styles.icon}>support_agent</span>
+              <span>Agentes</span>
+            </Link>
+            <Link to="/runs" className={styles.sidebarNavItem} title="Runs">
+              <span className={styles.icon}>history</span>
+              <span>Runs</span>
+            </Link>
+            <Link to="/analytics" className={styles.sidebarNavItem} title="Analytics">
+              <span className={styles.icon}>analytics</span>
+              <span>Analytics</span>
+            </Link>
+            <Link to="/skills" className={styles.sidebarNavItem} title="Skills">
+              <span className={styles.icon}>menu_book</span>
+              <span>Skills</span>
+            </Link>
+            <Link to="/settings" className={styles.sidebarNavItem} title="Configurações">
+              <span className={styles.icon}>settings</span>
+              <span>Configurações</span>
+            </Link>
+          </nav>
+
           {/* Session list */}
           <div className={styles.sessionList}>
             {groups.length === 0 && (
@@ -619,33 +646,8 @@ export function ChatPage() {
             ))}
           </div>
 
-          {/* Sidebar bottom nav */}
-          <div className={styles.sidebarNav}>
-            <Link to="/" className={styles.sidebarNavItem} title="Dashboard">
-              <span className={styles.icon}>dashboard</span>
-              <span>Dashboard</span>
-            </Link>
-            <Link to="/agents" className={styles.sidebarNavItem} title="Agentes">
-              <span className={styles.icon}>support_agent</span>
-              <span>Agentes</span>
-            </Link>
-            <Link to="/runs" className={styles.sidebarNavItem} title="Runs">
-              <span className={styles.icon}>history</span>
-              <span>Runs</span>
-            </Link>
-            <Link to="/analytics" className={styles.sidebarNavItem} title="Analytics">
-              <span className={styles.icon}>analytics</span>
-              <span>Analytics</span>
-            </Link>
-            <Link to="/skills" className={styles.sidebarNavItem} title="Skills">
-              <span className={styles.icon}>menu_book</span>
-              <span>Skills</span>
-            </Link>
-            <Link to="/settings" className={styles.sidebarNavItem} title="Configurações">
-              <span className={styles.icon}>settings</span>
-              <span>Configurações</span>
-            </Link>
-            <button className={styles.sidebarNavItem} onClick={logout} title="Sair">
+          <div className={styles.sidebarFooter}>
+            <button type="button" className={styles.sidebarLogoutBtn} onClick={logout} title="Sair">
               <span className={styles.icon}>logout</span>
               <span>Sair</span>
             </button>
@@ -1155,7 +1157,8 @@ function ActiveChat({
     <div className={styles.activeChat}>
       {/* Session header — env + branch + diff stats + PR + painel ficheiros/diff */}
       <div className={styles.sessionHeader}>
-        <div className={styles.sessionHeaderLeft}>
+        <div className={styles.sessionHeaderInner}>
+          <div className={styles.sessionHeaderLeft}>
           {activeEnvSlug ? (
             <>
               <span className={`${styles.icon} ${styles.sessionHeaderIcon}`}>source</span>
@@ -1174,8 +1177,8 @@ function ActiveChat({
               Conversa (sem repositório ligado)
             </span>
           )}
-        </div>
-        <div className={styles.sessionHeaderRight}>
+          </div>
+          <div className={styles.sessionHeaderRight}>
           {diffStats && (diffStats.added > 0 || diffStats.removed > 0) && (
             <>
               <span className={styles.diffAdded}>+{diffStats.added}</span>
@@ -1222,6 +1225,7 @@ function ActiveChat({
               <span className={styles.icon}>difference</span>
             </button>
           </div>
+          </div>
         </div>
       </div>
       <div className={styles.chatBody}>
@@ -1233,7 +1237,9 @@ function ActiveChat({
             type="auto"
             onScrollPositionChange={updateStickyScroll}
           >
-            <Stack gap="sm" p="md">
+            <div className={styles.chatScrollInner}>
+              <div className={styles.chatThread}>
+              <Stack gap="sm" p="md">
               {messagesLoading && (
                 <div className={styles.chatStateCard}>
                   <ThinkingIndicator label="A carregar conversa…" />
@@ -1279,7 +1285,9 @@ function ActiveChat({
               {pendingAction && (
                 <ActionRequiredCard action={pendingAction} onReply={onActionReply} />
               )}
-            </Stack>
+              </Stack>
+              </div>
+            </div>
           </ScrollArea>
           {showJumpToLatest && (
             <button type="button" className={styles.jumpToLatestBtn} onClick={() => scrollToLatest('smooth')}>
@@ -1315,7 +1323,8 @@ function ActiveChat({
 
       {/* Compact input bar */}
       <div className={styles.chatInputBar}>
-        <div className={styles.chatInputWrapper}>
+        <div className={styles.chatInputBarShell}>
+          <div className={styles.chatInputWrapper}>
           <textarea
             ref={inputRef}
             className={styles.chatTextarea}
@@ -1345,10 +1354,10 @@ function ActiveChat({
             <span className={styles.icon}>keyboard_return</span>
           </button>
           )}
-        </div>
+          </div>
 
-        {/* Context status bar — repo + branch */}
-        <div className={styles.chatContextBar}>
+          {/* Context status bar — repo + branch */}
+          <div className={styles.chatContextBar}>
           <div className={styles.chatContextPill}>
             <span className={`${styles.icon} ${styles.chatContextIcon}`}>source</span>
             <span className={styles.chatContextText}>
@@ -1393,6 +1402,7 @@ function ActiveChat({
           >
             · fixo
           </span>
+          </div>
         </div>
       </div>
     </div>

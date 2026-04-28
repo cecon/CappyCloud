@@ -273,11 +273,12 @@
   opacity: 0.7;
 }
 
-/* ─ Sidebar bottom nav (Ambientes + Logout) ─ */
+/* ─ Sidebar nav (top, abaixo de Nova Sessão) ─ */
 
 .sidebarNav {
-  padding: 0.75rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 0 0.75rem 0.65rem;
+  margin: 0 0 0.35rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -315,6 +316,53 @@
 
 .sidebarNavItem:hover .icon {
   opacity: 1;
+}
+
+/* ─ Sidebar footer: apenas sair, contraste reforçado ─ */
+
+.sidebarFooter {
+  flex-shrink: 0;
+  padding: 0.65rem 0.75rem 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.22));
+}
+
+.sidebarLogoutBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  padding: 9px 11px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  cursor: pointer;
+  color: #e2e8f0;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: left;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.sidebarLogoutBtn .icon {
+  font-size: 0.9375rem;
+  opacity: 0.85;
+  color: #fda4af;
+}
+
+.sidebarLogoutBtn:hover {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(248, 113, 113, 0.35);
+  color: #fef2f2;
+}
+
+.sidebarLogoutBtn:hover .icon {
+  opacity: 1;
+  color: #fecdd3;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -780,6 +828,37 @@
   overflow: hidden;
 }
 
+/*
+ * O viewport do ScrollArea (Mantine) mede a largura pelo conteúdo; sem um faixa com min-width
+ * 100% o fio fica colado à esquerda e margin:auto não centra no painel.
+ */
+.chatScrollInner {
+  display: flex;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 100%;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+/* Coluna central do fio — mesma âncora que o input e o cabeçalho */
+.chatThread {
+  width: 100%;
+  max-width: min(52rem, 100%);
+  flex: 0 1 min(52rem, 100%);
+  box-sizing: border-box;
+}
+
+/* Input alinhado à mesma largura máxima do fio */
+.chatInputBarShell {
+  max-width: min(52rem, calc(100% - 2rem));
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .messageArea {
   flex: 1;
   min-height: 0;
@@ -788,13 +867,13 @@
 
 .messageArea :global(.mantine-ScrollArea-viewport) {
   overscroll-behavior: contain;
+  width: 100%;
 }
 
 /* ─ Messages ─ */
 
 .message {
   animation: fadeInUp 0.2s ease both;
-  max-width: min(88%, 920px);
   min-width: 0;
   padding: 12px 15px;
   border-radius: 10px;
@@ -806,12 +885,15 @@
 .messageUser {
   align-self: flex-end;
   margin-left: auto;
+  max-width: min(100%, 26rem);
   background: linear-gradient(135deg, var(--cc-primary) 0%, #2563eb 100%);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .messageAgent {
-  align-self: flex-start;
+  align-self: stretch;
+  width: 100%;
+  max-width: 100%;
   background: var(--cc-surface-high);
   border: 1px solid rgba(72, 72, 75, 0.18);
 }
@@ -1491,15 +1573,23 @@
    ───────────────────────────────────────────────────────────── */
 
 .sessionHeader {
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid var(--cc-outline-variant);
+  background: var(--cc-surface);
+  flex-shrink: 0;
+}
+
+.sessionHeaderInner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.4rem 1rem;
-  border-bottom: 1px solid var(--cc-outline-variant);
-  background: var(--cc-surface);
+  max-width: min(52rem, calc(100% - 2rem));
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
   min-height: 36px;
-  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .sessionHeaderLeft {
