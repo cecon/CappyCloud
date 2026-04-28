@@ -27,6 +27,7 @@ const { promisify } = require('util')
 
 const gitHandlers = require('./git_handlers')
 const repoHandlers = require('./repo_handlers')
+const taskHandler = require('./task_handler')
 
 const execFileAsync = promisify(execFile)
 const PORT = parseInt(process.env.SESSION_SERVER_PORT || '8080', 10)
@@ -222,6 +223,9 @@ const server = http.createServer(async (req, res) => {
     if (await gitHandlers.tryHandle(req, res, { json, readBody, injectToken })) {
       return
     }
+
+    // POST /task — delega sub-agente ao OpenRouter (ver task_handler.js)
+    if (await taskHandler.tryHandle(req, res, { json, readBody })) return
 
     // GET /skills/search?q=...&agent_id=... — proxy para a API CappyCloud
     // O LLM (openclaude) usa este endpoint via curl/Bash para fazer RAG por demanda.
