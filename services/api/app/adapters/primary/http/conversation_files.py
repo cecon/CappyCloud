@@ -9,8 +9,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.primary.http.conversation_worktree_paths import (
+    WORKTREE_FROM_CONVERSATION,
+    resolve_git_paths_from_worktree_row,
+)
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
 from app.domain.entities import User
+from app.infrastructure.sandbox_worktree_client import (
+    SandboxWorktreeError,
+    worktree_ls_files,
+    worktree_read_file,
+)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -52,27 +61,20 @@ async def _get_worktree_container(
     user_id: str,
     db: AsyncSession,
 ) -> tuple[str, str]:
-    """Retorna (container_name, worktree_path) para a conversa ou lança 404."""
+    """Retorna (container_name, worktree_path) para a conversa ou lança 404.
+
+    Usa primeiro os caminhos em `cappy_sessions` (agente); se ainda não existir
+    linha de sessão ou estiver desactualizada, faz fallback para `conversations.repos`
+    e `conversations.session_root` definidos na criação da conversa.
+    """
     row = await db.execute(
-        text(
-            "SELECT "
-            "  cs.session_root, "
-            "  cs.repos->0->>'worktree_path' AS worktree_path "
-            "FROM conversations c "
-            "LEFT JOIN cappy_sessions cs ON cs.chat_id = c.id::text "
-            "WHERE c.id = :cid AND c.user_id = :uid"
-        ),
+        text(WORKTREE_FROM_CONVERSATION),
         {"cid": str(conversation_id), "uid": user_id},
     )
     conv = row.fetchone()
     if not conv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada")
-    worktree = conv.worktree_path or conv.session_root
-    if not worktree:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Sem worktree activa para esta conversa",
-        )
+    worktree, _, _ = resolve_git_paths_from_worktree_row(conv, conversation_id)
     return "cappycloud-sandbox", worktree
 
 
@@ -86,27 +88,14 @@ async def list_conversation_files(
     db: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> dict:
     """Lista todos os ficheiros tracked do worktree (git ls-files)."""
-    container_id, worktree_path = await _get_worktree_container(
-        conversation_id, str(current.id), db
-    )
+    _, worktree_path = await _get_worktree_container(conversation_id, str(current.id), db)
 
     try:
-        import docker
+        normalized, files = await worktree_ls_files(worktree_path)
+    except SandboxWorktreeError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
-        client = docker.from_env()
-        container = client.containers.get(container_id)
-        _, output = container.exec_run(
-            ["git", "-C", worktree_path, "ls-files"],
-        )
-        raw = output.decode("utf-8", errors="replace") if output else ""
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Erro ao listar ficheiros: {exc}",
-        ) from exc
-
-    files = [f for f in raw.splitlines() if f.strip()]
-    return {"worktree_path": worktree_path, "files": files}
+    return {"worktree_path": normalized, "files": files}
 
 
 # ── File content ──────────────────────────────────────────────────────────────
@@ -123,29 +112,12 @@ async def get_conversation_file(
     if ".." in path or path.startswith("/"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Caminho inválido")
 
-    container_id, worktree_path = await _get_worktree_container(
-        conversation_id, str(current.id), db
-    )
+    _, worktree_path = await _get_worktree_container(conversation_id, str(current.id), db)
 
-    full_path = f"{worktree_path}/{path}"
     try:
-        import docker
+        rel_path, content = await worktree_read_file(worktree_path, path)
+    except SandboxWorktreeError as exc:
+        code = exc.status_code if exc.status_code >= 400 else status.HTTP_503_SERVICE_UNAVAILABLE
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
 
-        client = docker.from_env()
-        container = client.containers.get(container_id)
-        exit_code, output = container.exec_run(["cat", full_path])
-        if exit_code != 0:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Ficheiro não encontrado: {path}",
-            )
-        content = output.decode("utf-8", errors="replace") if output else ""
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Erro ao ler ficheiro: {exc}",
-        ) from exc
-
-    return {"path": path, "content": content}
+    return {"path": rel_path, "content": content}

@@ -186,27 +186,8 @@ class TaskDispatcher:
         """Cria a sessão, inicia a GrpcSession e arranca o TaskRunner."""
         user_id = conversation_id or "system"
         chat_id = conversation_id or task_id
-        mode = "initializing"
 
         try:
-            await insert_status_event(
-                self._pool,
-                task_id,
-                "Preparando sessão do agente...",
-                "session",
-                "initializing",
-            )
-            if repos:
-                repo_slugs = ", ".join(
-                    str(repo.get("slug") or repo.get("alias") or "?") for repo in repos
-                )
-                await insert_status_event(
-                    self._pool,
-                    task_id,
-                    f"Preparando repositório: {repo_slugs}...",
-                    "repository",
-                    "initializing",
-                )
             lease = await self._env_manager.get_or_create_session(
                 user_id=user_id,
                 chat_id=chat_id,
@@ -217,6 +198,27 @@ class TaskDispatcher:
             sandbox = lease.record
             mode = "initializing" if lease.created else "resuming"
             session_message = "Sessão criada" if lease.created else "Sessão retomada"
+            repository_message = (
+                "Repositório preparado" if lease.created else "Repositório sincronizado"
+            )
+            await insert_status_event(
+                self._pool,
+                task_id,
+                "Sessão do agente preparada.",
+                "session",
+                mode,
+            )
+            if repos:
+                repo_slugs = ", ".join(
+                    str(repo.get("slug") or repo.get("alias") or "?") for repo in repos
+                )
+                await insert_status_event(
+                    self._pool,
+                    task_id,
+                    f"{repository_message}: {repo_slugs}.",
+                    "repository",
+                    mode,
+                )
             await insert_status_event(
                 self._pool,
                 task_id,

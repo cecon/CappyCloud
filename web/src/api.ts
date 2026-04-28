@@ -522,7 +522,10 @@ export async function fetchConversationDiff(
   const res = await apiFetch(`/api/conversations/${conversationId}/diff`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  if (!res.ok) throw new Error('Erro ao carregar diff')
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(data) || 'Erro ao carregar diff')
+  }
   return res.json()
 }
 
@@ -533,7 +536,10 @@ export async function fetchConversationFiles(
   const res = await apiFetch(`/api/conversations/${conversationId}/files`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  if (!res.ok) throw new Error('Erro ao listar ficheiros')
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(data) || 'Erro ao listar ficheiros')
+  }
   return res.json()
 }
 
@@ -546,7 +552,10 @@ export async function fetchConversationFile(
     `/api/conversations/${conversationId}/file?path=${encodeURIComponent(path)}`,
     { headers: { Authorization: `Bearer ${token}` } }
   )
-  if (!res.ok) throw new Error('Erro ao ler ficheiro')
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(data) || 'Erro ao ler ficheiro')
+  }
   return res.json()
 }
 
