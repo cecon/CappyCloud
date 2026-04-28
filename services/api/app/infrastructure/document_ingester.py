@@ -62,7 +62,7 @@ def _extract_text(content: str | None, fallback_title: str) -> tuple[str, str]:
 
 def _extract_pdf(blob: bytes, fallback_title: str) -> tuple[str, str]:
     try:
-        from pypdf import PdfReader  # type: ignore[import-not-found]
+        from pypdf import PdfReader
     except ImportError as exc:
         raise IngesterError(
             "pypdf não instalado — adicionar ao requirements.txt para suportar PDF"
@@ -79,7 +79,7 @@ def _extract_pdf(blob: bytes, fallback_title: str) -> tuple[str, str]:
 
 def _extract_xlsx(blob: bytes, fallback_title: str) -> tuple[str, str]:
     try:
-        from openpyxl import load_workbook  # type: ignore[import-not-found]
+        from openpyxl import load_workbook
     except ImportError as exc:
         raise IngesterError(
             "openpyxl não instalado — adicionar ao requirements.txt para suportar XLSX"
