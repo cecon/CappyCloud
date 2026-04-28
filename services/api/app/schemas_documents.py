@@ -29,9 +29,7 @@ class DocumentCreate(BaseModel):
     def normalized_source_type(self) -> str:
         st = (self.source_type or "").strip().lower()
         if st not in _SOURCE_TYPES:
-            raise ValueError(
-                f"source_type inválido: {st!r}. Use um de {sorted(_SOURCE_TYPES)}."
-            )
+            raise ValueError(f"source_type inválido: {st!r}. Use um de {sorted(_SOURCE_TYPES)}.")
         return st
 
 
