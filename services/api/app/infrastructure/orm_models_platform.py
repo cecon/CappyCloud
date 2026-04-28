@@ -128,6 +128,44 @@ class Repository(Base):
     )
 
 
+class Document(Base):
+    """Documento de referência associado a um repositório (suporte/produto).
+
+    Fonte de verdade da ingestão (PDF/XLSX/URL/texto). Os *chunks* extraídos
+    vivem na tabela ``skills`` (com ``document_id`` apontando aqui), permitindo
+    reuso integral do RAG existente. Reindexar = bumpa version, deleta chunks
+    antigos via cascade e regenera.
+
+    source_type: pdf | xlsx | url | text
+    status:      pending | processing | indexed | error
+    """
+
+    __tablename__ = "documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
+    repository_id: Mapped[uuid.UUID] = mapped_column(
+        UUIDType,
+        ForeignKey("repositories.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_uri: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    checksum: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", index=True
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chunks_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class SandboxSyncQueue(Base):
     """Fila de sincronização DB → sandbox VM (watchdog).
 
