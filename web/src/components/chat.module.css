@@ -273,11 +273,12 @@
   opacity: 0.7;
 }
 
-/* ─ Sidebar bottom nav (Ambientes + Logout) ─ */
+/* ─ Sidebar nav (top, abaixo de Nova Sessão) ─ */
 
 .sidebarNav {
-  padding: 0.75rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 0 0.75rem 0.65rem;
+  margin: 0 0 0.35rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -315,6 +316,53 @@
 
 .sidebarNavItem:hover .icon {
   opacity: 1;
+}
+
+/* ─ Sidebar footer: apenas sair, contraste reforçado ─ */
+
+.sidebarFooter {
+  flex-shrink: 0;
+  padding: 0.65rem 0.75rem 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.22));
+}
+
+.sidebarLogoutBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  padding: 9px 11px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  cursor: pointer;
+  color: #e2e8f0;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: left;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.sidebarLogoutBtn .icon {
+  font-size: 0.9375rem;
+  opacity: 0.85;
+  color: #fda4af;
+}
+
+.sidebarLogoutBtn:hover {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(248, 113, 113, 0.35);
+  color: #fef2f2;
+}
+
+.sidebarLogoutBtn:hover .icon {
+  opacity: 1;
+  color: #fecdd3;
 }
 
 /* ─────────────────────────────────────────────────────────────

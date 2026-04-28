@@ -590,6 +590,33 @@ export function ChatPage() {
             </button>
           </div>
 
+          <nav className={styles.sidebarNav} aria-label="Áreas do produto">
+            <Link to="/" className={styles.sidebarNavItem} title="Dashboard">
+              <span className={styles.icon}>dashboard</span>
+              <span>Dashboard</span>
+            </Link>
+            <Link to="/agents" className={styles.sidebarNavItem} title="Agentes">
+              <span className={styles.icon}>support_agent</span>
+              <span>Agentes</span>
+            </Link>
+            <Link to="/runs" className={styles.sidebarNavItem} title="Runs">
+              <span className={styles.icon}>history</span>
+              <span>Runs</span>
+            </Link>
+            <Link to="/analytics" className={styles.sidebarNavItem} title="Analytics">
+              <span className={styles.icon}>analytics</span>
+              <span>Analytics</span>
+            </Link>
+            <Link to="/skills" className={styles.sidebarNavItem} title="Skills">
+              <span className={styles.icon}>menu_book</span>
+              <span>Skills</span>
+            </Link>
+            <Link to="/settings" className={styles.sidebarNavItem} title="Configurações">
+              <span className={styles.icon}>settings</span>
+              <span>Configurações</span>
+            </Link>
+          </nav>
+
           {/* Session list */}
           <div className={styles.sessionList}>
             {groups.length === 0 && (
@@ -619,33 +646,8 @@ export function ChatPage() {
             ))}
           </div>
 
-          {/* Sidebar bottom nav */}
-          <div className={styles.sidebarNav}>
-            <Link to="/" className={styles.sidebarNavItem} title="Dashboard">
-              <span className={styles.icon}>dashboard</span>
-              <span>Dashboard</span>
-            </Link>
-            <Link to="/agents" className={styles.sidebarNavItem} title="Agentes">
-              <span className={styles.icon}>support_agent</span>
-              <span>Agentes</span>
-            </Link>
-            <Link to="/runs" className={styles.sidebarNavItem} title="Runs">
-              <span className={styles.icon}>history</span>
-              <span>Runs</span>
-            </Link>
-            <Link to="/analytics" className={styles.sidebarNavItem} title="Analytics">
-              <span className={styles.icon}>analytics</span>
-              <span>Analytics</span>
-            </Link>
-            <Link to="/skills" className={styles.sidebarNavItem} title="Skills">
-              <span className={styles.icon}>menu_book</span>
-              <span>Skills</span>
-            </Link>
-            <Link to="/settings" className={styles.sidebarNavItem} title="Configurações">
-              <span className={styles.icon}>settings</span>
-              <span>Configurações</span>
-            </Link>
-            <button className={styles.sidebarNavItem} onClick={logout} title="Sair">
+          <div className={styles.sidebarFooter}>
+            <button type="button" className={styles.sidebarLogoutBtn} onClick={logout} title="Sair">
               <span className={styles.icon}>logout</span>
               <span>Sair</span>
             </button>

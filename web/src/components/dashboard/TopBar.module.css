@@ -2,8 +2,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  flex-wrap: nowrap;
   padding: 0.65rem 0 1.1rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
@@ -53,6 +53,29 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Diagrama hub-and-spoke (Coordinator + agentes) — decorativo */
+.hubArt {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  max-width: min(420px, 42vw);
+  margin: 0 auto;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.95;
+}
+
+.hubImg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 56px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 14px rgba(59, 130, 246, 0.22));
 }
 
 .right {
@@ -146,6 +169,16 @@
   font-size: 1rem;
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
   line-height: 1;
+}
+
+@media (max-width: 900px) {
+  .hubArt {
+    display: none;
+  }
+
+  .bar {
+    flex-wrap: wrap;
+  }
 }
 
 @media (max-width: 520px) {

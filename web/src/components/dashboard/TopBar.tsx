@@ -17,6 +17,16 @@ export function TopBar() {
         </span>
         <span className={styles.crumb}>Command Center</span>
       </div>
+      <div className={styles.hubArt} aria-hidden>
+        <img
+          src="/command-center-hub.svg"
+          alt=""
+          className={styles.hubImg}
+          width={440}
+          height={80}
+          decoding="async"
+        />
+      </div>
       <div className={styles.right}>
         <div className={styles.statusPill} title="Runtime do workspace">
           <span className={styles.statusDot} aria-hidden />
