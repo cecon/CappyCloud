@@ -5,6 +5,7 @@ Revises: a150801ba0db
 Create Date: 2026-04-27 13:38:48.470186
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -20,7 +21,9 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Reconcile agent privacy/default columns for DBs stamped with the orphan revision."""
     op.execute("ALTER TABLE agents ADD COLUMN IF NOT EXISTS owner_id UUID")
-    op.execute("ALTER TABLE agents ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE")
+    op.execute(
+        "ALTER TABLE agents ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE"
+    )
     op.execute(
         """
         DO $$
