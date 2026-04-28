@@ -27,6 +27,7 @@ const { promisify } = require('util')
 
 const gitHandlers = require('./git_handlers')
 const repoHandlers = require('./repo_handlers')
+const taskHandler = require('./task_handler')
 
 const execFileAsync = promisify(execFile)
 const PORT = parseInt(process.env.SESSION_SERVER_PORT || '8080', 10)
@@ -223,45 +224,8 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
-    // POST /task — lança sub-agente direto no OpenRouter e devolve o resultado.
-    // Usado pelo agente orquestrador para delegar investigações via Bash/curl.
-    if (req.method === 'POST' && pathname === '/task') {
-      const { description, prompt, model } = await readBody(req)
-      if (!prompt) return json(res, 400, { error: 'prompt is required' })
-
-      const apiKey = process.env.OPENAI_API_KEY || ''
-      const baseUrl = (process.env.OPENAI_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/$/, '')
-      const apiModel = model || process.env.OPENAI_MODEL || 'anthropic/claude-3.5-sonnet'
-
-      if (!apiKey) return json(res, 500, { error: 'OPENAI_API_KEY not configured' })
-
-      try {
-        const resp = await fetch(`${baseUrl}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: apiModel,
-            messages: [{ role: 'user', content: prompt }],
-            max_tokens: 8192,
-          }),
-        })
-
-        if (!resp.ok) {
-          const text = await resp.text()
-          return json(res, 502, { error: 'LLM API error', detail: text.slice(0, 500) })
-        }
-
-        const data = await resp.json()
-        const result = data.choices?.[0]?.message?.content || ''
-        console.log(`[session_server] /task "${description || ''}" — ${result.length} chars`)
-        return json(res, 200, { result, description: description || '' })
-      } catch (err) {
-        return json(res, 500, { error: err.message })
-      }
-    }
+    // POST /task — delega sub-agente ao OpenRouter (ver task_handler.js)
+    if (await taskHandler.tryHandle(req, res, { json, readBody })) return
 
     // GET /skills/search?q=...&agent_id=... — proxy para a API CappyCloud
     // O LLM (openclaude) usa este endpoint via curl/Bash para fazer RAG por demanda.
