@@ -121,7 +121,6 @@ class Pipeline:
         repos = body.get("repos") or []
         session_root = str(body.get("session_root") or "")
         sandbox_id = str(body.get("sandbox_id") or "")
-        agent_id = str(body.get("agent_id") or "")
         cursor = body.get("cursor")
         try:
             cursor = int(cursor) if cursor is not None else None
@@ -130,14 +129,12 @@ class Pipeline:
 
         repo_ids: list[str] = [r["repo_id"] for r in repos if r.get("repo_id")]
 
-        system_prompt = ""
         skills_top: list[dict] = []
-        if agent_id or repo_ids:
+        if repo_ids:
             try:
-                system_prompt, skills_top = self._run(
+                skills_top = self._run(
                     load_agent_context(
                         self.valves.DATABASE_URL,
-                        agent_id,
                         user_message,
                         repo_ids=repo_ids or None,
                     ),
@@ -152,7 +149,6 @@ class Pipeline:
 
         prompt = build_prompt_with_agent(
             user_message,
-            system_prompt,
             skills_top,
             sandbox_session_url,
             repos=repos,

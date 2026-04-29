@@ -10,12 +10,10 @@ from collections.abc import AsyncGenerator
 from app.application.use_cases._stream_helpers import inject_diff_comments
 from app.domain.entities import Conversation, Message
 from app.ports.agent import AgentPort
-from app.ports.agent_repository import AgentRepository
 from app.ports.repositories import (
     ConversationRepository,
     MessageRepository,
     RepositoryRepository,
-    UserAgentProfileRepository,
 )
 
 _TITLE_MAX_LEN = 80
@@ -42,13 +40,9 @@ class CreateConversation:
         self,
         conversations: ConversationRepository,
         repositories: RepositoryRepository | None = None,
-        user_agent_profiles: UserAgentProfileRepository | None = None,
-        agents: AgentRepository | None = None,
     ) -> None:
         self._conversations = conversations
         self._repositories = repositories
-        self._user_agent_profiles = user_agent_profiles
-        self._agents = agents
 
     async def execute(
         self,
@@ -56,10 +50,7 @@ class CreateConversation:
         title: str | None = None,
         sandbox_id: uuid.UUID | None = None,
         repos: list[dict] | None = None,
-        agent_id: uuid.UUID | None = None,
     ) -> Conversation:
-        resolved_agent_id = await self._resolve_agent_id(user_id, agent_id)
-
         conv_id = uuid.uuid4()
         short_id = conv_id.hex[:12]
 
@@ -89,32 +80,10 @@ class CreateConversation:
             user_id=user_id,
             title=title or _DEFAULT_TITLE,
             sandbox_id=sandbox_id,
-            agent_id=resolved_agent_id,
             repos=resolved_repos,
             session_root=session_root,
         )
         return await self._conversations.save(conv)
-
-    async def _resolve_agent_id(
-        self,
-        user_id: uuid.UUID,
-        agent_id: uuid.UUID | None,
-    ) -> uuid.UUID | None:
-        if agent_id is not None:
-            if self._agents and not await self._agents.can_user_access(user_id, agent_id):
-                raise PermissionError("Agente não encontrado ou sem permissão de acesso.")
-            return agent_id
-
-        resolved_agent_id = None
-        if self._user_agent_profiles:
-            resolved_agent_id = await self._user_agent_profiles.get_default_agent_id(user_id)
-        if (
-            resolved_agent_id is not None
-            and self._agents
-            and not await self._agents.can_user_access(user_id, resolved_agent_id)
-        ):
-            raise PermissionError("Agente não encontrado ou sem permissão de acesso.")
-        return resolved_agent_id
 
 
 class ListMessages:
@@ -236,7 +205,6 @@ class StreamMessage:
             "repos": repos_for_pipeline,
             "session_root": conv.session_root or "",
             "sandbox_id": str(conv.sandbox_id) if conv.sandbox_id else "",
-            "agent_id": str(conv.agent_id) if conv.agent_id else "",
             "override_model": override_model,
         }
 

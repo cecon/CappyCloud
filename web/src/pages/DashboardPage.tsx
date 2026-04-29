@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   AuthError,
-  fetchAgents,
   fetchConversations,
   fetchSkills,
   fetchWorkspaces,
   getToken,
   setToken,
-  type Agent,
   type Conversation,
   type Skill,
   type Workspace,
@@ -28,14 +26,12 @@ import pageStyles from './dashboard-page.module.css'
 type DashboardData = {
   conversations: Conversation[]
   workspaces: Workspace[]
-  agents: Agent[]
   skills: Skill[]
 }
 
 const EMPTY_DATA: DashboardData = {
   conversations: [],
   workspaces: [],
-  agents: [],
   skills: [],
 }
 
@@ -58,14 +54,13 @@ export function DashboardPage() {
       setLoading(true)
       setError(null)
       try {
-        const [conversations, workspaces, agents, skills] = await Promise.all([
+        const [conversations, workspaces, skills] = await Promise.all([
           fetchConversations(token),
           fetchWorkspaces(token),
-          fetchAgents(token),
           fetchSkills(token),
         ])
         if (!cancelled) {
-          setData({ conversations, workspaces, agents, skills })
+          setData({ conversations, workspaces, skills })
         }
       } catch (err) {
         if (err instanceof AuthError) {
@@ -87,10 +82,6 @@ export function DashboardPage() {
     }
   }, [token])
 
-  const activeAgents = useMemo(
-    () => data.agents.filter((agent) => agent.active),
-    [data.agents],
-  )
   const activeSkills = useMemo(
     () => data.skills.filter((skill) => skill.active),
     [data.skills],
@@ -99,17 +90,6 @@ export function DashboardPage() {
   const readyWorkspaces = data.workspaces.filter(
     (workspace) => workspace.sandbox_status !== 'error',
   )
-
-  const agentById = useMemo(() => {
-    const m = new Map<string, Agent>()
-    for (const a of data.agents) m.set(a.id, a)
-    return m
-  }, [data.agents])
-
-  const agentLabel = (agentId: string | null | undefined) => {
-    if (!agentId) return 'Agente padrão'
-    return agentById.get(agentId)?.name ?? 'Agente'
-  }
 
   const sessionsThisWeek = useMemo(() => {
     const cutoff = Date.now() - MS_WEEK
@@ -131,7 +111,7 @@ export function DashboardPage() {
       {
         icon: 'menu_book',
         title: 'Skills',
-        text: 'Conhecimento por agente e RAG orientado.',
+        text: 'Conhecimento por repositório e RAG orientado.',
         href: '/skills',
         status: 'available' as StatusBadgeVariant,
       },
@@ -167,7 +147,6 @@ export function DashboardPage() {
           <HeroCommandPanel
             sessionsCount={data.conversations.length}
             readyRepos={readyWorkspaces.length}
-            activeAgents={activeAgents.length}
             activeSkills={activeSkills.length}
             loading={loading}
           />
@@ -201,13 +180,6 @@ export function DashboardPage() {
                 loading={loading}
               />
               <MetricCard
-                icon="smart_toy"
-                value={activeAgents.length}
-                label="Agentes ativos"
-                hint={loading ? '…' : activeAgents.length > 0 ? 'Online' : 'Nenhum ativo'}
-                loading={loading}
-              />
-              <MetricCard
                 icon="auto_awesome"
                 value={activeSkills.length}
                 label="Skills ativas"
@@ -226,7 +198,7 @@ export function DashboardPage() {
                   <DashboardSectionHeader
                     id="quick-actions-title"
                     title="Ações rápidas"
-                    subtitle="Atalhos para chat, contexto, agentes e observabilidade."
+                    subtitle="Atalhos para chat, contexto e observabilidade."
                   />
                   <div className={pageStyles.featureGrid}>
                     <FeatureCard
@@ -242,13 +214,6 @@ export function DashboardPage() {
                       description="Credenciais, branches e sync dos projetos."
                       href="/settings"
                       cta="Preparar contexto"
-                    />
-                    <FeatureCard
-                      icon="support_agent"
-                      title="Agentes"
-                      description="Prompts, modelo padrão e perfis especializados."
-                      href="/agents"
-                      cta="Editar agentes"
                     />
                     <FeatureCard
                       icon="history"
@@ -292,7 +257,6 @@ export function DashboardPage() {
                   <RecentSessions
                     conversations={recentConversations}
                     loading={loading}
-                    agentLabel={agentLabel}
                     statusFor={conversationSessionStatus}
                     formatDuration={formatSessionDuration}
                     formatDateTime={formatDateTime}

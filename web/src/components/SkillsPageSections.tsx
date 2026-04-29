@@ -1,23 +1,19 @@
-import type { Agent, Skill, SkillCreate } from '../api'
+import type { Skill, SkillCreate } from '../api'
 import styles from '../pages/settings.module.css'
 
-type FilterMode = 'all' | 'global' | string
+type FilterMode = 'all' | 'active'
 
 type SkillsPageSectionsProps = {
-  agents: Agent[]
   filterMode: FilterMode
   onFilterChange: (mode: FilterMode) => void
   loading: boolean
   error: string | null
   importUrl: string
   setImportUrl: (v: string) => void
-  importAgentId: string
-  setImportAgentId: (v: string) => void
   importing: boolean
   importError: string | null
   onImportSubmit: (e: React.FormEvent) => void
   filteredSkills: Skill[]
-  agentNameById: Map<string, string>
   onToggleActive: (s: Skill) => void
   onDelete: (id: string) => void
   skillForm: SkillCreate
@@ -44,12 +40,7 @@ export function SkillsPageSections(p: SkillsPageSectionsProps) {
               onChange={(e) => p.onFilterChange(e.target.value as FilterMode)}
             >
               <option value="all">Todas as skills</option>
-              <option value="global">Só globais (sem agente)</option>
-              {p.agents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  Agente: {a.name}
-                </option>
-              ))}
+              <option value="active">Somente ativas</option>
             </select>
           </label>
         </div>
@@ -70,21 +61,6 @@ export function SkillsPageSections(p: SkillsPageSectionsProps) {
                 placeholder="https://…"
                 type="url"
               />
-            </label>
-            <label className={styles.label} style={{ flex: 1 }}>
-              Associar a (opcional)
-              <select
-                className={styles.input}
-                value={p.importAgentId}
-                onChange={(e) => p.setImportAgentId(e.target.value)}
-              >
-                <option value="">Global (nenhum agente)</option>
-                {p.agents.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
             </label>
             <button
               type="submit"
@@ -108,7 +84,6 @@ export function SkillsPageSections(p: SkillsPageSectionsProps) {
             <thead>
               <tr>
                 <th>Título</th>
-                <th>Agente</th>
                 <th>Slug</th>
                 <th>Embed</th>
                 <th>Status</th>
@@ -120,9 +95,6 @@ export function SkillsPageSections(p: SkillsPageSectionsProps) {
               {p.filteredSkills.map((s) => (
                 <tr key={s.id}>
                   <td>{s.title}</td>
-                  <td>
-                    {s.agent_id ? p.agentNameById.get(s.agent_id) ?? s.agent_id : '—'}
-                  </td>
                   <td>
                     <code>{s.slug}</code>
                   </td>
@@ -177,26 +149,6 @@ export function SkillsPageSections(p: SkillsPageSectionsProps) {
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Criar skill manualmente</h2>
         <form onSubmit={p.onSaveSkill} className={styles.form}>
-          <label className={styles.label}>
-            Vincular a agente (opcional)
-            <select
-              className={styles.input}
-              value={p.skillForm.agent_id ?? ''}
-              onChange={(e) =>
-                p.setSkillForm((prev) => ({
-                  ...prev,
-                  agent_id: e.target.value || null,
-                }))
-              }
-            >
-              <option value="">Global (nenhum agente)</option>
-              {p.agents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </label>
           <label className={styles.label}>
             Título
             <input

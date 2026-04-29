@@ -4,7 +4,6 @@ import styles from './HeroCommandPanel.module.css'
 export interface HeroCommandPanelProps {
   sessionsCount: number
   readyRepos: number
-  activeAgents: number
   activeSkills: number
   loading?: boolean
 }
@@ -15,7 +14,6 @@ export interface HeroCommandPanelProps {
 export function HeroCommandPanel({
   sessionsCount,
   readyRepos,
-  activeAgents,
   activeSkills,
   loading,
 }: HeroCommandPanelProps) {
@@ -23,20 +21,16 @@ export function HeroCommandPanel({
     <section className={styles.hero} aria-labelledby="dashboard-hero-title">
       <div className={styles.copy}>
         <h1 id="dashboard-hero-title" className={styles.title}>
-          Controle seus agentes em um só lugar
+          Desenvolva em worktrees isolados com OpenClaude
         </h1>
         <p className={styles.subtitle}>
-          Execute sessões isoladas, acompanhe runs, gerencie agentes e prepare repositórios para
+          Execute sessões isoladas, acompanhe runs e prepare repositórios para
           automação segura na nuvem.
         </p>
         <div className={styles.actions}>
           <Link to="/chat" className={styles.primary}>
             <span className={styles.icon}>bolt</span>
-            Nova sessão de agente
-          </Link>
-          <Link to="/agents" className={styles.secondary}>
-            <span className={styles.icon}>support_agent</span>
-            Gerenciar agentes
+            Nova sessão de desenvolvimento
           </Link>
           <Link to="/chat" className={styles.tertiary}>
             Ver histórico
@@ -63,13 +57,6 @@ export function HeroCommandPanel({
             </span>
             <span className={styles.ovLabel}>Repositórios prontos</span>
             <span className={styles.ovValue}>{loading ? '…' : readyRepos}</span>
-          </li>
-          <li>
-            <span className={styles.ovIcon} aria-hidden>
-              <span className={styles.icon}>smart_toy</span>
-            </span>
-            <span className={styles.ovLabel}>Agentes ativos</span>
-            <span className={styles.ovValue}>{loading ? '…' : activeAgents}</span>
           </li>
           <li>
             <span className={styles.ovIcon} aria-hidden>

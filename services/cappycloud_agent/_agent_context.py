@@ -1,7 +1,6 @@
-"""Helpers para enriquecer o prompt do utilizador com contexto do Agente.
+"""Helpers para enriquecer o prompt do utilizador com contexto técnico.
 
-Carrega o ``system_prompt`` do agente associado à conversa e (opcionalmente)
-um conjunto inicial de Skills relevantes via busca lexical no Postgres.
+Carrega um conjunto inicial de Skills relevantes via busca lexical no Postgres.
 A busca semântica completa fica disponível ao LLM por demanda em
 ``GET /skills/search`` no session_server do sandbox.
 """
@@ -66,51 +65,18 @@ async def _load_repo_skills(
 
 async def load_agent_context(
     db_url: str,
-    agent_id: str,
     user_message: str,
     repo_ids: list[str] | None = None,
-) -> tuple[str, list[dict]]:
-    """Devolve ``(system_prompt, [{title, summary, source_url}, ...])``."""
+) -> list[dict]:
+    """Devolve skills relevantes para os repositórios da sessão."""
     if not db_url:
-        return "", []
+        return []
 
     conn: Optional[asyncpg.Connection] = None
     try:
         conn = await asyncpg.connect(db_url)
 
-        system_prompt = ""
-        if agent_id:
-            agent_row = await conn.fetchrow(
-                "SELECT system_prompt FROM agents WHERE id = $1::uuid AND active = TRUE",
-                agent_id,
-            )
-            if agent_row:
-                system_prompt = agent_row["system_prompt"] or ""
-
-        # Match lexical simples: a primeira palavra-chave longa da mensagem.
-        keywords = [w for w in user_message.split() if len(w) > 4][:6]
         skills: list[dict] = []
-
-        if keywords and agent_id:
-            pattern = f"%{keywords[0]}%"
-            rows = await conn.fetch(
-                "SELECT title, summary, content, source_url FROM skills "
-                "WHERE active = TRUE AND (agent_id = $1::uuid OR agent_id IS NULL) "
-                "AND (title ILIKE $2 OR summary ILIKE $2 OR content ILIKE $2) "
-                "ORDER BY title LIMIT $3",
-                agent_id,
-                pattern,
-                _RAG_TOP_N,
-            )
-            for r in rows:
-                skills.append(
-                    {
-                        "title": r["title"],
-                        "summary": r["summary"] or "",
-                        "content": _trim_skill_content(r["content"]),
-                        "source_url": r["source_url"],
-                    }
-                )
 
         # Skills vinculadas ao(s) repositório(s) da sessão.
         if repo_ids:
@@ -122,14 +88,10 @@ async def load_agent_context(
                 if rs["title"] not in existing_titles:
                     skills.append(rs)
                     existing_titles.add(rs["title"])
-        return system_prompt, skills
+        return skills
     except Exception as exc:  # noqa: BLE001 - degrada graciosamente
-        log.warning(
-            "load_agent_context falhou (agent=%s): %s",
-            agent_id[:8] if agent_id else "?",
-            exc,
-        )
-        return "", []
+        log.warning("load_agent_context falhou: %s", exc)
+        return []
     finally:
         if conn:
             await conn.close()
@@ -137,13 +99,12 @@ async def load_agent_context(
 
 def build_prompt_with_agent(
     user_message: str,
-    system_prompt: str,
     skills: list[dict],
     sandbox_session_url: str,
     repos: list[dict] | None = None,
     session_root: str = "",
 ) -> str:
-    """Monta o prompt final colando system_prompt + top-N skills + msg do user.
+    """Monta o prompt final colando top-N skills + msg do user.
 
     Inclui também o **caminho absoluto do worktree** quando há repos
     associados — necessário porque o openclaude por vezes executa tools
@@ -152,9 +113,6 @@ def build_prompt_with_agent(
     ``GET <sandbox>/skills/search?q=...`` via Bash para RAG por demanda.
     """
     parts: list[str] = []
-
-    if system_prompt.strip():
-        parts.append("## Instruções do agente\n\n" + system_prompt.strip())
 
     # Worktree paths absolutos — força o agente a usá-los em todos os comandos
     # (rg, find, ls, cat) para evitar o bug de CWD do openclaude.

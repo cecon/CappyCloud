@@ -9,7 +9,6 @@ export type SessionFilter = 'all' | 'completed' | 'running'
 export interface RecentSessionsProps {
   conversations: Conversation[]
   loading: boolean
-  agentLabel: (agentId: string | null | undefined) => string
   statusFor: (conversation: Conversation) => StatusBadgeVariant
   formatDuration: (conversation: Conversation) => string
   formatDateTime: (iso: string) => string
@@ -22,7 +21,6 @@ export interface RecentSessionsProps {
 export function RecentSessions({
   conversations,
   loading,
-  agentLabel,
   statusFor,
   formatDuration,
   formatDateTime,
@@ -92,8 +90,8 @@ export function RecentSessions({
                     {conversation.title}
                   </span>
                   <div className={styles.itemMeta}>
-                    <span className={styles.metaTruncate} title={agentLabel(conversation.agent_id)}>
-                      {agentLabel(conversation.agent_id)}
+                    <span className={styles.metaTruncate} title="Fluxo de desenvolvimento">
+                      Fluxo de desenvolvimento
                     </span>
                     <span className={styles.metaSep} aria-hidden>
                       ·

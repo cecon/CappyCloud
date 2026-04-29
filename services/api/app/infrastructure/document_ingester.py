@@ -8,8 +8,8 @@ Fluxo (todas as fontes):
        - xlsx  → ``openpyxl`` (lazy import)
   2. Calcular checksum sha256 do texto normalizado.
   3. Dividir em chunks de ~CHUNK_CHARS caracteres (com overlap simples).
-  4. Para cada chunk: criar uma Skill (agent_id=NULL global, repository_id=<>,
-     document_id=<>, chunk_index=i) e calcular embedding.
+  4. Para cada chunk: criar uma Skill (repository_id=<>, document_id=<>,
+     chunk_index=i) e calcular embedding.
   5. Atualizar Document.status / chunks_count / indexed_at.
 
 Reindexar = chamar ``reindex_document`` que apaga skills antigas (cascade do
@@ -183,7 +183,6 @@ async def ingest_document(
         for idx, chunk in enumerate(chunks):
             skill = Skill(
                 id=uuid.uuid4(),
-                agent_id=None,
                 repository_id=document.repository_id,
                 document_id=document.id,
                 chunk_index=idx,

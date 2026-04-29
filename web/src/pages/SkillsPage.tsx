@@ -8,20 +8,17 @@ import {
   AuthError,
   createSkill,
   deleteSkill,
-  fetchAgents,
   fetchSkills,
   getToken,
   importSkillFromUrl,
   setToken,
   updateSkill,
-  type Agent,
   type Skill,
   type SkillCreate,
 } from '../api'
 import styles from './settings.module.css'
 
 const EMPTY_SKILL: SkillCreate = {
-  agent_id: null,
   title: '',
   summary: '',
   content: '',
@@ -31,12 +28,11 @@ const EMPTY_SKILL: SkillCreate = {
 
 /**
  * Página dedicada à gestão de skills (knowledge base): lista todas as skills,
- * filtra por agente ou só globais, importa por URL e cria manualmente.
+ * importa por URL e cria conteúdo manualmente.
  */
 export function SkillsPage() {
   const token = getToken()!
 
-  const [agents, setAgents] = useState<Agent[]>([])
   const [allSkills, setAllSkills] = useState<Skill[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -47,20 +43,12 @@ export function SkillsPage() {
   const [skillFormError, setSkillFormError] = useState<string | null>(null)
 
   const [importUrl, setImportUrl] = useState('')
-  const [importAgentId, setImportAgentId] = useState('')
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
 
-  const agentNameById = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const a of agents) m.set(a.id, a.name)
-    return m
-  }, [agents])
-
   const filteredSkills = useMemo(() => {
     if (filterMode === 'all') return allSkills
-    if (filterMode === 'global') return allSkills.filter((s) => !s.agent_id)
-    return allSkills.filter((s) => s.agent_id === filterMode)
+    return allSkills.filter((s) => s.active)
   }, [allSkills, filterMode])
 
   useEffect(() => {
@@ -72,11 +60,7 @@ export function SkillsPage() {
     setLoading(true)
     setError(null)
     try {
-      const [agentList, skillList] = await Promise.all([
-        fetchAgents(token),
-        fetchSkills(token),
-      ])
-      setAgents(agentList)
+      const skillList = await fetchSkills(token)
       setAllSkills(skillList)
     } catch (err) {
       if (err instanceof AuthError) {
@@ -95,8 +79,7 @@ export function SkillsPage() {
     setSavingSkill(true)
     setSkillFormError(null)
     try {
-      const agent_id = skillForm.agent_id?.trim() ? skillForm.agent_id : null
-      const created = await createSkill(token, { ...skillForm, agent_id })
+      const created = await createSkill(token, skillForm)
       setAllSkills((prev) => [...prev, created])
       setSkillForm(EMPTY_SKILL)
     } catch (err) {
@@ -131,8 +114,7 @@ export function SkillsPage() {
     setImporting(true)
     setImportError(null)
     try {
-      const aid = importAgentId.trim() || null
-      const created = await importSkillFromUrl(token, importUrl, aid)
+      const created = await importSkillFromUrl(token, importUrl)
       setAllSkills((prev) => [...prev, created])
       setImportUrl('')
     } catch (err) {
@@ -151,29 +133,21 @@ export function SkillsPage() {
         </Link>
         <h1 className={styles.title}>Skills</h1>
         <p className={styles.sectionDesc} style={{ marginTop: '0.35rem' }}>
-          Documentação que o agente consulta (RAG). Pode ser global (sem agente) ou
-          vinculada a um perfil.{' '}
-          <Link to="/agents" className={styles.backLink}>
-            Gerir agentes →
-          </Link>
+          Documentação que o fluxo de desenvolvimento consulta por RAG.
         </p>
       </header>
 
       <SkillsPageSections
-        agents={agents}
         filterMode={filterMode}
         onFilterChange={setFilterMode}
         loading={loading}
         error={error}
         importUrl={importUrl}
         setImportUrl={setImportUrl}
-        importAgentId={importAgentId}
-        setImportAgentId={setImportAgentId}
         importing={importing}
         importError={importError}
         onImportSubmit={handleImportUrl}
         filteredSkills={filteredSkills}
-        agentNameById={agentNameById}
         onToggleActive={handleToggleSkillActive}
         onDelete={handleDeleteSkill}
         skillForm={skillForm}

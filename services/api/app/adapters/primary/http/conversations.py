@@ -41,7 +41,6 @@ async def list_conversations(
             created_at=c.created_at,
             updated_at=c.updated_at,
             sandbox_id=c.sandbox_id,
-            agent_id=c.agent_id,
             repos=c.repos,
             session_root=c.session_root,
         )
@@ -63,7 +62,6 @@ async def create_conversation(
         title=b.title,
         sandbox_id=b.sandbox_id,
         repos=repos_dicts,
-        agent_id=b.agent_id,
     )
     return ConversationOut(
         id=conv.id,
@@ -71,7 +69,6 @@ async def create_conversation(
         created_at=conv.created_at,
         updated_at=conv.updated_at,
         sandbox_id=conv.sandbox_id,
-        agent_id=conv.agent_id,
         repos=conv.repos,
         session_root=conv.session_root,
     )

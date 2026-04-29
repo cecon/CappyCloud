@@ -119,7 +119,6 @@ class ConversationCreate(BaseModel):
     title: str | None = Field(default="Nova conversa", max_length=512)
     sandbox_id: uuid.UUID | None = None
     repos: list[RepoSelection] = Field(default_factory=list)
-    agent_id: uuid.UUID | None = None
 
 
 class ConversationOut(BaseModel):
@@ -131,7 +130,6 @@ class ConversationOut(BaseModel):
     updated_at: datetime
     sandbox_id: uuid.UUID | None = None
     ai_model_id: uuid.UUID | None = None
-    agent_id: uuid.UUID | None = None
     repos: list[dict] = Field(default_factory=list)
     session_root: str | None = None
     # Worktree state
@@ -263,11 +261,8 @@ class SendMessageBody(BaseModel):
     )
 
 
-# ── Re-export schemas de Agents & Skills (definidos em ``schemas_agents``) ──
+# ── Re-export schemas de Skills (definidos em ``schemas_agents``) ───────────
 from app.schemas_agents import (  # noqa: E402, F401
-    AgentCreate,
-    AgentOut,
-    AgentUpdate,
     SkillCreate,
     SkillImportFromUrlBody,
     SkillOut,

@@ -1,4 +1,4 @@
-"""ORM models — Agents (perfis de comportamento) e Skills (knowledge base)."""
+"""ORM models — Skills (knowledge base)."""
 
 from __future__ import annotations
 
@@ -15,9 +15,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    UniqueConstraint,
     func,
-    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -31,79 +29,11 @@ _TagsType = PG_ARRAY(String).with_variant(JSON(), "sqlite")
 _EmbeddingType = Vector(1536).with_variant(JSON(), "sqlite")
 
 
-class Agent(Base):
-    """Perfil de comportamento pré-configurado (system prompt + metadata).
-
-    Uma conversa pode opcionalmente apontar para um Agent — quando aponta,
-    o pipeline injeta ``system_prompt`` antes da primeira mensagem do user
-    e expõe as Skills associadas ao agente como contexto pesquisável.
-    """
-
-    __tablename__ = "agents"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
-    slug: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(256), nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    icon: Mapped[str] = mapped_column(String(64), nullable=False, default="support_agent")
-    system_prompt: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    default_model: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
-    owner_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUIDType, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
-    )
-    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-    skills: Mapped[list["Skill"]] = relationship(
-        "Skill", back_populates="agent", cascade="all, delete-orphan"
-    )
-    user_profiles: Mapped[list["UserAgentProfile"]] = relationship(
-        "UserAgentProfile", back_populates="agent", cascade="all, delete-orphan"
-    )
-
-
-class UserAgentProfile(Base):
-    """Associa um utilizador a uma persona e ao agente padrão correspondente."""
-
-    __tablename__ = "user_agent_profiles"
-    __table_args__ = (
-        UniqueConstraint("user_id", "persona", name="uq_user_agent_profiles_user_persona"),
-        Index(
-            "uq_user_agent_profiles_default_per_user",
-            "user_id",
-            unique=True,
-            postgresql_where=text("is_default = true"),
-            sqlite_where=text("is_default = 1"),
-        ),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUIDType, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    agent_id: Mapped[uuid.UUID] = mapped_column(
-        UUIDType, ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    persona: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-    agent: Mapped["Agent"] = relationship("Agent", back_populates="user_profiles")
-
-
 class Skill(Base):
-    """Knowledge base item (documentação/regra/manual) associado a um Agent.
+    """Knowledge base item (documentação/regra/manual) associado a repositórios.
 
     ``embedding`` é gerado via OpenAI text-embedding-3-small (1536 dims) e
     permite RAG por similaridade cosseno. ``content`` em markdown.
-    Quando ``agent_id`` é NULL, a skill é **global** (visível a todos agentes).
     """
 
     __tablename__ = "skills"
@@ -117,9 +47,6 @@ class Skill(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
-    agent_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUIDType, ForeignKey("agents.id", ondelete="CASCADE"), nullable=True, index=True
-    )
     repository_id: Mapped[uuid.UUID | None] = mapped_column(
         UUIDType, ForeignKey("repositories.id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -140,7 +67,6 @@ class Skill(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    agent: Mapped["Agent | None"] = relationship("Agent", back_populates="skills")
     repository: Mapped["Repository | None"] = relationship(  # type: ignore[name-defined]
         "Repository", foreign_keys=[repository_id]
     )

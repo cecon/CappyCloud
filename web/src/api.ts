@@ -158,7 +158,6 @@ export type Conversation = {
   updated_at: string
   repos: RepoSelection[]
   session_root: string | null
-  agent_id?: string | null
 }
 
 export type ChatMessage = {
@@ -215,10 +214,8 @@ export async function fetchConversations(token: string): Promise<Conversation[]>
 export async function createConversation(
   token: string,
   repos: RepoSelection[] = [],
-  agentId: string | null = null,
 ): Promise<Conversation> {
   const body: Record<string, unknown> = { repos }
-  if (agentId) body.agent_id = agentId
   const res = await apiFetch('/api/conversations', {
     method: 'POST',
     headers: {
@@ -860,98 +857,10 @@ export async function fetchAgentTaskEvents(
   return res.json()
 }
 
-// ── Agents & Skills ──────────────────────────────────────────────────────────
-
-export interface Agent {
-  id: string
-  slug: string
-  name: string
-  description: string
-  icon: string
-  system_prompt: string
-  default_model: string | null
-  active: boolean
-  skills_count: number
-  created_at: string
-  updated_at: string
-}
-
-export interface AgentCreate {
-  slug: string
-  name: string
-  description?: string
-  icon?: string
-  system_prompt?: string
-  default_model?: string | null
-  active?: boolean
-}
-
-export interface AgentUpdate {
-  name?: string
-  description?: string
-  icon?: string
-  system_prompt?: string
-  default_model?: string | null
-  active?: boolean
-}
-
-export async function fetchAgents(token: string): Promise<Agent[]> {
-  const res = await apiFetch('/api/agents', {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) return []
-  return res.json()
-}
-
-export async function fetchAgent(token: string, id: string): Promise<Agent> {
-  const res = await apiFetch(`/api/agents/${id}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) throw new Error('Agente não encontrado')
-  return res.json()
-}
-
-export async function createAgent(token: string, data: AgentCreate): Promise<Agent> {
-  const res = await apiFetch('/api/agents', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar agente')
-  }
-  return res.json()
-}
-
-export async function updateAgent(
-  token: string,
-  id: string,
-  data: AgentUpdate,
-): Promise<Agent> {
-  const res = await apiFetch(`/api/agents/${id}`, {
-    method: 'PATCH',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar agente')
-  }
-  return res.json()
-}
-
-export async function deleteAgent(token: string, id: string): Promise<void> {
-  const res = await apiFetch(`/api/agents/${id}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) throw new Error('Falha ao remover agente')
-}
+// ── Skills ───────────────────────────────────────────────────────────────────
 
 export interface Skill {
   id: string
-  agent_id: string | null
   slug: string
   title: string
   summary: string
@@ -965,7 +874,6 @@ export interface Skill {
 }
 
 export interface SkillCreate {
-  agent_id?: string | null
   title: string
   slug?: string
   summary?: string
@@ -974,14 +882,8 @@ export interface SkillCreate {
   source_url?: string | null
 }
 
-export async function fetchSkills(
-  token: string,
-  agentId?: string | null,
-): Promise<Skill[]> {
-  const url = agentId
-    ? `/api/skills?agent_id=${encodeURIComponent(agentId)}`
-    : '/api/skills'
-  const res = await apiFetch(url, {
+export async function fetchSkills(token: string): Promise<Skill[]> {
+  const res = await apiFetch('/api/skills', {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) return []
@@ -1029,11 +931,9 @@ export async function deleteSkill(token: string, id: string): Promise<void> {
 export async function importSkillFromUrl(
   token: string,
   url: string,
-  agentId: string | null = null,
   tags: string[] = [],
 ): Promise<Skill> {
   const body: Record<string, unknown> = { url, tags }
-  if (agentId) body.agent_id = agentId
   const res = await apiFetch('/api/skills/import-url', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
