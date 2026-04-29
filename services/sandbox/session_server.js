@@ -229,11 +229,10 @@ const server = http.createServer(async (req, res) => {
     // POST /task — delega sub-agente ao OpenRouter (ver task_handler.js)
     if (await taskHandler.tryHandle(req, res, { json, readBody })) return
 
-    // GET /skills/search?q=...&agent_id=... — proxy para a API CappyCloud
+    // GET /skills/search?q=... — proxy para a API CappyCloud
     // O LLM (openclaude) usa este endpoint via curl/Bash para fazer RAG por demanda.
     if (req.method === 'GET' && pathname === '/skills/search') {
       const q = url.searchParams.get('q') || ''
-      const agentId = url.searchParams.get('agent_id') || ''
       const limit = url.searchParams.get('limit') || '5'
       if (!q) return json(res, 400, { error: 'q is required' })
 
@@ -241,7 +240,6 @@ const server = http.createServer(async (req, res) => {
       const apiPort = process.env.API_PORT_INTERNAL || '8080'
       const internalToken = process.env.INTERNAL_API_TOKEN || ''
       const params = new URLSearchParams({ q, limit })
-      if (agentId) params.set('agent_id', agentId)
       const apiUrl = `http://${apiHost}:${apiPort}/api/skills/_search/internal?${params}`
       try {
         const resp = await fetch(apiUrl, {

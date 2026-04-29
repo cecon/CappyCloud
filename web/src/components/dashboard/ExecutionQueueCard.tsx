@@ -35,7 +35,7 @@ export function ExecutionQueueCard() {
       <p className={styles.listLabel}>Últimas tarefas</p>
       <ul className={styles.queueList}>
         <li className={styles.queueItem}>
-          <span className={styles.queueName}>AutoSystem analysis</span>
+          <span className={styles.queueName}>Repository analysis</span>
           <span className={`${styles.queueStatus} ${styles.done}`}>Concluído</span>
         </li>
         <li className={styles.queueItem}>

@@ -2,7 +2,7 @@
 
 Named orm_models.py (not models.py) to avoid collision with domain/entities.py.
 Sub-modules imported at the bottom register their tables with Base.metadata for Alembic:
-  - orm_models_agent.py     → Agent, Skill (behavior profiles)
+  - orm_models_agent.py     → Skill (knowledge base)
   - orm_models_execution.py → AgentTask, AgentEvent, CicdEvent, Routine, etc.
   - orm_models_platform.py  → GitProvider, Repository, AiProvider, AiModel, etc.
 """
@@ -151,12 +151,6 @@ class Conversation(Base):
         nullable=True,
         index=True,
     )
-    agent_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUIDType,
-        ForeignKey("agents.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
     title: Mapped[str] = mapped_column(String(512), default="Nova conversa")
     # Multi-repo: lista de {slug, alias, base_branch, branch_name, worktree_path}
     repos: Mapped[list] = mapped_column(JSONBType, nullable=False, server_default="[]")
@@ -219,9 +213,7 @@ class Message(Base):
 
 # Import sub-modules last — registers tables with Base.metadata for Alembic.
 from app.infrastructure.orm_models_agent import (  # noqa: F401, E402
-    Agent,
     Skill,
-    UserAgentProfile,
 )
 from app.infrastructure.orm_models_execution import (  # noqa: F401, E402
     AgentEvent,

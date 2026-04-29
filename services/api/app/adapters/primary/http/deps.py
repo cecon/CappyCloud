@@ -12,9 +12,6 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.secondary.persistence.sqlalchemy_agent_repo import (
-    SQLAlchemyAgentRepository,
-)
 from app.adapters.secondary.persistence.sqlalchemy_conversation_repo import (
     SQLAlchemyConversationRepository,
 )
@@ -26,9 +23,6 @@ from app.adapters.secondary.persistence.sqlalchemy_repo_env_repo import (
 )
 from app.adapters.secondary.persistence.sqlalchemy_repository_repo import (
     SQLAlchemyRepositoryRepository,
-)
-from app.adapters.secondary.persistence.sqlalchemy_user_agent_profile_repo import (
-    SQLAlchemyUserAgentProfileRepository,
 )
 from app.adapters.secondary.persistence.sqlalchemy_user_repo import (
     SQLAlchemyUserRepository,
@@ -48,13 +42,11 @@ from app.application.use_cases.repo_environments import (
 from app.domain.entities import User
 from app.infrastructure.database import get_db
 from app.ports.agent import AgentPort
-from app.ports.agent_repository import AgentRepository
 from app.ports.repositories import (
     ConversationRepository,
     MessageRepository,
     RepoEnvironmentRepository,
     RepositoryRepository,
-    UserAgentProfileRepository,
     UserRepository,
 )
 from app.ports.services import PasswordService, TokenService
@@ -83,12 +75,6 @@ def get_user_repo(
     return SQLAlchemyUserRepository(session)
 
 
-def get_user_agent_profile_repo(
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-) -> UserAgentProfileRepository:
-    return SQLAlchemyUserAgentProfileRepository(session)
-
-
 def get_conv_repo(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> ConversationRepository:
@@ -111,12 +97,6 @@ def get_repository_repo(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RepositoryRepository:
     return SQLAlchemyRepositoryRepository(session)
-
-
-def get_agent_repo(
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-) -> AgentRepository:
-    return SQLAlchemyAgentRepository(session)
 
 
 # ---------------------------------------------------------------------------
@@ -192,12 +172,8 @@ def get_list_convs_uc(
 def get_create_conv_uc(
     convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
     repos: Annotated[RepositoryRepository, Depends(get_repository_repo)],
-    user_agent_profiles: Annotated[
-        UserAgentProfileRepository, Depends(get_user_agent_profile_repo)
-    ],
-    agents: Annotated[AgentRepository, Depends(get_agent_repo)],
 ) -> CreateConversation:
-    return CreateConversation(convs, repos, user_agent_profiles, agents)
+    return CreateConversation(convs, repos)
 
 
 def get_list_msgs_uc(

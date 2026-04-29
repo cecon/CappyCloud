@@ -1,7 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { getToken } from './api'
 import { AnalyticsPage } from './pages/AnalyticsPage'
-import { AgentsPage } from './pages/AgentsPage'
 import { SkillsPage } from './pages/SkillsPage'
 import { ChatPage } from './pages/ChatPage'
 import { DashboardPage } from './pages/DashboardPage'
@@ -34,12 +33,6 @@ export default function App() {
         path="/settings"
         element={
           token ? <SettingsPage /> : <Navigate to="/login" replace />
-        }
-      />
-      <Route
-        path="/agents"
-        element={
-          token ? <AgentsPage /> : <Navigate to="/login" replace />
         }
       />
       <Route

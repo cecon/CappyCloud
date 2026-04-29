@@ -89,9 +89,8 @@ omit = [
     "app/adapters/primary/http/_routines_scheduler.py",
     "app/adapters/secondary/persistence/sqlalchemy_repo_env_repo.py",
     "app/adapters/primary/http/environments.py",
-    # Agentes/Skills — adaptadores HTTP testáveis via integração; lógica externa
+    # Skills — adaptadores HTTP testáveis via integração; lógica externa
     # (HTTP scrape, embeddings) requer mocks pesados.
-    "app/adapters/primary/http/agents.py",
     "app/adapters/primary/http/skills.py",
     "app/adapters/primary/http/skills_search.py",
     "app/adapters/primary/http/git_providers.py",

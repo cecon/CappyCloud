@@ -14,7 +14,6 @@ import {
   cancelConversation,
   createConversation,
   createConversationPr,
-  fetchAgents,
   fetchAiModels,
   fetchBranches,
   fetchConversationDiff,
@@ -26,7 +25,6 @@ import {
   streamAssistantReply,
   errorToUserMessage,
   type ActionRequiredEvent,
-  type Agent,
   type AiModel,
   type ChatMessage,
   type Conversation,
@@ -161,8 +159,6 @@ export function ChatPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [selectedSlug, setSelectedSlug] = useState<string>('')
   const [selectedBranch, setSelectedBranch] = useState<string>('')
-  const [agents, setAgents] = useState<Agent[]>([])
-  const [selectedAgentId, setSelectedAgentId] = useState<string>('')
   const [models, setModels] = useState<AiModel[]>([])
   const [selectedModelId, setSelectedModelId] = useState<string>('')
 
@@ -188,15 +184,11 @@ export function ChatPage() {
     let cancelled = false
     ;(async () => {
       try {
-        const [convsResult, wsList, agentsList, modelsList] = await Promise.allSettled([
+        const [convsResult, wsList, modelsList] = await Promise.allSettled([
           fetchConversations(token),
           fetchWorkspaces(token),
-          fetchAgents(token),
           fetchAiModels(token),
         ])
-        if (agentsList.status === 'fulfilled') {
-          setAgents(agentsList.value)
-        }
         if (modelsList.status === 'fulfilled') {
           const ms = modelsList.value
           setModels(ms)
@@ -334,7 +326,7 @@ export function ChatPage() {
     const repos = selectedSlug
       ? [{ slug: selectedSlug, base_branch: selectedBranch || null }]
       : []
-    const c = await createConversation(token, repos, selectedAgentId || null)
+    const c = await createConversation(token, repos)
     // Update otimista do título — o backend renomeia "Nova conversa" para o
     // início da primeira mensagem (mesma lógica de _TITLE_MAX_LEN=80).
     const previewTitle =
@@ -595,10 +587,6 @@ export function ChatPage() {
               <span className={styles.icon}>dashboard</span>
               <span>Dashboard</span>
             </Link>
-            <Link to="/agents" className={styles.sidebarNavItem} title="Agentes">
-              <span className={styles.icon}>support_agent</span>
-              <span>Agentes</span>
-            </Link>
             <Link to="/runs" className={styles.sidebarNavItem} title="Runs">
               <span className={styles.icon}>history</span>
               <span>Runs</span>
@@ -668,9 +656,6 @@ export function ChatPage() {
             setSelectedSlug={setSelectedSlug}
             selectedBranch={selectedBranch}
             setSelectedBranch={setSelectedBranch}
-            agents={agents}
-            selectedAgentId={selectedAgentId}
-            setSelectedAgentId={setSelectedAgentId}
             models={models}
             selectedModelId={selectedModelId}
             setSelectedModelId={setSelectedModelId}
@@ -736,9 +721,6 @@ interface EmptyStateProps {
   setSelectedSlug: (s: string) => void
   selectedBranch: string
   setSelectedBranch: Dispatch<SetStateAction<string>>
-  agents: Agent[]
-  selectedAgentId: string
-  setSelectedAgentId: (id: string) => void
   models: AiModel[]
   selectedModelId: string
   setSelectedModelId: (id: string) => void
@@ -749,7 +731,6 @@ function EmptyState({
   input, setInput, inputRef, onExecute, streaming,
   workspaces, selectedSlug, setSelectedSlug,
   selectedBranch, setSelectedBranch,
-  agents, selectedAgentId, setSelectedAgentId,
   models, selectedModelId, setSelectedModelId, token,
 }: EmptyStateProps) {
   const [branches, setBranches] = useState<string[]>([])
@@ -782,8 +763,6 @@ function EmptyState({
   const branchRequired = !!selectedSlug && !selectedBranch
   const selectedWorkspaceName =
     workspaces.find((workspace) => workspace.slug === selectedSlug)?.name ?? 'Escolha o repositório'
-  const selectedAgentName =
-    agents.find((agent) => agent.id === selectedAgentId)?.name ?? 'Agente genérico'
   const selectedModelName =
     models.find((model) => model.model_id === selectedModelId)?.display_name ?? 'Modelo padrão'
 
@@ -796,9 +775,9 @@ function EmptyState({
         </div>
         <div className={styles.welcomeCopy}>
           <span className={styles.welcomeEyebrow}>CappyCloud Command Center</span>
-          <h1 className={styles.welcomeTitle}>Orquestre agentes de código na nuvem.</h1>
+          <h1 className={styles.welcomeTitle}>Desenvolva com OpenClaude em worktrees isolados.</h1>
           <p className={styles.welcomeText}>
-            Escolha o contexto, descreva a tarefa e acompanhe execução, ferramentas,
+            Escolha o repositório, descreva a tarefa e acompanhe execução, ferramentas,
             diff e PR a partir de uma única superfície.
           </p>
         </div>
@@ -806,10 +785,6 @@ function EmptyState({
           <div className={styles.metricCard}>
             <span className={styles.metricValue}>{workspaces.length}</span>
             <span className={styles.metricLabel}>repositórios</span>
-          </div>
-          <div className={styles.metricCard}>
-            <span className={styles.metricValue}>{agents.length}</span>
-            <span className={styles.metricLabel}>agentes</span>
           </div>
           <div className={styles.metricCard}>
             <span className={styles.metricValue}>{models.length || 1}</span>
@@ -912,30 +887,6 @@ function EmptyState({
                     </select>
                   </div>
                 )}
-                {agents.length > 0 && (
-                  <div className={styles.contextPill} style={{ marginLeft: '0.25rem' }}>
-                    <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
-                      support_agent
-                    </span>
-                    <span className={styles.contextPillLabel}>
-                      {agents.find((a) => a.id === selectedAgentId)?.name ?? 'Sem agente'}
-                    </span>
-                    <span className={styles.icon} style={{ fontSize: '0.75rem', opacity: 0.35 }}>
-                      expand_more
-                    </span>
-                    <select
-                      className={styles.contextPillSelect}
-                      value={selectedAgentId}
-                      onChange={(e) => setSelectedAgentId(e.target.value)}
-                      title="Selecionar agente"
-                    >
-                      <option value="">— sem agente (genérico) —</option>
-                      {agents.map((a) => (
-                        <option key={a.id} value={a.id}>{a.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
                 {models.length > 0 && (
                   <div className={styles.contextPill} style={{ marginLeft: '0.25rem' }}>
                     <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
@@ -990,13 +941,6 @@ function EmptyState({
           title={selectedWorkspaceName}
           desc="Sessões isoladas por worktree, prontas para diff e PR."
           href="/settings"
-        />
-        <QuickActionCard
-          icon="support_agent"
-          iconColor="var(--cc-primary)"
-          title={selectedAgentName}
-          desc="Perfis com system prompt e skills para orientar o comportamento."
-          href="/agents"
         />
         <QuickActionCard
           icon="smart_toy"

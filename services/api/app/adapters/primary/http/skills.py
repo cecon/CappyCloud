@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
 from app.domain.entities import User
 from app.infrastructure.embeddings import embed_text
-from app.infrastructure.orm_models import Agent, Skill
+from app.infrastructure.orm_models import Skill
 from app.infrastructure.skill_importer import ImporterError, import_url
 from app.schemas import SkillCreate, SkillImportFromUrlBody, SkillOut, SkillUpdate
 
@@ -35,7 +35,6 @@ def _slugify(text: str, max_len: int = 80) -> str:
 def _to_out(skill: Skill) -> SkillOut:
     return SkillOut(
         id=skill.id,
-        agent_id=skill.agent_id,
         slug=skill.slug,
         title=skill.title,
         summary=skill.summary,
@@ -81,12 +80,9 @@ async def _set_embedding(skill: Skill) -> None:
 async def list_skills(
     _current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    agent_id: uuid.UUID | None = Query(default=None),  # noqa: B008
     active: bool | None = Query(default=None),
 ) -> list[SkillOut]:
     q = select(Skill).order_by(Skill.title)
-    if agent_id is not None:
-        q = q.where(Skill.agent_id == agent_id)
     if active is not None:
         q = q.where(Skill.active.is_(active))
     rows = await session.execute(q)
@@ -111,15 +107,10 @@ async def create_skill(
     _current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> SkillOut:
-    if body.agent_id is not None:
-        agent = await session.get(Agent, body.agent_id)
-        if not agent:
-            raise HTTPException(status_code=400, detail="agent_id inválido")
     base_slug = body.slug or _slugify(body.title)
     slug = await _ensure_unique_slug(session, base_slug)
     skill = Skill(
         id=uuid.uuid4(),
-        agent_id=body.agent_id,
         slug=slug,
         title=body.title,
         summary=body.summary,
@@ -146,10 +137,6 @@ async def update_skill(
     if not skill:
         raise HTTPException(status_code=404, detail="Skill não encontrada")
     changes = body.model_dump(exclude_unset=True)
-    if changes.get("agent_id") is not None:
-        agent = await session.get(Agent, changes["agent_id"])
-        if not agent:
-            raise HTTPException(status_code=400, detail="agent_id inválido")
     for field, value in changes.items():
         setattr(skill, field, value)
     if any(k in changes for k in ("title", "summary", "content")):
@@ -178,10 +165,6 @@ async def import_skill_from_url(
     _current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> SkillOut:
-    if body.agent_id is not None:
-        agent = await session.get(Agent, body.agent_id)
-        if not agent:
-            raise HTTPException(status_code=400, detail="agent_id inválido")
     try:
         extracted = await import_url(body.url)
     except ImporterError as exc:
@@ -190,7 +173,6 @@ async def import_skill_from_url(
     slug = await _ensure_unique_slug(session, extracted["slug"])
     skill = Skill(
         id=uuid.uuid4(),
-        agent_id=body.agent_id,
         slug=slug,
         title=extracted["title"],
         summary=extracted["summary"],

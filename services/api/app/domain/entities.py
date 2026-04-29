@@ -20,22 +20,6 @@ class User:
 
 
 @dataclass
-class UserAgentProfile:
-    """Vínculo entre utilizador, persona operacional e agente padrão."""
-
-    id: uuid.UUID
-    user_id: uuid.UUID
-    agent_id: uuid.UUID
-    persona: str
-    is_default: bool = True
-    created_at: datetime = field(default_factory=_utcnow)
-    updated_at: datetime = field(default_factory=_utcnow)
-
-
-# ── Platform control plane ────────────────────────────────────
-
-
-@dataclass
 class Sandbox:
     """Container sandbox hospedando openclaude gRPC + session_server HTTP."""
 
@@ -164,7 +148,6 @@ class Conversation:
     # Infra
     sandbox_id: uuid.UUID | None = None
     ai_model_id: uuid.UUID | None = None
-    agent_id: uuid.UUID | None = None
     # Multi-repo session
     repos: list[dict] = field(default_factory=list)
     session_root: str | None = None
