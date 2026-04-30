@@ -72,10 +72,7 @@ def render_worktree_top_level_section(
 
 
 def inject_section_before_user_message(prompt: str, section: str) -> str:
-    """Insere uma seção markdown antes do bloco final ``## Mensagem do utilizador``.
-
-    Se o marcador não for encontrado, dá *append* ao final do prompt.
-    """
+    """Insere ``section`` antes de ``## Mensagem do utilizador`` (ou append)."""
     if not section:
         return prompt
     marker = "## Mensagem do utilizador"
@@ -92,12 +89,10 @@ def inject_section_before_user_message(prompt: str, section: str) -> str:
 async def _fetch_worktree_top_level(
     session_url: str, worktree_path: str, limit: int = _TOPLEVEL_LIMIT
 ) -> list[str]:
-    """Lista entradas top-level do worktree via session_server.
+    """Lista entradas top-level do worktree via ``/worktree/ls-files``.
 
-    Modelos pequenos beneficiam imenso de receber a estrutura inicial em vez
-    de terem de a descobrir com várias chamadas a ``ls``/``Glob``. Esta
-    listagem é barata (uma única chamada HTTP a ``/worktree/ls-files`` que
-    o sandbox já expõe).
+    Dá ao modelo um snapshot inicial barato em vez de o forçar a descobrir
+    a estrutura com sucessivos ``ls``/``Glob``.
     """
     if not session_url or not worktree_path:
         return []
