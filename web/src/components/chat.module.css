@@ -318,6 +318,16 @@
   opacity: 1;
 }
 
+.sidebarNavItemActive {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.16), rgba(255, 255, 255, 0.035));
+  color: var(--cc-on-surface);
+}
+
+.sidebarNavItemActive .icon {
+  opacity: 1;
+  color: var(--cc-primary);
+}
+
 /* ─ Sidebar footer: apenas sair, contraste reforçado ─ */
 
 .sidebarFooter {
@@ -1345,6 +1355,18 @@
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mascotGlow,
+  .streamingCursor,
+  .thinkingDot,
+  .spinner,
+  .sessionProgressIconActive,
+  .message {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
 .streamingCursor {
