@@ -218,6 +218,7 @@ class StreamMessage:
     ) -> AsyncGenerator[bytes]:
         accumulated_text: list[str] = []
         accumulated_error: list[str] = []
+        usage: dict = {}
         gen = self._agent.pipe(content, model_id, messages_payload, pipeline_body)
 
         while True:
@@ -228,15 +229,25 @@ class StreamMessage:
             if line.startswith("data: "):
                 try:
                     evt = json.loads(line[6:])
-                    if evt.get("type") == "text":
+                    evt_type = evt.get("type")
+                    if evt_type == "text":
                         accumulated_text.append(evt.get("content", ""))
-                    elif evt.get("type") == "error":
+                    elif evt_type == "error":
                         accumulated_error.append(evt.get("message", ""))
+                    elif evt_type == "done":
+                        # O TaskRunner enriquece o evento done com tokens/modelo
+                        # para que possamos persistir o uso na mensagem assistant.
+                        usage = {
+                            "model_used": evt.get("model_used") or "",
+                            "prompt_tokens": int(evt.get("prompt_tokens") or 0),
+                            "completion_tokens": int(evt.get("completion_tokens") or 0),
+                        }
                 except Exception:
                     pass
             yield chunk.encode("utf-8")
 
         assistant_text = "".join(accumulated_text).strip()
+        cost_usd = await self._compute_cost(usage)
         if assistant_text:
             await self._messages.save(
                 Message(
@@ -244,6 +255,10 @@ class StreamMessage:
                     conversation_id=conversation_id,
                     role="assistant",
                     content=assistant_text,
+                    model_used=usage.get("model_used") or None,
+                    prompt_tokens=int(usage.get("prompt_tokens") or 0),
+                    completion_tokens=int(usage.get("completion_tokens") or 0),
+                    cost_usd=cost_usd,
                 )
             )
         elif accumulated_error:
@@ -255,3 +270,20 @@ class StreamMessage:
                     content="**Erro:** " + " ".join(accumulated_error),
                 )
             )
+
+    async def _compute_cost(self, usage: dict) -> float:
+        """Calcula custo em USD via lookup no catálogo ``ai_models``.
+
+        Devolve ``0.0`` quando não há tokens, modelo ou pricing cadastrado.
+        """
+        model_used = usage.get("model_used") or ""
+        prompt_tokens = int(usage.get("prompt_tokens") or 0)
+        completion_tokens = int(usage.get("completion_tokens") or 0)
+        if not model_used or (prompt_tokens == 0 and completion_tokens == 0):
+            return 0.0
+        pricing = await self._messages.get_model_pricing(model_used)
+        input_cost, output_cost = pricing or (0.0, 0.0)
+        return round(
+            (prompt_tokens * input_cost + completion_tokens * output_cost) / 1_000_000.0,
+            6,
+        )

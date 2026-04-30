@@ -17,6 +17,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     func,
@@ -193,7 +194,12 @@ class Conversation(Base):
 
 
 class Message(Base):
-    """Mensagem numa conversa."""
+    """Mensagem numa conversa.
+
+    Em mensagens de ``role='assistant'``, os campos ``model_used``,
+    ``prompt_tokens``, ``completion_tokens`` e ``cost_usd`` são preenchidos
+    no fim do turno do agente. Para ``role='user'`` ficam ``NULL``/``0``.
+    """
 
     __tablename__ = "messages"
 
@@ -206,6 +212,10 @@ class Message(Base):
     )
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    model_used: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_usd: Mapped[float] = mapped_column(Numeric(12, 6), nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship("Conversation", back_populates="messages")

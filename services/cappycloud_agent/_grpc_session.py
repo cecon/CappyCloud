@@ -148,8 +148,6 @@ class GrpcSession:
             out_q.put(("text", f"\n\n**Erro interno:** {exc}\n"))
             out_q.put((_DONE, None))
 
-    # ── State ─────────────────────────────────────────────────────
-
     def is_alive(self) -> bool:
         return self._task is not None and not self._task.done()
 
@@ -161,8 +159,6 @@ class GrpcSession:
                 await self._channel.close()
             except Exception:
                 pass
-
-    # ── Internal gRPC task ───────────────────────────────────────
 
     _STOP = object()  # Sentinel to terminate the request generator
 
@@ -229,30 +225,38 @@ class GrpcSession:
 
                 elif event == "done":
                     done = msg.done
-                    # full_text foi removido do proto (reserved 1) — o texto já foi acumulado
-                    # via text_chunk events. Se chegou done com 0 tokens e nenhum texto,
-                    # o openclaude terminou sem chamar o LLM (path inválido, /add falhou, etc.).
+                    # done com 0 tokens + sem texto = openclaude não chamou o LLM
+                    # (working_directory inválido, worktree ausente, erro de modelo).
                     if (
                         not streamed_text
                         and done.prompt_tokens == 0
                         and done.completion_tokens == 0
                     ):
                         log.warning(
-                            "[%s] Done with 0 tokens and no text — session likely failed to start "
-                            "(invalid working_directory, worktree not created, or model error)",
+                            "[%s] Done with 0 tokens/no text — likely failed to start",
                             self._session_id,
                         )
                         await self._out_queue.put(("error", SESSION_START_ERROR))
                         received_done = True
                         return
                     log.info(
-                        "[%s] Done — prompt_tokens=%d completion_tokens=%d",
+                        "[%s] Done model=%s in=%d out=%d",
                         self._session_id,
+                        self._model,
                         done.prompt_tokens,
                         done.completion_tokens,
                     )
                     received_done = True
-                    await self._out_queue.put(("done", None))
+                    await self._out_queue.put(
+                        (
+                            "done",
+                            {
+                                "prompt_tokens": int(done.prompt_tokens),
+                                "completion_tokens": int(done.completion_tokens),
+                                "model_used": self._model,
+                            },
+                        )
+                    )
                     return
 
                 elif event == "error":

@@ -8,6 +8,11 @@ import uuid
 
 import asyncpg
 
+from ._agent_context import (
+    fetch_worktree_top_levels,
+    inject_section_before_user_message,
+    render_worktree_top_level_section,
+)
 from ._environment_manager import EnvironmentManager
 from ._grpc_session import GrpcSession
 from ._session_store import SessionStore
@@ -37,11 +42,7 @@ class TaskDispatcher:
         self._db_url = db_url
         self._model = openrouter_model
         self._pool: asyncpg.Pool | None = None
-
-        # task_id (str) → TaskRunner
         self._runners: dict[str, TaskRunner] = {}
-
-    # ── Lifecycle ─────────────────────────────────────────────────
 
     async def start(self) -> None:
         """Conecta ao DB e reconecta tasks órfãs de um restart anterior."""
@@ -55,8 +56,6 @@ class TaskDispatcher:
         if self._pool:
             await self._pool.close()
 
-    # ── Dispatch ──────────────────────────────────────────────────
-
     async def dispatch(
         self,
         prompt: str,
@@ -67,11 +66,9 @@ class TaskDispatcher:
         session_root: str = "",
         sandbox_id: str = "",
         override_model: str | None = None,
+        sandbox_session_url: str = "",
     ) -> str:
-        """Cria um agent_task no DB e arranca o TaskRunner correspondente.
-
-        Retorna o task_id (UUID str) para que o caller possa fazer SSE.
-        """
+        """Cria uma agent_task e arranca o runner; retorna o task_id (UUID)."""
         task_id = str(uuid.uuid4())
         await insert_task(
             self._pool,
@@ -90,19 +87,18 @@ class TaskDispatcher:
                 session_root=session_root,
                 sandbox_id=sandbox_id,
                 override_model=override_model,
+                sandbox_session_url=sandbox_session_url,
             ),
             name=f"dispatch-{task_id[:8]}",
         )
         return task_id
-
-    # ── Access to active runners ──────────────────────────────────
 
     def get_runner(self, task_id: str) -> TaskRunner | None:
         return self._runners.get(task_id)
 
     def get_runner_for_conversation(self, conversation_id: str) -> TaskRunner | None:
         """Retorna o runner activo da conversa (status running ou paused)."""
-        for task_id, runner in self._runners.items():
+        for _task_id, runner in self._runners.items():
             if runner.is_alive():
                 return runner
         return None
@@ -123,10 +119,8 @@ class TaskDispatcher:
         )
         return str(row["id"]) if row else None
 
-    # ── Input routing ─────────────────────────────────────────────
-
     async def send_input(self, task_id: str, reply: str) -> bool:
-        """Encaminha resposta do utilizador para a task pausada. Retorna True se OK."""
+        """Encaminha resposta do utilizador para a task pausada."""
         runner = self._runners.get(task_id)
         if runner and runner.is_alive() and runner.pending_action:
             await runner.send_input(reply)
@@ -134,7 +128,7 @@ class TaskDispatcher:
         return False
 
     async def send_message(self, task_id: str, message: str) -> bool:
-        """Envia nova mensagem numa task running (nova turn). Retorna True se OK."""
+        """Envia nova mensagem numa task running (nova turn)."""
         runner = self._runners.get(task_id)
         if runner and runner.is_alive() and not runner.pending_action:
             await runner.send_message(message)
@@ -142,7 +136,7 @@ class TaskDispatcher:
         return False
 
     async def cancel_task(self, task_id: str) -> bool:
-        """Cancela uma task em execução. Retorna True se havia algo a cancelar."""
+        """Cancela uma task em execução."""
         runner = self._runners.pop(task_id, None)
         if runner:
             await runner.close()
@@ -153,13 +147,11 @@ class TaskDispatcher:
         return True
 
     async def cancel_for_conversation(self, conversation_id: str) -> bool:
-        """Cancela a task activa da conversa. Retorna True se havia algo a cancelar."""
+        """Cancela a task activa da conversa, se houver."""
         task_id = await self.get_active_task_id(conversation_id)
         if not task_id:
             return False
         return await self.cancel_task(task_id)
-
-    # ── GC ────────────────────────────────────────────────────────
 
     async def gc(self) -> None:
         """Remove runners mortos do mapa em memória."""
@@ -171,8 +163,6 @@ class TaskDispatcher:
             "GC: removed %d dead runners (%d active)", len(dead), len(self._runners)
         )
 
-    # ── Internal ──────────────────────────────────────────────────
-
     async def _launch_runner(
         self,
         task_id: str,
@@ -182,6 +172,7 @@ class TaskDispatcher:
         session_root: str = "",
         sandbox_id: str = "",
         override_model: str | None = None,
+        sandbox_session_url: str = "",
     ) -> None:
         """Cria a sessão, inicia a GrpcSession e arranca o TaskRunner."""
         user_id = conversation_id or "system"
@@ -202,11 +193,7 @@ class TaskDispatcher:
                 "Repositório preparado" if lease.created else "Repositório sincronizado"
             )
             await insert_status_event(
-                self._pool,
-                task_id,
-                "Sessão do agente preparada.",
-                "session",
-                mode,
+                self._pool, task_id, "Sessão do agente preparada.", "session", mode
             )
             if repos:
                 repo_slugs = ", ".join(
@@ -227,14 +214,26 @@ class TaskDispatcher:
                 mode,
             )
         except Exception as exc:
-            log.exception(
-                "[Dispatcher] Falha ao criar sessão para task %s", task_id[:8]
-            )
+            log.exception("[Dispatcher] Falha ao criar sessão para task %s", task_id[:8])
             await update_task_status(self._pool, task_id, "error")
             await insert_error_event(self._pool, task_id, str(exc))
             return
 
         working_directory = sandbox.working_directory
+
+        # Worktree(s) já materializados — enriquecemos o prompt com o
+        # snapshot top-level. Crítico para modelos pequenos (ex.: gpt-oss-120b)
+        # que sem isso fazem grep cego com globs errados e desistem.
+        if sandbox_session_url and repos:
+            try:
+                top_level = await fetch_worktree_top_levels(
+                    sandbox_session_url, repos, session_root
+                )
+                section = render_worktree_top_level_section(top_level)
+                if section:
+                    prompt = inject_section_before_user_message(prompt, section)
+            except Exception as exc:  # noqa: BLE001 — degrada graciosamente
+                log.warning("[Dispatcher] worktree top-level fetch falhou: %s", exc)
 
         session = GrpcSession(
             container_ip=sandbox.grpc_host,
@@ -246,23 +245,16 @@ class TaskDispatcher:
 
         try:
             await insert_status_event(
-                self._pool,
-                task_id,
-                "Iniciando agente...",
-                "agent",
-                mode,
+                self._pool, task_id, "Iniciando agente...", "agent", mode
             )
             await session.start(prompt)
         except Exception as exc:
-            log.exception(
-                "[Dispatcher] Falha ao iniciar gRPC para task %s", task_id[:8]
-            )
+            log.exception("[Dispatcher] Falha ao iniciar gRPC para task %s", task_id[:8])
             await update_task_status(self._pool, task_id, "error")
             await insert_error_event(self._pool, task_id, str(exc))
             await session.close()
             return
 
-        # Actualiza session_id no DB
         if self._pool:
             await self._pool.execute(
                 "UPDATE agent_tasks SET session_id=$1 WHERE id=$2::uuid",
@@ -270,17 +262,18 @@ class TaskDispatcher:
                 task_id,
             )
 
-        runner = TaskRunner(task_id=task_id, session=session, db_url=self._db_url)
+        runner = TaskRunner(
+            task_id=task_id,
+            session=session,
+            db_url=self._db_url,
+            model_used=override_model or self._model,
+        )
         self._runners[task_id] = runner
         await runner.start()
         log.info("[Dispatcher] TaskRunner started for task %s", task_id[:8])
 
     async def _reconnect_orphaned_tasks(self) -> None:
-        """Marca como error tasks que ficaram running/paused após restart.
-
-        Não tenta reconectar streams gRPC (o openclaude já perdeu o contexto);
-        insere um evento de erro para que a UI saiba que a task foi interrompida.
-        """
+        """Marca como error as tasks running/paused remanescentes após restart."""
         if not self._pool:
             return
         rows = await self._pool.fetch(
@@ -292,6 +285,6 @@ class TaskDispatcher:
             await insert_error_event(
                 self._pool,
                 task_id,
-                "Serviço reiniciado — sessão interrompida. Envie uma nova mensagem para continuar.",
+                "Serviço reiniciado — sessão interrompida. Envie nova mensagem.",
             )
             log.warning("[Dispatcher] Orphan task %s marked as error", task_id[:8])

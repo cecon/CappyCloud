@@ -108,3 +108,11 @@ class MessageRepository(ABC):
     @abstractmethod
     async def save(self, message: Message) -> Message:
         """Persist a new message and return it."""
+
+    @abstractmethod
+    async def get_model_pricing(self, model_used: str) -> tuple[float, float] | None:
+        """Devolve ``(input_cost_per_1m_usd, output_cost_per_1m_usd)`` ou ``None``.
+
+        Lookup pelo ``model_id`` do catálogo de ``ai_models`` activos. Usado
+        para calcular o ``cost_usd`` no fim de cada turno do agente.
+        """
