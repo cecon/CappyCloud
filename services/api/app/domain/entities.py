@@ -63,10 +63,11 @@ class AiProvider:
 
 @dataclass
 class AiModel:
-    """Modelo IA com capabilities e flags de default por capability.
+    """Modelo IA com capabilities, preços e flags de default por capability.
 
     capabilities: ['text', 'vision', 'embedding', 'video']
     is_default:   {'text': True, 'vision': False, ...}
+    Preços em USD por **1 milhão** de tokens (formato OpenRouter normalizado).
     """
 
     id: uuid.UUID
@@ -76,6 +77,8 @@ class AiModel:
     capabilities: list[str] = field(default_factory=lambda: ["text"])
     is_default: dict = field(default_factory=dict)
     context_window: int = 200000
+    input_cost_per_1m_usd: float | None = None
+    output_cost_per_1m_usd: float | None = None
     active: bool = True
     created_at: datetime = field(default_factory=_utcnow)
 
@@ -174,3 +177,8 @@ class Message:
     role: str
     content: str
     created_at: datetime = field(default_factory=_utcnow)
+    # Uso por turno — preenchido apenas em mensagens do assistente.
+    model_used: str | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cost_usd: float = 0.0

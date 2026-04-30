@@ -1,4 +1,4 @@
-import { Fragment, type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Burger,
@@ -18,6 +18,7 @@ import {
   fetchBranches,
   fetchConversationDiff,
   fetchConversations,
+  fetchConversationUsage,
   fetchMessages,
   fetchWorkspaces,
   getToken,
@@ -29,6 +30,8 @@ import {
   type ChatMessage,
   type Conversation,
   type ConversationDiff,
+  type ConversationUsage,
+  type DoneEvent,
   type StatusEvent,
   type Workspace,
 } from '../api'
@@ -40,6 +43,49 @@ import { ToolCallCard, type ToolCallState } from '../components/ToolCallCard'
 import styles from '../components/chat.module.css'
 
 const STICKY_SCROLL_THRESHOLD_PX = 96
+
+/**
+ * Formata custo USD como "$0.0034" / "$1.20" / "free" / "—".
+ * Sub-cêntimo recebe 4 casas para não colapsar a zero.
+ */
+function formatCostUsd(value: number | null | undefined): string {
+  if (value == null) return '—'
+  if (value === 0) return 'free'
+  if (value < 0.01) return `$${value.toFixed(4)}`
+  return `$${value.toFixed(2)}`
+}
+
+/**
+ * Constrói a etiqueta de um modelo para o select: "Display Name · $0.15/$0.60".
+ * Modelos sem pricing recebem apenas o display_name.
+ */
+function modelOptionLabel(model: AiModel): string {
+  const ic = model.input_cost_per_1m_usd
+  const oc = model.output_cost_per_1m_usd
+  if (ic == null && oc == null) return model.display_name
+  if ((ic ?? 0) === 0 && (oc ?? 0) === 0) return `${model.display_name} · free`
+  const inStr = ic == null ? '?' : `$${Number(ic).toFixed(2)}`
+  const outStr = oc == null ? '?' : `$${Number(oc).toFixed(2)}`
+  return `${model.display_name} · ${inStr}/${outStr} per 1M`
+}
+
+/**
+ * Ordena modelos: free primeiro (melhor para experimentar), depois por preço de
+ * input ascendente, com pricing desconhecido no fim. Estável por display_name.
+ */
+function sortModelsForSelect(models: AiModel[]): AiModel[] {
+  const score = (m: AiModel) => {
+    const ic = m.input_cost_per_1m_usd
+    if (ic == null) return Number.POSITIVE_INFINITY
+    return Number(ic)
+  }
+  return [...models].sort((a, b) => {
+    const sa = score(a)
+    const sb = score(b)
+    if (sa !== sb) return sa - sb
+    return a.display_name.localeCompare(b.display_name)
+  })
+}
 
 /** Agrupa conversas em Today / Yesterday / Older */
 function groupConversations(convs: Conversation[]): { label: string; items: Conversation[] }[] {
@@ -161,6 +207,14 @@ export function ChatPage() {
   const [selectedBranch, setSelectedBranch] = useState<string>('')
   const [models, setModels] = useState<AiModel[]>([])
   const [selectedModelId, setSelectedModelId] = useState<string>('')
+  const [convUsage, setConvUsage] = useState<ConversationUsage>({
+    total_prompt_tokens: 0,
+    total_completion_tokens: 0,
+    total_cost_usd: 0,
+  })
+  const [liveUsage, setLiveUsage] = useState<DoneEvent | null>(null)
+
+  const sortedModels = useMemo(() => sortModelsForSelect(models), [models])
 
   const [pendingText, setPendingText] = useState('')
   const [pendingTools, setPendingTools] = useState<ToolCallState[]>([])
@@ -226,6 +280,8 @@ export function ChatPage() {
       setMessages([])
       setMessagesLoading(false)
       setMessagesError(null)
+      setConvUsage({ total_prompt_tokens: 0, total_completion_tokens: 0, total_cost_usd: 0 })
+      setLiveUsage(null)
       return
     }
     let cancelled = false
@@ -236,10 +292,17 @@ export function ChatPage() {
     setMessages([])
     setMessagesLoading(true)
     setMessagesError(null)
+    setLiveUsage(null)
     ;(async () => {
       try {
-        const msgs = await fetchMessages(token, activeId)
-        if (!cancelled) setMessages(msgs)
+        const [msgs, usage] = await Promise.all([
+          fetchMessages(token, activeId),
+          fetchConversationUsage(token, activeId),
+        ])
+        if (!cancelled) {
+          setMessages(msgs)
+          setConvUsage(usage)
+        }
       } catch (e) {
         if (e instanceof AuthError) {
           setToken(null)
@@ -396,11 +459,17 @@ export function ChatPage() {
             },
           ])
         },
+        onDone(usage) { setLiveUsage(usage) },
         signal: ctrl.signal,
       }, selectedModelId || null)
       setPendingText('')
-      const msgs = await fetchMessages(token, c.id)
+      const [msgs, totals] = await Promise.all([
+        fetchMessages(token, c.id),
+        fetchConversationUsage(token, c.id),
+      ])
       setMessages(msgs)
+      setConvUsage(totals)
+      setLiveUsage(null)
     } catch (e) {
       if (e instanceof AuthError) {
         setToken(null); window.location.href = '/login'; return
@@ -500,11 +569,17 @@ export function ChatPage() {
             },
           ])
         },
+        onDone(usage) { setLiveUsage(usage) },
         signal: ctrl.signal,
       }, selectedModelId || null)
       setPendingText('')
-      const msgs = await fetchMessages(token, activeId)
+      const [msgs, totals] = await Promise.all([
+        fetchMessages(token, activeId),
+        fetchConversationUsage(token, activeId),
+      ])
       setMessages(msgs)
+      setConvUsage(totals)
+      setLiveUsage(null)
     } catch (e) {
       if (e instanceof AuthError) {
         setToken(null); window.location.href = '/login'; return
@@ -656,7 +731,7 @@ export function ChatPage() {
             setSelectedSlug={setSelectedSlug}
             selectedBranch={selectedBranch}
             setSelectedBranch={setSelectedBranch}
-            models={models}
+            models={sortedModels}
             selectedModelId={selectedModelId}
             setSelectedModelId={setSelectedModelId}
             token={token}
@@ -696,9 +771,11 @@ export function ChatPage() {
               diffLoading={diffLoading}
               onOpenDiff={handleOpenDiff}
               onToggleFiles={handleToggleFiles}
-              models={models}
+              models={sortedModels}
               selectedModelId={selectedModelId}
               setSelectedModelId={setSelectedModelId}
+              convUsage={convUsage}
+              liveUsage={liveUsage}
             />
           )}
         </main>
@@ -902,11 +979,13 @@ function EmptyState({
                       className={styles.contextPillSelect}
                       value={selectedModelId}
                       onChange={(e) => setSelectedModelId(e.target.value)}
-                      title="Selecionar modelo"
+                      title="Selecionar modelo (preço por 1M tokens: input/output)"
                     >
                       <option value="">— modelo padrão —</option>
                       {models.map((m) => (
-                        <option key={m.id} value={m.model_id}>{m.display_name}</option>
+                        <option key={m.id} value={m.model_id}>
+                          {modelOptionLabel(m)}
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -1016,6 +1095,8 @@ interface ActiveChatProps {
   models: AiModel[]
   selectedModelId: string
   setSelectedModelId: (id: string) => void
+  convUsage: ConversationUsage
+  liveUsage: DoneEvent | null
 }
 
 function ActiveChat({
@@ -1027,6 +1108,7 @@ function ActiveChat({
   activeTitle: _activeTitle,
   token, conversationId, sidePanel, diff, diffLoading, onOpenDiff, onToggleFiles,
   models, selectedModelId, setSelectedModelId,
+  convUsage, liveUsage,
 }: ActiveChatProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const shouldStickToBottomRef = useRef(true)
@@ -1205,7 +1287,15 @@ function ActiveChat({
               )}
               {messages.map((m, index) => (
                 <Fragment key={m.id}>
-                  <PaperMessage key={m.id} role={m.role} content={m.content} />
+                  <PaperMessage
+                    key={m.id}
+                    role={m.role}
+                    content={m.content}
+                    modelUsed={m.model_used ?? null}
+                    promptTokens={m.prompt_tokens ?? 0}
+                    completionTokens={m.completion_tokens ?? 0}
+                    costUsd={m.cost_usd ?? 0}
+                  />
                   {sessionProgress.length > 0 && index === sessionProgressAfterIndex && (
                     <SessionProgressCard stages={sessionProgress} />
                   )}
@@ -1329,14 +1419,41 @@ function ActiveChat({
                 className={styles.contextPillSelect}
                 value={selectedModelId}
                 onChange={(e) => setSelectedModelId(e.target.value)}
-                title="Mudar modelo"
+                title="Mudar modelo (preço por 1M tokens: input/output)"
                 disabled={streaming}
               >
                 <option value="">— modelo padrão —</option>
                 {models.map((m) => (
-                  <option key={m.id} value={m.model_id}>{m.display_name}</option>
+                  <option key={m.id} value={m.model_id}>
+                    {modelOptionLabel(m)}
+                  </option>
                 ))}
               </select>
+            </div>
+          )}
+          {(convUsage.total_prompt_tokens > 0 || convUsage.total_completion_tokens > 0) && (
+            <div
+              className={styles.chatContextPill}
+              style={{ marginLeft: '0.35rem' }}
+              title={`Total da conversa: ${convUsage.total_prompt_tokens} in + ${convUsage.total_completion_tokens} out`}
+            >
+              <span className={`${styles.icon} ${styles.chatContextIcon}`}>insights</span>
+              <span className={styles.chatContextText}>
+                {(convUsage.total_prompt_tokens + convUsage.total_completion_tokens).toLocaleString('pt-BR')} tok
+                · {formatCostUsd(convUsage.total_cost_usd)}
+              </span>
+            </div>
+          )}
+          {liveUsage && (liveUsage.prompt_tokens > 0 || liveUsage.completion_tokens > 0) && (
+            <div
+              className={styles.chatContextPill}
+              style={{ marginLeft: '0.35rem', opacity: 0.85 }}
+              title="Último turno (ainda não consolidado nos totais)"
+            >
+              <span className={`${styles.icon} ${styles.chatContextIcon}`}>bolt</span>
+              <span className={styles.chatContextText}>
+                +{liveUsage.prompt_tokens + liveUsage.completion_tokens} tok agora
+              </span>
             </div>
           )}
           <span
@@ -1414,8 +1531,26 @@ function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
 /* ────────────────────────────────────────────────────────────────
    Message bubble
    ──────────────────────────────────────────────────────────────── */
-function PaperMessage({ role, content, streaming }: { role: string; content: string; streaming?: boolean }) {
+function PaperMessage({
+  role,
+  content,
+  streaming,
+  modelUsed,
+  promptTokens,
+  completionTokens,
+  costUsd,
+}: {
+  role: string
+  content: string
+  streaming?: boolean
+  modelUsed?: string | null
+  promptTokens?: number
+  completionTokens?: number
+  costUsd?: number
+}) {
   const isUser = role === 'user'
+  const hasUsage =
+    !isUser && ((promptTokens ?? 0) > 0 || (completionTokens ?? 0) > 0 || !!modelUsed)
   return (
     <div className={`${styles.message} ${isUser ? styles.messageUser : styles.messageAgent}`}>
       <Text
@@ -1448,6 +1583,17 @@ function PaperMessage({ role, content, streaming }: { role: string; content: str
         <div className={styles.markdownBody}>
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{content}</ReactMarkdown>
           {streaming && <span className={styles.streamingCursor} aria-hidden />}
+        </div>
+      )}
+      {hasUsage && (
+        <div className={styles.messageUsageFooter}>
+          {modelUsed && <span className={styles.messageUsageModel}>{modelUsed}</span>}
+          {((promptTokens ?? 0) > 0 || (completionTokens ?? 0) > 0) && (
+            <span className={styles.messageUsageTokens}>
+              {(promptTokens ?? 0).toLocaleString('pt-BR')} in · {(completionTokens ?? 0).toLocaleString('pt-BR')} out
+            </span>
+          )}
+          <span className={styles.messageUsageCost}>{formatCostUsd(costUsd ?? 0)}</span>
         </div>
       )}
     </div>

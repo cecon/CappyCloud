@@ -194,6 +194,8 @@ class AiModelCreate(BaseModel):
     capabilities: list[str] = Field(default_factory=lambda: ["text"])
     is_default: dict = Field(default_factory=dict)
     context_window: int = Field(default=200000, ge=1)
+    input_cost_per_1m_usd: float | None = None
+    output_cost_per_1m_usd: float | None = None
 
 
 class AiModelOut(BaseModel):
@@ -204,10 +206,22 @@ class AiModelOut(BaseModel):
     capabilities: list[str]
     is_default: dict
     context_window: int
+    input_cost_per_1m_usd: float | None = None
+    output_cost_per_1m_usd: float | None = None
     active: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AiModelSyncResult(BaseModel):
+    """Resultado de um sync de catálogo OpenRouter → DB."""
+
+    provider_id: uuid.UUID
+    fetched: int
+    created: int
+    updated: int
+    deactivated: int
 
 
 class RepositoryCreate(BaseModel):
@@ -245,8 +259,20 @@ class MessageOut(BaseModel):
     role: str
     content: str
     created_at: datetime
+    model_used: str | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cost_usd: float = 0.0
 
     model_config = {"from_attributes": True}
+
+
+class ConversationUsage(BaseModel):
+    """Totais de uso agregados por conversa."""
+
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
+    total_cost_usd: float = 0.0
 
 
 class SendMessageBody(BaseModel):

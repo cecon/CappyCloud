@@ -246,13 +246,23 @@ class GrpcSession:
                         received_done = True
                         return
                     log.info(
-                        "[%s] Done — prompt_tokens=%d completion_tokens=%d",
+                        "[%s] Done — model=%s prompt_tokens=%d completion_tokens=%d",
                         self._session_id,
+                        self._model,
                         done.prompt_tokens,
                         done.completion_tokens,
                     )
                     received_done = True
-                    await self._out_queue.put(("done", None))
+                    await self._out_queue.put(
+                        (
+                            "done",
+                            {
+                                "prompt_tokens": int(done.prompt_tokens),
+                                "completion_tokens": int(done.completion_tokens),
+                                "model_used": self._model,
+                            },
+                        )
+                    )
                     return
 
                 elif event == "error":

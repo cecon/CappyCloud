@@ -31,10 +31,28 @@ echo "[session_start] slug=${ENV_SLUG}  session=${SESSION_ID}  worktree=${WORKTR
 
 mkdir -p "$(dirname "$WORKTREE_PATH")"
 
-# ── Idempotente: worktree já existe ───────────────────────────
+# ── Idempotente: worktree saudável já existe ──────────────────
 if [ -d "$WORKTREE_PATH/.git" ] || [ -f "$WORKTREE_PATH/.git" ]; then
     echo "[session_start] Worktree já existe — reutilizando."
     exit 0
+fi
+
+# ── Pasta órfã (existe mas sem .git) ──────────────────────────
+# Aparece quando a sessão foi destruída parcialmente (ex.: watchdog
+# apagou conteúdo mas deixou a pasta, ou alguém criou /repos/sessions/<id>/<alias>
+# fora do fluxo normal). git worktree add recusa pasta de destino existente,
+# o que provoca o agente a entrar num diretório vazio e responder
+# "não há código X" — o famoso falso-negativo.
+if [ -d "$WORKTREE_PATH" ]; then
+    echo "[session_start] Pasta órfã em ${WORKTREE_PATH} — removendo antes de recriar worktree."
+    rm -rf "$WORKTREE_PATH"
+fi
+
+# ── Worktree órfão no registry do bare repo ───────────────────
+# Se o git ainda conhece a worktree (mas a pasta foi apagada),
+# bloqueia novo `worktree add`. prune limpa entradas mortas.
+if [ -d "$MAIN_REPO/.git" ] || [ -d "$MAIN_REPO" ]; then
+    git -C "$MAIN_REPO" worktree prune 2>/dev/null || true
 fi
 
 # ── Helper: detecta a branch default real do repo ─────────────

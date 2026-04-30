@@ -98,6 +98,8 @@ class InMemoryMessageRepository(MessageRepository):
 
     def __init__(self) -> None:
         self._store: list[Message] = []
+        # model_id → (input_cost_per_1m_usd, output_cost_per_1m_usd)
+        self._pricing: dict[str, tuple[float, float]] = {}
 
     async def list_by_conversation(self, conversation_id: uuid.UUID) -> list[Message]:
         return sorted(
@@ -108,6 +110,13 @@ class InMemoryMessageRepository(MessageRepository):
     async def save(self, message: Message) -> Message:
         self._store.append(message)
         return message
+
+    async def get_model_pricing(self, model_used: str) -> tuple[float, float] | None:
+        return self._pricing.get(model_used)
+
+    def set_pricing(self, model_used: str, input_cost: float, output_cost: float) -> None:
+        """Técnica de teste: configura preço de um modelo no fake."""
+        self._pricing[model_used] = (input_cost, output_cost)
 
 
 # ---------------------------------------------------------------------------

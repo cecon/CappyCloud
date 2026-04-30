@@ -22,7 +22,13 @@ from app.application.use_cases.conversations import (
     StreamMessage,
 )
 from app.domain.entities import User
-from app.schemas import ConversationCreate, ConversationOut, MessageOut, SendMessageBody
+from app.schemas import (
+    ConversationCreate,
+    ConversationOut,
+    ConversationUsage,
+    MessageOut,
+    SendMessageBody,
+)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -74,6 +80,27 @@ async def create_conversation(
     )
 
 
+@router.get("/{conversation_id}/usage", response_model=ConversationUsage)
+async def get_conversation_usage(
+    conversation_id: uuid.UUID,
+    current: Annotated[User, Depends(get_authenticated_user)],
+    uc: Annotated[ListMessages, Depends(get_list_msgs_uc)],
+) -> ConversationUsage:
+    """Totais agregados de tokens e custo da conversa.
+
+    Soma todos os turnos do assistente (mensagens com ``role='assistant'``).
+    """
+    try:
+        msgs = await uc.execute(conversation_id, current.id)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return ConversationUsage(
+        total_prompt_tokens=sum(m.prompt_tokens for m in msgs),
+        total_completion_tokens=sum(m.completion_tokens for m in msgs),
+        total_cost_usd=round(sum(float(m.cost_usd) for m in msgs), 6),
+    )
+
+
 @router.get("/{conversation_id}/messages", response_model=list[MessageOut])
 async def list_messages(
     conversation_id: uuid.UUID,
@@ -86,7 +113,17 @@ async def list_messages(
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return [
-        MessageOut(id=m.id, role=m.role, content=m.content, created_at=m.created_at) for m in msgs
+        MessageOut(
+            id=m.id,
+            role=m.role,
+            content=m.content,
+            created_at=m.created_at,
+            model_used=m.model_used,
+            prompt_tokens=m.prompt_tokens,
+            completion_tokens=m.completion_tokens,
+            cost_usd=float(m.cost_usd),
+        )
+        for m in msgs
     ]
 
 

@@ -8,6 +8,11 @@ import uuid
 
 import asyncpg
 
+from ._agent_context import (
+    fetch_worktree_top_levels,
+    inject_section_before_user_message,
+    render_worktree_top_level_section,
+)
 from ._environment_manager import EnvironmentManager
 from ._grpc_session import GrpcSession
 from ._session_store import SessionStore
@@ -67,6 +72,7 @@ class TaskDispatcher:
         session_root: str = "",
         sandbox_id: str = "",
         override_model: str | None = None,
+        sandbox_session_url: str = "",
     ) -> str:
         """Cria um agent_task no DB e arranca o TaskRunner correspondente.
 
@@ -90,6 +96,7 @@ class TaskDispatcher:
                 session_root=session_root,
                 sandbox_id=sandbox_id,
                 override_model=override_model,
+                sandbox_session_url=sandbox_session_url,
             ),
             name=f"dispatch-{task_id[:8]}",
         )
@@ -182,6 +189,7 @@ class TaskDispatcher:
         session_root: str = "",
         sandbox_id: str = "",
         override_model: str | None = None,
+        sandbox_session_url: str = "",
     ) -> None:
         """Cria a sessão, inicia a GrpcSession e arranca o TaskRunner."""
         user_id = conversation_id or "system"
@@ -236,6 +244,24 @@ class TaskDispatcher:
 
         working_directory = sandbox.working_directory
 
+        # Worktree(s) já existem fisicamente — agora podemos buscar a
+        # estrutura top-level e enriquecer o prompt. Isto é crítico para
+        # modelos pequenos (ex.: gpt-oss-120b:free) que, sem a estrutura,
+        # fazem grep cego com globs errados (ex.: **/*.ts num projeto Python)
+        # e desistem inventando uma resposta.
+        if sandbox_session_url and repos:
+            try:
+                top_level = await fetch_worktree_top_levels(
+                    sandbox_session_url, repos, session_root
+                )
+                section = render_worktree_top_level_section(top_level)
+                if section:
+                    prompt = inject_section_before_user_message(prompt, section)
+            except Exception as exc:  # noqa: BLE001 — degrada graciosamente
+                log.warning(
+                    "[Dispatcher] worktree top-level fetch falhou: %s", exc
+                )
+
         session = GrpcSession(
             container_ip=sandbox.grpc_host,
             grpc_port=sandbox.grpc_port,
@@ -270,7 +296,12 @@ class TaskDispatcher:
                 task_id,
             )
 
-        runner = TaskRunner(task_id=task_id, session=session, db_url=self._db_url)
+        runner = TaskRunner(
+            task_id=task_id,
+            session=session,
+            db_url=self._db_url,
+            model_used=override_model or self._model,
+        )
         self._runners[task_id] = runner
         await runner.start()
         log.info("[Dispatcher] TaskRunner started for task %s", task_id[:8])
