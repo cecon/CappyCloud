@@ -25,9 +25,6 @@ npm-debug.log*
 .pnpm-debug.log*
 
 # IDE / OS
-.claude/settings.json
-.claude/settings.local.json
-.claude/todos.json
 .idea/
 .vscode/*
 !.vscode/extensions.json
