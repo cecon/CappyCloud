@@ -19,7 +19,10 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from ._agent_context import build_prompt_with_agent, load_agent_context
+from ._agent_context import (
+    build_prompt_with_agent,
+    load_agent_context,
+)
 from ._environment_manager import EnvironmentManager
 from ._pipeline_helpers import db_url, inject_repo_context, sse
 from ._session_store import SessionStore
@@ -147,12 +150,17 @@ class Pipeline:
         sandbox_session_port = os.getenv("SANDBOX_SESSION_PORT", "8080")
         sandbox_session_url = f"http://{sandbox_host}:{sandbox_session_port}"
 
+        # NOTA: a estrutura top-level do worktree é injetada pelo dispatcher,
+        # depois de o worktree ser efetivamente criado pelo EnvironmentManager.
+        # Tentar obtê-la aqui falha sempre na primeira mensagem (worktree ainda
+        # não existe → /worktree/ls-files devolve 500).
         prompt = build_prompt_with_agent(
             user_message,
             skills_top,
             sandbox_session_url,
             repos=repos,
             session_root=session_root,
+            worktree_top_level=None,
         )
         prompt = inject_repo_context(prompt, repos, session_root)
 
@@ -167,6 +175,7 @@ class Pipeline:
             "session_root": session_root,
             "sandbox_id": sandbox_id,
             "override_model": body.get("override_model"),
+            "sandbox_session_url": sandbox_session_url,
         }
 
         if runner and runner.is_alive() and runner.pending_action:

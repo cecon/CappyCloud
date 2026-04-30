@@ -898,6 +898,42 @@
   border: 1px solid rgba(72, 72, 75, 0.18);
 }
 
+.messageUsageFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.06);
+  font-family: 'JetBrains Mono', 'Space Grotesk', monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cc-on-surface-variant);
+}
+
+.messageUsageModel {
+  color: var(--cc-primary-light, #93c5fd);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-size: 0.66rem;
+}
+
+.messageUsageTokens {
+  opacity: 0.85;
+}
+
+.messageUsageCost {
+  margin-left: auto;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.12);
+  color: var(--cc-primary-light, #93c5fd);
+  font-weight: 600;
+}
+
 .chatStateCard {
   align-self: center;
   display: flex;

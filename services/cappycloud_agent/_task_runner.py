@@ -35,10 +35,12 @@ class TaskRunner:
         task_id: str,
         session: GrpcSession,
         db_url: str,
+        model_used: str = "",
     ) -> None:
         self._task_id = task_id
         self._session = session
         self._db_url = db_url
+        self._model_used = model_used
         self._pool: Optional[asyncpg.Pool] = None
         self._task: Optional[asyncio.Task] = None
 
@@ -106,6 +108,12 @@ class TaskRunner:
                     await self._update_task(status="running")
 
                 elif event_type in ("done",):
+                    usage = data if isinstance(data, dict) else {}
+                    await self._persist_usage(
+                        model_used=str(usage.get("model_used") or self._model_used),
+                        prompt_tokens=int(usage.get("prompt_tokens") or 0),
+                        completion_tokens=int(usage.get("completion_tokens") or 0),
+                    )
                     await self._update_task(status="done", completed_at=_now())
                     return
 
@@ -189,6 +197,68 @@ class TaskRunner:
                 )
         except Exception:
             pass
+
+    async def _persist_usage(
+        self,
+        model_used: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+    ) -> None:
+        """Calcula custo via lookup em ``ai_models`` e grava em ``agent_tasks``.
+
+        Quando o ``model_used`` não estiver no catálogo, gravamos os tokens
+        e ``cost_usd=0`` (e logamos um aviso para que o admin sincronize via
+        ``POST /api/ai-models/sync-from-openrouter``).
+        """
+        if not self._pool:
+            return
+        try:
+            async with self._pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT input_cost_per_1m_usd, output_cost_per_1m_usd
+                    FROM ai_models
+                    WHERE model_id = $1 AND active = TRUE
+                    LIMIT 1
+                    """,
+                    model_used,
+                )
+                input_cost = float(row["input_cost_per_1m_usd"] or 0) if row else 0.0
+                output_cost = float(row["output_cost_per_1m_usd"] or 0) if row else 0.0
+                cost_usd = round(
+                    (prompt_tokens * input_cost + completion_tokens * output_cost)
+                    / 1_000_000.0,
+                    6,
+                )
+                if not row:
+                    log.warning(
+                        "[TaskRunner %s] modelo '%s' não consta de ai_models — "
+                        "custo=0. Faça sync OpenRouter.",
+                        self._task_id[:8],
+                        model_used,
+                    )
+                await conn.execute(
+                    """
+                    UPDATE agent_tasks
+                    SET model_used=$1,
+                        prompt_tokens=$2,
+                        completion_tokens=$3,
+                        cost_usd=$4,
+                        last_event_at=NOW()
+                    WHERE id=$5::uuid
+                    """,
+                    model_used,
+                    prompt_tokens,
+                    completion_tokens,
+                    cost_usd,
+                    self._task_id,
+                )
+        except Exception as exc:
+            log.error(
+                "[TaskRunner %s] persist_usage failed: %s",
+                self._task_id[:8],
+                exc,
+            )
 
 
 def _now() -> datetime:

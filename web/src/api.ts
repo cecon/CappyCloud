@@ -165,6 +165,23 @@ export type ChatMessage = {
   role: string
   content: string
   created_at: string
+  /** Modelo IA usado para gerar a resposta (apenas em mensagens do assistente). */
+  model_used?: string | null
+  prompt_tokens?: number
+  completion_tokens?: number
+  cost_usd?: number
+}
+
+export interface ConversationUsage {
+  total_prompt_tokens: number
+  total_completion_tokens: number
+  total_cost_usd: number
+}
+
+export interface DoneEvent {
+  model_used: string | null
+  prompt_tokens: number
+  completion_tokens: number
 }
 
 export interface ToolStartEvent {
@@ -200,6 +217,8 @@ export interface StreamHandlers {
   onActionRequired(action: ActionRequiredEvent): void
   onStatus(status: StatusEvent): void
   onError(message: string): void
+  /** Acumulador final de tokens/modelo enviado quando o agente termina o turno. */
+  onDone?(usage: DoneEvent): void
   signal?: AbortSignal
 }
 
@@ -324,6 +343,13 @@ export async function streamAssistantReply(
           }
           case 'error':
             eventHandlers.onError((evt.message as string) ?? 'Erro desconhecido')
+            break
+          case 'done':
+            eventHandlers.onDone?.({
+              model_used: (evt.model_used as string | null) ?? null,
+              prompt_tokens: (evt.prompt_tokens as number) ?? 0,
+              completion_tokens: (evt.completion_tokens as number) ?? 0,
+            })
             break
         }
       } catch {
@@ -785,8 +811,20 @@ export interface AiModel {
   capabilities: string[]
   is_default: Record<string, boolean>
   context_window: number
+  /** Preço do prompt em USD por 1 milhão de tokens (null = desconhecido). */
+  input_cost_per_1m_usd: number | null
+  /** Preço do completion em USD por 1 milhão de tokens (null = desconhecido). */
+  output_cost_per_1m_usd: number | null
   active: boolean
   created_at: string
+}
+
+export interface AiModelSyncResult {
+  provider_id: string
+  fetched: number
+  created: number
+  updated: number
+  deactivated: number
 }
 
 export async function fetchAiModels(token: string): Promise<AiModel[]> {
@@ -794,6 +832,39 @@ export async function fetchAiModels(token: string): Promise<AiModel[]> {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) return []
+  return res.json()
+}
+
+/**
+ * Dispara sync do catálogo OpenRouter → DB (cria/atualiza pricing dos modelos).
+ */
+export async function syncAiModelsFromOpenrouter(
+  token: string,
+): Promise<AiModelSyncResult> {
+  const res = await apiFetch('/api/ai-models/sync-from-openrouter', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao sincronizar modelos')
+  }
+  return res.json()
+}
+
+/**
+ * Totais agregados de tokens/custo de uma conversa.
+ */
+export async function fetchConversationUsage(
+  token: string,
+  conversationId: string,
+): Promise<ConversationUsage> {
+  const res = await apiFetch(`/api/conversations/${conversationId}/usage`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    return { total_prompt_tokens: 0, total_completion_tokens: 0, total_cost_usd: 0 }
+  }
   return res.json()
 }
 

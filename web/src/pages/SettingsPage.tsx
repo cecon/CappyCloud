@@ -15,6 +15,7 @@ import {
   type RepositoryCreate,
   type Sandbox,
 } from '../api'
+import { AiModelsPanel } from '../components/AiModelsPanel'
 import { DocumentsPanel } from '../components/DocumentsPanel'
 import styles from './settings.module.css'
 
@@ -289,6 +290,9 @@ export function SettingsPage() {
           </table>
         )}
       </section>
+
+      {/* ── Modelos IA ──────────────────────────────────────── */}
+      <AiModelsPanel token={token} />
 
       {/* ── Form ──────────────────────────────────────────────── */}
       <section className={styles.section}>
