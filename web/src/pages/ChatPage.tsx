@@ -1,5 +1,5 @@
 import { Fragment, type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import {
   Burger,
   ScrollArea,
@@ -87,18 +87,18 @@ function sortModelsForSelect(models: AiModel[]): AiModel[] {
   })
 }
 
-/** Agrupa conversas em Today / Yesterday / Older */
+/** Agrupa conversas em Hoje / Ontem / Anteriores */
 function groupConversations(convs: Conversation[]): { label: string; items: Conversation[] }[] {
   const now = new Date()
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
   const yesterday = today - 86_400_000
 
-  const groups: Record<string, Conversation[]> = { Today: [], Yesterday: [], Older: [] }
+  const groups: Record<string, Conversation[]> = { Hoje: [], Ontem: [], Anteriores: [] }
   for (const c of convs) {
     const d = new Date(c.created_at ?? c.id).getTime()
-    if (d >= today) groups.Today.push(c)
-    else if (d >= yesterday) groups.Yesterday.push(c)
-    else groups.Older.push(c)
+    if (d >= today) groups.Hoje.push(c)
+    else if (d >= yesterday) groups.Ontem.push(c)
+    else groups.Anteriores.push(c)
   }
   return Object.entries(groups)
     .filter(([, items]) => items.length > 0)
@@ -229,10 +229,25 @@ export function ChatPage() {
   const [diffStats, setDiffStats] = useState<{ added: number; removed: number } | null>(null)
   const [prLoading, setPrLoading] = useState(false)
   const [prUrl, setPrUrl] = useState<string | null>(null)
+  const [prError, setPrError] = useState<string | null>(null)
   const [headBranch, setHeadBranch] = useState<string | null>(null)
+
+  const { pathname } = useLocation()
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
+        e.preventDefault()
+        handleNewChat()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -327,12 +342,13 @@ export function ChatPage() {
   async function handleCreatePr() {
     if (!activeId) return
     setPrLoading(true)
+    setPrError(null)
     try {
       const result = await createConversationPr(token, activeId)
       setPrUrl(result.pr_url)
       setHeadBranch(result.head_branch)
-    } catch {
-      // silently fail — user can retry
+    } catch (e) {
+      setPrError(e instanceof Error ? e.message : 'Não foi possível criar o PR. Tente novamente.')
     } finally {
       setPrLoading(false)
     }
@@ -658,26 +674,28 @@ export function ChatPage() {
           </div>
 
           <nav className={styles.sidebarNav} aria-label="Áreas do produto">
-            <Link to="/" className={styles.sidebarNavItem} title="Dashboard">
-              <span className={styles.icon}>dashboard</span>
-              <span>Dashboard</span>
-            </Link>
-            <Link to="/runs" className={styles.sidebarNavItem} title="Runs">
-              <span className={styles.icon}>history</span>
-              <span>Runs</span>
-            </Link>
-            <Link to="/analytics" className={styles.sidebarNavItem} title="Analytics">
-              <span className={styles.icon}>analytics</span>
-              <span>Analytics</span>
-            </Link>
-            <Link to="/skills" className={styles.sidebarNavItem} title="Skills">
-              <span className={styles.icon}>menu_book</span>
-              <span>Skills</span>
-            </Link>
-            <Link to="/settings" className={styles.sidebarNavItem} title="Configurações">
-              <span className={styles.icon}>settings</span>
-              <span>Configurações</span>
-            </Link>
+            {[
+              { to: '/', icon: 'dashboard', label: 'Dashboard' },
+              { to: '/chat', icon: 'chat_bubble', label: 'Chat' },
+              { to: '/runs', icon: 'history', label: 'Runs' },
+              { to: '/analytics', icon: 'analytics', label: 'Analytics' },
+              { to: '/skills', icon: 'menu_book', label: 'Skills' },
+              { to: '/settings', icon: 'settings', label: 'Configurações' },
+            ].map(({ to, icon, label }) => {
+              const isActive = pathname === to
+              return (
+                <Link
+                  key={to}
+                  to={to}
+                  className={`${styles.sidebarNavItem} ${isActive ? styles.sidebarNavItemActive : ''}`}
+                  aria-current={isActive ? 'page' : undefined}
+                  title={label}
+                >
+                  <span className={styles.icon}>{icon}</span>
+                  <span>{label}</span>
+                </Link>
+              )
+            })}
           </nav>
 
           {/* Session list */}
@@ -761,6 +779,7 @@ export function ChatPage() {
               diffStats={diffStats}
               prLoading={prLoading}
               prUrl={prUrl}
+              prError={prError}
               headBranch={headBranch}
               onCreatePr={handleCreatePr}
               activeTitle={activeConv?.title ?? 'Conversa'}
@@ -1082,6 +1101,7 @@ interface ActiveChatProps {
   diffStats: { added: number; removed: number } | null
   prLoading: boolean
   prUrl: string | null
+  prError: string | null
   headBranch: string | null
   onCreatePr: () => void
   activeTitle: string
@@ -1104,7 +1124,7 @@ function ActiveChat({
   showThinking, streaming, input, setInput, inputRef,
   onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch,
   workspaces,
-  diffStats, prLoading, prUrl, headBranch, onCreatePr,
+  diffStats, prLoading, prUrl, prError, headBranch, onCreatePr,
   activeTitle: _activeTitle,
   token, conversationId, sidePanel, diff, diffLoading, onOpenDiff, onToggleFiles,
   models, selectedModelId, setSelectedModelId,
@@ -1221,14 +1241,25 @@ function ActiveChat({
                     Ver PR
                   </a>
                 ) : (
-                  <button
-                    type="button"
-                    className={styles.createPrBtn}
-                    onClick={onCreatePr}
-                    disabled={prLoading || streaming}
-                  >
-                    {prLoading ? 'Criando…' : 'Criar PR'}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className={styles.createPrBtn}
+                      onClick={onCreatePr}
+                      disabled={prLoading || streaming}
+                    >
+                      {prLoading ? 'Criando…' : 'Criar PR'}
+                    </button>
+                    {prError && (
+                      <span
+                        role="alert"
+                        style={{ fontSize: '0.72rem', color: 'var(--mantine-color-red-5)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        title={prError}
+                      >
+                        {prError}
+                      </span>
+                    )}
+                  </>
                 )
               )}
             </>
@@ -1272,7 +1303,7 @@ function ActiveChat({
                 </div>
               )}
               {messagesError && (
-                <div className={`${styles.chatStateCard} ${styles.chatStateCardError}`}>
+                <div className={`${styles.chatStateCard} ${styles.chatStateCardError}`} role="alert">
                   <Text size="sm" fw={600}>Não foi possível carregar esta conversa.</Text>
                   <Text size="xs" c="dimmed">{messagesError}</Text>
                 </div>
