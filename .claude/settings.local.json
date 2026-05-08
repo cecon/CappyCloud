@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//d/projetos/CappyCloud/web/dist/**)",
+      "Read(//d/projetos/CappyCloud/web/public/**)",
+      "Bash(powershell -Command \"Get-CimInstance Win32_Process -Filter 'ProcessId=102492' | Select-Object Name, CommandLine, ExecutablePath | Format-List\")",
+      "Bash(git commit -m ' *)",
+      "Bash(git -C \"D:/projetos/CappyCloud\" status --short)",
+      "Bash(git -C \"D:/projetos/CappyCloud\" branch --show-current)",
+      "Bash(git -C \"D:/projetos/CappyCloud\" fetch . claude/brave-pascal-1a8df0:main)",
+      "Bash(git -C \"D:/projetos/CappyCloud\" log --oneline main -3)",
+      "Bash(gh pr *)"
+    ]
+  }
+}
