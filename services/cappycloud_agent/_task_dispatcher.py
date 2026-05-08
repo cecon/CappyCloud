@@ -8,13 +8,9 @@ import uuid
 
 import asyncpg
 
-from ._agent_context import (
-    fetch_worktree_top_levels,
-    inject_section_before_user_message,
-    render_worktree_top_level_section,
-)
 from ._environment_manager import EnvironmentManager
 from ._grpc_session import GrpcSession
+from ._orphan_recovery import reconnect_orphaned_tasks
 from ._session_store import SessionStore
 from ._task_events import (
     insert_error_event,
@@ -23,6 +19,7 @@ from ._task_events import (
     update_task_status,
 )
 from ._task_runner import TaskRunner
+from ._worktree_validation import validate_and_inject_worktree
 
 log = logging.getLogger(__name__)
 
@@ -67,8 +64,15 @@ class TaskDispatcher:
         sandbox_id: str = "",
         override_model: str | None = None,
         sandbox_session_url: str = "",
+        attachments: list[dict] | None = None,
     ) -> str:
-        """Cria uma agent_task e arranca o runner; retorna o task_id (UUID)."""
+        """Cria uma agent_task e arranca o runner; retorna o task_id (UUID).
+
+        ``attachments``: lista de dicts ``{mime_type, data, original_filename}``
+        que viajam até ao gRPC (multimodal nativo). Caller deve garantir que o
+        modelo escolhido suporta ``vision`` antes de passar bytes binários —
+        modelos text-only respondem 4xx.
+        """
         task_id = str(uuid.uuid4())
         await insert_task(
             self._pool,
@@ -88,6 +92,7 @@ class TaskDispatcher:
                 sandbox_id=sandbox_id,
                 override_model=override_model,
                 sandbox_session_url=sandbox_session_url,
+                attachments=attachments,
             ),
             name=f"dispatch-{task_id[:8]}",
         )
@@ -127,11 +132,16 @@ class TaskDispatcher:
             return True
         return False
 
-    async def send_message(self, task_id: str, message: str) -> bool:
+    async def send_message(
+        self,
+        task_id: str,
+        message: str,
+        attachments: list[dict] | None = None,
+    ) -> bool:
         """Envia nova mensagem numa task running (nova turn)."""
         runner = self._runners.get(task_id)
         if runner and runner.is_alive() and not runner.pending_action:
-            await runner.send_message(message)
+            await runner.send_message(message, attachments=attachments)
             return True
         return False
 
@@ -173,6 +183,7 @@ class TaskDispatcher:
         sandbox_id: str = "",
         override_model: str | None = None,
         sandbox_session_url: str = "",
+        attachments: list[dict] | None = None,
     ) -> None:
         """Cria a sessão, inicia a GrpcSession e arranca o TaskRunner."""
         user_id = conversation_id or "system"
@@ -221,19 +232,21 @@ class TaskDispatcher:
 
         working_directory = sandbox.working_directory
 
-        # Worktree(s) já materializados — enriquecemos o prompt com o
-        # snapshot top-level. Crítico para modelos pequenos (ex.: gpt-oss-120b)
-        # que sem isso fazem grep cego com globs errados e desistem.
+        # Validamos worktree ANTES do gRPC: openclaude com wd inexistente
+        # devolve `done` vazio (erro genérico). Falha cedo com causa específica.
         if sandbox_session_url and repos:
-            try:
-                top_level = await fetch_worktree_top_levels(
-                    sandbox_session_url, repos, session_root
-                )
-                section = render_worktree_top_level_section(top_level)
-                if section:
-                    prompt = inject_section_before_user_message(prompt, section)
-            except Exception as exc:  # noqa: BLE001 — degrada graciosamente
-                log.warning("[Dispatcher] worktree top-level fetch falhou: %s", exc)
+            new_prompt = await validate_and_inject_worktree(
+                pool=self._pool,
+                task_id=task_id,
+                prompt=prompt,
+                repos=repos,
+                sandbox_session_url=sandbox_session_url,
+                session_root=session_root,
+                working_directory=working_directory,
+            )
+            if new_prompt is None:
+                return
+            prompt = new_prompt
 
         session = GrpcSession(
             container_ip=sandbox.grpc_host,
@@ -243,11 +256,10 @@ class TaskDispatcher:
             working_directory=working_directory,
         )
 
+        # stage='agent' é emitido pelo TaskRunner quando o LLM responder de
+        # facto (primeiro chunk/tool). Evita "tudo verde + erro logo a seguir".
         try:
-            await insert_status_event(
-                self._pool, task_id, "Iniciando agente...", "agent", mode
-            )
-            await session.start(prompt)
+            await session.start(prompt, attachments=attachments)
         except Exception as exc:
             log.exception("[Dispatcher] Falha ao iniciar gRPC para task %s", task_id[:8])
             await update_task_status(self._pool, task_id, "error")
@@ -273,18 +285,4 @@ class TaskDispatcher:
         log.info("[Dispatcher] TaskRunner started for task %s", task_id[:8])
 
     async def _reconnect_orphaned_tasks(self) -> None:
-        """Marca como error as tasks running/paused remanescentes após restart."""
-        if not self._pool:
-            return
-        rows = await self._pool.fetch(
-            "SELECT id FROM agent_tasks WHERE status IN ('running','paused')"
-        )
-        for row in rows:
-            task_id = str(row["id"])
-            await update_task_status(self._pool, task_id, "error")
-            await insert_error_event(
-                self._pool,
-                task_id,
-                "Serviço reiniciado — sessão interrompida. Envie nova mensagem.",
-            )
-            log.warning("[Dispatcher] Orphan task %s marked as error", task_id[:8])
+        await reconnect_orphaned_tasks(self._pool)

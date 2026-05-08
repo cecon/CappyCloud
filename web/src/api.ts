@@ -265,10 +265,12 @@ export async function streamAssistantReply(
   content: string,
   handlers: StreamHandlers,
   modelId?: string | null,
+  attachmentIds?: string[] | null,
 ): Promise<void> {
   const { signal, ...eventHandlers } = handlers
   const bodyPayload: Record<string, unknown> = { content }
   if (modelId) bodyPayload.model_id = modelId
+  if (attachmentIds && attachmentIds.length > 0) bodyPayload.attachment_ids = attachmentIds
   const res = await apiFetch(`/api/conversations/${conversationId}/messages/stream`, {
     method: 'POST',
     headers: {
@@ -357,6 +359,96 @@ export async function streamAssistantReply(
       }
     }
   }
+}
+
+// ── Attachments ──────────────────────────────────────────────────────────────
+
+/**
+ * Metadado de um anexo (imagem) carregado numa conversa.
+ *
+ * O campo {@link previewUrl} é um path relativo (sem host) que deve ser
+ * concatenado com o base da API para servir a imagem; obriga `Authorization`
+ * para download — use {@link fetchAttachmentBlobUrl} para obter um Object URL
+ * pronto para `<img src=…>`.
+ */
+export interface Attachment {
+  id: string
+  conversation_id: string
+  mime_type: string
+  original_filename: string
+  size_bytes: number
+  kind: 'image'
+  has_description: boolean
+  vision_model_used: string | null
+  uploaded_at: string
+  preview_url: string
+}
+
+/**
+ * Faz upload de uma imagem para uma conversa. O backend gera descrição
+ * textual via modelo de visão (síncrono, ~3-8s); a Promise resolve só após
+ * isso para o front conseguir mostrar o status `vision_model_used`.
+ */
+export async function uploadAttachment(
+  token: string,
+  conversationId: string,
+  file: File,
+  signal?: AbortSignal,
+): Promise<Attachment> {
+  const fd = new FormData()
+  fd.append('file', file, file.name)
+  const res = await apiFetch(`/api/conversations/${conversationId}/attachments`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: fd,
+    signal,
+  })
+  if (!res.ok) {
+    const err = await res.text().catch(() => '')
+    throw new Error(err || `Falha no upload (HTTP ${res.status})`)
+  }
+  return (await res.json()) as Attachment
+}
+
+/**
+ * Apaga um anexo (storage físico + registo no banco). 204 No Content em sucesso.
+ */
+export async function deleteAttachment(
+  token: string,
+  conversationId: string,
+  attachmentId: string,
+): Promise<void> {
+  const res = await apiFetch(
+    `/api/conversations/${conversationId}/attachments/${attachmentId}`,
+    {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  )
+  if (!res.ok && res.status !== 204) {
+    throw new Error(`Falha ao remover anexo (HTTP ${res.status})`)
+  }
+}
+
+/**
+ * Faz GET autenticado da imagem e devolve um Object URL pronto para usar em
+ * `<img src=…>`. **Lembrar de revogar com `URL.revokeObjectURL` no unmount**
+ * para libertar memória.
+ */
+export async function fetchAttachmentBlobUrl(
+  token: string,
+  conversationId: string,
+  attachmentId: string,
+): Promise<string> {
+  const res = await apiFetch(
+    `/api/conversations/${conversationId}/attachments/${attachmentId}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  if (!res.ok) {
+    throw new Error(`Falha ao carregar preview (HTTP ${res.status})`)
+  }
+  const blob = await res.blob()
+  return URL.createObjectURL(blob)
 }
 
 // ── Environment lifecycle ─────────────────────────────────────────────────────

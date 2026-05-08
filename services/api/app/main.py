@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.adapters.primary.http import ai_models as ai_models_router
+from app.adapters.primary.http import attachments as attachments_router
 from app.adapters.primary.http import auth as auth_router
 from app.adapters.primary.http import conversation_diff as conv_diff_router
 from app.adapters.primary.http import conversation_files as conv_files_router
@@ -122,6 +123,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router.router, prefix="/api")
+app.include_router(attachments_router.router)
 app.include_router(conv_router.router, prefix="/api")
 app.include_router(conv_diff_router.router, prefix="/api")
 app.include_router(conv_files_router.router, prefix="/api")

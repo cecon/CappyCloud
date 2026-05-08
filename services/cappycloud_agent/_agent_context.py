@@ -16,6 +16,8 @@ import httpx
 
 log = logging.getLogger(__name__)
 
+from ._other_repos import fetch_other_repos, render_other_repos_section  # noqa: F401
+
 _RAG_TOP_N = int(os.getenv("RAG_TOP_N", "3"))
 _SKILL_CONTENT_MAX_CHARS = int(os.getenv("SKILL_CONTENT_MAX_CHARS", "1200"))
 _TOPLEVEL_LIMIT = int(os.getenv("WORKTREE_TOPLEVEL_LIMIT", "60"))
@@ -206,23 +208,17 @@ def build_prompt_with_agent(
     repos: list[dict] | None = None,
     session_root: str = "",
     worktree_top_level: dict[str, list[str]] | None = None,
+    other_repos: list[str] | None = None,
 ) -> str:
     """Monta o prompt final colando top-N skills + msg do user.
 
-    Inclui também o **caminho absoluto do worktree** quando há repos
-    associados — necessário porque o openclaude por vezes executa tools
-    no CWD do servidor (``/openclaude``) em vez do worktree, e usar
-    paths absolutos resolve esse bug. Também instrui a chamar
-    ``GET <sandbox>/skills/search?q=...`` via Bash para RAG por demanda.
-
-    ``worktree_top_level`` (opcional) mapeia ``worktree_path`` → lista de
-    entradas top-level do repo (pastas/ficheiros). Quando presente, é
-    incluído no prompt para dar fundação a modelos pequenos.
+    Inclui o caminho absoluto do worktree quando há repos associados (workaround
+    para bug de CWD do openclaude) e instrui o uso de ``GET <sandbox>/skills/
+    search?q=...`` via Bash para RAG sob demanda. ``worktree_top_level`` mapeia
+    ``worktree_path`` → entradas top-level do repo (fundação p/ modelos pequenos).
     """
     parts: list[str] = []
 
-    # Worktree paths absolutos — força o agente a usá-los em todos os comandos
-    # (rg, find, ls, cat) para evitar o bug de CWD do openclaude.
     worktree_paths: list[str] = []
     for r in repos or []:
         wt = r.get("worktree_path")
@@ -259,6 +255,10 @@ def build_prompt_with_agent(
                     "Confirma com `ls`/`git ls-files` antes de afirmar que "
                     "alguma pasta não existe:\n\n" + "\n\n".join(sections)
                 )
+
+    other_section = render_other_repos_section(other_repos or [])
+    if other_section:
+        parts.append(other_section)
 
     if skills:
         kb_lines = ["## Conhecimento disponível (top resultados)"]

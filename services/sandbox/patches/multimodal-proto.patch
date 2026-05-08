@@ -1,0 +1,25 @@
+diff --git a/src/proto/openclaude.proto b/src/proto/openclaude.proto
+index 07d39c9..3baaf9f 100644
+--- a/src/proto/openclaude.proto
++++ b/src/proto/openclaude.proto
+@@ -25,12 +25,20 @@ message ClientMessage {
+   }
+ }
+ 
++message Attachment {
++  string mime_type = 1;            // ex.: "image/png"
++  bytes  data      = 2;            // raw bytes (NOT base64-encoded)
++  string original_filename = 3;    // hint for the model + logs
++}
++
+ message ChatRequest {
+   string message = 1;
+   string working_directory = 2; // Where the agent should execute commands
+   reserved 3;                   // Reserved to prevent accidental reuse
+   optional string model = 4;
+   string session_id = 5;        // Non-empty = cross-stream session persistence
++  reserved 6;                   // Reserved on CappyCloud side for request_id
++  repeated Attachment attachments = 7; // Vision input (used only when model supports it)
+ }
+ 
+ message UserInput {

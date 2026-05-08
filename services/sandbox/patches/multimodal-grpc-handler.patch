@@ -1,0 +1,29 @@
+diff --git a/src/grpc/server.ts b/src/grpc/server.ts
+--- a/src/grpc/server.ts
++++ b/src/grpc/server.ts
+@@ -145,7 +145,24 @@ export class GrpcServer {
+           let promptTokens = 0
+           let completionTokens = 0
+ 
+-          const generator = engine.submitMessage(req.message)
++          // Multimodal input: when client passes attachments, build a
++          // ContentBlockParam[] (image + text blocks). The QueryEngine accepts
++          // this shape natively and forwards it to the provider SDK. Models
++          // that do not support vision will produce a 4xx upstream — caller
++          // should validate model capability BEFORE sending attachments.
++          let promptInput: any = req.message
++          if (Array.isArray(req.attachments) && req.attachments.length > 0) {
++            const imageBlocks = req.attachments.map((att: any) => ({
++              type: "image",
++              source: {
++                type: "base64",
++                media_type: att.mime_type,
++                data: Buffer.from(att.data).toString("base64"),
++              },
++            }))
++            promptInput = [...imageBlocks, { type: "text", text: req.message }]
++          }
++          const generator = engine.submitMessage(promptInput)
+ 
+           for await (const msg of generator) {
+             if (msg.type === 'stream_event') {

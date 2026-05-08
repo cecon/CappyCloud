@@ -182,3 +182,27 @@ class Message:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     cost_usd: float = 0.0
+
+
+@dataclass
+class MessageAttachment:
+    """Anexo (imagem inicialmente) carregado pelo utilizador numa conversa.
+
+    O bytes vivem num storage separado (volume Docker / S3); aqui só metadado
+    + ``vision_description``: o texto produzido por um modelo de visão que é
+    injetado no prompt do agente para permitir que modelos text-only raciocinem
+    sobre o conteúdo da imagem.
+    """
+
+    id: uuid.UUID
+    conversation_id: uuid.UUID
+    mime_type: str
+    storage_path: str
+    original_filename: str
+    size_bytes: int = 0
+    kind: str = "image"
+    message_id: uuid.UUID | None = None
+    vision_description: str | None = None
+    vision_model_used: str | None = None
+    uploaded_by: uuid.UUID | None = None
+    uploaded_at: datetime = field(default_factory=_utcnow)

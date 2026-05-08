@@ -25,13 +25,20 @@ message ClientMessage {
   }
 }
 
+message Attachment {
+  string mime_type         = 1; // ex.: "image/png"
+  bytes  data              = 2; // raw bytes (NOT base64-encoded)
+  string original_filename = 3; // hint for the model + logs
+}
+
 message ChatRequest {
-  string message = 1;
-  string working_directory = 2;
+  string message            = 1;
+  string working_directory  = 2;
   reserved 3;
-  optional string model = 4;
-  string session_id = 5;
-  string request_id = 6;        // Client-generated UUID for distributed tracing
+  optional string model     = 4;
+  string session_id         = 5;
+  string request_id         = 6; // Client-generated UUID for distributed tracing
+  repeated Attachment attachments = 7; // Vision input (only used when model supports it)
 }
 
 message UserInput {

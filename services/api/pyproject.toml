@@ -103,6 +103,13 @@ omit = [
     "app/infrastructure/skill_importer.py",
     "app/infrastructure/embeddings.py",
     "app/infrastructure/sandbox_watchdog.py",
+    # Anexos (visão computacional) — HTTP/upload, storage filesystem físico,
+    # chamada externa OpenRouter Vision. Cobertura via testes de integração
+    # (fora do gate de unit-coverage); use cases têm fakes em conftest.py.
+    "app/adapters/primary/http/attachments.py",
+    "app/adapters/secondary/storage/local_volume_attachment_storage.py",
+    "app/adapters/secondary/vision/openrouter_vision_describer.py",
+    "app/application/use_cases/attachments.py",
 ]
 
 [tool.coverage.report]
