@@ -136,11 +136,22 @@ export function ModelPicker({
     })
   }, [])
 
+  /** Abre o popover e reseta filtro/seleção numa só transição.
+   *  Mantém os resets fora de useEffect (regra react-hooks/set-state-in-effect). */
+  const togglePicker = useCallback(() => {
+    setOpen((prev) => {
+      const next = !prev
+      if (next) {
+        setActiveIndex(0)
+        setQuery('')
+      }
+      return next
+    })
+  }, [])
+
   useEffect(() => {
     if (!open) return
     reposition()
-    setActiveIndex(0)
-    setQuery('')
     const t = window.setTimeout(() => inputRef.current?.focus(), 0)
     return () => window.clearTimeout(t)
   }, [open, reposition])
@@ -225,7 +236,7 @@ export function ModelPicker({
         ref={triggerRef}
         type="button"
         className={`${styles.trigger} ${compact ? styles.triggerCompact : ''}`}
-        onClick={() => !disabled && setOpen((o) => !o)}
+        onClick={() => !disabled && togglePicker()}
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}

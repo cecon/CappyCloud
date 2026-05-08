@@ -11,7 +11,7 @@
  *   - Cada item entra com fade+slide (animacao no CSS)
  */
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import styles from './chat.module.css'
 
 export type ThoughtStep =
@@ -119,15 +119,12 @@ export function ThinkingStream({ steps, streaming, elapsedMs = 0 }: Props) {
   const [manualExpanded, setManualExpanded] = useState<boolean | null>(null)
   const [expandedToolId, setExpandedToolId] = useState<string | null>(null)
 
-  // Auto-expand durante streaming; auto-colapso ao terminar (se o utilizador
-  // não tiver tomado controlo manual).
+  // Auto-expand durante streaming; auto-colapso ao terminar.
+  // ``manualExpanded ?? streaming`` já entrega esse comportamento sem
+  // precisar de um useEffect (que viola react-hooks/set-state-in-effect):
+  // enquanto o utilizador não toma controlo manual, ``expanded`` segue
+  // ``streaming``, colapsando sozinho quando o turno termina.
   const expanded = manualExpanded ?? streaming
-
-  useEffect(() => {
-    if (!streaming) {
-      setManualExpanded((prev) => (prev === null ? false : prev))
-    }
-  }, [streaming])
 
   if (steps.length === 0) return null
 
