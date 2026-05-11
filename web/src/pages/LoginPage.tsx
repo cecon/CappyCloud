@@ -18,38 +18,42 @@ type Props = {
   onLoggedIn: () => void
 }
 
-/**
- * Página de login; registo em `/register`.
- */
 export function LoginPage({ onLoggedIn }: Props) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [emailError, setEmailError] = useState<string | null>(null)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [apiError, setApiError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+
+  function validateEmail(): boolean {
+    const em = email.trim().toLowerCase()
+    if (!em) { setEmailError('Indica o teu email.'); return false }
+    if (!isPlausibleEmail(em)) { setEmailError('Email inválido. Usa o formato nome@dominio.com.'); return false }
+    setEmailError(null)
+    return true
+  }
+
+  function validatePassword(): boolean {
+    if (!password) { setPasswordError('Indica a senha.'); return false }
+    setPasswordError(null)
+    return true
+  }
 
   async function handleLogin(e?: React.FormEvent) {
     e?.preventDefault()
-    const em = email.trim().toLowerCase()
-    if (!em) {
-      setError('Indica o teu email.')
-      return
-    }
-    if (!isPlausibleEmail(em)) {
-      setError('Email inválido. Usa o formato nome@dominio.com (ex.: nome@gmail.com).')
-      return
-    }
-    if (!password) {
-      setError('Indica a password.')
-      return
-    }
+    const emailOk = validateEmail()
+    const passwordOk = validatePassword()
+    if (!emailOk || !passwordOk) return
+
     setLoading(true)
-    setError(null)
+    setApiError(null)
     try {
-      const token = await loginRequest(em, password)
+      const token = await loginRequest(email.trim().toLowerCase(), password)
       setToken(token)
       onLoggedIn()
     } catch (e) {
-      setError(errorToUserMessage(e))
+      setApiError(errorToUserMessage(e))
     } finally {
       setLoading(false)
     }
@@ -61,40 +65,44 @@ export function LoginPage({ onLoggedIn }: Props) {
         CappyCloud
       </Title>
       <Text c="dimmed" size="sm" ta="center" mb="lg">
-        Agente de código com sandbox isolado — stack própria (FastAPI + React).
+        Agente de código com sandbox isolado na nuvem.
       </Text>
       <Paper withBorder shadow="md" p={30} radius="md">
         <form onSubmit={handleLogin}>
-        <Stack gap="md">
-          {error && (
-            <Text c="red" size="sm">
-              {error}
+          <Stack gap="md">
+            {apiError && (
+              <Text c="red" size="sm" role="alert">
+                {apiError}
+              </Text>
+            )}
+            <TextInput
+              label="Email"
+              placeholder="nome@exemplo.com"
+              type="email"
+              value={email}
+              onChange={(e) => { setEmail(e.currentTarget.value); if (emailError) setEmailError(null) }}
+              onBlur={validateEmail}
+              error={emailError}
+              autoComplete="email"
+            />
+            <PasswordInput
+              label="Senha"
+              value={password}
+              onChange={(e) => { setPassword(e.currentTarget.value); if (passwordError) setPasswordError(null) }}
+              onBlur={validatePassword}
+              error={passwordError}
+              autoComplete="current-password"
+            />
+            <Button type="submit" loading={loading} fullWidth>
+              Entrar
+            </Button>
+            <Text size="sm" ta="center">
+              Novo aqui?{' '}
+              <Anchor component={Link} to="/register" underline="hover">
+                Criar conta
+              </Anchor>
             </Text>
-          )}
-          <TextInput
-            label="Email"
-            placeholder="nome@gmail.com"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.currentTarget.value)}
-            autoComplete="email"
-          />
-          <PasswordInput
-            label="Password"
-            value={password}
-            onChange={(e) => setPassword(e.currentTarget.value)}
-            autoComplete="current-password"
-          />
-          <Button type="submit" loading={loading} fullWidth>
-            Entrar
-          </Button>
-          <Text size="sm" ta="center">
-            Novo aqui?{' '}
-            <Anchor component={Link} to="/register" underline="hover">
-              Criar conta
-            </Anchor>
-          </Text>
-        </Stack>
+          </Stack>
         </form>
       </Paper>
     </Container>

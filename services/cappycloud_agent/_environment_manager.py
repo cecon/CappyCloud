@@ -19,12 +19,21 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 
 import httpx
 
 from ._session_store import SandboxRecord, SessionStore
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class SessionLease:
+    """Resultado da preparação da sessão no sandbox."""
+
+    record: SandboxRecord
+    created: bool
 
 
 class EnvironmentManager:
@@ -54,8 +63,9 @@ class EnvironmentManager:
         user_id: str,
         chat_id: str,
         repos: list[dict] | None = None,
+        session_root: str = "",
         sandbox_id: str = "",
-    ) -> SandboxRecord:
+    ) -> SessionLease:
         """Return (or create) a SandboxRecord for the conversation.
 
         session_server.js is idempotent: if session_root already exists it
@@ -65,13 +75,17 @@ class EnvironmentManager:
         if record:
             await self._store.refresh_ttl(user_id, chat_id)
             await self._ensure_session(record)
-            return record
+            return SessionLease(record=record, created=False)
 
-        return await self._create_session(
-            user_id=user_id,
-            chat_id=chat_id,
-            repos=repos,
-            sandbox_id=sandbox_id,
+        return SessionLease(
+            record=await self._create_session(
+                user_id=user_id,
+                chat_id=chat_id,
+                repos=repos,
+                session_root=session_root,
+                sandbox_id=sandbox_id,
+            ),
+            created=True,
         )
 
     async def destroy_session(self, user_id: str, chat_id: str) -> None:
@@ -110,22 +124,24 @@ class EnvironmentManager:
         host = record.grpc_host or self._default_host
         base = self._session_base(host, self._default_session_port)
         session_id = record.chat_id.replace("-", "")[:12]
-        try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                await client.post(
-                    f"{base}/sessions",
-                    json=self._session_payload(
-                        session_id, record.repos, record.session_root
-                    ),
-                )
-        except Exception as exc:
-            log.warning("_ensure_session non-fatal: %s", exc)
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{base}/sessions",
+                json=self._session_payload(
+                    session_id, record.repos, record.session_root
+                ),
+            )
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"session_server returned {resp.status_code}: {resp.text}"
+            )
 
     async def _create_session(
         self,
         user_id: str,
         chat_id: str,
         repos: list[dict] | None,
+        session_root: str,
         sandbox_id: str,
     ) -> SandboxRecord:
         session_id = chat_id.replace("-", "")[:12]
@@ -134,7 +150,7 @@ class EnvironmentManager:
         grpc_port = self._default_grpc_port
         base = self._session_base(host, self._default_session_port)
 
-        session_root = f"/repos/sessions/{session_id}"
+        session_root = session_root or f"/repos/sessions/{session_id}"
         resolved_repos = repos or []
 
         log.info(
@@ -155,11 +171,24 @@ class EnvironmentManager:
                 raise RuntimeError(
                     f"session_server returned {resp.status_code}: {resp.text}"
                 )
+            resp_data = resp.json()
         except httpx.ConnectError as exc:
             raise RuntimeError(
                 f"Cannot reach sandbox session server at {base}. "
                 "Check if cappycloud-sandbox is running."
             ) from exc
+
+        # Mescla branch_name retornado pelo session_server nos repos persistidos.
+        repos_created: list[dict] = resp_data.get("repos_created") or []
+        if repos_created:
+            by_alias = {r["alias"]: r for r in repos_created if "alias" in r}
+            for repo in resolved_repos:
+                alias = repo.get("alias") or repo.get("slug", "")
+                created = by_alias.get(alias)
+                if created and not repo.get("branch_name"):
+                    repo["branch_name"] = created["branch_name"]
+                if created and not repo.get("worktree_path"):
+                    repo["worktree_path"] = created["worktree_path"]
 
         record = SandboxRecord(
             user_id=user_id,

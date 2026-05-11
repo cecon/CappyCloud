@@ -12,11 +12,12 @@ from collections.abc import Generator
 from typing import Any
 
 import pytest
-from app.domain.entities import Conversation, Message, User
+from app.domain.entities import Conversation, Message, Repository, User
 from app.ports.agent import AgentPort
 from app.ports.repositories import (
     ConversationRepository,
     MessageRepository,
+    RepositoryRepository,
     UserRepository,
 )
 from app.ports.services import PasswordService, TokenService
@@ -71,11 +72,34 @@ class InMemoryConversationRepository(ConversationRepository):
         return conversation
 
 
+class InMemoryRepositoryRepository(RepositoryRepository):
+    """In-memory repository catalog for testing."""
+
+    def __init__(self) -> None:
+        self._store: dict[uuid.UUID, Repository] = {}
+
+    async def get(self, repo_id: uuid.UUID) -> Repository | None:
+        return self._store.get(repo_id)
+
+    async def get_by_slug(self, slug: str) -> Repository | None:
+        return next((r for r in self._store.values() if r.slug == slug), None)
+
+    async def get_authenticated_clone_url(self, repo_id: uuid.UUID) -> str | None:
+        repo = self._store.get(repo_id)
+        return repo.clone_url if repo else None
+
+    def add(self, repo: Repository) -> None:
+        """T\u00e9cnica de teste: insere reposit\u00f3rio diretamente sem rota HTTP."""
+        self._store[repo.id] = repo
+
+
 class InMemoryMessageRepository(MessageRepository):
     """In-memory message store for testing."""
 
     def __init__(self) -> None:
         self._store: list[Message] = []
+        # model_id → (input_cost_per_1m_usd, output_cost_per_1m_usd)
+        self._pricing: dict[str, tuple[float, float]] = {}
 
     async def list_by_conversation(self, conversation_id: uuid.UUID) -> list[Message]:
         return sorted(
@@ -86,6 +110,13 @@ class InMemoryMessageRepository(MessageRepository):
     async def save(self, message: Message) -> Message:
         self._store.append(message)
         return message
+
+    async def get_model_pricing(self, model_used: str) -> tuple[float, float] | None:
+        return self._pricing.get(model_used)
+
+    def set_pricing(self, model_used: str, input_cost: float, output_cost: float) -> None:
+        """Técnica de teste: configura preço de um modelo no fake."""
+        self._pricing[model_used] = (input_cost, output_cost)
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +205,11 @@ def user_repo() -> InMemoryUserRepository:
 @pytest.fixture
 def conv_repo() -> InMemoryConversationRepository:
     return InMemoryConversationRepository()
+
+
+@pytest.fixture
+def repository_repo() -> InMemoryRepositoryRepository:
+    return InMemoryRepositoryRepository()
 
 
 @pytest.fixture

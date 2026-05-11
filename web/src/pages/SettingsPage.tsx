@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   AuthError,
@@ -15,6 +15,8 @@ import {
   type RepositoryCreate,
   type Sandbox,
 } from '../api'
+import { AiModelsPanel } from '../components/AiModelsPanel'
+import { DocumentsPanel } from '../components/DocumentsPanel'
 import styles from './settings.module.css'
 
 const PROVIDER_TYPES: Array<{ value: string; label: string }> = [
@@ -55,6 +57,7 @@ export function SettingsPage() {
   const [loadingBranches, setLoadingBranches] = useState(false)
   const [syncingId, setSyncingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [docsOpenId, setDocsOpenId] = useState<string | null>(null)
 
   useEffect(() => {
     void loadAll()
@@ -172,15 +175,15 @@ export function SettingsPage() {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <Link to="/" className={styles.backLink}>
+        <Link to="/chat" className={styles.backLink}>
           <span className={styles.icon}>arrow_back</span>
           Voltar ao chat
         </Link>
         <h1 className={styles.title}>Configurações</h1>
-        <div style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
-          <Link to="/agents" className={styles.backLink}>
-            <span className={styles.icon}>support_agent</span>
-            Gerir Agentes & Skills →
+        <div style={{ marginTop: '0.5rem', fontSize: '0.85rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          <Link to="/skills" className={styles.backLink}>
+            <span className={styles.icon}>menu_book</span>
+            Skills →
           </Link>
         </div>
       </header>
@@ -214,55 +217,82 @@ export function SettingsPage() {
             </thead>
             <tbody>
               {repos.map((r) => (
-                <tr key={r.id}>
-                  <td>{r.name}</td>
-                  <td>
-                    <code>{r.slug}</code>
-                  </td>
-                  <td className={styles.urlCell} title={r.clone_url}>
-                    {r.clone_url}
-                  </td>
-                  <td>{r.default_branch}</td>
-                  <td>
-                    <span
-                      className={`${styles.badge} ${styles[`badge_${r.sandbox_status}`] ?? ''}`}
-                    >
-                      {r.sandbox_status}
-                    </span>
-                  </td>
-                  <td className={styles.actions}>
-                    <button
-                      className={styles.actionBtn}
-                      onClick={() => handleEdit(r)}
-                      title="Editar"
-                    >
-                      <span className={styles.icon}>edit</span>
-                    </button>
-                    <button
-                      className={styles.actionBtn}
-                      onClick={() => handleSync(r.id)}
-                      disabled={syncingId === r.id}
-                      title="Sincronizar (clone/fetch) no sandbox"
-                    >
-                      <span className={styles.icon}>
-                        {syncingId === r.id ? 'hourglass_empty' : 'sync'}
+                <Fragment key={r.id}>
+                  <tr>
+                    <td>{r.name}</td>
+                    <td>
+                      <code>{r.slug}</code>
+                    </td>
+                    <td className={styles.urlCell} title={r.clone_url}>
+                      {r.clone_url}
+                    </td>
+                    <td>{r.default_branch}</td>
+                    <td>
+                      <span
+                        className={`${styles.badge} ${styles[`badge_${r.sandbox_status}`] ?? ''}`}
+                      >
+                        {r.sandbox_status}
                       </span>
-                    </button>
-                    <button
-                      className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
-                      onClick={() => handleDelete(r.id)}
-                      disabled={deletingId === r.id}
-                      title="Remover"
-                    >
-                      <span className={styles.icon}>delete</span>
-                    </button>
-                  </td>
-                </tr>
+                    </td>
+                    <td className={styles.actions}>
+                      <button
+                        className={styles.actionBtn}
+                        onClick={() =>
+                          setDocsOpenId((prev) => (prev === r.id ? null : r.id))
+                        }
+                        title={docsOpenId === r.id ? 'Fechar documentos' : 'Documentos'}
+                      >
+                        <span className={styles.icon}>
+                          {docsOpenId === r.id ? 'expand_less' : 'menu_book'}
+                        </span>
+                      </button>
+                      <button
+                        className={styles.actionBtn}
+                        onClick={() => handleEdit(r)}
+                        title="Editar"
+                      >
+                        <span className={styles.icon}>edit</span>
+                      </button>
+                      <button
+                        className={styles.actionBtn}
+                        onClick={() => handleSync(r.id)}
+                        disabled={syncingId === r.id}
+                        title="Sincronizar (clone/fetch) no sandbox"
+                      >
+                        <span className={styles.icon}>
+                          {syncingId === r.id ? 'hourglass_empty' : 'sync'}
+                        </span>
+                      </button>
+                      <button
+                        className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
+                        onClick={() => handleDelete(r.id)}
+                        disabled={deletingId === r.id}
+                        title="Remover"
+                      >
+                        <span className={styles.icon}>delete</span>
+                      </button>
+                    </td>
+                  </tr>
+                  {docsOpenId === r.id && (
+                    <tr>
+                      <td colSpan={6} style={{ padding: 0, background: 'transparent' }}>
+                        <DocumentsPanel
+                          token={token}
+                          repositoryId={r.id}
+                          repositoryName={r.name}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
         )}
       </section>
+
+      {/* ── Modelos IA ──────────────────────────────────────── */}
+      <AiModelsPanel token={token} />
 
       {/* ── Form ──────────────────────────────────────────────── */}
       <section className={styles.section}>

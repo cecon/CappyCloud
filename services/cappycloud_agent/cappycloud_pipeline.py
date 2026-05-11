@@ -19,7 +19,10 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from ._agent_context import build_prompt_with_agent, load_agent_context
+from ._agent_context import (
+    build_prompt_with_agent,
+    load_agent_context,
+)
 from ._environment_manager import EnvironmentManager
 from ._pipeline_helpers import db_url, inject_repo_context, sse
 from ._session_store import SessionStore
@@ -121,37 +124,43 @@ class Pipeline:
         repos = body.get("repos") or []
         session_root = str(body.get("session_root") or "")
         sandbox_id = str(body.get("sandbox_id") or "")
-        agent_id = str(body.get("agent_id") or "")
         cursor = body.get("cursor")
         try:
             cursor = int(cursor) if cursor is not None else None
         except (TypeError, ValueError):
             cursor = None
 
-        # Carrega system_prompt do agente + RAG inicial (top-N skills relevantes).
-        system_prompt = ""
+        repo_ids: list[str] = [r["repo_id"] for r in repos if r.get("repo_id")]
+
         skills_top: list[dict] = []
-        if agent_id:
+        if repo_ids:
             try:
-                system_prompt, skills_top = self._run(
+                skills_top = self._run(
                     load_agent_context(
-                        self.valves.DATABASE_URL, agent_id, user_message
+                        self.valves.DATABASE_URL,
+                        user_message,
+                        repo_ids=repo_ids or None,
                     ),
                     timeout=10,
                 )
             except Exception as exc:  # noqa: BLE001
                 log.warning("Falha ao carregar agent_context: %s", exc)
 
-        # URL do session_server (para o LLM chamar /skills/search via Bash quando precisar).
         sandbox_host = os.getenv("SANDBOX_HOST", "cappycloud-sandbox")
         sandbox_session_port = os.getenv("SANDBOX_SESSION_PORT", "8080")
         sandbox_session_url = f"http://{sandbox_host}:{sandbox_session_port}"
 
+        # NOTA: a estrutura top-level do worktree é injetada pelo dispatcher,
+        # depois de o worktree ser efetivamente criado pelo EnvironmentManager.
+        # Tentar obtê-la aqui falha sempre na primeira mensagem (worktree ainda
+        # não existe → /worktree/ls-files devolve 500).
         prompt = build_prompt_with_agent(
             user_message,
-            system_prompt,
             skills_top,
             sandbox_session_url,
+            repos=repos,
+            session_root=session_root,
+            worktree_top_level=None,
         )
         prompt = inject_repo_context(prompt, repos, session_root)
 
@@ -161,12 +170,13 @@ class Pipeline:
         )
         runner = self._dispatcher.get_runner(task_id) if task_id else None
 
-        dispatch_kwargs = dict(
-            repos=repos,
-            session_root=session_root,
-            sandbox_id=sandbox_id,
-            override_model=body.get("override_model"),
-        )
+        dispatch_kwargs = {
+            "repos": repos,
+            "session_root": session_root,
+            "sandbox_id": sandbox_id,
+            "override_model": body.get("override_model"),
+            "sandbox_session_url": sandbox_session_url,
+        }
 
         if runner and runner.is_alive() and runner.pending_action:
             self._run(self._dispatcher.send_input(task_id, user_message), timeout=10)

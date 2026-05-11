@@ -23,7 +23,11 @@ from app.adapters.secondary.persistence.sqlalchemy_user_repo import (
 )
 from app.domain.entities import Conversation, Message, User
 from app.infrastructure.orm_models import Base
-from app.ports.repositories import ConversationRepository, MessageRepository, UserRepository
+from app.ports.repositories import (
+    ConversationRepository,
+    MessageRepository,
+    UserRepository,
+)
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from tests.conftest import (

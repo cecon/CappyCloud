@@ -10,8 +10,16 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.primary.http.conversation_worktree_paths import (
+    WORKTREE_FROM_CONVERSATION,
+    resolve_git_paths_from_worktree_row,
+)
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
 from app.domain.entities import User
+from app.infrastructure.sandbox_worktree_client import (
+    SandboxWorktreeError,
+    worktree_diff_against_base,
+)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -79,39 +87,19 @@ async def get_conversation_diff(
 ) -> dict:
     """Diff do worktree actual em relação ao branch base."""
     row = await db.execute(
-        text(
-            "SELECT "
-            "  cs.session_root, "
-            "  cs.repos->0->>'worktree_path' AS worktree_path, "
-            "  cs.repos->0->>'base_branch'   AS base_branch "
-            "FROM conversations c "
-            "LEFT JOIN cappy_sessions cs ON cs.chat_id = c.id::text "
-            "WHERE c.id = :cid AND c.user_id = :uid"
-        ),
+        text(WORKTREE_FROM_CONVERSATION),
         {"cid": str(conversation_id), "uid": str(current.id)},
     )
     conv = row.fetchone()
     if not conv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada")
 
-    base_branch = conv.base_branch or "main"
-    worktree = conv.worktree_path or conv.session_root
-    if not worktree:
-        return {"base_branch": base_branch, "stats": {"added": 0, "removed": 0}, "files": []}
+    worktree, _, base_branch = resolve_git_paths_from_worktree_row(conv, conversation_id)
 
     try:
-        import docker
-
-        client = docker.from_env()
-        container = client.containers.get("cappycloud-sandbox")
-        _, output = container.exec_run(
-            ["git", "-C", worktree, "diff", f"{base_branch}..HEAD"],
-        )
-        diff_text = output.decode("utf-8", errors="replace") if output else ""
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Erro ao obter diff: {exc}"
-        ) from exc
+        diff_text = await worktree_diff_against_base(worktree, base_branch)
+    except SandboxWorktreeError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     return _parse_diff(diff_text, base_branch)
 

@@ -97,11 +97,11 @@ def _pick_main(soup: BeautifulSoup) -> Tag:
 def _extract_title(soup: BeautifulSoup, main: Tag) -> str:
     h1 = main.find("h1")
     if isinstance(h1, Tag) and h1.get_text(strip=True):
-        return h1.get_text(strip=True)[:480]
+        return str(h1.get_text(strip=True))[:480]
     if soup.title and soup.title.string:
         title = soup.title.string.strip()
         # Confluence: "Title - Space - Site" → mantém só o primeiro
-        return title.split(" - ")[0][:480]
+        return str(title.split(" - ")[0])[:480]
     return "Sem título"
 
 

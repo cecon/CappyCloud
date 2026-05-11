@@ -85,6 +85,16 @@ class SandboxOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SandboxRegister(BaseModel):
+    """Payload de auto-registro enviado pelo container ao iniciar."""
+
+    name: str = Field(min_length=1, max_length=128)
+    host: str = Field(min_length=1, max_length=256)
+    grpc_port: int = Field(default=50051, ge=1, le=65535)
+    session_port: int = Field(default=8080, ge=1, le=65535)
+    register_token: str = Field(min_length=1, max_length=256)
+
+
 # ── Conversations ─────────────────────────────────────────────
 
 
@@ -109,7 +119,6 @@ class ConversationCreate(BaseModel):
     title: str | None = Field(default="Nova conversa", max_length=512)
     sandbox_id: uuid.UUID | None = None
     repos: list[RepoSelection] = Field(default_factory=list)
-    agent_id: uuid.UUID | None = None
 
 
 class ConversationOut(BaseModel):
@@ -121,7 +130,6 @@ class ConversationOut(BaseModel):
     updated_at: datetime
     sandbox_id: uuid.UUID | None = None
     ai_model_id: uuid.UUID | None = None
-    agent_id: uuid.UUID | None = None
     repos: list[dict] = Field(default_factory=list)
     session_root: str | None = None
     # Worktree state
@@ -186,6 +194,8 @@ class AiModelCreate(BaseModel):
     capabilities: list[str] = Field(default_factory=lambda: ["text"])
     is_default: dict = Field(default_factory=dict)
     context_window: int = Field(default=200000, ge=1)
+    input_cost_per_1m_usd: float | None = None
+    output_cost_per_1m_usd: float | None = None
 
 
 class AiModelOut(BaseModel):
@@ -196,10 +206,22 @@ class AiModelOut(BaseModel):
     capabilities: list[str]
     is_default: dict
     context_window: int
+    input_cost_per_1m_usd: float | None = None
+    output_cost_per_1m_usd: float | None = None
     active: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AiModelSyncResult(BaseModel):
+    """Resultado de um sync de catálogo OpenRouter → DB."""
+
+    provider_id: uuid.UUID
+    fetched: int
+    created: int
+    updated: int
+    deactivated: int
 
 
 class RepositoryCreate(BaseModel):
@@ -237,30 +259,37 @@ class MessageOut(BaseModel):
     role: str
     content: str
     created_at: datetime
+    model_used: str | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cost_usd: float = 0.0
 
     model_config = {"from_attributes": True}
 
 
+class ConversationUsage(BaseModel):
+    """Totais de uso agregados por conversa."""
+
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
+    total_cost_usd: float = 0.0
+
+
 class SendMessageBody(BaseModel):
     content: str = Field(min_length=1, max_length=1_000_000)
-    model_id: str | None = Field(
-        default=None,
-        max_length=256,
-        description=(
-            "OpenRouter model ID (ex: anthropic/claude-3.5-sonnet). "
-            "Se None, usa o default da env var."
-        ),
-    )
+    # OpenRouter model ID (ex.: anthropic/claude-3.5-sonnet). None usa default.
+    model_id: str | None = Field(default=None, max_length=256)
 
 
-# ── Re-export schemas de Agents & Skills (definidos em ``schemas_agents``) ──
+# ── Re-export schemas de Skills (definidos em ``schemas_agents``) ───────────
 from app.schemas_agents import (  # noqa: E402, F401
-    AgentCreate,
-    AgentOut,
-    AgentUpdate,
     SkillCreate,
     SkillImportFromUrlBody,
     SkillOut,
     SkillSearchResult,
     SkillUpdate,
+)
+from app.schemas_documents import (  # noqa: E402, F401
+    DocumentCreate,
+    DocumentOut,
 )

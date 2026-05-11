@@ -1,8 +1,10 @@
 """ORM models — SQLAlchemy mapped classes for users, conversations and messages.
 
 Named orm_models.py (not models.py) to avoid collision with domain/entities.py.
-Agent execution models live in orm_models_agent.py (imported below to register them
-with Base.metadata for Alembic).
+Sub-modules imported at the bottom register their tables with Base.metadata for Alembic:
+  - orm_models_agent.py     → Skill (knowledge base)
+  - orm_models_execution.py → AgentTask, AgentEvent, CicdEvent, Routine, etc.
+  - orm_models_platform.py  → GitProvider, Repository, AiProvider, AiModel, etc.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     func,
@@ -83,6 +86,7 @@ class Sandbox(Base):
     grpc_port: Mapped[int] = mapped_column(Integer, nullable=False, default=50051)
     session_port: Mapped[int] = mapped_column(Integer, nullable=False, default=8080)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", index=True)
+    register_token: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversations: Mapped[list["Conversation"]] = relationship(
@@ -148,12 +152,6 @@ class Conversation(Base):
         nullable=True,
         index=True,
     )
-    agent_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUIDType,
-        ForeignKey("agents.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
     title: Mapped[str] = mapped_column(String(512), default="Nova conversa")
     # Multi-repo: lista de {slug, alias, base_branch, branch_name, worktree_path}
     repos: Mapped[list] = mapped_column(JSONBType, nullable=False, server_default="[]")
@@ -196,7 +194,12 @@ class Conversation(Base):
 
 
 class Message(Base):
-    """Mensagem numa conversa."""
+    """Mensagem numa conversa.
+
+    Em mensagens de ``role='assistant'``, os campos ``model_used``,
+    ``prompt_tokens``, ``completion_tokens`` e ``cost_usd`` são preenchidos
+    no fim do turno do agente. Para ``role='user'`` ficam ``NULL``/``0``.
+    """
 
     __tablename__ = "messages"
 
@@ -209,13 +212,20 @@ class Message(Base):
     )
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    model_used: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_usd: Mapped[float] = mapped_column(Numeric(12, 6), nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship("Conversation", back_populates="messages")
 
 
-# Import platform and agent models last — registers tables with Base.metadata for Alembic.
+# Import sub-modules last — registers tables with Base.metadata for Alembic.
 from app.infrastructure.orm_models_agent import (  # noqa: F401, E402
+    Skill,
+)
+from app.infrastructure.orm_models_execution import (  # noqa: F401, E402
     AgentEvent,
     AgentTask,
     CicdEvent,
@@ -224,13 +234,10 @@ from app.infrastructure.orm_models_agent import (  # noqa: F401, E402
     Routine,
     RoutineRun,
 )
-from app.infrastructure.orm_models_agents import (  # noqa: F401, E402
-    Agent,
-    Skill,
-)
 from app.infrastructure.orm_models_platform import (  # noqa: F401, E402
     AiModel,
     AiProvider,
+    Document,
     GitProvider,
     Repository,
     SandboxSyncQueue,

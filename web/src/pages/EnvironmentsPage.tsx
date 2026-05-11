@@ -141,7 +141,7 @@ export function EnvironmentsPage({ token }: Props) {
         <Group gap="sm">
           <Button
             component={Link}
-            to="/"
+            to="/chat"
             variant="subtle"
             size="xs"
             color="gray"

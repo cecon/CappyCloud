@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 80" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="trace" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.15"/>
+      <stop offset="50%" stop-color="#60a5fa" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+  <!-- Traces estilo PCB -->
+  <path stroke="url(#trace)" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"
+    d="M56 40H92l8-18M56 40H92l8 18M220 40h-52M220 40h52M384 40h-36l-8-18M384 40h-36l-8 18"/>
+  <path stroke="rgba(59,130,246,0.35)" stroke-width="1" stroke-linecap="round"
+    d="M220 58V48M148 22h64M292 22h-64M148 62h64M292 62h-64"/>
+  <circle cx="56" cy="40" r="2.5" fill="#3b82f6"/>
+  <circle cx="384" cy="40" r="2.5" fill="#3b82f6"/>
+  <!-- Nós periféricos (glass) -->
+  <rect x="8" y="24" width="40" height="32" rx="8" fill="rgba(30,41,59,0.72)" stroke="rgba(59,130,246,0.4)"/>
+  <text x="28" y="44" text-anchor="middle" fill="#cbd5e1" font-size="8" font-family="Segoe UI,system-ui,sans-serif" font-weight="600">Code</text>
+  <circle cx="44" y="30" r="2" fill="#22c55e"/>
+  <rect x="392" y="24" width="40" height="32" rx="8" fill="rgba(30,41,59,0.72)" stroke="rgba(59,130,246,0.4)"/>
+  <text x="412" y="44" text-anchor="middle" fill="#cbd5e1" font-size="8" font-family="Segoe UI,system-ui,sans-serif" font-weight="600">MCP</text>
+  <circle cx="428" y="30" r="2" fill="#22c55e"/>
+  <rect x="118" y="6" width="36" height="26" rx="7" fill="rgba(30,41,59,0.65)" stroke="rgba(59,130,246,0.32)"/>
+  <text x="136" y="23" text-anchor="middle" fill="#94a3b8" font-size="7" font-family="Segoe UI,system-ui,sans-serif">Repo</text>
+  <rect x="286" y="6" width="36" height="26" rx="7" fill="rgba(30,41,59,0.65)" stroke="rgba(59,130,246,0.32)"/>
+  <text x="304" y="23" text-anchor="middle" fill="#94a3b8" font-size="7" font-family="Segoe UI,system-ui,sans-serif">Runs</text>
+  <rect x="108" y="52" width="40" height="24" rx="6" fill="rgba(30,41,59,0.6)" stroke="rgba(59,130,246,0.28)"/>
+  <text x="128" y="68" text-anchor="middle" fill="#64748b" font-size="6.5" font-family="Segoe UI,system-ui,sans-serif">Sandbox</text>
+  <rect x="292" y="52" width="40" height="24" rx="6" fill="rgba(30,41,59,0.6)" stroke="rgba(59,130,246,0.28)"/>
+  <text x="312" y="68" text-anchor="middle" fill="#64748b" font-size="6.5" font-family="Segoe UI,system-ui,sans-serif">Agents</text>
+  <!-- Hub central -->
+  <circle cx="220" cy="40" r="24" fill="rgba(15,23,42,0.85)" stroke="#3b82f6" stroke-width="1.5"/>
+  <circle cx="220" cy="40" r="19" stroke="rgba(96,165,250,0.35)" stroke-width="1" stroke-dasharray="2 5" fill="none"/>
+  <text x="220" y="36" text-anchor="middle" fill="#f1f5f9" font-size="9" font-family="Segoe UI,system-ui,sans-serif" font-weight="700">Coordinator</text>
+  <text x="220" y="47" text-anchor="middle" fill="#64748b" font-size="6.5" font-family="Segoe UI,system-ui,sans-serif">multi-agente</text>
+</svg>

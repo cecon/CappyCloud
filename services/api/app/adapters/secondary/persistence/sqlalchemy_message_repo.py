@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities import Message as MsgEntity
 from app.infrastructure.orm_models import Message as MsgORM
+from app.infrastructure.orm_models_platform import AiModel
 from app.ports.repositories import MessageRepository
 
 
@@ -32,11 +33,35 @@ class SQLAlchemyMessageRepository(MessageRepository):
             conversation_id=message.conversation_id,
             role=message.role,
             content=message.content,
+            model_used=message.model_used,
+            prompt_tokens=message.prompt_tokens,
+            completion_tokens=message.completion_tokens,
+            cost_usd=message.cost_usd,
         )
         self._session.add(orm)
         await self._session.commit()
         await self._session.refresh(orm)
         return self._to_entity(orm)
+
+    async def get_model_pricing(self, model_used: str) -> tuple[float, float] | None:
+        if not model_used:
+            return None
+        row = (
+            await self._session.execute(
+                select(
+                    AiModel.input_cost_per_1m_usd,
+                    AiModel.output_cost_per_1m_usd,
+                )
+                .where(AiModel.model_id == model_used)
+                .where(AiModel.active.is_(True))
+                .limit(1)
+            )
+        ).first()
+        if row is None:
+            return None
+        input_cost = float(row[0] or 0)
+        output_cost = float(row[1] or 0)
+        return (input_cost, output_cost)
 
     @staticmethod
     def _to_entity(row: MsgORM) -> MsgEntity:
@@ -46,4 +71,8 @@ class SQLAlchemyMessageRepository(MessageRepository):
             role=row.role,
             content=row.content,
             created_at=row.created_at,
+            model_used=row.model_used,
+            prompt_tokens=row.prompt_tokens or 0,
+            completion_tokens=row.completion_tokens or 0,
+            cost_usd=float(row.cost_usd or 0),
         )

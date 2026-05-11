@@ -9,6 +9,7 @@ __pycache__/
 *$py.class
 .Python
 .venv/
+.ruff_cache/
 venv/
 *.egg-info/
 .pytest_cache/

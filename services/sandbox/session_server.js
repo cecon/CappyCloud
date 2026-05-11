@@ -16,6 +16,7 @@
 //   POST   /git/ls-remote-branches → git ls-remote --heads (URL com ou sem PAT)
 //   POST   /git/origin-head-branch → default local (symbolic-ref)
 //   POST   /git/branch-r           → git branch -r no clone /repos/...
+//   POST   /worktree/*              → worktree_handlers.js (ls-files, diff, PR, …)
 //   GET    /health                 → liveness probe
 // ──────────────────────────────────────────────────────────────
 
@@ -27,6 +28,8 @@ const { promisify } = require('util')
 
 const gitHandlers = require('./git_handlers')
 const repoHandlers = require('./repo_handlers')
+const taskHandler = require('./task_handler')
+const worktreeHandlers = require('./worktree_handlers')
 
 const execFileAsync = promisify(execFile)
 const PORT = parseInt(process.env.SESSION_SERVER_PORT || '8080', 10)
@@ -84,6 +87,10 @@ async function createWorktree({ slug, alias, base_branch, branch_name, worktree_
     env: { ...process.env },
     timeout: 60_000,
   })
+  const gitDir = path.join(worktree_path, '.git')
+  if (!fs.existsSync(gitDir)) {
+    throw new Error(`worktree não foi criado em ${worktree_path}`)
+  }
   return (stdout + stderr).trim()
 }
 
@@ -137,6 +144,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       const outputs = []
+      const repos_created = []
 
       fs.mkdirSync(session_root, { recursive: true })
 
@@ -155,27 +163,42 @@ const server = http.createServer(async (req, res) => {
         const { slug, alias, base_branch: rb, branch_name, clone_url: rc } = repo
         if (!slug || !alias) continue
         const wt_path = path.join(session_root, alias)
+        const resolved_branch = branch_name || `cappy/${slug}/${session_id}-${alias}`
         try {
           const out = await createWorktree({
             slug,
             alias,
             base_branch: rb || 'main',
-            branch_name: branch_name || `cappy/${slug}/${session_id}-${alias}`,
+            branch_name: resolved_branch,
             worktree_path: wt_path,
             clone_url: rc || '',
           })
           outputs.push(`[${alias}] ${out}`)
-          console.log(`[session_server] created worktree ${wt_path}`)
+          repos_created.push({ alias, branch_name: resolved_branch, worktree_path: wt_path })
+          console.log(`[session_server] created worktree ${wt_path} on branch ${resolved_branch}`)
         } catch (err) {
           const msg = ((err.stdout || '') + (err.stderr || '')).trim() || err.message
           console.error(`[session_server] failed worktree ${wt_path}: ${msg}`)
           outputs.push(`[${alias}] ERROR: ${msg}`)
+          repos_created.push({ alias, branch_name: resolved_branch, worktree_path: wt_path, error: msg })
         }
+      }
+
+      const errors = repos_created.filter(r => r.error)
+      if (errors.length > 0) {
+        return json(res, 500, {
+          session_id,
+          session_root,
+          repos_created,
+          error: 'failed to create one or more repo worktrees',
+          output: outputs.join('\n'),
+        })
       }
 
       return json(res, 200, {
         session_id,
         session_root,
+        repos_created,
         output: outputs.join('\n'),
       })
     }
@@ -203,11 +226,13 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
-    // GET /skills/search?q=...&agent_id=... — proxy para a API CappyCloud
+    // POST /task — delega sub-agente ao OpenRouter (ver task_handler.js)
+    if (await taskHandler.tryHandle(req, res, { json, readBody })) return
+
+    // GET /skills/search?q=... — proxy para a API CappyCloud
     // O LLM (openclaude) usa este endpoint via curl/Bash para fazer RAG por demanda.
     if (req.method === 'GET' && pathname === '/skills/search') {
       const q = url.searchParams.get('q') || ''
-      const agentId = url.searchParams.get('agent_id') || ''
       const limit = url.searchParams.get('limit') || '5'
       if (!q) return json(res, 400, { error: 'q is required' })
 
@@ -215,7 +240,6 @@ const server = http.createServer(async (req, res) => {
       const apiPort = process.env.API_PORT_INTERNAL || '8080'
       const internalToken = process.env.INTERNAL_API_TOKEN || ''
       const params = new URLSearchParams({ q, limit })
-      if (agentId) params.set('agent_id', agentId)
       const apiUrl = `http://${apiHost}:${apiPort}/api/skills/_search/internal?${params}`
       try {
         const resp = await fetch(apiUrl, {
@@ -232,7 +256,9 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // POST /git-auth — reconfigura credenciais git (token atualizado no DB)
+    if (await worktreeHandlers.tryHandle(req, res, { json, readBody })) return
+
+    // POST /git-auth — reconfigura credenciais git (token actualizado no DB)
     if (req.method === 'POST' && pathname === '/git-auth') {
       const { provider_type, token, base_url } = await readBody(req)
       try {

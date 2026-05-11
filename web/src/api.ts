@@ -158,7 +158,6 @@ export type Conversation = {
   updated_at: string
   repos: RepoSelection[]
   session_root: string | null
-  agent_id?: string | null
 }
 
 export type ChatMessage = {
@@ -166,6 +165,23 @@ export type ChatMessage = {
   role: string
   content: string
   created_at: string
+  /** Modelo IA usado para gerar a resposta (apenas em mensagens do assistente). */
+  model_used?: string | null
+  prompt_tokens?: number
+  completion_tokens?: number
+  cost_usd?: number
+}
+
+export interface ConversationUsage {
+  total_prompt_tokens: number
+  total_completion_tokens: number
+  total_cost_usd: number
+}
+
+export interface DoneEvent {
+  model_used: string | null
+  prompt_tokens: number
+  completion_tokens: number
 }
 
 export interface ToolStartEvent {
@@ -188,12 +204,21 @@ export interface ActionRequiredEvent {
   choices: string[] | null
 }
 
+export interface StatusEvent {
+  message: string
+  stage?: 'session' | 'repository' | 'ready' | 'agent'
+  mode?: 'initializing' | 'resuming'
+}
+
 export interface StreamHandlers {
   onText(accumulated: string): void
   onToolStart(tool: ToolStartEvent): void
   onToolResult(tool: ToolResultEvent): void
   onActionRequired(action: ActionRequiredEvent): void
+  onStatus(status: StatusEvent): void
   onError(message: string): void
+  /** Acumulador final de tokens/modelo enviado quando o agente termina o turno. */
+  onDone?(usage: DoneEvent): void
   signal?: AbortSignal
 }
 
@@ -208,10 +233,8 @@ export async function fetchConversations(token: string): Promise<Conversation[]>
 export async function createConversation(
   token: string,
   repos: RepoSelection[] = [],
-  agentId: string | null = null,
 ): Promise<Conversation> {
   const body: Record<string, unknown> = { repos }
-  if (agentId) body.agent_id = agentId
   const res = await apiFetch('/api/conversations', {
     method: 'POST',
     headers: {
@@ -305,8 +328,28 @@ export async function streamAssistantReply(
               choices: (evt.choices as string[] | null) ?? null,
             })
             break
+          case 'status': {
+            const stage = evt.stage
+            const mode = evt.mode
+            eventHandlers.onStatus({
+              message: (evt.message as string) ?? 'Preparando sessão...',
+              stage:
+                stage === 'session' || stage === 'repository' || stage === 'ready' || stage === 'agent'
+                  ? stage
+                  : undefined,
+              mode: mode === 'initializing' || mode === 'resuming' ? mode : undefined,
+            })
+            break
+          }
           case 'error':
             eventHandlers.onError((evt.message as string) ?? 'Erro desconhecido')
+            break
+          case 'done':
+            eventHandlers.onDone?.({
+              model_used: (evt.model_used as string | null) ?? null,
+              prompt_tokens: (evt.prompt_tokens as number) ?? 0,
+              completion_tokens: (evt.completion_tokens as number) ?? 0,
+            })
             break
         }
       } catch {
@@ -502,7 +545,10 @@ export async function fetchConversationDiff(
   const res = await apiFetch(`/api/conversations/${conversationId}/diff`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  if (!res.ok) throw new Error('Erro ao carregar diff')
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(data) || 'Erro ao carregar diff')
+  }
   return res.json()
 }
 
@@ -513,7 +559,10 @@ export async function fetchConversationFiles(
   const res = await apiFetch(`/api/conversations/${conversationId}/files`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  if (!res.ok) throw new Error('Erro ao listar ficheiros')
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(data) || 'Erro ao listar ficheiros')
+  }
   return res.json()
 }
 
@@ -526,7 +575,10 @@ export async function fetchConversationFile(
     `/api/conversations/${conversationId}/file?path=${encodeURIComponent(path)}`,
     { headers: { Authorization: `Bearer ${token}` } }
   )
-  if (!res.ok) throw new Error('Erro ao ler ficheiro')
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(data) || 'Erro ao ler ficheiro')
+  }
   return res.json()
 }
 
@@ -759,8 +811,20 @@ export interface AiModel {
   capabilities: string[]
   is_default: Record<string, boolean>
   context_window: number
+  /** Preço do prompt em USD por 1 milhão de tokens (null = desconhecido). */
+  input_cost_per_1m_usd: number | null
+  /** Preço do completion em USD por 1 milhão de tokens (null = desconhecido). */
+  output_cost_per_1m_usd: number | null
   active: boolean
   created_at: string
+}
+
+export interface AiModelSyncResult {
+  provider_id: string
+  fetched: number
+  created: number
+  updated: number
+  deactivated: number
 }
 
 export async function fetchAiModels(token: string): Promise<AiModel[]> {
@@ -771,98 +835,103 @@ export async function fetchAiModels(token: string): Promise<AiModel[]> {
   return res.json()
 }
 
-// ── Agents & Skills ──────────────────────────────────────────────────────────
+/**
+ * Dispara sync do catálogo OpenRouter → DB (cria/atualiza pricing dos modelos).
+ */
+export async function syncAiModelsFromOpenrouter(
+  token: string,
+): Promise<AiModelSyncResult> {
+  const res = await apiFetch('/api/ai-models/sync-from-openrouter', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao sincronizar modelos')
+  }
+  return res.json()
+}
 
-export interface Agent {
+/**
+ * Totais agregados de tokens/custo de uma conversa.
+ */
+export async function fetchConversationUsage(
+  token: string,
+  conversationId: string,
+): Promise<ConversationUsage> {
+  const res = await apiFetch(`/api/conversations/${conversationId}/usage`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    return { total_prompt_tokens: 0, total_completion_tokens: 0, total_cost_usd: 0 }
+  }
+  return res.json()
+}
+
+// ── Agent Tasks / Runs ──────────────────────────────────────────────────────
+
+export interface AgentTask {
   id: string
-  slug: string
-  name: string
-  description: string
-  icon: string
-  system_prompt: string
-  default_model: string | null
-  active: boolean
-  skills_count: number
+  env_slug: string
+  status: 'pending' | 'running' | 'paused' | 'done' | 'error' | string
+  triggered_by: string
+  prompt: string
+  conversation_id: string | null
+  started_at: string | null
+  completed_at: string | null
+  last_event_at: string | null
   created_at: string
-  updated_at: string
 }
 
-export interface AgentCreate {
-  slug: string
-  name: string
-  description?: string
-  icon?: string
-  system_prompt?: string
-  default_model?: string | null
-  active?: boolean
+export interface AgentTaskEvent {
+  id: number
+  event_type: string
+  data: Record<string, unknown>
+  created_at: string
 }
 
-export interface AgentUpdate {
-  name?: string
-  description?: string
-  icon?: string
-  system_prompt?: string
-  default_model?: string | null
-  active?: boolean
-}
-
-export async function fetchAgents(token: string): Promise<Agent[]> {
-  const res = await apiFetch('/api/agents', {
+/**
+ * Lista execuções recentes do agente, com filtros opcionais por status e ambiente.
+ */
+export async function fetchAgentTasks(
+  token: string,
+  options: { status?: string; envSlug?: string; limit?: number } = {},
+): Promise<AgentTask[]> {
+  const params = new URLSearchParams()
+  if (options.status) params.set('status', options.status)
+  if (options.envSlug) params.set('env_slug', options.envSlug)
+  if (options.limit) params.set('limit', String(options.limit))
+  const suffix = params.toString() ? `?${params.toString()}` : ''
+  const res = await apiFetch(`/api/tasks${suffix}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) return []
   return res.json()
 }
 
-export async function fetchAgent(token: string, id: string): Promise<Agent> {
-  const res = await apiFetch(`/api/agents/${id}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) throw new Error('Agente não encontrado')
-  return res.json()
-}
-
-export async function createAgent(token: string, data: AgentCreate): Promise<Agent> {
-  const res = await apiFetch('/api/agents', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar agente')
-  }
-  return res.json()
-}
-
-export async function updateAgent(
+/**
+ * Carrega eventos persistidos de uma execução do agente.
+ */
+export async function fetchAgentTaskEvents(
   token: string,
-  id: string,
-  data: AgentUpdate,
-): Promise<Agent> {
-  const res = await apiFetch(`/api/agents/${id}`, {
-    method: 'PATCH',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
+  taskId: string,
+  options: { after?: number; limit?: number } = {},
+): Promise<AgentTaskEvent[]> {
+  const params = new URLSearchParams()
+  if (options.after !== undefined) params.set('after', String(options.after))
+  if (options.limit) params.set('limit', String(options.limit))
+  const suffix = params.toString() ? `?${params.toString()}` : ''
+  const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/events${suffix}`, {
+    headers: { Authorization: `Bearer ${token}` },
   })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar agente')
-  }
+  if (!res.ok) throw new Error('Não foi possível carregar eventos da execução')
   return res.json()
 }
 
-export async function deleteAgent(token: string, id: string): Promise<void> {
-  const res = await apiFetch(`/api/agents/${id}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) throw new Error('Falha ao remover agente')
-}
+// ── Skills ───────────────────────────────────────────────────────────────────
 
 export interface Skill {
   id: string
-  agent_id: string | null
   slug: string
   title: string
   summary: string
@@ -876,7 +945,6 @@ export interface Skill {
 }
 
 export interface SkillCreate {
-  agent_id?: string | null
   title: string
   slug?: string
   summary?: string
@@ -885,14 +953,8 @@ export interface SkillCreate {
   source_url?: string | null
 }
 
-export async function fetchSkills(
-  token: string,
-  agentId?: string | null,
-): Promise<Skill[]> {
-  const url = agentId
-    ? `/api/skills?agent_id=${encodeURIComponent(agentId)}`
-    : '/api/skills'
-  const res = await apiFetch(url, {
+export async function fetchSkills(token: string): Promise<Skill[]> {
+  const res = await apiFetch('/api/skills', {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) return []
@@ -940,11 +1002,9 @@ export async function deleteSkill(token: string, id: string): Promise<void> {
 export async function importSkillFromUrl(
   token: string,
   url: string,
-  agentId: string | null = null,
   tags: string[] = [],
 ): Promise<Skill> {
   const body: Record<string, unknown> = { url, tags }
-  if (agentId) body.agent_id = agentId
   const res = await apiFetch('/api/skills/import-url', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -955,4 +1015,104 @@ export async function importSkillFromUrl(
     throw new Error(formatApiErrorPayload(err) || 'Falha ao importar URL')
   }
   return res.json()
+}
+
+// ── Documents (RAG por repositório) ──────────────────────────────────────────
+
+export type DocumentSourceType = 'pdf' | 'xlsx' | 'url' | 'text'
+
+export interface RepoDocument {
+  id: string
+  repository_id: string
+  source_type: DocumentSourceType | string
+  source_uri: string
+  title: string
+  version: number
+  checksum: string | null
+  status: 'pending' | 'processing' | 'indexed' | 'error' | string
+  error_message: string | null
+  chunks_count: number
+  created_at: string
+  updated_at: string
+  indexed_at: string | null
+}
+
+export interface DocumentCreate {
+  source_type: DocumentSourceType
+  source_uri?: string
+  title?: string | null
+  /** Conteúdo bruto — obrigatório quando source_type='text'. */
+  content?: string | null
+}
+
+export async function fetchRepoDocuments(
+  token: string,
+  repoId: string,
+): Promise<RepoDocument[]> {
+  const res = await apiFetch(`/api/repositories/${repoId}/documents`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function createRepoDocument(
+  token: string,
+  repoId: string,
+  data: DocumentCreate,
+): Promise<RepoDocument> {
+  const res = await apiFetch(`/api/repositories/${repoId}/documents`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar documento')
+  }
+  return res.json()
+}
+
+export async function uploadRepoDocument(
+  token: string,
+  repoId: string,
+  file: File,
+  title: string | null = null,
+): Promise<RepoDocument> {
+  const form = new FormData()
+  form.append('file', file)
+  if (title) form.append('title', title)
+  const res = await apiFetch(`/api/repositories/${repoId}/documents/upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao enviar ficheiro')
+  }
+  return res.json()
+}
+
+export async function reindexRepoDocument(
+  token: string,
+  docId: string,
+): Promise<RepoDocument> {
+  const res = await apiFetch(`/api/documents/${docId}/reindex`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao reindexar')
+  }
+  return res.json()
+}
+
+export async function deleteRepoDocument(token: string, docId: string): Promise<void> {
+  const res = await apiFetch(`/api/documents/${docId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error('Falha ao remover documento')
 }
