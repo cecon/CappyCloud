@@ -19,9 +19,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Garante extensão pgvector (idempotente).
-    op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
-
+    # A extensão pgvector é garantida no script de inicialização do volume.
+    
     # ── agents ────────────────────────────────────────────────
     op.create_table(
         "agents",

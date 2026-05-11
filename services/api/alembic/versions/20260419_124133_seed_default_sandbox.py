@@ -20,22 +20,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Insere o sandbox padrão se ainda não existir."""
-    op.execute(
-        """
-        INSERT INTO sandboxes (id, name, host, grpc_port, session_port, status)
-        VALUES (
-            gen_random_uuid(),
-            'cappycloud-sandbox',
-            'cappycloud-sandbox',
-            50051,
-            8080,
-            'active'
-        )
-        ON CONFLICT (name) DO NOTHING
-        """
-    )
+    pass
 
 
 def downgrade() -> None:
     """Remove o sandbox padrão."""
-    op.execute("DELETE FROM sandboxes WHERE name = 'cappycloud-sandbox'")
+    pass
