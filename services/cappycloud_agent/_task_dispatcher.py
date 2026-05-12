@@ -6,7 +6,7 @@ import asyncio
 import logging
 import uuid
 
-import asyncpg
+import asyncpg  # type: ignore
 
 from ._agent_context import (
     fetch_worktree_top_levels,

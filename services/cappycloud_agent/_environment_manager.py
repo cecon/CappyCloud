@@ -82,8 +82,12 @@ class EnvironmentManager:
             # ── Reconcile repos if the caller provides a different list ──
             incoming_repos = repos or []
             if incoming_repos:
-                old_aliases = {r.get("alias") or r.get("slug") for r in record.repos}
-                new_aliases = {r.get("alias") or r.get("slug") for r in incoming_repos}
+                old_aliases: set[str] = {
+                    str(alias) for r in record.repos if (alias := r.get("alias") or r.get("slug"))
+                }
+                new_aliases: set[str] = {
+                    str(alias) for r in incoming_repos if (alias := r.get("alias") or r.get("slug"))
+                }
                 removed_aliases = old_aliases - new_aliases
 
                 if removed_aliases:

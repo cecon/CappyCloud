@@ -24,7 +24,6 @@ import {
   getToken,
   setToken,
   streamAssistantReply,
-  updateConversationRepos,
   errorToUserMessage,
   type ActionRequiredEvent,
   type AiModel,
@@ -33,7 +32,6 @@ import {
   type ConversationDiff,
   type ConversationUsage,
   type DoneEvent,
-  type RepoSelection,
   type StatusEvent,
   type Workspace,
 } from '../api'
@@ -266,7 +264,6 @@ export function ChatPage() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -1165,9 +1162,9 @@ function ActiveChat({
   showThinking, streaming, input, setInput, inputRef,
   onSend, onStop, onActionReply, activeRepos,
   workspaces,
-  diffStats, prLoading, prUrl, prError, headBranch, onCreatePr,
+  diffStats, prLoading, prUrl, prError, headBranch: _headBranch, onCreatePr,
   activeTitle: _activeTitle,
-  token, conversationId, conversations, setConversations, sidePanel, diff, diffLoading, onOpenDiff, onToggleFiles,
+  token, conversationId, conversations: _conversations, setConversations: _setConversations, sidePanel, diff, diffLoading, onOpenDiff, onToggleFiles,
   models, selectedModelId, setSelectedModelId,
   convUsage, liveUsage,
 }: ActiveChatProps) {
