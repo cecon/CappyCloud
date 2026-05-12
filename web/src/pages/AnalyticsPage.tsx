@@ -3,12 +3,10 @@ import { Link } from 'react-router-dom'
 import {
   AuthError,
   fetchAgentTasks,
-  fetchAgents,
   fetchAiModels,
   fetchConversations,
   getToken,
   setToken,
-  type Agent,
   type AgentTask,
   type AiModel,
   type Conversation,
@@ -18,14 +16,12 @@ import styles from './analytics.module.css'
 type AnalyticsData = {
   tasks: AgentTask[]
   conversations: Conversation[]
-  agents: Agent[]
   models: AiModel[]
 }
 
 const EMPTY_DATA: AnalyticsData = {
   tasks: [],
   conversations: [],
-  agents: [],
   models: [],
 }
 
@@ -45,13 +41,12 @@ export function AnalyticsPage() {
       setLoading(true)
       setError(null)
       try {
-        const [tasks, conversations, agents, models] = await Promise.all([
+        const [tasks, conversations, models] = await Promise.all([
           fetchAgentTasks(token, { limit: 200 }),
           fetchConversations(token),
-          fetchAgents(token),
           fetchAiModels(token),
         ])
-        if (!cancelled) setData({ tasks, conversations, agents, models })
+        if (!cancelled) setData({ tasks, conversations, models })
       } catch (err) {
         if (err instanceof AuthError) {
           setToken(null)
@@ -73,7 +68,6 @@ export function AnalyticsPage() {
   }, [token])
 
   const stats = useMemo(() => buildStats(data.tasks), [data.tasks])
-  const activeAgents = data.agents.filter((agent) => agent.active)
   const activeModels = data.models.filter((model) => model.active)
   const completionRate = data.tasks.length > 0
     ? Math.round((stats.done / data.tasks.length) * 100)
@@ -90,7 +84,7 @@ export function AnalyticsPage() {
           <span className={styles.eyebrow}>Operational Analytics</span>
           <h1 className={styles.title}>Métricas do agente</h1>
           <p className={styles.subtitle}>
-            Visão de saúde e adoção baseada nas tasks, conversas, agentes e modelos já
+            Visão de saúde e adoção baseada nas tasks, conversas e modelos já
             persistidos. Custos e tokens entram quando o backend gravar usage do gRPC.
           </p>
         </div>
@@ -174,7 +168,6 @@ export function AnalyticsPage() {
             </div>
           </div>
           <div className={styles.inventory}>
-            <InventoryRow icon="support_agent" label="Agentes ativos" value={activeAgents.length} href="/agents" />
             <InventoryRow icon="smart_toy" label="Modelos ativos" value={activeModels.length} />
             <InventoryRow icon="chat_bubble" label="Conversas salvas" value={data.conversations.length} href="/chat" />
             <InventoryRow icon="history" label="Runs rastreáveis" value={data.tasks.length} href="/runs" />

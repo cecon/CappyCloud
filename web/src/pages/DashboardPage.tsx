@@ -1,33 +1,42 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import {
   AuthError,
-  fetchAgents,
   fetchConversations,
   fetchSkills,
   fetchWorkspaces,
   getToken,
   setToken,
-  type Agent,
   type Conversation,
   type Skill,
   type Workspace,
 } from '../api'
-import styles from './dashboard.module.css'
+import { DashboardSectionHeader } from '../components/dashboard/DashboardSectionHeader'
+import { DashboardShell } from '../components/dashboard/DashboardShell'
+import { ExecutionQueueCard } from '../components/dashboard/ExecutionQueueCard'
+import { FeatureCard } from '../components/dashboard/FeatureCard'
+import { HeroCommandPanel } from '../components/dashboard/HeroCommandPanel'
+import { MetricCard, MetricStrip } from '../components/dashboard/MetricStrip'
+import { RecentSessions } from '../components/dashboard/RecentSessions'
+import { TopBar } from '../components/dashboard/TopBar'
+import { WorkspaceControls } from '../components/dashboard/WorkspaceControls'
+import { WorkspaceHealth } from '../components/dashboard/WorkspaceHealth'
+import type { StatusBadgeVariant } from '../components/dashboard/StatusBadge'
+import pageStyles from './dashboard-page.module.css'
 
 type DashboardData = {
   conversations: Conversation[]
   workspaces: Workspace[]
-  agents: Agent[]
   skills: Skill[]
 }
 
 const EMPTY_DATA: DashboardData = {
   conversations: [],
   workspaces: [],
-  agents: [],
   skills: [],
 }
+
+const MS_DAY = 86_400_000
+const MS_WEEK = 7 * MS_DAY
 
 /**
  * Painel inicial do CappyCloud com atalhos para as superfícies principais.
@@ -45,14 +54,13 @@ export function DashboardPage() {
       setLoading(true)
       setError(null)
       try {
-        const [conversations, workspaces, agents, skills] = await Promise.all([
+        const [conversations, workspaces, skills] = await Promise.all([
           fetchConversations(token),
           fetchWorkspaces(token),
-          fetchAgents(token),
           fetchSkills(token),
         ])
         if (!cancelled) {
-          setData({ conversations, workspaces, agents, skills })
+          setData({ conversations, workspaces, skills })
         }
       } catch (err) {
         if (err instanceof AuthError) {
@@ -74,218 +82,222 @@ export function DashboardPage() {
     }
   }, [token])
 
-  const activeAgents = useMemo(
-    () => data.agents.filter((agent) => agent.active),
-    [data.agents],
-  )
   const activeSkills = useMemo(
     () => data.skills.filter((skill) => skill.active),
     [data.skills],
   )
-  const recentConversations = data.conversations.slice(0, 5)
+  const recentConversations = data.conversations.slice(0, 8)
   const readyWorkspaces = data.workspaces.filter(
     (workspace) => workspace.sandbox_status !== 'error',
   )
 
+  const sessionsThisWeek = useMemo(() => {
+    const cutoff = Date.now() - MS_WEEK
+    return data.conversations.filter((c) => new Date(c.created_at).getTime() >= cutoff).length
+  }, [data.conversations])
+
+  const lastActivityIso = useMemo(() => {
+    if (data.conversations.length === 0) return null
+    return data.conversations.reduce(
+      (best, c) => (new Date(c.updated_at) > new Date(best) ? c.updated_at : best),
+      data.conversations[0].updated_at,
+    )
+  }, [data.conversations])
+
+  const lastRunLabel = lastActivityIso ? formatRelativePt(lastActivityIso) : 'Nenhuma ainda'
+
+  const controlItems = useMemo(
+    () => [
+      {
+        icon: 'menu_book',
+        title: 'Skills',
+        text: 'Conhecimento por repositório e RAG orientado.',
+        href: '/skills',
+        status: 'available' as StatusBadgeVariant,
+      },
+      {
+        icon: 'analytics',
+        title: 'Usage dashboard',
+        text: 'Métricas operacionais e adoção.',
+        href: '/analytics',
+        status: 'available' as StatusBadgeVariant,
+      },
+      {
+        icon: 'timeline',
+        title: 'Timeline',
+        text: 'Checkpoints e diff entre estados de sessão.',
+        status: 'planned' as StatusBadgeVariant,
+      },
+      {
+        icon: 'hub',
+        title: 'MCP Manager',
+        text: 'Registro e status de ferramentas externas.',
+        status: 'development' as StatusBadgeVariant,
+      },
+    ],
+    [],
+  )
+
   return (
-    <main className={styles.page}>
-      <section className={styles.hero}>
-        <div className={styles.heroContent}>
-          <div className={styles.brandRow}>
-            <img src="/capybara.png" alt="" className={styles.logo} />
-            <span className={styles.eyebrow}>CappyCloud Command Center</span>
+    <main>
+      <DashboardShell>
+        <div className={pageStyles.inner}>
+          <TopBar />
+
+          <HeroCommandPanel
+            sessionsCount={data.conversations.length}
+            readyRepos={readyWorkspaces.length}
+            activeSkills={activeSkills.length}
+            loading={loading}
+          />
+
+          <div className={pageStyles.metricsBlock}>
+            <MetricStrip>
+              <MetricCard
+                icon="forum"
+                value={data.conversations.length}
+                label="Sessões"
+                hint={
+                  loading
+                    ? '…'
+                    : sessionsThisWeek > 0
+                      ? `+${sessionsThisWeek} esta semana`
+                      : 'Sem novas esta semana'
+                }
+                loading={loading}
+              />
+              <MetricCard
+                icon="source"
+                value={readyWorkspaces.length}
+                label="Repositórios prontos"
+                hint={
+                  loading
+                    ? '…'
+                    : readyWorkspaces.length === 1
+                      ? '1 pronto para execução'
+                      : `${readyWorkspaces.length} prontos para execução`
+                }
+                loading={loading}
+              />
+              <MetricCard
+                icon="auto_awesome"
+                value={activeSkills.length}
+                label="Skills ativas"
+                hint={loading ? '…' : 'Sincronizadas'}
+                loading={loading}
+              />
+            </MetricStrip>
           </div>
-          <h1 className={styles.title}>Controle suas sessões de agente em um só painel.</h1>
-          <p className={styles.subtitle}>
-            Abra uma sessão, acompanhe histórico, gerencie agentes e prepare repositórios
-            para execução isolada na nuvem.
-          </p>
-          <div className={styles.heroActions}>
-            <Link to="/chat" className={styles.primaryAction}>
-              <span className={styles.icon}>bolt</span>
-              Nova sessão de agente
-            </Link>
-            <Link to="/agents" className={styles.secondaryAction}>
-              <span className={styles.icon}>support_agent</span>
-              Gerenciar agentes
-            </Link>
-          </div>
-        </div>
 
-        <div className={styles.statusDeck} aria-label="Resumo do ambiente">
-          <MetricCard value={data.conversations.length} label="sessões" loading={loading} />
-          <MetricCard value={readyWorkspaces.length} label="repositórios prontos" loading={loading} />
-          <MetricCard value={activeAgents.length} label="agentes ativos" loading={loading} />
-          <MetricCard value={activeSkills.length} label="skills ativas" loading={loading} />
-        </div>
-      </section>
+          {error ? <p className={pageStyles.error}>{error}</p> : null}
 
-      {error && <p className={styles.error}>{error}</p>}
-
-      <section className={styles.grid}>
-        <FeatureCard
-          icon="chat_bubble"
-          title="Chat de agente"
-          description="Execute tarefas em worktrees isolados e acompanhe ferramentas, diff e PR."
-          href="/chat"
-          cta="Abrir workspace"
-        />
-        <FeatureCard
-          icon="source"
-          title="Repositórios"
-          description="Configure credenciais, branches padrão e sincronização dos projetos."
-          href="/settings"
-          cta="Preparar contexto"
-        />
-        <FeatureCard
-          icon="support_agent"
-          title="Agentes"
-          description="Perfis com system prompt, modelo padrão e comportamento especializado."
-          href="/agents"
-          cta="Editar agentes"
-        />
-        <FeatureCard
-          icon="history"
-          title="Runs"
-          description="Tasks em execução, pausadas ou concluídas com timeline de eventos."
-          href="/runs"
-          cta="Acompanhar execuções"
-        />
-        <FeatureCard
-          icon="analytics"
-          title="Analytics"
-          description="Métricas operacionais de adoção, saúde e throughput do agente."
-          href="/analytics"
-          cta="Ver métricas"
-        />
-      </section>
-
-      <section className={styles.lowerGrid}>
-        <div className={styles.panel}>
-          <div className={styles.panelHeader}>
-            <div>
-              <h2 className={styles.panelTitle}>Sessões recentes</h2>
-              <p className={styles.panelText}>Retome rapidamente o histórico de trabalho.</p>
+          <div className={pageStyles.mainStack}>
+            <div className={pageStyles.pairRow}>
+              <div className={pageStyles.pairMain}>
+                <section className={pageStyles.quickSection} aria-labelledby="quick-actions-title">
+                  <DashboardSectionHeader
+                    id="quick-actions-title"
+                    title="Ações rápidas"
+                    subtitle="Atalhos para chat, contexto e observabilidade."
+                  />
+                  <div className={pageStyles.featureGrid}>
+                    <FeatureCard
+                      icon="chat_bubble"
+                      title="Chat de agente"
+                      description="Worktrees isolados, ferramentas, diff e PR em um fluxo só."
+                      href="/chat"
+                      cta="Abrir workspace"
+                    />
+                    <FeatureCard
+                      icon="source"
+                      title="Repositórios"
+                      description="Credenciais, branches e sync dos projetos."
+                      href="/settings"
+                      cta="Preparar contexto"
+                    />
+                    <FeatureCard
+                      icon="history"
+                      title="Runs"
+                      description="Tasks em execução ou concluídas com timeline."
+                      href="/runs"
+                      cta="Acompanhar runs"
+                    />
+                    <FeatureCard
+                      icon="analytics"
+                      title="Analytics"
+                      description="Throughput, saúde e adoção do agente."
+                      href="/analytics"
+                      cta="Ver métricas"
+                    />
+                    <FeatureCard
+                      icon="hub"
+                      title="MCP Manager"
+                      description="Conectores, ferramentas externas e políticas de runtime."
+                      href="/settings"
+                      cta="Gerenciar MCP"
+                    />
+                  </div>
+                </section>
+              </div>
+              <aside className={`${pageStyles.pairAside} ${pageStyles.pairAsideStretch}`}>
+                <div className={pageStyles.controlsSection}>
+                  <DashboardSectionHeader
+                    id="workspace-controls-title"
+                    title="Controles do workspace"
+                    subtitle="Roadmap operacional e módulos em evolução."
+                  />
+                  <WorkspaceControls items={controlItems} />
+                </div>
+              </aside>
             </div>
-            <Link to="/chat" className={styles.panelLink}>Ver chat</Link>
-          </div>
-          {loading ? (
-            <p className={styles.muted}>Carregando sessões...</p>
-          ) : recentConversations.length > 0 ? (
-            <div className={styles.sessionList}>
-              {recentConversations.map((conversation) => (
-                <Link key={conversation.id} to="/chat" className={styles.sessionItem}>
-                  <span className={styles.sessionIcon}>
-                    <span className={styles.icon}>history</span>
-                  </span>
-                  <span className={styles.sessionBody}>
-                    <span className={styles.sessionTitle}>{conversation.title}</span>
-                    <span className={styles.sessionMeta}>
-                      {conversation.repos?.[0]?.slug ?? 'sem repositório'} · {formatDate(conversation.updated_at)}
-                    </span>
-                  </span>
-                  <span className={styles.icon}>chevron_right</span>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p className={styles.muted}>Nenhuma conversa ainda. Comece uma nova sessão.</p>
-          )}
-        </div>
 
-        <div className={styles.panel}>
-          <div className={styles.panelHeader}>
-            <div>
-              <h2 className={styles.panelTitle}>Próximos controles</h2>
-              <p className={styles.panelText}>A fase seguinte pode evoluir esses blocos.</p>
+            <div className={`${pageStyles.pairRow} ${pageStyles.pairRowSessions}`}>
+              <div className={pageStyles.pairMain}>
+                <div className={pageStyles.sessionsBlock}>
+                  <RecentSessions
+                    conversations={recentConversations}
+                    loading={loading}
+                    statusFor={conversationSessionStatus}
+                    formatDuration={formatSessionDuration}
+                    formatDateTime={formatDateTime}
+                  />
+                </div>
+              </div>
+              <aside className={`${pageStyles.pairAside} ${pageStyles.pairAsideStack}`}>
+                <WorkspaceHealth
+                  lastRunLabel={lastRunLabel}
+                  sandboxActive={readyWorkspaces.length > 0}
+                  mcpConnected={2}
+                />
+                <ExecutionQueueCard />
+              </aside>
             </div>
           </div>
-          <div className={styles.roadmap}>
-            <RoadmapItem icon="menu_book" title="Skills" text="Conhecimento global e por agente para orientar RAG." href="/skills" />
-            <RoadmapItem icon="analytics" title="Usage dashboard" text="Métricas operacionais disponíveis agora." href="/analytics" />
-            <RoadmapItem icon="timeline" title="Timeline" text="Checkpoints e diff entre estados de sessão." />
-            <RoadmapItem icon="hub" title="MCP manager" text="Registro e status de ferramentas externas." />
-          </div>
         </div>
-      </section>
+      </DashboardShell>
     </main>
   )
 }
 
-/** Card numérico usado no resumo do dashboard. */
-function MetricCard({ value, label, loading }: { value: number; label: string; loading: boolean }) {
-  return (
-    <div className={styles.metricCard}>
-      <span className={styles.metricValue}>{loading ? '...' : value}</span>
-      <span className={styles.metricLabel}>{label}</span>
-    </div>
-  )
+function conversationSessionStatus(conversation: Conversation): StatusBadgeVariant {
+  const updated = new Date(conversation.updated_at).getTime()
+  if (Number.isNaN(updated)) return 'completed'
+  const minutes = (Date.now() - updated) / 60_000
+  if (minutes < 3) return 'running'
+  return 'completed'
 }
 
-/** Atalho principal para uma área do produto. */
-function FeatureCard({
-  icon,
-  title,
-  description,
-  href,
-  cta,
-}: {
-  icon: string
-  title: string
-  description: string
-  href: string
-  cta: string
-}) {
-  return (
-    <Link to={href} className={styles.featureCard}>
-      <span className={styles.featureIcon}>
-        <span className={styles.icon}>{icon}</span>
-      </span>
-      <span className={styles.featureTitle}>{title}</span>
-      <span className={styles.featureDescription}>{description}</span>
-      <span className={styles.featureCta}>
-        {cta}
-        <span className={styles.icon}>arrow_forward</span>
-      </span>
-    </Link>
-  )
+function formatSessionDuration(conversation: Conversation): string {
+  const a = new Date(conversation.created_at).getTime()
+  const b = new Date(conversation.updated_at).getTime()
+  if (Number.isNaN(a) || Number.isNaN(b)) return '—'
+  const ms = Math.max(0, b - a)
+  if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))}s`
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)} min`
+  return `${Math.round(ms / 3_600_000)}h`
 }
 
-/** Item da lista de evolução planejada. */
-function RoadmapItem({
-  icon,
-  title,
-  text,
-  href,
-}: {
-  icon: string
-  title: string
-  text: string
-  href?: string
-}) {
-  const content = (
-    <div className={styles.roadmapItem}>
-      <span className={styles.roadmapIcon}>
-        <span className={styles.icon}>{icon}</span>
-      </span>
-      <span>
-        <strong>{title}</strong>
-        <small>{text}</small>
-      </span>
-    </div>
-  )
-
-  if (!href) return content
-
-  return (
-    <Link to={href} className={styles.roadmapLink}>
-      {content}
-    </Link>
-  )
-}
-
-/** Formata datas curtas sem expor detalhes desnecessários no card. */
-function formatDate(value: string): string {
+function formatDateTime(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'sem data'
   return new Intl.DateTimeFormat('pt-BR', {
@@ -294,4 +306,19 @@ function formatDate(value: string): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date)
+}
+
+function formatRelativePt(iso: string): string {
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return '—'
+  const diff = Date.now() - t
+  const min = Math.floor(diff / 60_000)
+  if (min < 1) return 'agora'
+  if (min < 60) return `há ${min} min`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `há ${h} h`
+  const d = Math.floor(h / 24)
+  if (d < 7) return `há ${d} ${d === 1 ? 'dia' : 'dias'}`
+  const w = Math.floor(d / 7)
+  return `há ${w} ${w === 1 ? 'semana' : 'semanas'}`
 }

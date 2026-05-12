@@ -14,15 +14,22 @@ from typing import Any
 import pytest
 from app.domain.entities import Conversation, Message, Repository, User
 from app.ports.agent import AgentPort
-from app.ports.agent_repository import AgentRepository
 from app.ports.repositories import (
     ConversationRepository,
     MessageRepository,
     RepositoryRepository,
-    UserAgentProfileRepository,
     UserRepository,
 )
 from app.ports.services import PasswordService, TokenService
+
+# Re-export dos fakes de anexos (definidos em ``fakes_attachments.py``) para
+# que testes existentes continuem a importar daqui.
+from .fakes_attachments import (  # noqa: F401
+    FakeVisionDescriber,
+    InMemoryAiModelCapabilityLookup,
+    InMemoryAttachmentRepository,
+    InMemoryAttachmentStorage,
+)
 
 # ---------------------------------------------------------------------------
 # In-Memory Repository Fakes
@@ -44,20 +51,6 @@ class InMemoryUserRepository(UserRepository):
     async def save(self, user: User) -> User:
         self._store[user.id] = user
         return user
-
-
-class InMemoryUserAgentProfileRepository(UserAgentProfileRepository):
-    """In-memory user→default agent mapping for testing."""
-
-    def __init__(self) -> None:
-        self._default_agents: dict[uuid.UUID, uuid.UUID] = {}
-
-    async def get_default_agent_id(self, user_id: uuid.UUID) -> uuid.UUID | None:
-        return self._default_agents.get(user_id)
-
-    def set_default(self, user_id: uuid.UUID, agent_id: uuid.UUID) -> None:
-        """Técnica de teste: define o agente padrão do utilizador."""
-        self._default_agents[user_id] = agent_id
 
 
 class InMemoryConversationRepository(ConversationRepository):
@@ -114,6 +107,8 @@ class InMemoryMessageRepository(MessageRepository):
 
     def __init__(self) -> None:
         self._store: list[Message] = []
+        # model_id → (input_cost_per_1m_usd, output_cost_per_1m_usd)
+        self._pricing: dict[str, tuple[float, float]] = {}
 
     async def list_by_conversation(self, conversation_id: uuid.UUID) -> list[Message]:
         return sorted(
@@ -124,6 +119,13 @@ class InMemoryMessageRepository(MessageRepository):
     async def save(self, message: Message) -> Message:
         self._store.append(message)
         return message
+
+    async def get_model_pricing(self, model_used: str) -> tuple[float, float] | None:
+        return self._pricing.get(model_used)
+
+    def set_pricing(self, model_used: str, input_cost: float, output_cost: float) -> None:
+        """Técnica de teste: configura preço de um modelo no fake."""
+        self._pricing[model_used] = (input_cost, output_cost)
 
 
 # ---------------------------------------------------------------------------
@@ -151,31 +153,6 @@ class FakeTokenService(TokenService):
         if not token.startswith("token:"):
             raise ValueError("Token inválido")
         return {"sub": token[6:]}
-
-
-# ---------------------------------------------------------------------------
-# AgentRepository Fake
-# ---------------------------------------------------------------------------
-
-
-class InMemoryAgentRepository(AgentRepository):
-    """Fake em memória para AgentRepository — usado em testes de use cases."""
-
-    def __init__(
-        self,
-        default_id: uuid.UUID | None = None,
-        private_agents: dict[uuid.UUID, uuid.UUID] | None = None,
-    ) -> None:
-        self._default_id = default_id
-        # private_agents: {agent_id: owner_id}
-        self._private: dict[uuid.UUID, uuid.UUID] = private_agents or {}
-
-    async def get_default_id(self) -> uuid.UUID | None:
-        return self._default_id
-
-    async def can_user_access(self, user_id: uuid.UUID, agent_id: uuid.UUID) -> bool:
-        owner = self._private.get(agent_id)
-        return owner is None or owner == user_id
 
 
 # ---------------------------------------------------------------------------
@@ -245,11 +222,6 @@ def repository_repo() -> InMemoryRepositoryRepository:
 
 
 @pytest.fixture
-def user_agent_profile_repo() -> InMemoryUserAgentProfileRepository:
-    return InMemoryUserAgentProfileRepository()
-
-
-@pytest.fixture
 def msg_repo() -> InMemoryMessageRepository:
     return InMemoryMessageRepository()
 
@@ -262,11 +234,6 @@ def password_svc() -> FakePasswordService:
 @pytest.fixture
 def token_svc() -> FakeTokenService:
     return FakeTokenService()
-
-
-@pytest.fixture
-def agent_repo() -> InMemoryAgentRepository:
-    return InMemoryAgentRepository()
 
 
 @pytest.fixture

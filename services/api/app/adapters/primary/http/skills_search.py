@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -36,14 +35,11 @@ def _row_to_result(skill: Skill, score: float) -> SkillSearchResult:
 async def do_search(
     session: AsyncSession,
     q: str,
-    agent_id: uuid.UUID | None,
     limit: int,
 ) -> list[SkillSearchResult]:
     """Busca híbrida: vetorial (cosine) se houver embedding; senão lexical (ILIKE)."""
     query_emb = await embed_text(q)
     filters: list = [Skill.active.is_(True)]
-    if agent_id is not None:
-        filters.append(or_(Skill.agent_id == agent_id, Skill.agent_id.is_(None)))
 
     if query_emb is not None:
         distance = Skill.embedding.cosine_distance(query_emb)
@@ -79,17 +75,15 @@ async def search_skills(
     _current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     q: str = Query(min_length=1, max_length=512),
-    agent_id: uuid.UUID | None = Query(default=None),  # noqa: B008
     limit: int = Query(default=5, ge=1, le=20),
 ) -> list[SkillSearchResult]:
     """Busca de Skills (autenticada por JWT)."""
-    return await do_search(session, q, agent_id, limit)
+    return await do_search(session, q, limit)
 
 
 @router.get("/_search/internal", response_model=list[SkillSearchResult])
 async def search_skills_internal(
     q: str = Query(min_length=1, max_length=512),
-    agent_id: uuid.UUID | None = Query(default=None),  # noqa: B008
     limit: int = Query(default=5, ge=1, le=20),
     x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
 ) -> list[SkillSearchResult]:
@@ -101,4 +95,4 @@ async def search_skills_internal(
     if not _INTERNAL_TOKEN or x_internal_token != _INTERNAL_TOKEN:
         raise HTTPException(status_code=403, detail="Internal token inválido")
     async with async_session_factory() as session:
-        return await do_search(session, q, agent_id, limit)
+        return await do_search(session, q, limit)

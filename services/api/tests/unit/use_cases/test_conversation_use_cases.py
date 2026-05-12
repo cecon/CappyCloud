@@ -13,11 +13,9 @@ from app.domain.entities import Repository
 
 from tests.conftest import (
     FakeAgent,
-    InMemoryAgentRepository,
     InMemoryConversationRepository,
     InMemoryMessageRepository,
     InMemoryRepositoryRepository,
-    InMemoryUserAgentProfileRepository,
 )
 
 
@@ -93,17 +91,17 @@ class TestCreateConversation:
         repo_catalog = InMemoryRepositoryRepository()
         repo = Repository(
             id=uuid.uuid4(),
-            slug="autosystem",
-            name="autosystem",
-            clone_url="https://example.com/autosystem.git",
+            slug="demo-repo",
+            name="Demo Repo",
+            clone_url="https://example.com/demo-repo.git",
         )
         repo_catalog.add(repo)
         uc = CreateConversation(conv_repo, repo_catalog)
 
-        conv = await uc.execute(user_id, repos=[{"slug": "autosystem"}])
+        conv = await uc.execute(user_id, repos=[{"slug": "demo-repo"}])
 
         assert len(conv.repos) == 1
-        assert conv.repos[0]["slug"] == "autosystem"
+        assert conv.repos[0]["slug"] == "demo-repo"
         assert conv.repos[0]["repo_id"] == str(repo.id)
 
     async def test_repo_id_is_none_for_unknown_slug(
@@ -117,64 +115,6 @@ class TestCreateConversation:
         conv = await uc.execute(user_id, repos=[{"slug": "nao-existe"}])
 
         assert conv.repos[0]["repo_id"] is None
-
-    async def test_uses_user_default_agent_when_not_provided(
-        self,
-        conv_repo: InMemoryConversationRepository,
-        user_id: uuid.UUID,
-    ) -> None:
-        default_agent_id = uuid.uuid4()
-        profiles = InMemoryUserAgentProfileRepository()
-        profiles.set_default(user_id, default_agent_id)
-        uc = CreateConversation(conv_repo, user_agent_profiles=profiles)
-
-        conv = await uc.execute(user_id)
-
-        assert conv.agent_id == default_agent_id
-
-    async def test_explicit_agent_overrides_user_default(
-        self,
-        conv_repo: InMemoryConversationRepository,
-        user_id: uuid.UUID,
-    ) -> None:
-        default_agent_id = uuid.uuid4()
-        explicit_agent_id = uuid.uuid4()
-        profiles = InMemoryUserAgentProfileRepository()
-        profiles.set_default(user_id, default_agent_id)
-        uc = CreateConversation(conv_repo, user_agent_profiles=profiles)
-
-        conv = await uc.execute(user_id, agent_id=explicit_agent_id)
-
-        assert conv.agent_id == explicit_agent_id
-
-    async def test_user_default_overrides_global_default_agent(
-        self,
-        conv_repo: InMemoryConversationRepository,
-        user_id: uuid.UUID,
-    ) -> None:
-        user_default_agent_id = uuid.uuid4()
-        global_default_agent_id = uuid.uuid4()
-        profiles = InMemoryUserAgentProfileRepository()
-        profiles.set_default(user_id, user_default_agent_id)
-        agents = InMemoryAgentRepository(default_id=global_default_agent_id)
-        uc = CreateConversation(conv_repo, user_agent_profiles=profiles, agents=agents)
-
-        conv = await uc.execute(user_id)
-
-        assert conv.agent_id == user_default_agent_id
-
-    async def test_does_not_use_global_default_agent_without_user_profile(
-        self,
-        conv_repo: InMemoryConversationRepository,
-        user_id: uuid.UUID,
-    ) -> None:
-        profiles = InMemoryUserAgentProfileRepository()
-        agents = InMemoryAgentRepository(default_id=uuid.uuid4())
-        uc = CreateConversation(conv_repo, user_agent_profiles=profiles, agents=agents)
-
-        conv = await uc.execute(user_id)
-
-        assert conv.agent_id is None
 
 
 class TestListMessages:

@@ -12,12 +12,6 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.secondary.persistence.sqlalchemy_agent_repo import (
-    SQLAlchemyAgentRepository,
-)
-from app.adapters.secondary.persistence.sqlalchemy_conversation_repo import (
-    SQLAlchemyConversationRepository,
-)
 from app.adapters.secondary.persistence.sqlalchemy_message_repo import (
     SQLAlchemyMessageRepository,
 )
@@ -26,9 +20,6 @@ from app.adapters.secondary.persistence.sqlalchemy_repo_env_repo import (
 )
 from app.adapters.secondary.persistence.sqlalchemy_repository_repo import (
     SQLAlchemyRepositoryRepository,
-)
-from app.adapters.secondary.persistence.sqlalchemy_user_agent_profile_repo import (
-    SQLAlchemyUserAgentProfileRepository,
 )
 from app.adapters.secondary.persistence.sqlalchemy_user_repo import (
     SQLAlchemyUserRepository,
@@ -46,30 +37,26 @@ from app.application.use_cases.repo_environments import (
     ListRepoEnvironments,
 )
 from app.domain.entities import User
-from app.infrastructure.database import get_db
 from app.ports.agent import AgentPort
-from app.ports.agent_repository import AgentRepository
 from app.ports.repositories import (
+    AiModelCapabilityLookup,
+    AttachmentRepository,
     ConversationRepository,
     MessageRepository,
     RepoEnvironmentRepository,
     RepositoryRepository,
-    UserAgentProfileRepository,
     UserRepository,
 )
-from app.ports.services import PasswordService, TokenService
+from app.ports.services import AttachmentStorage, PasswordService, TokenService
+
+from . import deps_attachments as _attach_deps
+from .deps_base import get_conv_repo, get_db_session  # re-export
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 # ---------------------------------------------------------------------------
 # Infrastructure dependencies
 # ---------------------------------------------------------------------------
-
-
-async def get_db_session(
-    session: Annotated[AsyncSession, Depends(get_db)],
-) -> AsyncSession:
-    return session
 
 
 # ---------------------------------------------------------------------------
@@ -81,18 +68,6 @@ def get_user_repo(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> UserRepository:
     return SQLAlchemyUserRepository(session)
-
-
-def get_user_agent_profile_repo(
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-) -> UserAgentProfileRepository:
-    return SQLAlchemyUserAgentProfileRepository(session)
-
-
-def get_conv_repo(
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-) -> ConversationRepository:
-    return SQLAlchemyConversationRepository(session)
 
 
 def get_msg_repo(
@@ -111,12 +86,6 @@ def get_repository_repo(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RepositoryRepository:
     return SQLAlchemyRepositoryRepository(session)
-
-
-def get_agent_repo(
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-) -> AgentRepository:
-    return SQLAlchemyAgentRepository(session)
 
 
 # ---------------------------------------------------------------------------
@@ -192,12 +161,8 @@ def get_list_convs_uc(
 def get_create_conv_uc(
     convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
     repos: Annotated[RepositoryRepository, Depends(get_repository_repo)],
-    user_agent_profiles: Annotated[
-        UserAgentProfileRepository, Depends(get_user_agent_profile_repo)
-    ],
-    agents: Annotated[AgentRepository, Depends(get_agent_repo)],
 ) -> CreateConversation:
-    return CreateConversation(convs, repos, user_agent_profiles, agents)
+    return CreateConversation(convs, repos)
 
 
 def get_list_msgs_uc(
@@ -212,8 +177,19 @@ def get_stream_msg_uc(
     msgs: Annotated[MessageRepository, Depends(get_msg_repo)],
     agent: Annotated[AgentPort, Depends(get_agent)],
     repos: Annotated[RepositoryRepository, Depends(get_repository_repo)],
+    attachments: Annotated[AttachmentRepository, Depends(_attach_deps.get_attachment_repo)],
+    storage: Annotated[AttachmentStorage, Depends(_attach_deps.get_attachment_storage)],
+    model_caps: Annotated[AiModelCapabilityLookup, Depends(_attach_deps.get_ai_model_caps)],
 ) -> StreamMessage:
-    return StreamMessage(convs, msgs, agent, repos)
+    return StreamMessage(
+        convs,
+        msgs,
+        agent,
+        repos,
+        attachments=attachments,
+        attachment_storage=storage,
+        model_caps=model_caps,
+    )
 
 
 def get_list_repo_envs_uc(

@@ -1,0 +1,154 @@
+.inner {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.error {
+  margin: 0 0 1rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+}
+
+/* Pilha principal: duas faixas 8+4 com mesma largura de colunas em ambas */
+.mainStack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.pairRow {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 1.25rem;
+  align-items: stretch;
+}
+
+/* Segunda faixa: mesma altura nas colunas; sessões preenchem até alinhar com Saúde + Fila */
+.pairRowSessions {
+  align-items: stretch;
+}
+
+.pairRowSessions .pairMain {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pairRowSessions .sessionsBlock {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pairRowSessions .sessionsBlock > * {
+  flex: 1 1 0;
+  min-height: 0;
+  align-self: stretch;
+}
+
+.pairMain {
+  grid-column: span 8;
+  min-width: 0;
+}
+
+.pairAside {
+  grid-column: span 4;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Primeira faixa: painel de controles estica até a altura das ações rápidas */
+.pairAsideStretch {
+  min-height: 0;
+}
+
+.pairAsideStretch > :only-child {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Segunda faixa: saúde + fila — fluxo natural, sem forçar 100% da célula do grid */
+.pairAsideStack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.quickSection,
+.controlsSection {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.controlsSection {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.featureGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.sessionsBlock {
+  min-width: 0;
+}
+
+.metricsBlock {
+  margin-bottom: 1.25rem;
+}
+
+/* Em telas estreitas o System overview no hero exibe os KPIs; a faixa duplicada some. */
+@media (max-width: 900px) {
+  .metricsBlock {
+    display: none;
+  }
+}
+
+@media (max-width: 1040px) {
+  .pairMain,
+  .pairAside {
+    grid-column: 1 / -1;
+  }
+
+  .pairAsideStretch > :only-child {
+    flex: none;
+  }
+
+  .pairRowSessions .pairMain {
+    display: block;
+    min-height: 0;
+  }
+
+  .pairRowSessions .sessionsBlock {
+    flex: 0 1 auto;
+    display: block;
+  }
+
+  .pairRowSessions .sessionsBlock > * {
+    flex: 0 1 auto;
+    min-height: 0;
+    align-self: stretch;
+  }
+}
+
+@media (max-width: 1040px) and (min-width: 641px) {
+  .featureGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .featureGrid {
+    grid-template-columns: 1fr;
+  }
+}

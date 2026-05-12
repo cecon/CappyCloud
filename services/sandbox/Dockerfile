@@ -22,7 +22,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         jq \
         gnupg \
         lsb-release \
+        python3 \
+        python3-pip \
+        python3-venv \
+        graphviz \
+        fonts-dejavu-core \
+        libpango-1.0-0 \
+        libpangoft2-1.0-0 \
+        libcairo2 \
     && rm -rf /var/lib/apt/lists/*
+
+# ── Python libs para geração de artefactos (relatórios, diagramas) ──
+# Instalados system-wide (--break-system-packages é seguro neste container
+# isolado e elimina a fricção de venv para cada task do agente).
+RUN pip3 install --no-cache-dir --break-system-packages \
+        python-docx==1.1.2 \
+        openpyxl==3.1.5 \
+        matplotlib==3.9.2 \
+        pillow==10.4.0 \
+        graphviz==0.20.3 \
+        networkx==3.3 \
+        reportlab==4.2.5 \
+        markdown==3.7 \
+        weasyprint==62.3 \
+        pyyaml==6.0.2 \
+        jinja2==3.1.4 \
+        requests==2.32.3
 
 # ── GitHub CLI (gh) ───────────────────────────────────────────
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -47,11 +72,16 @@ ENV PATH="/root/.bun/bin:${PATH}"
 # ── Clone and build openclaude from source ────────────────────
 COPY patches/grep-tool-n-alias.patch /tmp/grep-tool-n-alias.patch
 COPY patches/auto-approve-tools.patch /tmp/auto-approve-tools.patch
+COPY patches/multimodal-proto.patch /tmp/multimodal-proto.patch
+COPY patches/multimodal-grpc-handler.patch /tmp/multimodal-grpc-handler.patch
 WORKDIR /openclaude
 RUN git clone --depth=1 https://github.com/Gitlawb/openclaude.git . \
     && git apply /tmp/grep-tool-n-alias.patch \
     && git apply /tmp/auto-approve-tools.patch \
+    && git apply /tmp/multimodal-proto.patch \
+    && git apply /tmp/multimodal-grpc-handler.patch \
     && rm -f /tmp/grep-tool-n-alias.patch /tmp/auto-approve-tools.patch \
+            /tmp/multimodal-proto.patch /tmp/multimodal-grpc-handler.patch \
     && bun install \
     && bun run build
 
@@ -70,6 +100,7 @@ COPY session_start.sh /session_start.sh
 COPY session_server.js /session_server.js
 COPY git_handlers.js /git_handlers.js
 COPY repo_handlers.js /repo_handlers.js
+COPY task_handler.js /task_handler.js
 COPY worktree_handlers.js /worktree_handlers.js
 RUN sed -i 's/\r//' /env_init.sh /session_start.sh \
     && chmod +x /env_init.sh /session_start.sh

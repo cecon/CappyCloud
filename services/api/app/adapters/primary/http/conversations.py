@@ -22,7 +22,13 @@ from app.application.use_cases.conversations import (
     StreamMessage,
 )
 from app.domain.entities import User
-from app.schemas import ConversationCreate, ConversationOut, MessageOut, SendMessageBody
+from app.schemas import (
+    ConversationCreate,
+    ConversationOut,
+    ConversationUsage,
+    MessageOut,
+    SendMessageBody,
+)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -41,7 +47,6 @@ async def list_conversations(
             created_at=c.created_at,
             updated_at=c.updated_at,
             sandbox_id=c.sandbox_id,
-            agent_id=c.agent_id,
             repos=c.repos,
             session_root=c.session_root,
         )
@@ -63,7 +68,6 @@ async def create_conversation(
         title=b.title,
         sandbox_id=b.sandbox_id,
         repos=repos_dicts,
-        agent_id=b.agent_id,
     )
     return ConversationOut(
         id=conv.id,
@@ -71,9 +75,29 @@ async def create_conversation(
         created_at=conv.created_at,
         updated_at=conv.updated_at,
         sandbox_id=conv.sandbox_id,
-        agent_id=conv.agent_id,
         repos=conv.repos,
         session_root=conv.session_root,
+    )
+
+
+@router.get("/{conversation_id}/usage", response_model=ConversationUsage)
+async def get_conversation_usage(
+    conversation_id: uuid.UUID,
+    current: Annotated[User, Depends(get_authenticated_user)],
+    uc: Annotated[ListMessages, Depends(get_list_msgs_uc)],
+) -> ConversationUsage:
+    """Totais agregados de tokens e custo da conversa.
+
+    Soma todos os turnos do assistente (mensagens com ``role='assistant'``).
+    """
+    try:
+        msgs = await uc.execute(conversation_id, current.id)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return ConversationUsage(
+        total_prompt_tokens=sum(m.prompt_tokens for m in msgs),
+        total_completion_tokens=sum(m.completion_tokens for m in msgs),
+        total_cost_usd=round(sum(float(m.cost_usd) for m in msgs), 6),
     )
 
 
@@ -89,7 +113,17 @@ async def list_messages(
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return [
-        MessageOut(id=m.id, role=m.role, content=m.content, created_at=m.created_at) for m in msgs
+        MessageOut(
+            id=m.id,
+            role=m.role,
+            content=m.content,
+            created_at=m.created_at,
+            model_used=m.model_used,
+            prompt_tokens=m.prompt_tokens,
+            completion_tokens=m.completion_tokens,
+            cost_usd=float(m.cost_usd),
+        )
+        for m in msgs
     ]
 
 
@@ -116,6 +150,7 @@ async def stream_message(
             body.content,
             cursor=cursor,
             override_model=body.model_id,
+            attachment_ids=body.attachment_ids,
         )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

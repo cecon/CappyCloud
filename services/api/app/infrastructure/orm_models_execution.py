@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     func,
@@ -59,6 +60,11 @@ class AgentTask(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Uso por execução — preenchido no fim do turno via FinalResponse do gRPC.
+    model_used: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_usd: Mapped[float] = mapped_column(Numeric(12, 6), nullable=False, default=0)
 
     conversation: Mapped["Conversation | None"] = relationship(
         "Conversation", back_populates="agent_tasks"

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -23,8 +24,15 @@ import asyncpg
 
 from ._grpc_helpers import PendingAction
 from ._grpc_session import GrpcSession
+from ._task_usage import persist_usage
 
 log = logging.getLogger(__name__)
+
+# Janela de silêncio (sem QUALQUER evento do stream gRPC) antes de matar a
+# sessão. Em tasks longas de análise/relatório o LLM pode passar minutos a
+# pensar entre chunks; um valor pequeno mata investigações legítimas. Cada
+# chunk recebido reinicia o relógio (ver _run loop).
+STREAM_IDLE_TIMEOUT_S = float(os.getenv("AGENT_STREAM_IDLE_TIMEOUT_S", "900"))
 
 
 class TaskRunner:
@@ -35,10 +43,12 @@ class TaskRunner:
         task_id: str,
         session: GrpcSession,
         db_url: str,
+        model_used: str = "",
     ) -> None:
         self._task_id = task_id
         self._session = session
         self._db_url = db_url
+        self._model_used = model_used
         self._pool: Optional[asyncpg.Pool] = None
         self._task: Optional[asyncio.Task] = None
 
@@ -55,9 +65,13 @@ class TaskRunner:
         """Repassa a resposta do utilizador ao stream gRPC pausado."""
         await self._session.send_input(reply)
 
-    async def send_message(self, message: str) -> None:
+    async def send_message(
+        self,
+        message: str,
+        attachments: list[dict] | None = None,
+    ) -> None:
         """Envia uma nova mensagem numa sessão já activa."""
-        await self._session.send_message(message)
+        await self._session.send_message(message, attachments=attachments)
 
     def is_alive(self) -> bool:
         return self._task is not None and not self._task.done()
@@ -80,23 +94,53 @@ class TaskRunner:
     # ── Internal ──────────────────────────────────────────────────
 
     async def _run(self) -> None:
-        """Loop principal: drena o stream gRPC e persiste eventos no DB."""
+        """Loop principal: drena o stream gRPC e persiste eventos no DB.
+
+        O timeout (``STREAM_IDLE_TIMEOUT_S``) reinicia a cada evento recebido —
+        é uma janela de silêncio, não um wall-clock total. Permite tasks de
+        análise/relatório de 30+ min desde que o LLM emita chunks regulares.
+        """
         await self._update_task(status="running", started_at=_now())
+        agent_stage_marked = False
         try:
             while True:
                 try:
                     event_type, data = await asyncio.wait_for(
-                        self._session._out_queue.get(), timeout=300.0
+                        self._session._out_queue.get(),
+                        timeout=STREAM_IDLE_TIMEOUT_S,
                     )
                 except asyncio.TimeoutError:
+                    minutes = int(STREAM_IDLE_TIMEOUT_S // 60)
                     await self._insert_event(
-                        "timeout", {"message": "Stream silencioso por 5 min."}
+                        "timeout",
+                        {"message": f"Stream silencioso por {minutes} min."},
                     )
                     await self._update_task(status="error", completed_at=_now())
                     return
 
                 await self._insert_event(event_type, _normalise(data))
                 await self._touch_task()
+
+                # Marca o stage 'agent' como done apenas quando o LLM responde
+                # de facto (text/tool/action). Se nunca chegar resposta — caso
+                # típico de done-vazio ou erro de provider — o passo "Agente
+                # iniciado" fica explicitamente pending e o erro detalhado
+                # aparece logo abaixo, sem o falso "tudo verde".
+                if not agent_stage_marked and event_type in (
+                    "text",
+                    "tool_start",
+                    "tool_result",
+                    "action_required",
+                ):
+                    agent_stage_marked = True
+                    await self._insert_event(
+                        "status",
+                        {
+                            "message": "Agente respondeu",
+                            "stage": "agent",
+                            "mode": "initializing",
+                        },
+                    )
 
                 if event_type == "action_required":
                     await self._update_task(status="paused")
@@ -106,6 +150,12 @@ class TaskRunner:
                     await self._update_task(status="running")
 
                 elif event_type in ("done",):
+                    usage = data if isinstance(data, dict) else {}
+                    await self._persist_usage(
+                        model_used=str(usage.get("model_used") or self._model_used),
+                        prompt_tokens=int(usage.get("prompt_tokens") or 0),
+                        completion_tokens=int(usage.get("completion_tokens") or 0),
+                    )
                     await self._update_task(status="done", completed_at=_now())
                     return
 
@@ -189,6 +239,16 @@ class TaskRunner:
                 )
         except Exception:
             pass
+
+    async def _persist_usage(
+        self,
+        model_used: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+    ) -> None:
+        await persist_usage(
+            self._pool, self._task_id, model_used, prompt_tokens, completion_tokens
+        )
 
 
 def _now() -> datetime:

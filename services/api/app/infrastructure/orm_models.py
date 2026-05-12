@@ -2,7 +2,7 @@
 
 Named orm_models.py (not models.py) to avoid collision with domain/entities.py.
 Sub-modules imported at the bottom register their tables with Base.metadata for Alembic:
-  - orm_models_agent.py     → Agent, Skill (behavior profiles)
+  - orm_models_agent.py     → Skill (knowledge base)
   - orm_models_execution.py → AgentTask, AgentEvent, CicdEvent, Routine, etc.
   - orm_models_platform.py  → GitProvider, Repository, AiProvider, AiModel, etc.
 """
@@ -17,6 +17,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     func,
@@ -151,12 +152,6 @@ class Conversation(Base):
         nullable=True,
         index=True,
     )
-    agent_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUIDType,
-        ForeignKey("agents.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
     title: Mapped[str] = mapped_column(String(512), default="Nova conversa")
     # Multi-repo: lista de {slug, alias, base_branch, branch_name, worktree_path}
     repos: Mapped[list] = mapped_column(JSONBType, nullable=False, server_default="[]")
@@ -199,7 +194,12 @@ class Conversation(Base):
 
 
 class Message(Base):
-    """Mensagem numa conversa."""
+    """Mensagem numa conversa.
+
+    Em mensagens de ``role='assistant'``, os campos ``model_used``,
+    ``prompt_tokens``, ``completion_tokens`` e ``cost_usd`` são preenchidos
+    no fim do turno do agente. Para ``role='user'`` ficam ``NULL``/``0``.
+    """
 
     __tablename__ = "messages"
 
@@ -212,16 +212,54 @@ class Message(Base):
     )
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    model_used: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_usd: Mapped[float] = mapped_column(Numeric(12, 6), nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship("Conversation", back_populates="messages")
 
 
+class MessageAttachment(Base):
+    """Anexo carregado pelo utilizador (inicialmente imagens).
+
+    O ficheiro físico vive num volume Docker (``storage_path``); aqui
+    armazenamos apenas o metadado e a descrição textual gerada pelo modelo
+    de visão (``vision_description``) que é injetada no prompt do agente.
+    """
+
+    __tablename__ = "message_attachments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUIDType,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    message_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUIDType,
+        ForeignKey("messages.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, default="image")
+    mime_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    storage_path: Mapped[str] = mapped_column(Text, nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    vision_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    vision_model_used: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(UUIDType, nullable=True)
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 # Import sub-modules last — registers tables with Base.metadata for Alembic.
 from app.infrastructure.orm_models_agent import (  # noqa: F401, E402
-    Agent,
     Skill,
-    UserAgentProfile,
 )
 from app.infrastructure.orm_models_execution import (  # noqa: F401, E402
     AgentEvent,
@@ -235,6 +273,7 @@ from app.infrastructure.orm_models_execution import (  # noqa: F401, E402
 from app.infrastructure.orm_models_platform import (  # noqa: F401, E402
     AiModel,
     AiProvider,
+    Document,
     GitProvider,
     Repository,
     SandboxSyncQueue,

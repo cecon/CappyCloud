@@ -7,16 +7,24 @@ import json
 import uuid
 from collections.abc import AsyncGenerator
 
-from app.application.use_cases._stream_helpers import inject_diff_comments
+from app.application.use_cases import _attachments_helpers as _att
+from app.application.use_cases._stream_helpers import (
+    build_pipeline_body,
+    compute_cost,
+    enrich_repos_for_pipeline,
+    ensure_repo_ids,
+    inject_diff_comments,
+)
 from app.domain.entities import Conversation, Message
 from app.ports.agent import AgentPort
-from app.ports.agent_repository import AgentRepository
 from app.ports.repositories import (
+    AiModelCapabilityLookup,
+    AttachmentRepository,
     ConversationRepository,
     MessageRepository,
     RepositoryRepository,
-    UserAgentProfileRepository,
 )
+from app.ports.services import AttachmentStorage
 
 _TITLE_MAX_LEN = 80
 _DEFAULT_TITLE = "Nova conversa"
@@ -42,13 +50,9 @@ class CreateConversation:
         self,
         conversations: ConversationRepository,
         repositories: RepositoryRepository | None = None,
-        user_agent_profiles: UserAgentProfileRepository | None = None,
-        agents: AgentRepository | None = None,
     ) -> None:
         self._conversations = conversations
         self._repositories = repositories
-        self._user_agent_profiles = user_agent_profiles
-        self._agents = agents
 
     async def execute(
         self,
@@ -56,10 +60,7 @@ class CreateConversation:
         title: str | None = None,
         sandbox_id: uuid.UUID | None = None,
         repos: list[dict] | None = None,
-        agent_id: uuid.UUID | None = None,
     ) -> Conversation:
-        resolved_agent_id = await self._resolve_agent_id(user_id, agent_id)
-
         conv_id = uuid.uuid4()
         short_id = conv_id.hex[:12]
 
@@ -89,32 +90,10 @@ class CreateConversation:
             user_id=user_id,
             title=title or _DEFAULT_TITLE,
             sandbox_id=sandbox_id,
-            agent_id=resolved_agent_id,
             repos=resolved_repos,
             session_root=session_root,
         )
         return await self._conversations.save(conv)
-
-    async def _resolve_agent_id(
-        self,
-        user_id: uuid.UUID,
-        agent_id: uuid.UUID | None,
-    ) -> uuid.UUID | None:
-        if agent_id is not None:
-            if self._agents and not await self._agents.can_user_access(user_id, agent_id):
-                raise PermissionError("Agente não encontrado ou sem permissão de acesso.")
-            return agent_id
-
-        resolved_agent_id = None
-        if self._user_agent_profiles:
-            resolved_agent_id = await self._user_agent_profiles.get_default_agent_id(user_id)
-        if (
-            resolved_agent_id is not None
-            and self._agents
-            and not await self._agents.can_user_access(user_id, resolved_agent_id)
-        ):
-            raise PermissionError("Agente não encontrado ou sem permissão de acesso.")
-        return resolved_agent_id
 
 
 class ListMessages:
@@ -140,11 +119,17 @@ class StreamMessage:
         messages: MessageRepository,
         agent: AgentPort,
         repositories: RepositoryRepository | None = None,
+        attachments: AttachmentRepository | None = None,
+        attachment_storage: AttachmentStorage | None = None,
+        model_caps: AiModelCapabilityLookup | None = None,
     ) -> None:
         self._conversations = conversations
         self._messages = messages
         self._agent = agent
         self._repositories = repositories
+        self._attachments = attachments
+        self._storage = attachment_storage
+        self._model_caps = model_caps
 
     async def execute(
         self,
@@ -154,12 +139,32 @@ class StreamMessage:
         model_id: str = "cappycloud",
         cursor: int | None = None,
         override_model: str | None = None,
+        attachment_ids: list[uuid.UUID] | None = None,
     ) -> AsyncGenerator[bytes]:
         conv = await self._conversations.get(conversation_id, user_id)
         if not conv:
             raise LookupError("Conversa não encontrada.")
 
+        # Decisão de caminho:
+        #   A) modelo selecionado tem capability "vision" → carregar bytes e
+        #      enviar nativamente pelo gRPC (modelo "vê" a imagem)
+        #   C) caso contrário (text-only ou default desconhecido) → injetar
+        #      a descrição textual pré-gerada pelo vision describer no prompt
+        # As duas vias são mutuamente exclusivas: se A é viável, NÃO injetamos
+        # descrição (evita duplicar contexto).
+        attachments_payload: list[dict] | None = None
         injected_prompt = await inject_diff_comments(conversation_id, content)
+
+        if attachment_ids:
+            use_native = await self._can_send_native_vision(override_model)
+            if use_native:
+                attachments_payload = await self._load_attachment_bytes(
+                    conversation_id, attachment_ids
+                )
+            else:
+                injected_prompt = await self._inject_attachments(
+                    conversation_id, attachment_ids, injected_prompt
+                )
 
         await self._messages.save(
             Message(
@@ -178,47 +183,36 @@ class StreamMessage:
         messages_payload = [{"role": m.role, "content": m.content} for m in history]
 
         await self._ensure_repo_ids(conv)
-        pipeline_body = await self._build_pipeline_body(conv, user_id, cursor, override_model)
+        pipeline_body = await self._build_pipeline_body(
+            conv, user_id, cursor, override_model, attachments_payload
+        )
 
         return self._stream_chunks(
             injected_prompt, model_id, messages_payload, pipeline_body, conversation_id
         )
 
-    async def _ensure_repo_ids(self, conv: Conversation) -> None:
-        if not self._repositories or not conv.repos:
-            return
-        changed = False
-        for r in conv.repos:
-            if r.get("repo_id"):
-                continue
-            slug = r.get("slug")
-            if not slug:
-                continue
-            repo_entity = await self._repositories.get_by_slug(slug)
-            if repo_entity:
-                r["repo_id"] = str(repo_entity.id)
-                changed = True
-        if changed:
-            await self._conversations.update(conv)
+    async def _can_send_native_vision(self, override_model: str | None) -> bool:
+        return await _att.can_send_native_vision(self._model_caps, override_model)
 
-    async def _enrich_repos_for_pipeline(self, repos: list[dict]) -> list[dict]:
-        if not self._repositories:
-            return repos
-        enriched: list[dict] = []
-        for r in repos:
-            repo_id_str = r.get("repo_id")
-            if repo_id_str:
-                try:
-                    auth_url = await self._repositories.get_authenticated_clone_url(
-                        uuid.UUID(repo_id_str)
-                    )
-                    if auth_url:
-                        enriched.append({**r, "clone_url": auth_url})
-                        continue
-                except Exception:
-                    pass
-            enriched.append(r)
-        return enriched
+    async def _load_attachment_bytes(
+        self, conversation_id: uuid.UUID, attachment_ids: list[uuid.UUID]
+    ) -> list[dict] | None:
+        return await _att.load_attachment_bytes(
+            self._attachments, self._storage, conversation_id, attachment_ids
+        )
+
+    async def _inject_attachments(
+        self,
+        conversation_id: uuid.UUID,
+        attachment_ids: list[uuid.UUID] | None,
+        prompt: str,
+    ) -> str:
+        return await _att.inject_attachments(
+            self._attachments, conversation_id, attachment_ids, prompt
+        )
+
+    async def _ensure_repo_ids(self, conv: Conversation) -> None:
+        await ensure_repo_ids(self._repositories, self._conversations, conv)
 
     async def _build_pipeline_body(
         self,
@@ -226,19 +220,12 @@ class StreamMessage:
         user_id: uuid.UUID,
         cursor: int | None,
         override_model: str | None = None,
+        attachments_payload: list[dict] | None = None,
     ) -> dict:
-        repos_for_pipeline = await self._enrich_repos_for_pipeline(conv.repos)
-        return {
-            "user_id": str(user_id),
-            "conversation_id": str(conv.id),
-            "user": {"id": str(user_id)},
-            "cursor": cursor,
-            "repos": repos_for_pipeline,
-            "session_root": conv.session_root or "",
-            "sandbox_id": str(conv.sandbox_id) if conv.sandbox_id else "",
-            "agent_id": str(conv.agent_id) if conv.agent_id else "",
-            "override_model": override_model,
-        }
+        enriched = await enrich_repos_for_pipeline(self._repositories, conv.repos)
+        return build_pipeline_body(
+            conv, enriched, user_id, cursor, override_model, attachments_payload
+        )
 
     async def _stream_chunks(
         self,
@@ -250,6 +237,7 @@ class StreamMessage:
     ) -> AsyncGenerator[bytes]:
         accumulated_text: list[str] = []
         accumulated_error: list[str] = []
+        usage: dict = {}
         gen = self._agent.pipe(content, model_id, messages_payload, pipeline_body)
 
         while True:
@@ -260,15 +248,25 @@ class StreamMessage:
             if line.startswith("data: "):
                 try:
                     evt = json.loads(line[6:])
-                    if evt.get("type") == "text":
+                    evt_type = evt.get("type")
+                    if evt_type == "text":
                         accumulated_text.append(evt.get("content", ""))
-                    elif evt.get("type") == "error":
+                    elif evt_type == "error":
                         accumulated_error.append(evt.get("message", ""))
+                    elif evt_type == "done":
+                        # O TaskRunner enriquece o evento done com tokens/modelo
+                        # para que possamos persistir o uso na mensagem assistant.
+                        usage = {
+                            "model_used": evt.get("model_used") or "",
+                            "prompt_tokens": int(evt.get("prompt_tokens") or 0),
+                            "completion_tokens": int(evt.get("completion_tokens") or 0),
+                        }
                 except Exception:
                     pass
             yield chunk.encode("utf-8")
 
         assistant_text = "".join(accumulated_text).strip()
+        cost_usd = await self._compute_cost(usage)
         if assistant_text:
             await self._messages.save(
                 Message(
@@ -276,6 +274,10 @@ class StreamMessage:
                     conversation_id=conversation_id,
                     role="assistant",
                     content=assistant_text,
+                    model_used=usage.get("model_used") or None,
+                    prompt_tokens=int(usage.get("prompt_tokens") or 0),
+                    completion_tokens=int(usage.get("completion_tokens") or 0),
+                    cost_usd=cost_usd,
                 )
             )
         elif accumulated_error:
@@ -287,3 +289,6 @@ class StreamMessage:
                     content="**Erro:** " + " ".join(accumulated_error),
                 )
             )
+
+    async def _compute_cost(self, usage: dict) -> float:
+        return await compute_cost(self._messages, usage)

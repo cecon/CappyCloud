@@ -1,5 +1,5 @@
-import { Fragment, type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Fragment, type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import {
   Burger,
   ScrollArea,
@@ -14,47 +14,109 @@ import {
   cancelConversation,
   createConversation,
   createConversationPr,
-  fetchAgents,
+  deleteAttachment,
   fetchAiModels,
   fetchBranches,
   fetchConversationDiff,
   fetchConversations,
+  fetchConversationUsage,
   fetchMessages,
   fetchWorkspaces,
   getToken,
   setToken,
   streamAssistantReply,
+  uploadAttachment,
   errorToUserMessage,
   type ActionRequiredEvent,
-  type Agent,
   type AiModel,
   type ChatMessage,
   type Conversation,
   type ConversationDiff,
+  type ConversationUsage,
+  type DoneEvent,
   type StatusEvent,
   type Workspace,
 } from '../api'
 import { ActionRequiredCard } from '../components/ActionRequiredCard'
+import { AttachmentTray, type TrayItem } from '../components/AttachmentTray'
 import { DiffViewer } from '../components/DiffViewer'
 import { FileExplorer } from '../components/FileExplorer'
+import { ModelPicker } from '../components/ModelPicker'
 import { ThinkingIndicator } from '../components/ThinkingIndicator'
-import { ToolCallCard, type ToolCallState } from '../components/ToolCallCard'
+import { ThinkingStream, type ThoughtStep } from '../components/ThinkingStream'
 import styles from '../components/chat.module.css'
+
+const ALLOWED_ATTACHMENT_MIME = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/gif',
+])
+const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
 
 const STICKY_SCROLL_THRESHOLD_PX = 96
 
-/** Agrupa conversas em Today / Yesterday / Older */
+/**
+ * Formata custo USD como "$0.0034" / "$1.20" / "free" / "—".
+ * Sub-cêntimo recebe 4 casas para não colapsar a zero.
+ */
+function formatCostUsd(value: number | null | undefined): string {
+  if (value == null) return '—'
+  if (value === 0) return 'free'
+  if (value < 0.01) return `$${value.toFixed(4)}`
+  return `$${value.toFixed(2)}`
+}
+
+/**
+ * Ordena modelos: free primeiro (melhor para experimentar), depois por preço de
+ * input ascendente, com pricing desconhecido no fim. Estável por display_name.
+ */
+function sortModelsForSelect(models: AiModel[]): AiModel[] {
+  const score = (m: AiModel) => {
+    const ic = m.input_cost_per_1m_usd
+    if (ic == null) return Number.POSITIVE_INFINITY
+    return Number(ic)
+  }
+  return [...models].sort((a, b) => {
+    const sa = score(a)
+    const sb = score(b)
+    if (sa !== sb) return sa - sb
+    return a.display_name.localeCompare(b.display_name)
+  })
+}
+
+/**
+ * UUID v4 com fallback. `randomId()` só existe em contextos seguros
+ * (HTTPS ou localhost). Em http://<IP>:porta o método é `undefined` e o React
+ * estoura. Estes IDs são apenas chave React / id local de mensagem — não
+ * precisam de aleatoriedade criptográfica quando o fallback é usado.
+ */
+function randomId(): string {
+  const c = typeof crypto !== 'undefined' ? crypto : undefined
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID()
+  if (c && typeof c.getRandomValues === 'function') {
+    const b = c.getRandomValues(new Uint8Array(16))
+    b[6] = (b[6] & 0x0f) | 0x40
+    b[8] = (b[8] & 0x3f) | 0x80
+    const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+  }
+  return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 11)}`
+}
+
+/** Agrupa conversas em Hoje / Ontem / Anteriores */
 function groupConversations(convs: Conversation[]): { label: string; items: Conversation[] }[] {
   const now = new Date()
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
   const yesterday = today - 86_400_000
 
-  const groups: Record<string, Conversation[]> = { Today: [], Yesterday: [], Older: [] }
+  const groups: Record<string, Conversation[]> = { Hoje: [], Ontem: [], Anteriores: [] }
   for (const c of convs) {
     const d = new Date(c.created_at ?? c.id).getTime()
-    if (d >= today) groups.Today.push(c)
-    else if (d >= yesterday) groups.Yesterday.push(c)
-    else groups.Older.push(c)
+    if (d >= today) groups.Hoje.push(c)
+    else if (d >= yesterday) groups.Ontem.push(c)
+    else groups.Anteriores.push(c)
   }
   return Object.entries(groups)
     .filter(([, items]) => items.length > 0)
@@ -141,6 +203,56 @@ function reduceSessionProgress(
 }
 
 /**
+ * Timeline cronológica do "pensamento" do agente.
+ * Concatena chunks de texto consecutivos no último step de tipo 'text' para
+ * preservar a ordem natural texto→tool→texto→tool→… Quando chega um tool_start,
+ * congela o texto atual e abre um novo step de tool. Tool_result actualiza o
+ * step correspondente.
+ */
+function appendTextToThoughts(
+  prev: ThoughtStep[],
+  delta: string,
+): ThoughtStep[] {
+  if (!delta) return prev
+  const last = prev[prev.length - 1]
+  if (last && last.kind === 'text') {
+    return [...prev.slice(0, -1), { ...last, content: last.content + delta }]
+  }
+  return [
+    ...prev,
+    { kind: 'text', id: `t-${prev.length}-${Date.now()}`, content: delta },
+  ]
+}
+
+function appendToolStartToThoughts(
+  prev: ThoughtStep[],
+  tool: { id: string; name: string; input: string },
+): ThoughtStep[] {
+  if (prev.some((s) => s.kind === 'tool' && s.id === tool.id)) return prev
+  return [
+    ...prev,
+    {
+      kind: 'tool',
+      id: tool.id,
+      name: tool.name,
+      input: tool.input,
+      done: false,
+    },
+  ]
+}
+
+function applyToolResultToThoughts(
+  prev: ThoughtStep[],
+  result: { id: string; output: string; is_error: boolean },
+): ThoughtStep[] {
+  return prev.map((step) =>
+    step.kind === 'tool' && step.id === result.id
+      ? { ...step, output: result.output, isError: result.is_error, done: true }
+      : step,
+  )
+}
+
+/**
  * UI principal: layout IDE estilo "The Silent Architect".
  * Estado vazio → command bar premium centralizada.
  * Estado ativo  → lista de mensagens + input compacto.
@@ -161,16 +273,157 @@ export function ChatPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [selectedSlug, setSelectedSlug] = useState<string>('')
   const [selectedBranch, setSelectedBranch] = useState<string>('')
-  const [agents, setAgents] = useState<Agent[]>([])
-  const [selectedAgentId, setSelectedAgentId] = useState<string>('')
   const [models, setModels] = useState<AiModel[]>([])
   const [selectedModelId, setSelectedModelId] = useState<string>('')
+  const [convUsage, setConvUsage] = useState<ConversationUsage>({
+    total_prompt_tokens: 0,
+    total_completion_tokens: 0,
+    total_cost_usd: 0,
+  })
+  const [liveUsage, setLiveUsage] = useState<DoneEvent | null>(null)
 
-  const [pendingText, setPendingText] = useState('')
-  const [pendingTools, setPendingTools] = useState<ToolCallState[]>([])
+  const sortedModels = useMemo(() => sortModelsForSelect(models), [models])
+
+  const [thoughtSteps, setThoughtSteps] = useState<ThoughtStep[]>([])
+  const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null)
+  const [streamElapsedMs, setStreamElapsedMs] = useState(0)
   const [pendingAction, setPendingAction] = useState<ActionRequiredEvent | null>(null)
   const [sessionProgress, setSessionProgress] = useState<SessionStageState[]>([])
   const [sessionProgressAnchor, setSessionProgressAnchor] = useState<SessionProgressAnchor | null>(null)
+
+  // Anexos pendentes de envio (uploads em curso, concluídos ou falhados).
+  // Apenas itens `kind === 'uploaded'` viajam no payload do streamAssistantReply.
+  const [trayItems, setTrayItems] = useState<TrayItem[]>([])
+  const [isDragOver, setIsDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  /**
+   * Faz upload de uma lista de imagens, registando placeholders na tray
+   * enquanto a Promise resolve. Anexos exigem `activeId` — antes de criar
+   * a conversa o input file fica desativado.
+   */
+  const uploadFiles = useCallback(
+    (files: File[]) => {
+      if (!activeId || files.length === 0) return
+      for (const file of files) {
+        if (!ALLOWED_ATTACHMENT_MIME.has(file.type)) {
+          setTrayItems((prev) => [
+            ...prev,
+            {
+              kind: 'failed',
+              localId: crypto.randomUUID(),
+              filename: file.name,
+              error: 'Tipo não suportado (use PNG, JPG, WebP ou GIF)',
+            },
+          ])
+          continue
+        }
+        if (file.size > MAX_ATTACHMENT_BYTES) {
+          setTrayItems((prev) => [
+            ...prev,
+            {
+              kind: 'failed',
+              localId: crypto.randomUUID(),
+              filename: file.name,
+              error: `Acima de ${(MAX_ATTACHMENT_BYTES / 1024 / 1024).toFixed(0)} MB`,
+            },
+          ])
+          continue
+        }
+        const localId = crypto.randomUUID()
+        const ctrl = new AbortController()
+        setTrayItems((prev) => [
+          ...prev,
+          {
+            kind: 'uploading',
+            localId,
+            filename: file.name,
+            abort: () => ctrl.abort(),
+          },
+        ])
+        uploadAttachment(token, activeId, file, ctrl.signal)
+          .then((att) => {
+            setTrayItems((prev) =>
+              prev.map((it) =>
+                it.localId === localId
+                  ? { kind: 'uploaded', localId, attachment: att }
+                  : it,
+              ),
+            )
+          })
+          .catch((e) => {
+            if (e instanceof Error && e.name === 'AbortError') {
+              setTrayItems((prev) => prev.filter((it) => it.localId !== localId))
+              return
+            }
+            setTrayItems((prev) =>
+              prev.map((it) =>
+                it.localId === localId
+                  ? {
+                      kind: 'failed',
+                      localId,
+                      filename: file.name,
+                      error: e instanceof Error ? e.message : String(e),
+                    }
+                  : it,
+              ),
+            )
+          })
+      }
+    },
+    [activeId, token],
+  )
+
+  /** Remove um item da tray; aborta uploads em curso e apaga uploads concluídos no backend. */
+  const removeTrayItem = useCallback(
+    (localId: string) => {
+      const item = trayItems.find((it) => it.localId === localId)
+      if (!item) return
+      if (item.kind === 'uploading') item.abort()
+      if (item.kind === 'uploaded' && activeId) {
+        deleteAttachment(token, activeId, item.attachment.id).catch(() => {
+          // melhor-esforço; o registo expira com a conversa via FK CASCADE
+        })
+      }
+      setTrayItems((prev) => prev.filter((it) => it.localId !== localId))
+    },
+    [trayItems, activeId, token],
+  )
+
+  /** Limpa a tray sem chamar DELETE — usado após envio bem-sucedido (anexos
+   *  ficam vinculados à conversa e sobrevivem como histórico no banco). */
+  const clearTrayLocal = useCallback(() => setTrayItems([]), [])
+
+  /** Handler para input file e drag&drop. */
+  const handleFileSelection = useCallback(
+    (fileList: FileList | null | undefined) => {
+      if (!fileList || fileList.length === 0) return
+      const files = Array.from(fileList)
+      uploadFiles(files)
+    },
+    [uploadFiles],
+  )
+
+  /** Handler para colar imagem do clipboard (Ctrl+V no textarea). */
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = e.clipboardData?.items
+      if (!items) return
+      const images: File[] = []
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i]
+        if (it.kind === 'file' && it.type.startsWith('image/')) {
+          const f = it.getAsFile()
+          if (f) images.push(f)
+        }
+      }
+      if (images.length > 0) {
+        e.preventDefault()
+        uploadFiles(images)
+      }
+    },
+    [uploadFiles],
+  )
 
   const [sidePanel, setSidePanel] = useState<'none' | 'diff' | 'files'>('none')
   const [diff, setDiff] = useState<ConversationDiff | null>(null)
@@ -179,24 +432,45 @@ export function ChatPage() {
   const [diffStats, setDiffStats] = useState<{ added: number; removed: number } | null>(null)
   const [prLoading, setPrLoading] = useState(false)
   const [prUrl, setPrUrl] = useState<string | null>(null)
+  const [prError, setPrError] = useState<string | null>(null)
   const [headBranch, setHeadBranch] = useState<string | null>(null)
+
+  const { pathname } = useLocation()
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  /** Comprimento do `accumulated` text já aplicado à timeline thoughtSteps. */
+  const lastTextOffsetRef = useRef(0)
+
+  // Tick do contador de tempo decorrido enquanto o stream está activo.
+  useEffect(() => {
+    if (streamStartedAt === null) return
+    const id = window.setInterval(() => {
+      setStreamElapsedMs(Date.now() - streamStartedAt)
+    }, 200)
+    return () => window.clearInterval(id)
+  }, [streamStartedAt])
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
+        e.preventDefault()
+        handleNewChat()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        const [convsResult, wsList, agentsList, modelsList] = await Promise.allSettled([
+        const [convsResult, wsList, modelsList] = await Promise.allSettled([
           fetchConversations(token),
           fetchWorkspaces(token),
-          fetchAgents(token),
           fetchAiModels(token),
         ])
-        if (agentsList.status === 'fulfilled') {
-          setAgents(agentsList.value)
-        }
         if (modelsList.status === 'fulfilled') {
           const ms = modelsList.value
           setModels(ms)
@@ -234,6 +508,8 @@ export function ChatPage() {
       setMessages([])
       setMessagesLoading(false)
       setMessagesError(null)
+      setConvUsage({ total_prompt_tokens: 0, total_completion_tokens: 0, total_cost_usd: 0 })
+      setLiveUsage(null)
       return
     }
     let cancelled = false
@@ -244,10 +520,17 @@ export function ChatPage() {
     setMessages([])
     setMessagesLoading(true)
     setMessagesError(null)
+    setLiveUsage(null)
     ;(async () => {
       try {
-        const msgs = await fetchMessages(token, activeId)
-        if (!cancelled) setMessages(msgs)
+        const [msgs, usage] = await Promise.all([
+          fetchMessages(token, activeId),
+          fetchConversationUsage(token, activeId),
+        ])
+        if (!cancelled) {
+          setMessages(msgs)
+          setConvUsage(usage)
+        }
       } catch (e) {
         if (e instanceof AuthError) {
           setToken(null)
@@ -272,12 +555,13 @@ export function ChatPage() {
   async function handleCreatePr() {
     if (!activeId) return
     setPrLoading(true)
+    setPrError(null)
     try {
       const result = await createConversationPr(token, activeId)
       setPrUrl(result.pr_url)
       setHeadBranch(result.head_branch)
-    } catch {
-      // silently fail — user can retry
+    } catch (e) {
+      setPrError(e instanceof Error ? e.message : 'Não foi possível criar o PR. Tente novamente.')
     } finally {
       setPrLoading(false)
     }
@@ -317,8 +601,7 @@ export function ChatPage() {
     abortControllerRef.current?.abort()
     abortControllerRef.current = null
     setStreaming(false)
-    setPendingText('')
-    setPendingTools([])
+    setThoughtSteps([])
     setPendingAction(null)
     setSessionProgress([])
     setSessionProgressAnchor(null)
@@ -334,7 +617,7 @@ export function ChatPage() {
     const repos = selectedSlug
       ? [{ slug: selectedSlug, base_branch: selectedBranch || null }]
       : []
-    const c = await createConversation(token, repos, selectedAgentId || null)
+    const c = await createConversation(token, repos)
     // Update otimista do título — o backend renomeia "Nova conversa" para o
     // início da primeira mensagem (mesma lógica de _TITLE_MAX_LEN=80).
     const previewTitle =
@@ -346,8 +629,10 @@ export function ChatPage() {
     setInput('')
 
     setStreaming(true)
-    setPendingText('')
-    setPendingTools([])
+    setThoughtSteps([])
+    lastTextOffsetRef.current = 0
+    setStreamStartedAt(Date.now())
+    setStreamElapsedMs(0)
     setPendingAction(null)
     setSessionProgress([])
 
@@ -355,7 +640,7 @@ export function ChatPage() {
     abortControllerRef.current = ctrl
 
     const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: randomId(),
       role: 'user',
       content: text,
       created_at: new Date().toISOString(),
@@ -366,22 +651,17 @@ export function ChatPage() {
     try {
       await streamAssistantReply(token, c.id, text, {
         onText(accumulated) {
-          setPendingText(accumulated)
+          const delta = accumulated.slice(lastTextOffsetRef.current)
+          lastTextOffsetRef.current = accumulated.length
+          if (delta) {
+            setThoughtSteps((prev) => appendTextToThoughts(prev, delta))
+          }
         },
         onToolStart(tool) {
-          setPendingTools((prev) => [
-            ...prev,
-            { id: tool.id, name: tool.name, input: tool.input, done: false },
-          ])
+          setThoughtSteps((prev) => appendToolStartToThoughts(prev, tool))
         },
         onToolResult(result) {
-          setPendingTools((prev) =>
-            prev.map((t) =>
-              t.id === result.id
-                ? { ...t, output: result.output, isError: result.is_error, done: true }
-                : t
-            )
-          )
+          setThoughtSteps((prev) => applyToolResultToThoughts(prev, result))
         },
         onActionRequired(action) { setPendingAction(action) },
         onStatus(status) {
@@ -397,18 +677,26 @@ export function ChatPage() {
           setMessages((m) => [
             ...m,
             {
-              id: crypto.randomUUID(),
+              id: randomId(),
               role: 'assistant',
               content: `**Erro:** ${message}`,
               created_at: new Date().toISOString(),
             },
           ])
         },
+        onDone(usage) { setLiveUsage(usage) },
         signal: ctrl.signal,
       }, selectedModelId || null)
-      setPendingText('')
-      const msgs = await fetchMessages(token, c.id)
+      setThoughtSteps([])
+      setStreamStartedAt(null)
+      clearTrayLocal()
+      const [msgs, totals] = await Promise.all([
+        fetchMessages(token, c.id),
+        fetchConversationUsage(token, c.id),
+      ])
       setMessages(msgs)
+      setConvUsage(totals)
+      setLiveUsage(null)
     } catch (e) {
       if (e instanceof AuthError) {
         setToken(null); window.location.href = '/login'; return
@@ -418,7 +706,7 @@ export function ChatPage() {
         setMessages((m) => [
           ...m,
           {
-            id: crypto.randomUUID(),
+            id: randomId(),
             role: 'assistant',
             content: `**Erro:** ${e instanceof Error ? e.message : String(e)}`,
             created_at: new Date().toISOString(),
@@ -427,6 +715,7 @@ export function ChatPage() {
       }
     } finally {
       setStreaming(false)
+      setStreamStartedAt(null)
       abortControllerRef.current = null
       fetchConversationDiff(token, c.id).then((d) => setDiffStats(d.stats)).catch(() => {})
     }
@@ -436,12 +725,22 @@ export function ChatPage() {
     const text = (textOverride ?? input).trim()
     if (!text || !activeId || streaming) return
 
+    // Bloqueia envio enquanto houver uploads em curso para não perder o
+    // anexo no meio do streaming. Failed items podem ficar — o utilizador
+    // já viu o erro e decide se remove ou tenta de novo.
+    if (trayItems.some((it) => it.kind === 'uploading')) return
+    const uploadedAttachmentIds = trayItems
+      .filter((it): it is Extract<TrayItem, { kind: 'uploaded' }> => it.kind === 'uploaded')
+      .map((it) => it.attachment.id)
+
     const sessionMode: SessionMode = 'resuming'
 
     if (!textOverride) setInput('')
     setStreaming(true)
-    setPendingText('')
-    setPendingTools([])
+    setThoughtSteps([])
+    lastTextOffsetRef.current = 0
+    setStreamStartedAt(Date.now())
+    setStreamElapsedMs(0)
     setPendingAction(null)
     setSessionProgress([])
 
@@ -449,7 +748,7 @@ export function ChatPage() {
     abortControllerRef.current = ctrl
 
     const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: randomId(),
       role: 'user',
       content: text,
       created_at: new Date().toISOString(),
@@ -470,22 +769,17 @@ export function ChatPage() {
     try {
       await streamAssistantReply(token, activeId, text, {
         onText(accumulated) {
-          setPendingText(accumulated)
+          const delta = accumulated.slice(lastTextOffsetRef.current)
+          lastTextOffsetRef.current = accumulated.length
+          if (delta) {
+            setThoughtSteps((prev) => appendTextToThoughts(prev, delta))
+          }
         },
         onToolStart(tool) {
-          setPendingTools((prev) => [
-            ...prev,
-            { id: tool.id, name: tool.name, input: tool.input, done: false },
-          ])
+          setThoughtSteps((prev) => appendToolStartToThoughts(prev, tool))
         },
         onToolResult(result) {
-          setPendingTools((prev) =>
-            prev.map((t) =>
-              t.id === result.id
-                ? { ...t, output: result.output, isError: result.is_error, done: true }
-                : t
-            )
-          )
+          setThoughtSteps((prev) => applyToolResultToThoughts(prev, result))
         },
         onActionRequired(action) { setPendingAction(action) },
         onStatus(status) {
@@ -501,18 +795,26 @@ export function ChatPage() {
           setMessages((m) => [
             ...m,
             {
-              id: crypto.randomUUID(),
+              id: randomId(),
               role: 'assistant',
               content: `**Erro:** ${message}`,
               created_at: new Date().toISOString(),
             },
           ])
         },
+        onDone(usage) { setLiveUsage(usage) },
         signal: ctrl.signal,
-      }, selectedModelId || null)
-      setPendingText('')
-      const msgs = await fetchMessages(token, activeId)
+      }, selectedModelId || null, uploadedAttachmentIds.length ? uploadedAttachmentIds : null)
+      setThoughtSteps([])
+      setStreamStartedAt(null)
+      clearTrayLocal()
+      const [msgs, totals] = await Promise.all([
+        fetchMessages(token, activeId),
+        fetchConversationUsage(token, activeId),
+      ])
       setMessages(msgs)
+      setConvUsage(totals)
+      setLiveUsage(null)
     } catch (e) {
       if (e instanceof AuthError) {
         setToken(null); window.location.href = '/login'; return
@@ -522,7 +824,7 @@ export function ChatPage() {
         setMessages((m) => [
           ...m,
           {
-            id: crypto.randomUUID(),
+            id: randomId(),
             role: 'assistant',
             content: `**Erro:** ${e instanceof Error ? e.message : String(e)}`,
             created_at: new Date().toISOString(),
@@ -531,6 +833,7 @@ export function ChatPage() {
       }
     } finally {
       setStreaming(false)
+      setStreamStartedAt(null)
       abortControllerRef.current = null
       if (activeId) fetchConversationDiff(token, activeId).then((d) => setDiffStats(d.stats)).catch(() => {})
     }
@@ -546,7 +849,10 @@ export function ChatPage() {
   const activeConv = conversations.find((c) => c.id === activeId)
   const activeEnvSlug = activeConv?.repos?.[0]?.slug ?? null
   const showThinking =
-    streaming && !pendingText && !sessionProgress.length && pendingTools.every((t) => t.done) && !pendingAction
+    streaming &&
+    !sessionProgress.length &&
+    thoughtSteps.length === 0 &&
+    !pendingAction
 
   const groups = groupConversations(conversations)
 
@@ -590,6 +896,31 @@ export function ChatPage() {
             </button>
           </div>
 
+          <nav className={styles.sidebarNav} aria-label="Áreas do produto">
+            {[
+              { to: '/', icon: 'dashboard', label: 'Dashboard' },
+              { to: '/chat', icon: 'chat_bubble', label: 'Chat' },
+              { to: '/runs', icon: 'history', label: 'Runs' },
+              { to: '/analytics', icon: 'analytics', label: 'Analytics' },
+              { to: '/skills', icon: 'menu_book', label: 'Skills' },
+              { to: '/settings', icon: 'settings', label: 'Configurações' },
+            ].map(({ to, icon, label }) => {
+              const isActive = pathname === to
+              return (
+                <Link
+                  key={to}
+                  to={to}
+                  className={`${styles.sidebarNavItem} ${isActive ? styles.sidebarNavItemActive : ''}`}
+                  aria-current={isActive ? 'page' : undefined}
+                  title={label}
+                >
+                  <span className={styles.icon}>{icon}</span>
+                  <span>{label}</span>
+                </Link>
+              )
+            })}
+          </nav>
+
           {/* Session list */}
           <div className={styles.sessionList}>
             {groups.length === 0 && (
@@ -619,33 +950,8 @@ export function ChatPage() {
             ))}
           </div>
 
-          {/* Sidebar bottom nav */}
-          <div className={styles.sidebarNav}>
-            <Link to="/" className={styles.sidebarNavItem} title="Dashboard">
-              <span className={styles.icon}>dashboard</span>
-              <span>Dashboard</span>
-            </Link>
-            <Link to="/agents" className={styles.sidebarNavItem} title="Agentes">
-              <span className={styles.icon}>support_agent</span>
-              <span>Agentes</span>
-            </Link>
-            <Link to="/runs" className={styles.sidebarNavItem} title="Runs">
-              <span className={styles.icon}>history</span>
-              <span>Runs</span>
-            </Link>
-            <Link to="/analytics" className={styles.sidebarNavItem} title="Analytics">
-              <span className={styles.icon}>analytics</span>
-              <span>Analytics</span>
-            </Link>
-            <Link to="/skills" className={styles.sidebarNavItem} title="Skills">
-              <span className={styles.icon}>menu_book</span>
-              <span>Skills</span>
-            </Link>
-            <Link to="/settings" className={styles.sidebarNavItem} title="Configurações">
-              <span className={styles.icon}>settings</span>
-              <span>Configurações</span>
-            </Link>
-            <button className={styles.sidebarNavItem} onClick={logout} title="Sair">
+          <div className={styles.sidebarFooter}>
+            <button type="button" className={styles.sidebarLogoutBtn} onClick={logout} title="Sair">
               <span className={styles.icon}>logout</span>
               <span>Sair</span>
             </button>
@@ -666,10 +972,7 @@ export function ChatPage() {
             setSelectedSlug={setSelectedSlug}
             selectedBranch={selectedBranch}
             setSelectedBranch={setSelectedBranch}
-            agents={agents}
-            selectedAgentId={selectedAgentId}
-            setSelectedAgentId={setSelectedAgentId}
-            models={models}
+            models={sortedModels}
             selectedModelId={selectedModelId}
             setSelectedModelId={setSelectedModelId}
             token={token}
@@ -680,8 +983,8 @@ export function ChatPage() {
               messagesLoading={messagesLoading}
               messagesError={messagesError}
               sessionProgressAnchor={sessionProgressAnchor}
-              pendingText={pendingText}
-              pendingTools={pendingTools}
+              thoughtSteps={thoughtSteps}
+              streamElapsedMs={streamElapsedMs}
               sessionProgress={sessionProgress}
               pendingAction={pendingAction}
               showThinking={showThinking}
@@ -699,6 +1002,7 @@ export function ChatPage() {
               diffStats={diffStats}
               prLoading={prLoading}
               prUrl={prUrl}
+              prError={prError}
               headBranch={headBranch}
               onCreatePr={handleCreatePr}
               activeTitle={activeConv?.title ?? 'Conversa'}
@@ -709,9 +1013,18 @@ export function ChatPage() {
               diffLoading={diffLoading}
               onOpenDiff={handleOpenDiff}
               onToggleFiles={handleToggleFiles}
-              models={models}
+              models={sortedModels}
               selectedModelId={selectedModelId}
               setSelectedModelId={setSelectedModelId}
+              convUsage={convUsage}
+              liveUsage={liveUsage}
+              trayItems={trayItems}
+              onPickFiles={handleFileSelection}
+              onPasteFiles={handlePaste}
+              onRemoveTrayItem={removeTrayItem}
+              fileInputRef={fileInputRef}
+              isDragOver={isDragOver}
+              setDragOver={setIsDragOver}
             />
           )}
         </main>
@@ -734,9 +1047,6 @@ interface EmptyStateProps {
   setSelectedSlug: (s: string) => void
   selectedBranch: string
   setSelectedBranch: Dispatch<SetStateAction<string>>
-  agents: Agent[]
-  selectedAgentId: string
-  setSelectedAgentId: (id: string) => void
   models: AiModel[]
   selectedModelId: string
   setSelectedModelId: (id: string) => void
@@ -747,7 +1057,6 @@ function EmptyState({
   input, setInput, inputRef, onExecute, streaming,
   workspaces, selectedSlug, setSelectedSlug,
   selectedBranch, setSelectedBranch,
-  agents, selectedAgentId, setSelectedAgentId,
   models, selectedModelId, setSelectedModelId, token,
 }: EmptyStateProps) {
   const [branches, setBranches] = useState<string[]>([])
@@ -780,8 +1089,6 @@ function EmptyState({
   const branchRequired = !!selectedSlug && !selectedBranch
   const selectedWorkspaceName =
     workspaces.find((workspace) => workspace.slug === selectedSlug)?.name ?? 'Escolha o repositório'
-  const selectedAgentName =
-    agents.find((agent) => agent.id === selectedAgentId)?.name ?? 'Agente genérico'
   const selectedModelName =
     models.find((model) => model.model_id === selectedModelId)?.display_name ?? 'Modelo padrão'
 
@@ -794,9 +1101,9 @@ function EmptyState({
         </div>
         <div className={styles.welcomeCopy}>
           <span className={styles.welcomeEyebrow}>CappyCloud Command Center</span>
-          <h1 className={styles.welcomeTitle}>Orquestre agentes de código na nuvem.</h1>
+          <h1 className={styles.welcomeTitle}>Desenvolva com OpenClaude em worktrees isolados.</h1>
           <p className={styles.welcomeText}>
-            Escolha o contexto, descreva a tarefa e acompanhe execução, ferramentas,
+            Escolha o repositório, descreva a tarefa e acompanhe execução, ferramentas,
             diff e PR a partir de uma única superfície.
           </p>
         </div>
@@ -804,10 +1111,6 @@ function EmptyState({
           <div className={styles.metricCard}>
             <span className={styles.metricValue}>{workspaces.length}</span>
             <span className={styles.metricLabel}>repositórios</span>
-          </div>
-          <div className={styles.metricCard}>
-            <span className={styles.metricValue}>{agents.length}</span>
-            <span className={styles.metricLabel}>agentes</span>
           </div>
           <div className={styles.metricCard}>
             <span className={styles.metricValue}>{models.length || 1}</span>
@@ -910,52 +1213,13 @@ function EmptyState({
                     </select>
                   </div>
                 )}
-                {agents.length > 0 && (
-                  <div className={styles.contextPill} style={{ marginLeft: '0.25rem' }}>
-                    <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
-                      support_agent
-                    </span>
-                    <span className={styles.contextPillLabel}>
-                      {agents.find((a) => a.id === selectedAgentId)?.name ?? 'Sem agente'}
-                    </span>
-                    <span className={styles.icon} style={{ fontSize: '0.75rem', opacity: 0.35 }}>
-                      expand_more
-                    </span>
-                    <select
-                      className={styles.contextPillSelect}
-                      value={selectedAgentId}
-                      onChange={(e) => setSelectedAgentId(e.target.value)}
-                      title="Selecionar agente"
-                    >
-                      <option value="">— sem agente (genérico) —</option>
-                      {agents.map((a) => (
-                        <option key={a.id} value={a.id}>{a.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
                 {models.length > 0 && (
-                  <div className={styles.contextPill} style={{ marginLeft: '0.25rem' }}>
-                    <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
-                      smart_toy
-                    </span>
-                    <span className={styles.contextPillLabel}>
-                      {models.find((m) => m.model_id === selectedModelId)?.display_name ?? 'Modelo…'}
-                    </span>
-                    <span className={styles.icon} style={{ fontSize: '0.75rem', opacity: 0.35 }}>
-                      expand_more
-                    </span>
-                    <select
-                      className={styles.contextPillSelect}
+                  <div style={{ marginLeft: '0.25rem' }}>
+                    <ModelPicker
+                      models={models}
                       value={selectedModelId}
-                      onChange={(e) => setSelectedModelId(e.target.value)}
-                      title="Selecionar modelo"
-                    >
-                      <option value="">— modelo padrão —</option>
-                      {models.map((m) => (
-                        <option key={m.id} value={m.model_id}>{m.display_name}</option>
-                      ))}
-                    </select>
+                      onChange={setSelectedModelId}
+                    />
                   </div>
                 )}
               </div>
@@ -988,13 +1252,6 @@ function EmptyState({
           title={selectedWorkspaceName}
           desc="Sessões isoladas por worktree, prontas para diff e PR."
           href="/settings"
-        />
-        <QuickActionCard
-          icon="support_agent"
-          iconColor="var(--cc-primary)"
-          title={selectedAgentName}
-          desc="Perfis com system prompt e skills para orientar o comportamento."
-          href="/agents"
         />
         <QuickActionCard
           icon="smart_toy"
@@ -1038,8 +1295,8 @@ interface ActiveChatProps {
   messagesLoading: boolean
   messagesError: string | null
   sessionProgressAnchor: SessionProgressAnchor | null
-  pendingText: string
-  pendingTools: ToolCallState[]
+  thoughtSteps: ThoughtStep[]
+  streamElapsedMs: number
   sessionProgress: SessionStageState[]
   pendingAction: ActionRequiredEvent | null
   showThinking: boolean
@@ -1057,6 +1314,7 @@ interface ActiveChatProps {
   diffStats: { added: number; removed: number } | null
   prLoading: boolean
   prUrl: string | null
+  prError: string | null
   headBranch: string | null
   onCreatePr: () => void
   activeTitle: string
@@ -1070,17 +1328,29 @@ interface ActiveChatProps {
   models: AiModel[]
   selectedModelId: string
   setSelectedModelId: (id: string) => void
+  convUsage: ConversationUsage
+  liveUsage: DoneEvent | null
+  // Anexos
+  trayItems: TrayItem[]
+  onPickFiles: (files: FileList | null | undefined) => void
+  onPasteFiles: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void
+  onRemoveTrayItem: (localId: string) => void
+  fileInputRef: React.RefObject<HTMLInputElement | null>
+  isDragOver: boolean
+  setDragOver: (v: boolean) => void
 }
 
 function ActiveChat({
-  messages, messagesLoading, messagesError, sessionProgressAnchor, pendingText, pendingTools, sessionProgress, pendingAction,
+  messages, messagesLoading, messagesError, sessionProgressAnchor, thoughtSteps, streamElapsedMs, sessionProgress, pendingAction,
   showThinking, streaming, input, setInput, inputRef,
   onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch,
   workspaces,
-  diffStats, prLoading, prUrl, headBranch, onCreatePr,
+  diffStats, prLoading, prUrl, prError, headBranch, onCreatePr,
   activeTitle: _activeTitle,
   token, conversationId, sidePanel, diff, diffLoading, onOpenDiff, onToggleFiles,
   models, selectedModelId, setSelectedModelId,
+  convUsage, liveUsage,
+  trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
 }: ActiveChatProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const shouldStickToBottomRef = useRef(true)
@@ -1127,7 +1397,7 @@ function ActiveChat({
     } else {
       requestAnimationFrame(() => setShowJumpToLatest(true))
     }
-  }, [messages, pendingText, pendingTools, sessionProgress, pendingAction, streaming, scrollToLatest])
+  }, [messages, thoughtSteps, sessionProgress, pendingAction, streaming, scrollToLatest])
 
   let sessionProgressAfterIndex = -1
   if (sessionProgressAnchor) {
@@ -1155,7 +1425,8 @@ function ActiveChat({
     <div className={styles.activeChat}>
       {/* Session header — env + branch + diff stats + PR + painel ficheiros/diff */}
       <div className={styles.sessionHeader}>
-        <div className={styles.sessionHeaderLeft}>
+        <div className={styles.sessionHeaderInner}>
+          <div className={styles.sessionHeaderLeft}>
           {activeEnvSlug ? (
             <>
               <span className={`${styles.icon} ${styles.sessionHeaderIcon}`}>source</span>
@@ -1174,8 +1445,8 @@ function ActiveChat({
               Conversa (sem repositório ligado)
             </span>
           )}
-        </div>
-        <div className={styles.sessionHeaderRight}>
+          </div>
+          <div className={styles.sessionHeaderRight}>
           {diffStats && (diffStats.added > 0 || diffStats.removed > 0) && (
             <>
               <span className={styles.diffAdded}>+{diffStats.added}</span>
@@ -1192,14 +1463,25 @@ function ActiveChat({
                     Ver PR
                   </a>
                 ) : (
-                  <button
-                    type="button"
-                    className={styles.createPrBtn}
-                    onClick={onCreatePr}
-                    disabled={prLoading || streaming}
-                  >
-                    {prLoading ? 'Criando…' : 'Criar PR'}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className={styles.createPrBtn}
+                      onClick={onCreatePr}
+                      disabled={prLoading || streaming}
+                    >
+                      {prLoading ? 'Criando…' : 'Criar PR'}
+                    </button>
+                    {prError && (
+                      <span
+                        role="alert"
+                        style={{ fontSize: '0.72rem', color: 'var(--mantine-color-red-5)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        title={prError}
+                      >
+                        {prError}
+                      </span>
+                    )}
+                  </>
                 )
               )}
             </>
@@ -1222,6 +1504,7 @@ function ActiveChat({
               <span className={styles.icon}>difference</span>
             </button>
           </div>
+          </div>
         </div>
       </div>
       <div className={styles.chatBody}>
@@ -1233,14 +1516,16 @@ function ActiveChat({
             type="auto"
             onScrollPositionChange={updateStickyScroll}
           >
-            <Stack gap="sm" p="md">
+            <div className={styles.chatScrollInner}>
+              <div className={styles.chatThread}>
+              <Stack gap="sm" p="md">
               {messagesLoading && (
                 <div className={styles.chatStateCard}>
                   <ThinkingIndicator label="A carregar conversa…" />
                 </div>
               )}
               {messagesError && (
-                <div className={`${styles.chatStateCard} ${styles.chatStateCardError}`}>
+                <div className={`${styles.chatStateCard} ${styles.chatStateCardError}`} role="alert">
                   <Text size="sm" fw={600}>Não foi possível carregar esta conversa.</Text>
                   <Text size="xs" c="dimmed">{messagesError}</Text>
                 </div>
@@ -1255,31 +1540,41 @@ function ActiveChat({
               )}
               {messages.map((m, index) => (
                 <Fragment key={m.id}>
-                  <PaperMessage key={m.id} role={m.role} content={m.content} />
+                  <PaperMessage
+                    key={m.id}
+                    role={m.role}
+                    content={m.content}
+                    modelUsed={m.model_used ?? null}
+                    promptTokens={m.prompt_tokens ?? 0}
+                    completionTokens={m.completion_tokens ?? 0}
+                    costUsd={m.cost_usd ?? 0}
+                  />
                   {sessionProgress.length > 0 && index === sessionProgressAfterIndex && (
                     <SessionProgressCard stages={sessionProgress} />
                   )}
                 </Fragment>
               ))}
-              {pendingTools.map((tool) => (
-                <ToolCallCard key={tool.id} tool={tool} />
-              ))}
-
-              {streaming && (
+              {(thoughtSteps.length > 0 || streaming) && (
                 <Stack gap="xs">
-                  {sessionProgress.length === 0 && (showThinking || (streaming && pendingTools.some(t => !t.done))) && (
-                    <ThinkingIndicator label={pendingTools.some(t => !t.done) ? 'A executar…' : undefined} />
+                  {thoughtSteps.length > 0 && (
+                    <ThinkingStream
+                      steps={thoughtSteps}
+                      streaming={streaming}
+                      elapsedMs={streamElapsedMs}
+                    />
                   )}
-                  {pendingText && (
-                    <PaperMessage role="assistant" content={pendingText} streaming />
-                  )}
+                  {streaming &&
+                    sessionProgress.length === 0 &&
+                    showThinking && <ThinkingIndicator />}
                 </Stack>
               )}
 
               {pendingAction && (
                 <ActionRequiredCard action={pendingAction} onReply={onActionReply} />
               )}
-            </Stack>
+              </Stack>
+              </div>
+            </div>
           </ScrollArea>
           {showJumpToLatest && (
             <button type="button" className={styles.jumpToLatestBtn} onClick={() => scrollToLatest('smooth')}>
@@ -1314,15 +1609,77 @@ function ActiveChat({
       </div>
 
       {/* Compact input bar */}
-      <div className={styles.chatInputBar}>
-        <div className={styles.chatInputWrapper}>
+      <div
+        className={`${styles.chatInputBar} ${isDragOver ? styles.chatInputBarDragOver : ''}`}
+        onDragOver={(e) => {
+          if (!e.dataTransfer?.types?.includes('Files')) return
+          e.preventDefault()
+          setDragOver(true)
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget === e.target) setDragOver(false)
+        }}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragOver(false)
+          onPickFiles(e.dataTransfer?.files)
+        }}
+      >
+        <div className={styles.chatInputBarShell}>
+          <div
+            className={`${styles.chatInputStatusRow} ${streaming && !pendingAction ? styles.visible : ''}`}
+            aria-hidden={!streaming || !!pendingAction}
+          >
+            {streaming && !pendingAction && (
+              <ThinkingIndicator
+                label={
+                  thoughtSteps.some((t) => t.kind === 'tool' && !t.done)
+                    ? 'A executar…'
+                    : undefined
+                }
+              />
+            )}
+          </div>
+          <AttachmentTray
+            items={trayItems}
+            token={token}
+            conversationId={conversationId}
+            onRemove={onRemoveTrayItem}
+          />
+          <div className={styles.chatInputWrapper}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+            multiple
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              onPickFiles(e.target.files)
+              if (e.target) e.target.value = ''
+            }}
+          />
+          <button
+            type="button"
+            className={styles.attachBtn}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={streaming}
+            title="Anexar imagem (PNG, JPG, WebP, GIF — até 8MB)"
+            aria-label="Anexar imagem"
+          >
+            <span className={styles.icon}>attachment</span>
+          </button>
           <textarea
             ref={inputRef}
             className={styles.chatTextarea}
-            placeholder="Mensagem ao agente… (Enter para enviar)"
+            placeholder={
+              isDragOver
+                ? 'Solte para anexar a imagem…'
+                : 'Mensagem ao agente… (Enter para enviar, cole imagens com Ctrl+V)'
+            }
             rows={2}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onPaste={onPasteFiles}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !streaming) {
                 e.preventDefault()
@@ -1340,15 +1697,24 @@ function ActiveChat({
           <button
             className={styles.sendBtn}
             onClick={onSend}
-            disabled={(!input.trim() && !pendingAction) || (streaming && !pendingAction)}
+            disabled={
+              (!input.trim() && !pendingAction) ||
+              (streaming && !pendingAction) ||
+              trayItems.some((it) => it.kind === 'uploading')
+            }
+            title={
+              trayItems.some((it) => it.kind === 'uploading')
+                ? 'Aguarde os anexos terminarem o envio…'
+                : undefined
+            }
           >
             <span className={styles.icon}>keyboard_return</span>
           </button>
           )}
-        </div>
+          </div>
 
-        {/* Context status bar — repo + branch */}
-        <div className={styles.chatContextBar}>
+          {/* Context status bar — repo + branch */}
+          <div className={styles.chatContextBar}>
           <div className={styles.chatContextPill}>
             <span className={`${styles.icon} ${styles.chatContextIcon}`}>source</span>
             <span className={styles.chatContextText}>
@@ -1364,26 +1730,39 @@ function ActiveChat({
             </div>
           )}
           {models.length > 0 && (
-            <div className={`${styles.chatContextPill} ${styles.contextPill}`} style={{ marginLeft: '0.35rem' }}>
-              <span className={`${styles.icon} ${styles.chatContextIcon}`}>smart_toy</span>
-              <span className={styles.chatContextText}>
-                {models.find((m) => m.model_id === selectedModelId)?.display_name ?? 'Padrão'}
-              </span>
-              <span className={styles.icon} style={{ fontSize: '0.65rem', opacity: 0.35 }}>
-                expand_more
-              </span>
-              <select
-                className={styles.contextPillSelect}
+            <div style={{ marginLeft: '0.35rem' }}>
+              <ModelPicker
+                models={models}
                 value={selectedModelId}
-                onChange={(e) => setSelectedModelId(e.target.value)}
-                title="Mudar modelo"
+                onChange={setSelectedModelId}
                 disabled={streaming}
-              >
-                <option value="">— modelo padrão —</option>
-                {models.map((m) => (
-                  <option key={m.id} value={m.model_id}>{m.display_name}</option>
-                ))}
-              </select>
+                compact
+              />
+            </div>
+          )}
+          {(convUsage.total_prompt_tokens > 0 || convUsage.total_completion_tokens > 0) && (
+            <div
+              className={styles.chatContextPill}
+              style={{ marginLeft: '0.35rem' }}
+              title={`Total da conversa: ${convUsage.total_prompt_tokens} in + ${convUsage.total_completion_tokens} out`}
+            >
+              <span className={`${styles.icon} ${styles.chatContextIcon}`}>insights</span>
+              <span className={styles.chatContextText}>
+                {(convUsage.total_prompt_tokens + convUsage.total_completion_tokens).toLocaleString('pt-BR')} tok
+                · {formatCostUsd(convUsage.total_cost_usd)}
+              </span>
+            </div>
+          )}
+          {liveUsage && (liveUsage.prompt_tokens > 0 || liveUsage.completion_tokens > 0) && (
+            <div
+              className={styles.chatContextPill}
+              style={{ marginLeft: '0.35rem', opacity: 0.85 }}
+              title="Último turno (ainda não consolidado nos totais)"
+            >
+              <span className={`${styles.icon} ${styles.chatContextIcon}`}>bolt</span>
+              <span className={styles.chatContextText}>
+                +{liveUsage.prompt_tokens + liveUsage.completion_tokens} tok agora
+              </span>
             </div>
           )}
           <span
@@ -1393,6 +1772,7 @@ function ActiveChat({
           >
             · fixo
           </span>
+          </div>
         </div>
       </div>
     </div>
@@ -1408,8 +1788,16 @@ function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
     ? resuming ? 'Sessão reiniciada' : 'Sessão inicializada'
     : resuming ? 'Reiniciando sessão' : 'Inicializando sessão'
 
+  const doneCount = stages.filter((s) => s.status === 'done').length
+  const progressPct = stages.length > 0 ? (doneCount / stages.length) * 100 : 0
+
   return (
-    <div className={styles.sessionProgressCard}>
+    <div
+      className={`${styles.sessionProgressCard} ${
+        completed ? styles.sessionProgressCardComplete : ''
+      }`}
+      style={{ ['--cc-progress' as string]: `${progressPct}%` }}
+    >
       <button
         type="button"
         className={styles.sessionProgressHeader}
@@ -1421,8 +1809,12 @@ function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
 
       {expanded && (
         <div className={styles.sessionProgressList}>
-          {stages.map((stage) => (
-            <div key={stage.key} className={styles.sessionProgressItem}>
+          {stages.map((stage, index) => (
+            <div
+              key={stage.key}
+              className={styles.sessionProgressItem}
+              style={{ ['--cc-step-delay' as string]: `${index * 90}ms` }}
+            >
               <span
                 className={`${styles.sessionProgressIcon} ${
                   stage.status === 'done' ? styles.sessionProgressIconDone : ''
@@ -1440,7 +1832,15 @@ function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
                 {stage.status === 'done' ? '✓' : ''}
               </span>
               <div>
-                <Text size="sm" c={stage.status === 'pending' ? 'dimmed' : undefined}>
+                <Text
+                  size="sm"
+                  c={stage.status === 'pending' ? 'dimmed' : undefined}
+                  className={
+                    stage.status === 'done'
+                      ? styles.sessionProgressLabelDone
+                      : undefined
+                  }
+                >
                   {stage.label}
                 </Text>
                 {stage.detail && (
@@ -1460,8 +1860,27 @@ function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
 /* ────────────────────────────────────────────────────────────────
    Message bubble
    ──────────────────────────────────────────────────────────────── */
-function PaperMessage({ role, content, streaming }: { role: string; content: string; streaming?: boolean }) {
+function PaperMessage({
+  role,
+  content,
+  streaming,
+  modelUsed,
+  promptTokens,
+  completionTokens,
+  costUsd,
+}: {
+  role: string
+  content: string
+  streaming?: boolean
+  modelUsed?: string | null
+  promptTokens?: number
+  completionTokens?: number
+  costUsd?: number
+}) {
   const isUser = role === 'user'
+  const hasUsage =
+    !isUser && ((promptTokens ?? 0) > 0 || (completionTokens ?? 0) > 0 || !!modelUsed)
+  const showCopy = !isUser && !streaming && content.trim().length > 0
   return (
     <div className={`${styles.message} ${isUser ? styles.messageUser : styles.messageAgent}`}>
       <Text
@@ -1496,6 +1915,62 @@ function PaperMessage({ role, content, streaming }: { role: string; content: str
           {streaming && <span className={styles.streamingCursor} aria-hidden />}
         </div>
       )}
+      {showCopy && <CopyMessageButton content={content} />}
+      {hasUsage && (
+        <div className={styles.messageUsageFooter}>
+          {modelUsed && <span className={styles.messageUsageModel}>{modelUsed}</span>}
+          {((promptTokens ?? 0) > 0 || (completionTokens ?? 0) > 0) && (
+            <span className={styles.messageUsageTokens}>
+              {(promptTokens ?? 0).toLocaleString('pt-BR')} in · {(completionTokens ?? 0).toLocaleString('pt-BR')} out
+            </span>
+          )}
+          <span className={styles.messageUsageCost}>{formatCostUsd(costUsd ?? 0)}</span>
+        </div>
+      )}
     </div>
+  )
+}
+
+/** Botão de copiar conteúdo da resposta do agente. Feedback visual por 1.6s. */
+function CopyMessageButton({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false)
+
+  async function handleCopy() {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(content)
+      } else {
+        const ta = document.createElement('textarea')
+        ta.value = content
+        ta.setAttribute('readonly', '')
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+      }
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1600)
+    } catch {
+      /* silently ignore — clipboard pode estar bloqueado */
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className={`${styles.messageCopyBtn} ${copied ? styles.messageCopyBtnCopied : ''}`}
+      onClick={handleCopy}
+      aria-label={copied ? 'Resposta copiada' : 'Copiar resposta do agente'}
+      title={copied ? 'Copiado!' : 'Copiar'}
+    >
+      <span className={styles.messageCopyIcon} aria-hidden="true">
+        {copied ? 'check' : 'content_copy'}
+      </span>
+      <span className={styles.messageCopyLabel}>
+        {copied ? 'Copiado' : 'Copiar'}
+      </span>
+    </button>
   )
 }

@@ -2,20 +2,32 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
 from app.domain.entities import User
 from app.infrastructure.encryption import get_encryptor
+from app.infrastructure.openrouter_models import fetch_openrouter_models
 from app.infrastructure.orm_models import AiModel, AiProvider
-from app.schemas import AiModelCreate, AiModelOut, AiProviderCreate, AiProviderOut
+from app.schemas import (
+    AiModelCreate,
+    AiModelOut,
+    AiModelSyncResult,
+    AiProviderCreate,
+    AiProviderOut,
+)
 
+log = logging.getLogger(__name__)
 router = APIRouter(tags=["ai"])
+_OPENROUTER_PROVIDER_NAME = "OpenRouter"
+_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 # ── AI Providers ──────────────────────────────────────────────
@@ -93,6 +105,8 @@ async def create_ai_model(
         capabilities=body.capabilities,
         is_default=body.is_default,
         context_window=body.context_window,
+        input_cost_per_1m_usd=body.input_cost_per_1m_usd,
+        output_cost_per_1m_usd=body.output_cost_per_1m_usd,
     )
     session.add(model)
     await session.commit()
@@ -111,3 +125,96 @@ async def delete_ai_model(
         raise HTTPException(status_code=404, detail="Modelo não encontrado")
     await session.delete(model)
     await session.commit()
+
+
+@router.post("/ai-models/sync-from-openrouter", response_model=AiModelSyncResult)
+async def sync_ai_models_from_openrouter(
+    _current: Annotated[User, Depends(get_authenticated_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AiModelSyncResult:
+    """Sincroniza catálogo do OpenRouter com a tabela ``ai_models``.
+
+    Comportamento:
+    - Garante a existência do provider ``OpenRouter``.
+    - Faz upsert por ``(provider_id, model_id)``: cria novos, actualiza
+      preço/contexto/capabilities dos existentes.
+    - Marca como ``active=False`` modelos que já não constam do catálogo
+      (não os apaga, para preservar FK em ``conversations.ai_model_id``).
+    """
+    provider = (
+        await session.execute(
+            select(AiProvider).where(AiProvider.name == _OPENROUTER_PROVIDER_NAME)
+        )
+    ).scalar_one_or_none()
+    if provider is None:
+        provider = AiProvider(
+            id=uuid.uuid4(),
+            name=_OPENROUTER_PROVIDER_NAME,
+            base_url=_OPENROUTER_BASE_URL,
+            api_key_encrypted="",
+        )
+        session.add(provider)
+        await session.flush()
+
+    try:
+        catalog = await fetch_openrouter_models()
+    except Exception as exc:
+        log.exception("Falha ao buscar catálogo OpenRouter")
+        raise HTTPException(status_code=502, detail=f"OpenRouter indisponível: {exc}") from exc
+
+    existing = (
+        (await session.execute(select(AiModel).where(AiModel.provider_id == provider.id)))
+        .scalars()
+        .all()
+    )
+    existing_by_model_id = {m.model_id: m for m in existing}
+    fetched_ids: set[str] = set()
+    created = 0
+    updated = 0
+    for entry in catalog:
+        fetched_ids.add(entry["model_id"])
+        current = existing_by_model_id.get(entry["model_id"])
+        input_raw = entry["input_cost_per_1m_usd"]
+        output_raw = entry["output_cost_per_1m_usd"]
+        # Mantemos Decimal (precisão exata), mas anotamos como float | None
+        # porque é o que o Mapped declara — o SQLAlchemy aceita ambos via
+        # Numeric() column. Esta cast é puramente para o type-checker.
+        input_cost = float(Decimal(str(input_raw))) if input_raw is not None else None
+        output_cost = float(Decimal(str(output_raw))) if output_raw is not None else None
+        if current is None:
+            session.add(
+                AiModel(
+                    id=uuid.uuid4(),
+                    provider_id=provider.id,
+                    model_id=entry["model_id"],
+                    display_name=entry["display_name"],
+                    capabilities=entry["capabilities"],
+                    is_default={},
+                    context_window=entry["context_window"],
+                    input_cost_per_1m_usd=input_cost,
+                    output_cost_per_1m_usd=output_cost,
+                    active=True,
+                )
+            )
+            created += 1
+        else:
+            current.display_name = entry["display_name"]
+            current.context_window = entry["context_window"]
+            current.capabilities = entry["capabilities"]
+            current.input_cost_per_1m_usd = input_cost
+            current.output_cost_per_1m_usd = output_cost
+            current.active = True
+            updated += 1
+
+    stale_ids = [m.id for m in existing if m.model_id not in fetched_ids and m.active]
+    if stale_ids:
+        await session.execute(update(AiModel).where(AiModel.id.in_(stale_ids)).values(active=False))
+
+    await session.commit()
+    return AiModelSyncResult(
+        provider_id=provider.id,
+        fetched=len(catalog),
+        created=created,
+        updated=updated,
+        deactivated=len(stale_ids),
+    )

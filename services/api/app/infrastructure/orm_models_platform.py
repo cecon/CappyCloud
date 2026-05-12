@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.orm_models import Base, JSONBType, UUIDType
@@ -63,10 +63,12 @@ class AiProvider(Base):
 
 
 class AiModel(Base):
-    """Modelo IA com capabilities e flags de default por capability.
+    """Modelo IA com capabilities, preços e flags de default por capability.
 
     capabilities: JSONB ['text', 'vision', 'embedding', 'video']
     is_default:   JSONB {'text': true, 'vision': false, ...}
+
+    Os preços são em USD por **1 milhão de tokens** (formato OpenRouter).
     """
 
     __tablename__ = "ai_models"
@@ -75,11 +77,13 @@ class AiModel(Base):
     provider_id: Mapped[uuid.UUID] = mapped_column(
         UUIDType, ForeignKey("ai_providers.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    model_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
     display_name: Mapped[str] = mapped_column(String(256), nullable=False)
     capabilities: Mapped[list] = mapped_column(JSONBType, nullable=False, server_default='["text"]')
     is_default: Mapped[dict] = mapped_column(JSONBType, nullable=False, server_default="{}")
     context_window: Mapped[int] = mapped_column(Integer, nullable=False, default=200000)
+    input_cost_per_1m_usd: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True)
+    output_cost_per_1m_usd: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -126,6 +130,42 @@ class Repository(Base):
     sandbox: Mapped["Sandbox | None"] = relationship(  # type: ignore[name-defined]
         "Sandbox", back_populates="repositories"
     )
+
+
+class Document(Base):
+    """Documento de referência associado a um repositório (suporte/produto).
+
+    Fonte de verdade da ingestão (PDF/XLSX/URL/texto). Os *chunks* extraídos
+    vivem na tabela ``skills`` (com ``document_id`` apontando aqui), permitindo
+    reuso integral do RAG existente. Reindexar = bumpa version, deleta chunks
+    antigos via cascade e regenera.
+
+    source_type: pdf | xlsx | url | text
+    status:      pending | processing | indexed | error
+    """
+
+    __tablename__ = "documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
+    repository_id: Mapped[uuid.UUID] = mapped_column(
+        UUIDType,
+        ForeignKey("repositories.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_uri: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    checksum: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chunks_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class SandboxSyncQueue(Base):

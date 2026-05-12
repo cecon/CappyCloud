@@ -89,18 +89,27 @@ omit = [
     "app/adapters/primary/http/_routines_scheduler.py",
     "app/adapters/secondary/persistence/sqlalchemy_repo_env_repo.py",
     "app/adapters/primary/http/environments.py",
-    # Agentes/Skills — adaptadores HTTP testáveis via integração; lógica externa
+    # Skills — adaptadores HTTP testáveis via integração; lógica externa
     # (HTTP scrape, embeddings) requer mocks pesados.
-    "app/adapters/primary/http/agents.py",
     "app/adapters/primary/http/skills.py",
     "app/adapters/primary/http/skills_search.py",
     "app/adapters/primary/http/git_providers.py",
     "app/adapters/primary/http/repositories_admin.py",
     "app/adapters/primary/http/workspaces.py",
     "app/adapters/primary/http/ai_models.py",
+    # Docs de suporte por repositório — HTTP fino; ingest PDF/XLSX/URL + embeddings.
+    "app/adapters/primary/http/documents.py",
+    "app/infrastructure/document_ingester.py",
     "app/infrastructure/skill_importer.py",
     "app/infrastructure/embeddings.py",
     "app/infrastructure/sandbox_watchdog.py",
+    # Anexos (visão computacional) — HTTP/upload, storage filesystem físico,
+    # chamada externa OpenRouter Vision. Cobertura via testes de integração
+    # (fora do gate de unit-coverage); use cases têm fakes em conftest.py.
+    "app/adapters/primary/http/attachments.py",
+    "app/adapters/secondary/storage/local_volume_attachment_storage.py",
+    "app/adapters/secondary/vision/openrouter_vision_describer.py",
+    "app/application/use_cases/attachments.py",
 ]
 
 [tool.coverage.report]
