@@ -6,6 +6,8 @@
 // Exporta `tryHandle(req, res, { json, readBody })`.
 // ──────────────────────────────────────────────────────────────
 
+const langfuse = require('./_langfuse')
+
 async function tryHandle(req, res, { json, readBody }) {
   const url = new URL(req.url, `http://localhost`)
   if (!(req.method === 'POST' && url.pathname === '/task')) return false
@@ -19,6 +21,7 @@ async function tryHandle(req, res, { json, readBody }) {
 
   if (!apiKey) return json(res, 500, { error: 'OPENAI_API_KEY not configured' }), true
 
+  const startTime = new Date().toISOString()
   try {
     const resp = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -35,14 +38,51 @@ async function tryHandle(req, res, { json, readBody }) {
 
     if (!resp.ok) {
       const text = await resp.text()
+      langfuse.logGeneration({
+        name: 'sandbox:delegate',
+        model: apiModel,
+        input: { prompt, description: description || '' },
+        output: text.slice(0, 2000),
+        level: 'ERROR',
+        statusMessage: `HTTP ${resp.status}`,
+        startTime,
+        endTime: new Date().toISOString(),
+        tags: ['delegate'],
+      })
       return json(res, 502, { error: 'LLM API error', detail: text.slice(0, 500) }), true
     }
 
     const data = await resp.json()
     const result = data.choices?.[0]?.message?.content || ''
+    const usage = data.usage || {}
+    langfuse.logGeneration({
+      name: 'sandbox:delegate',
+      model: data.model || apiModel,
+      input: { prompt, description: description || '' },
+      output: result,
+      usage: {
+        input: usage.prompt_tokens || 0,
+        output: usage.completion_tokens || 0,
+        total: usage.total_tokens || 0,
+        unit: 'TOKENS',
+      },
+      startTime,
+      endTime: new Date().toISOString(),
+      tags: ['delegate'],
+    })
     console.log(`[task_handler] "${description || ''}" — ${result.length} chars`)
     return json(res, 200, { result, description: description || '' }), true
   } catch (err) {
+    langfuse.logGeneration({
+      name: 'sandbox:delegate',
+      model: apiModel,
+      input: { prompt, description: description || '' },
+      level: 'ERROR',
+      statusMessage: err.message,
+      startTime,
+      endTime: new Date().toISOString(),
+      tags: ['delegate'],
+    })
     return json(res, 500, { error: err.message }), true
   }
 }

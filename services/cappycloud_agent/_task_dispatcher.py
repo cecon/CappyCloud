@@ -267,6 +267,8 @@ class TaskDispatcher:
             session=session,
             db_url=self._db_url,
             model_used=override_model or self._model,
+            conversation_id=conversation_id,
+            initial_prompt=prompt,
         )
         self._runners[task_id] = runner
         await runner.start()

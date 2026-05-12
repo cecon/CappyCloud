@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from collections.abc import Iterable
 
 import httpx
+
+from cappycloud_agent._langfuse_client import get_langfuse
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +62,8 @@ async def embed_texts(texts: Iterable[str]) -> list[list[float]]:
     }
     body = {"model": EMBEDDING_MODEL, "input": payload_inputs}
 
+    lf = get_langfuse()
+    started = time.time()
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
             r = await client.post(url, headers=headers, json=body)
@@ -66,6 +71,17 @@ async def embed_texts(texts: Iterable[str]) -> list[list[float]]:
                 raise EmbeddingError(f"HTTP {r.status_code}: {r.text[:300]}")
             data = r.json()
     except httpx.HTTPError as exc:
+        if lf is not None:
+            try:
+                lf.generation(
+                    name="embedding",
+                    model=EMBEDDING_MODEL,
+                    input={"count": len(payload_inputs)},
+                    level="ERROR",
+                    status_message=str(exc),
+                )
+            except Exception:  # noqa: BLE001
+                pass
         raise EmbeddingError(str(exc)) from exc
 
     embeddings: list[list[float]] = []
@@ -73,4 +89,23 @@ async def embed_texts(texts: Iterable[str]) -> list[list[float]]:
         emb = item.get("embedding")
         if isinstance(emb, list) and len(emb) == EMBEDDING_DIM:
             embeddings.append(emb)
+
+    if lf is not None:
+        try:
+            usage = data.get("usage") or {}
+            lf.generation(
+                name="embedding",
+                model=EMBEDDING_MODEL,
+                input={"count": len(payload_inputs)},
+                output={"vectors": len(embeddings), "dim": EMBEDDING_DIM},
+                usage={
+                    "input": int(usage.get("prompt_tokens") or 0),
+                    "total": int(usage.get("total_tokens") or 0),
+                    "unit": "TOKENS",
+                },
+                metadata={"latency_s": round(time.time() - started, 3)},
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
     return embeddings

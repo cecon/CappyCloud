@@ -58,6 +58,10 @@ services:
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-CHANGE_ME_internal_token}
       API_HOST: cappycloud-api
       API_PORT_INTERNAL: "8080"
+      # Telemetria Langfuse (opcional — só ativa se as chaves forem dadas).
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-http://cappycloud-langfuse-web:3000}
     volumes:
       - repos_data:/repos
     networks:
@@ -89,6 +93,10 @@ services:
       EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://openrouter.ai/api/v1}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openai/text-embedding-3-small}
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-CHANGE_ME_internal_token}
+      # Telemetria Langfuse (opcional — só ativa se as chaves forem dadas).
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-http://cappycloud-langfuse-web:3000}
     networks:
       - cappycloud_net
     ports:

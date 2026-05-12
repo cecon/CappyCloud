@@ -23,8 +23,12 @@ import asyncpg
 
 from ._grpc_helpers import PendingAction
 from ._grpc_session import GrpcSession
+from ._langfuse_client import get_langfuse
 
 log = logging.getLogger(__name__)
+
+# Tamanho máximo de campo enviado ao Langfuse (output de tool, texto, etc.).
+_LF_FIELD_LIMIT = 16_000
 
 
 class TaskRunner:
@@ -36,19 +40,27 @@ class TaskRunner:
         session: GrpcSession,
         db_url: str,
         model_used: str = "",
+        conversation_id: Optional[str] = None,
+        initial_prompt: Optional[str] = None,
     ) -> None:
         self._task_id = task_id
         self._session = session
         self._db_url = db_url
         self._model_used = model_used
+        self._conversation_id = conversation_id
+        self._initial_prompt = initial_prompt
         self._pool: Optional[asyncpg.Pool] = None
         self._task: Optional[asyncio.Task] = None
+        # Telemetria Langfuse (None se não configurada).
+        self._lf_trace = None
+        self._lf_text_buffer: list[str] = []
 
     # ── Public API ────────────────────────────────────────────────
 
     async def start(self) -> None:
         """Inicia a task de execução em background."""
         self._pool = await asyncpg.create_pool(self._db_url, min_size=1, max_size=3)
+        self._lf_start_trace()
         self._task = asyncio.create_task(
             self._run(), name=f"runner-{self._task_id[:8]}"
         )
@@ -97,7 +109,9 @@ class TaskRunner:
                     await self._update_task(status="error", completed_at=_now())
                     return
 
-                await self._insert_event(event_type, _normalise(data))
+                payload = _normalise(data)
+                await self._insert_event(event_type, payload)
+                self._lf_emit_event(event_type, payload)
                 await self._touch_task()
 
                 if event_type == "action_required":
@@ -109,25 +123,37 @@ class TaskRunner:
 
                 elif event_type in ("done",):
                     usage = data if isinstance(data, dict) else {}
+                    model_used = str(usage.get("model_used") or self._model_used)
+                    prompt_tokens = int(usage.get("prompt_tokens") or 0)
+                    completion_tokens = int(usage.get("completion_tokens") or 0)
                     await self._persist_usage(
-                        model_used=str(usage.get("model_used") or self._model_used),
-                        prompt_tokens=int(usage.get("prompt_tokens") or 0),
-                        completion_tokens=int(usage.get("completion_tokens") or 0),
+                        model_used=model_used,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
                     )
                     await self._update_task(status="done", completed_at=_now())
+                    self._lf_finalize(
+                        status="done",
+                        model=model_used,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                    )
                     return
 
                 elif event_type in ("error", "timeout"):
                     await self._update_task(status="error", completed_at=_now())
+                    self._lf_finalize(status=event_type, error=payload.get("message"))
                     return
 
         except asyncio.CancelledError:
             log.info("[TaskRunner %s] cancelled", self._task_id[:8])
+            self._lf_finalize(status="cancelled")
             raise
         except Exception as exc:
             log.exception("[TaskRunner %s] unexpected error", self._task_id[:8])
             await self._insert_event("error", {"message": str(exc)})
             await self._update_task(status="error", completed_at=_now())
+            self._lf_finalize(status="error", error=str(exc))
 
     async def _wait_for_resume(self) -> None:
         """Espera até a sessão deixar de estar em pending_action."""
@@ -259,6 +285,133 @@ class TaskRunner:
                 self._task_id[:8],
                 exc,
             )
+
+    # ── Langfuse helpers ──────────────────────────────────────────
+
+    def _lf_start_trace(self) -> None:
+        """Abre uma trace Langfuse para esta task. Silencioso se desactivado."""
+        lf = get_langfuse()
+        if lf is None:
+            return
+        try:
+            self._lf_trace = lf.trace(
+                id=self._task_id,
+                name="agent_task",
+                session_id=self._conversation_id,
+                input=_truncate(self._initial_prompt) if self._initial_prompt else None,
+                metadata={
+                    "model": self._model_used,
+                    "conversation_id": self._conversation_id,
+                },
+                tags=["agent", "cappycloud"],
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.debug("[TaskRunner %s] langfuse trace start failed: %s", self._task_id[:8], exc)
+            self._lf_trace = None
+
+    def _lf_emit_event(self, event_type: str, data: dict) -> None:
+        """Mapeia um evento gRPC para uma observação Langfuse."""
+        if self._lf_trace is None:
+            return
+        try:
+            if event_type == "text":
+                # Acumula tokens de texto para emitir como output final.
+                content = data.get("content", "")
+                if content:
+                    self._lf_text_buffer.append(content)
+                return
+
+            if event_type == "tool_start":
+                self._lf_trace.span(
+                    id=f"{self._task_id}:{data.get('id', 'noid')}",
+                    name=f"tool:{data.get('name', 'unknown')}",
+                    input=_truncate(data.get("input")),
+                )
+                return
+
+            if event_type == "tool_result":
+                output = data.get("output")
+                if isinstance(output, (bytes, bytearray)):
+                    output = output.decode("utf-8", errors="replace")
+                self._lf_trace.span(
+                    id=f"{self._task_id}:{data.get('id', 'noid')}:result",
+                    name=f"tool:{data.get('name', 'unknown')}:result",
+                    output=_truncate(output),
+                    level="ERROR" if data.get("is_error") else "DEFAULT",
+                )
+                return
+
+            if event_type == "action_required":
+                self._lf_trace.event(
+                    name="action_required",
+                    input={"question": data.get("question"), "type": data.get("action_type")},
+                )
+                return
+
+            if event_type == "status":
+                self._lf_trace.event(name=f"status:{data.get('stage', '')}", input=data)
+                return
+
+            if event_type == "error":
+                self._lf_trace.event(
+                    name="error",
+                    input=data,
+                    level="ERROR",
+                )
+        except Exception as exc:  # noqa: BLE001
+            log.debug("[TaskRunner %s] langfuse emit failed: %s", self._task_id[:8], exc)
+
+    def _lf_finalize(
+        self,
+        status: str,
+        model: str = "",
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        error: Optional[str] = None,
+    ) -> None:
+        """Fecha a trace, anexando uso de tokens e output acumulado."""
+        if self._lf_trace is None:
+            return
+        try:
+            full_text = "".join(self._lf_text_buffer)
+            self._lf_trace.update(
+                output=_truncate(full_text) if full_text else None,
+                metadata={
+                    "status": status,
+                    "model": model or self._model_used,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "error": error,
+                },
+            )
+            if model and (prompt_tokens or completion_tokens):
+                # Generation dedicada para o LLM call agregado (token cost view).
+                self._lf_trace.generation(
+                    name="llm_call",
+                    model=model,
+                    input=_truncate(self._initial_prompt) if self._initial_prompt else None,
+                    output=_truncate(full_text) if full_text else None,
+                    usage={
+                        "input": prompt_tokens,
+                        "output": completion_tokens,
+                        "unit": "TOKENS",
+                    },
+                )
+        except Exception as exc:  # noqa: BLE001
+            log.debug("[TaskRunner %s] langfuse finalize failed: %s", self._task_id[:8], exc)
+        finally:
+            self._lf_trace = None
+
+
+def _truncate(value):
+    """Trunca strings/bytes ao limite do Langfuse para evitar payloads gigantes."""
+    if value is None:
+        return None
+    if isinstance(value, (bytes, bytearray)):
+        value = value.decode("utf-8", errors="replace")
+    if isinstance(value, str) and len(value) > _LF_FIELD_LIMIT:
+        return value[:_LF_FIELD_LIMIT] + f"... [truncated {len(value) - _LF_FIELD_LIMIT}b]"
+    return value
 
 
 def _now() -> datetime:

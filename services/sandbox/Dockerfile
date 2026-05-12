@@ -72,6 +72,7 @@ COPY git_handlers.js /git_handlers.js
 COPY repo_handlers.js /repo_handlers.js
 COPY task_handler.js /task_handler.js
 COPY worktree_handlers.js /worktree_handlers.js
+COPY _langfuse.js /_langfuse.js
 RUN sed -i 's/\r//' /env_init.sh /session_start.sh \
     && chmod +x /env_init.sh /session_start.sh
 
