@@ -198,58 +198,25 @@ class TaskDispatcher:
         mode = "initializing"
 
         try:
-            # ── Indexing: notify the frontend that we're provisioning worktrees ──
-            if repos:
-                repo_slugs = ", ".join(
-                    str(repo.get("slug") or repo.get("alias") or "?") for repo in repos
-                )
-                await insert_status_event(
-                    self._pool, task_id,
-                    f"Preparando repositórios: {repo_slugs}",
-                    "indexing_start", mode,
-                )
+            repo_slugs = ", ".join(str(r.get("slug") or r.get("alias") or "?") for r in repos) if repos else ""
+            if repo_slugs:
+                await insert_status_event(self._pool, task_id, f"Preparando: {repo_slugs}", "indexing_start", mode)
 
             lease = await self._env_manager.get_or_create_session(
-                user_id=user_id,
-                chat_id=chat_id,
-                repos=repos or [],
-                session_root=session_root,
-                sandbox_id=sandbox_id,
+                user_id=user_id, chat_id=chat_id, repos=repos or [],
+                session_root=session_root, sandbox_id=sandbox_id,
             )
             sandbox = lease.record
             mode = "initializing" if lease.created else "resuming"
-            session_message = "Sessão criada" if lease.created else "Sessão retomada"
-            repository_message = (
-                "Repositório preparado" if lease.created else "Repositório sincronizado"
-            )
-            await insert_status_event(
-                self._pool, task_id, "Sessão do agente preparada.", "session", mode
-            )
-            if repos:
-                repo_slugs = ", ".join(
-                    str(repo.get("slug") or repo.get("alias") or "?") for repo in repos
-                )
-                await insert_status_event(
-                    self._pool,
-                    task_id,
-                    f"{repository_message}: {repo_slugs}.",
-                    "repository",
-                    mode,
-                )
+            await insert_status_event(self._pool, task_id, "Sessão preparada.", "session", mode)
 
-                # ── Indexing ready: all worktrees materialized ──
-                await insert_status_event(
-                    self._pool, task_id,
-                    f"Repositórios prontos: {repo_slugs}",
-                    "indexing_ready", mode,
-                )
-            await insert_status_event(
-                self._pool,
-                task_id,
-                f"{session_message} em {sandbox.working_directory}",
-                "ready",
-                mode,
-            )
+            if repo_slugs:
+                msg = "Repositório preparado" if lease.created else "Repositório sincronizado"
+                await insert_status_event(self._pool, task_id, f"{msg}: {repo_slugs}.", "repository", mode)
+                await insert_status_event(self._pool, task_id, f"Repositórios prontos: {repo_slugs}", "indexing_ready", mode)
+
+            msg_sess = "Sessão criada" if lease.created else "Sessão retomada"
+            await insert_status_event(self._pool, task_id, f"{msg_sess} em {sandbox.working_directory}", "ready", mode)
         except Exception as exc:
             log.exception("[Dispatcher] Falha ao criar sessão para task %s", task_id[:8])
             await update_task_status(self._pool, task_id, "error")
