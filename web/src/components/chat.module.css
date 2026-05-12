@@ -519,6 +519,66 @@
   animation: mascotPulse 3s ease-in-out infinite;
 }
 
+/* ─ Selected repos list (multi-repo EmptyState) ─ */
+
+.selectedReposList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: 100%;
+  max-width: 840px;
+  padding: 0.5rem 0;
+}
+
+.selectedRepoItem {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.8rem;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.012)),
+    var(--cc-surface-low);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.selectedRepoItem:hover {
+  border-color: rgba(167, 195, 255, 0.18);
+  background: var(--cc-surface-container);
+}
+
+.selectedRepoName {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--cc-on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.selectedRepoRemove {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: 50%;
+  color: rgba(239, 68, 68, 0.7);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+
+.selectedRepoRemove:hover {
+  background: rgba(239, 68, 68, 0.18);
+  color: rgba(239, 68, 68, 0.95);
+}
+
 /* Command bar */
 .commandBarWrapper {
   position: relative;

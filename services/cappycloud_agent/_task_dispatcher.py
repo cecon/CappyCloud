@@ -43,6 +43,8 @@ class TaskDispatcher:
         self._model = openrouter_model
         self._pool: asyncpg.Pool | None = None
         self._runners: dict[str, TaskRunner] = {}
+        # conversation_id → task_id (only alive runners)
+        self._conv_to_task: dict[str, str] = {}
 
     async def start(self) -> None:
         """Conecta ao DB e reconecta tasks órfãs de um restart anterior."""
@@ -53,6 +55,7 @@ class TaskDispatcher:
         for runner in list(self._runners.values()):
             await runner.close()
         self._runners.clear()
+        self._conv_to_task.clear()
         if self._pool:
             await self._pool.close()
 
@@ -78,6 +81,8 @@ class TaskDispatcher:
             triggered_by,
             trigger_payload or {},
         )
+        if conversation_id:
+            self._conv_to_task[conversation_id] = task_id
         asyncio.create_task(
             self._launch_runner(
                 task_id,
@@ -98,9 +103,13 @@ class TaskDispatcher:
 
     def get_runner_for_conversation(self, conversation_id: str) -> TaskRunner | None:
         """Retorna o runner activo da conversa (status running ou paused)."""
-        for _task_id, runner in self._runners.items():
-            if runner.is_alive():
+        task_id = self._conv_to_task.get(conversation_id)
+        if task_id:
+            runner = self._runners.get(task_id)
+            if runner and runner.is_alive():
                 return runner
+            # Runner morreu — limpa o mapa
+            self._conv_to_task.pop(conversation_id, None)
         return None
 
     async def get_active_task_id(self, conversation_id: str) -> str | None:
@@ -140,6 +149,10 @@ class TaskDispatcher:
         runner = self._runners.pop(task_id, None)
         if runner:
             await runner.close()
+        # Limpa o mapa conv→task para esta task
+        for conv_id, tid in list(self._conv_to_task.items()):
+            if tid == task_id:
+                self._conv_to_task.pop(conv_id, None)
         await update_task_status(self._pool, task_id, "error")
         await insert_error_event(
             self._pool, task_id, "Tarefa cancelada pelo utilizador."
@@ -159,6 +172,10 @@ class TaskDispatcher:
         for tid in dead:
             runner = self._runners.pop(tid)
             await runner.close()
+        # Limpa entradas do conv→task que apontam para runners mortos
+        for conv_id, tid in list(self._conv_to_task.items()):
+            if tid in dead or tid not in self._runners:
+                self._conv_to_task.pop(conv_id, None)
         log.debug(
             "GC: removed %d dead runners (%d active)", len(dead), len(self._runners)
         )
@@ -178,7 +195,20 @@ class TaskDispatcher:
         user_id = conversation_id or "system"
         chat_id = conversation_id or task_id
 
+        mode = "initializing"
+
         try:
+            # ── Indexing: notify the frontend that we're provisioning worktrees ──
+            if repos:
+                repo_slugs = ", ".join(
+                    str(repo.get("slug") or repo.get("alias") or "?") for repo in repos
+                )
+                await insert_status_event(
+                    self._pool, task_id,
+                    f"Preparando repositórios: {repo_slugs}",
+                    "indexing_start", mode,
+                )
+
             lease = await self._env_manager.get_or_create_session(
                 user_id=user_id,
                 chat_id=chat_id,
@@ -206,6 +236,13 @@ class TaskDispatcher:
                     "repository",
                     mode,
                 )
+
+                # ── Indexing ready: all worktrees materialized ──
+                await insert_status_event(
+                    self._pool, task_id,
+                    f"Repositórios prontos: {repo_slugs}",
+                    "indexing_ready", mode,
+                )
             await insert_status_event(
                 self._pool,
                 task_id,
@@ -232,6 +269,7 @@ class TaskDispatcher:
                 section = render_worktree_top_level_section(top_level)
                 if section:
                     prompt = inject_section_before_user_message(prompt, section)
+                log.info("[Dispatcher] Prompt length after worktree injection: %d chars", len(prompt))
             except Exception as exc:  # noqa: BLE001 — degrada graciosamente
                 log.warning("[Dispatcher] worktree top-level fetch falhou: %s", exc)
 

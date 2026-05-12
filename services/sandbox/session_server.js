@@ -184,15 +184,26 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
+      // Multi-repo: copy CLAUDE.md into the first repo's worktree since the
+      // agent's working_directory will be set there (not session_root).
+      if (repos.length > 1 && repos_created.length > 0 && !repos_created[0].error) {
+        const firstWt = repos_created[0].worktree_path
+        const claudeSrc = path.join(session_root, 'CLAUDE.md')
+        const claudeDst = path.join(firstWt, 'CLAUDE.md')
+        if (fs.existsSync(claudeSrc) && !fs.existsSync(claudeDst)) {
+          try {
+            fs.copyFileSync(claudeSrc, claudeDst)
+            console.log(`[session_server] copied CLAUDE.md to first worktree ${firstWt}`)
+          } catch (err) {
+            console.warn(`[session_server] failed to copy CLAUDE.md to worktree: ${err.message}`)
+          }
+        }
+      }
+
       const errors = repos_created.filter(r => r.error)
       if (errors.length > 0) {
-        return json(res, 500, {
-          session_id,
-          session_root,
-          repos_created,
-          error: 'failed to create one or more repo worktrees',
-          output: outputs.join('\n'),
-        })
+        console.warn(`[session_server] ${errors.length}/${repos.length} worktree(s) failed for session ${session_id}:`,
+          errors.map(r => `${r.alias}: ${r.error}`).join('; '))
       }
 
       return json(res, 200, {
@@ -200,6 +211,7 @@ const server = http.createServer(async (req, res) => {
         session_root,
         repos_created,
         output: outputs.join('\n'),
+        ...(errors.length > 0 ? { warnings: errors.map(r => `[${r.alias}] ${r.error}`) } : {}),
       })
     }
 
@@ -214,6 +226,34 @@ const server = http.createServer(async (req, res) => {
       await destroySession({ session_root, repos })
       console.log(`[session_server] removed session ${session_id}`)
       return json(res, 200, { deleted: true, session_id })
+    }
+
+    // DELETE /sessions/:id/worktree/:alias — remove a single worktree from a session
+    const deleteWorktreeMatch = pathname.match(/^\/sessions\/([^/]+)\/worktree\/([^/]+)$/)
+    if (req.method === 'DELETE' && deleteWorktreeMatch) {
+      const session_id = deleteWorktreeMatch[1]
+      const alias = deleteWorktreeMatch[2]
+      const session_root = url.searchParams.get('session_root') || ''
+      const slug = url.searchParams.get('slug') || alias
+
+      const worktreePath = session_root
+        ? path.join(session_root, alias)
+        : `/repos/sessions/${session_id}/${alias}`
+
+      try {
+        // Remove the worktree directory
+        await execFileAsync('rm', ['-rf', worktreePath], { timeout: 30_000 })
+        // Prune worktree metadata from the bare repo
+        await execFileAsync(
+          'git', ['-C', `/repos/${slug}`, 'worktree', 'prune'],
+          { timeout: 30_000 }
+        ).catch(() => {})
+        console.log(`[session_server] removed worktree ${alias} (${worktreePath}) from session ${session_id}`)
+        return json(res, 200, { deleted: true, session_id, alias, worktree_path: worktreePath })
+      } catch (err) {
+        console.error(`[session_server] failed to remove worktree ${alias}: ${err.message}`)
+        return json(res, 500, { error: err.message })
+      }
     }
 
     // /repos/clone (POST) e /repos/:slug (DELETE)

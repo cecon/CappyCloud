@@ -86,6 +86,54 @@ class CreateConversation:
         return await self._conversations.save(conv)
 
 
+class UpdateConversationRepos:
+    """Atualiza a lista de repositórios de uma conversa existente."""
+
+    def __init__(
+        self,
+        conversations: ConversationRepository,
+        repositories: RepositoryRepository | None = None,
+    ) -> None:
+        self._conversations = conversations
+        self._repositories = repositories
+
+    async def execute(
+        self,
+        conversation_id: uuid.UUID,
+        user_id: uuid.UUID,
+        repos: list[dict],
+    ) -> Conversation:
+        conv = await self._conversations.get(conversation_id, user_id)
+        if not conv:
+            raise LookupError("Conversa não encontrada.")
+
+        short_id = conv.id.hex[:12]
+
+        resolved_repos: list[dict] = []
+        for r in repos:
+            slug = r["slug"]
+            alias = r.get("alias") or slug
+            base = r.get("base_branch") or "main"
+            branch_name = f"cappy/{slug}/{short_id}-{alias}"
+            worktree_path = f"/repos/sessions/{short_id}/{alias}"
+            repo_entity = (
+                await self._repositories.get_by_slug(slug) if self._repositories else None
+            )
+            resolved_repos.append(
+                {
+                    "slug": slug,
+                    "alias": alias,
+                    "base_branch": base,
+                    "branch_name": branch_name,
+                    "worktree_path": worktree_path,
+                    "repo_id": str(repo_entity.id) if repo_entity else None,
+                }
+            )
+
+        conv.repos = resolved_repos
+        return await self._conversations.update(conv)
+
+
 class ListMessages:
     def __init__(
         self,

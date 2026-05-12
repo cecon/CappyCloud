@@ -14,12 +14,14 @@ from app.adapters.primary.http.deps import (
     get_list_convs_uc,
     get_list_msgs_uc,
     get_stream_msg_uc,
+    get_update_conv_repos_uc,
 )
 from app.application.use_cases.conversations import (
     CreateConversation,
     ListConversations,
     ListMessages,
     StreamMessage,
+    UpdateConversationRepos,
 )
 from app.domain.entities import User
 from app.schemas import (
@@ -27,6 +29,7 @@ from app.schemas import (
     ConversationOut,
     ConversationUsage,
     MessageOut,
+    RepoSelection,
     SendMessageBody,
 )
 
@@ -69,6 +72,30 @@ async def create_conversation(
         sandbox_id=b.sandbox_id,
         repos=repos_dicts,
     )
+    return ConversationOut(
+        id=conv.id,
+        title=conv.title,
+        created_at=conv.created_at,
+        updated_at=conv.updated_at,
+        sandbox_id=conv.sandbox_id,
+        repos=conv.repos,
+        session_root=conv.session_root,
+    )
+
+
+@router.put("/{conversation_id}/repos", response_model=ConversationOut)
+async def update_conversation_repos(
+    conversation_id: uuid.UUID,
+    repos: list[RepoSelection],
+    current: Annotated[User, Depends(get_authenticated_user)],
+    uc: Annotated[UpdateConversationRepos, Depends(get_update_conv_repos_uc)],
+) -> ConversationOut:
+    """Atualiza a lista de repositórios da conversa."""
+    repos_dicts = [r.model_dump() for r in repos]
+    try:
+        conv = await uc.execute(conversation_id, current.id, repos_dicts)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return ConversationOut(
         id=conv.id,
         title=conv.title,

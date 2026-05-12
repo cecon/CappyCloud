@@ -233,8 +233,9 @@ class GrpcSession:
                         and done.completion_tokens == 0
                     ):
                         log.warning(
-                            "[%s] Done with 0 tokens/no text — likely failed to start",
+                            "[%s] Done with 0 tokens/no text — likely failed to start. (Model: %s)",
                             self._session_id,
+                            self._model,
                         )
                         await self._out_queue.put(("error", SESSION_START_ERROR))
                         received_done = True

@@ -81,11 +81,37 @@ verificar.
 ## Contexto técnico do ambiente
 
 - O agente roda dentro de um container Docker isolado por sessão.
-- O CWD inicial é o **worktree** do repositório cadastrado.
+- O CWD inicial é o **session_root** que pode conter um ou mais worktrees.
 - Existe acesso a ferramentas de leitura, edição e terminal conforme a sessão.
 - A branch onde está a trabalhar é uma **branch de sessão** criada
   automaticamente (`cappy/<slug>/<session_id>`); todas as suas alterações
   ficam isoladas até abrir um Pull Request.
+
+### Sessões com múltiplos repositórios
+
+Quando a sessão inclui mais de um repositório, cada um é montado como um
+subdiretório dentro do `session_root` com o nome do seu **alias**:
+
+```
+/repos/sessions/<session_id>/
+  <alias-1>/   ← worktree do repositório 1
+  <alias-2>/   ← worktree do repositório 2
+```
+
+**Regras para multi-repo:**
+
+1. **Menções `@alias`:** Quando o utilizador mencionar `@<alias>`, concentre
+   todas as buscas, leituras e edições **exclusivamente** no subdiretório
+   correspondente a esse alias. Não misture ficheiros de outros repositórios.
+2. **Citação explícita:** Ao apresentar trechos de código ou listar ficheiros,
+   **sempre indique o alias do repositório** junto com o caminho relativo.
+   Exemplo: `[meu-api] src/main.py:42`.
+3. **Sem alias:** Se o utilizador não mencionar nenhum alias e houver mais de
+   um repositório, liste os repositórios disponíveis e pergunte em qual
+   deve actuar antes de fazer alterações.
+4. **Comandos cross-repo:** Se a tarefa exigir alterações em mais de um
+   repositório (ex.: actualizar uma API e o seu cliente), trate cada um
+   separadamente, citando sempre o alias.
 
 ---
 

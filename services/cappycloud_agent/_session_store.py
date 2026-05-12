@@ -56,8 +56,14 @@ class SandboxRecord:
 
     @property
     def working_directory(self) -> str:
-        """Diretório de trabalho que o openclaude deve usar."""
-        if len(self.repos) == 1:
+        """Diretório de trabalho que o openclaude deve usar.
+
+        Sempre resolve para o worktree do **primeiro** repositório,
+        pois o openclaude exige um directório git com conteúdo real.
+        Quando há múltiplos repos, o CLAUDE.md no session_root
+        instrui o agente a navegar para os outros subdirectórios.
+        """
+        if self.repos:
             repo = self.repos[0]
             worktree_path = repo.get("worktree_path")
             if worktree_path:

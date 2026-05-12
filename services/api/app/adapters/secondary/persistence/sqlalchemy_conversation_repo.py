@@ -52,6 +52,7 @@ class SQLAlchemyConversationRepository(ConversationRepository):
         result = await self._session.execute(select(ConvORM).where(ConvORM.id == conversation.id))
         orm = result.scalar_one()
         orm.title = conversation.title
+        orm.repos = conversation.repos
         await self._session.commit()
         await self._session.refresh(orm)
         return self._to_entity(orm)

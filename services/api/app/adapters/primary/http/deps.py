@@ -33,6 +33,7 @@ from app.application.use_cases.conversations import (
     ListConversations,
     ListMessages,
     StreamMessage,
+    UpdateConversationRepos,
 )
 from app.application.use_cases.repo_environments import (
     CreateRepoEnvironment,
@@ -190,6 +191,13 @@ def get_stream_msg_uc(
     repos: Annotated[RepositoryRepository, Depends(get_repository_repo)],
 ) -> StreamMessage:
     return StreamMessage(convs, msgs, agent, repos)
+
+
+def get_update_conv_repos_uc(
+    convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
+    repos: Annotated[RepositoryRepository, Depends(get_repository_repo)],
+) -> UpdateConversationRepos:
+    return UpdateConversationRepos(convs, repos)
 
 
 def get_list_repo_envs_uc(

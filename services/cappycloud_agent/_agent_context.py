@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 _RAG_TOP_N = int(os.getenv("RAG_TOP_N", "3"))
 _SKILL_CONTENT_MAX_CHARS = int(os.getenv("SKILL_CONTENT_MAX_CHARS", "1200"))
-_TOPLEVEL_LIMIT = int(os.getenv("WORKTREE_TOPLEVEL_LIMIT", "60"))
+_TOPLEVEL_LIMIT = int(os.getenv("WORKTREE_TOPLEVEL_LIMIT", "20"))
 
 
 async def fetch_worktree_top_levels(

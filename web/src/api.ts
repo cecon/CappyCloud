@@ -206,7 +206,7 @@ export interface ActionRequiredEvent {
 
 export interface StatusEvent {
   message: string
-  stage?: 'session' | 'repository' | 'ready' | 'agent'
+  stage?: 'session' | 'repository' | 'ready' | 'agent' | 'indexing_start' | 'indexing_ready'
   mode?: 'initializing' | 'resuming'
 }
 
@@ -244,6 +244,26 @@ export async function createConversation(
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error('Não foi possível criar conversa')
+  return res.json()
+}
+
+export async function updateConversationRepos(
+  token: string,
+  conversationId: string,
+  repos: RepoSelection[],
+): Promise<Conversation> {
+  const res = await apiFetch(`/api/conversations/${conversationId}/repos`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(repos),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar repositórios')
+  }
   return res.json()
 }
 
@@ -331,12 +351,12 @@ export async function streamAssistantReply(
           case 'status': {
             const stage = evt.stage
             const mode = evt.mode
+            const validStages = ['session', 'repository', 'ready', 'agent', 'indexing_start', 'indexing_ready']
             eventHandlers.onStatus({
               message: (evt.message as string) ?? 'Preparando sessão...',
-              stage:
-                stage === 'session' || stage === 'repository' || stage === 'ready' || stage === 'agent'
-                  ? stage
-                  : undefined,
+              stage: typeof stage === 'string' && validStages.includes(stage)
+                ? stage as StatusEvent['stage']
+                : undefined,
               mode: mode === 'initializing' || mode === 'resuming' ? mode : undefined,
             })
             break

@@ -24,6 +24,7 @@ import {
   getToken,
   setToken,
   streamAssistantReply,
+  updateConversationRepos,
   errorToUserMessage,
   type ActionRequiredEvent,
   type AiModel,
@@ -32,6 +33,7 @@ import {
   type ConversationDiff,
   type ConversationUsage,
   type DoneEvent,
+  type RepoSelection,
   type StatusEvent,
   type Workspace,
 } from '../api'
@@ -222,8 +224,7 @@ export function ChatPage() {
   const [loading, setLoading] = useState(true)
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
-  const [selectedSlug, setSelectedSlug] = useState<string>('')
-  const [selectedBranch, setSelectedBranch] = useState<string>('')
+  const [selectedRepos, setSelectedRepos] = useState<{ slug: string; base_branch: string }[]>([])
   const [models, setModels] = useState<AiModel[]>([])
   const [selectedModelId, setSelectedModelId] = useState<string>('')
   const [convUsage, setConvUsage] = useState<ConversationUsage>({
@@ -421,9 +422,7 @@ export function ChatPage() {
   /** Cria conversa e envia a mensagem inicial de uma vez */
   async function handleNewChatWithMessage(text: string) {
     if (!text.trim()) return
-    const repos = selectedSlug
-      ? [{ slug: selectedSlug, base_branch: selectedBranch || null }]
-      : []
+    const repos = selectedRepos.map(r => ({ slug: r.slug, base_branch: r.base_branch || null }))
     const c = await createConversation(token, repos)
     // Update otimista do título — o backend renomeia "Nova conversa" para o
     // início da primeira mensagem (mesma lógica de _TITLE_MAX_LEN=80).
@@ -646,7 +645,6 @@ export function ChatPage() {
   }
 
   const activeConv = conversations.find((c) => c.id === activeId)
-  const activeEnvSlug = activeConv?.repos?.[0]?.slug ?? null
   const showThinking =
     streaming && !pendingText && !sessionProgress.length && pendingTools.every((t) => t.done) && !pendingAction
 
@@ -764,10 +762,8 @@ export function ChatPage() {
             onExecute={(text) => handleNewChatWithMessage(text)}
             streaming={streaming}
             workspaces={workspaces}
-            selectedSlug={selectedSlug}
-            setSelectedSlug={setSelectedSlug}
-            selectedBranch={selectedBranch}
-            setSelectedBranch={setSelectedBranch}
+            selectedRepos={selectedRepos}
+            setSelectedRepos={setSelectedRepos}
             models={sortedModels}
             selectedModelId={selectedModelId}
             setSelectedModelId={setSelectedModelId}
@@ -791,9 +787,7 @@ export function ChatPage() {
               onSend={() => handleSend()}
               onStop={handleStop}
               onActionReply={handleActionReply}
-              activeEnvSlug={activeEnvSlug}
-              activeEnvName={workspaces.find(w => w.slug === activeEnvSlug)?.name ?? activeEnvSlug ?? workspaces[0]?.name ?? null}
-              activeBaseBranch={activeConv?.repos?.[0]?.base_branch ?? null}
+              activeRepos={activeConv?.repos ?? []}
               workspaces={workspaces}
               diffStats={diffStats}
               prLoading={prLoading}
@@ -804,6 +798,8 @@ export function ChatPage() {
               activeTitle={activeConv?.title ?? 'Conversa'}
               token={token}
               conversationId={activeId!}
+              conversations={conversations}
+              setConversations={setConversations}
               sidePanel={sidePanel}
               diff={diff}
               diffLoading={diffLoading}
@@ -823,7 +819,7 @@ export function ChatPage() {
 }
 
 /* ────────────────────────────────────────────────────────────────
-   Empty State — command bar premium centralizada
+   Empty State — command bar premium centralizada (multi-repo)
    ──────────────────────────────────────────────────────────────── */
 interface EmptyStateProps {
   input: string
@@ -832,40 +828,55 @@ interface EmptyStateProps {
   onExecute: (text: string) => void
   streaming: boolean
   workspaces: Workspace[]
-  selectedSlug: string
-  setSelectedSlug: (s: string) => void
-  selectedBranch: string
-  setSelectedBranch: Dispatch<SetStateAction<string>>
+  selectedRepos: { slug: string; base_branch: string }[]
+  setSelectedRepos: Dispatch<SetStateAction<{ slug: string; base_branch: string }[]>>
   models: AiModel[]
   selectedModelId: string
   setSelectedModelId: (id: string) => void
   token: string
 }
 
+/** Per-repo branch cache keyed by slug */
+type BranchCache = Record<string, { branches: string[]; default: string; loading: boolean }>
+
 function EmptyState({
   input, setInput, inputRef, onExecute, streaming,
-  workspaces, selectedSlug, setSelectedSlug,
-  selectedBranch, setSelectedBranch,
+  workspaces, selectedRepos, setSelectedRepos,
   models, selectedModelId, setSelectedModelId, token,
 }: EmptyStateProps) {
-  const [branches, setBranches] = useState<string[]>([])
-  const [loadedSlug, setLoadedSlug] = useState('')
-  const branchesLoading = !!selectedSlug && loadedSlug !== selectedSlug
+  const [branchCache, setBranchCache] = useState<BranchCache>({})
 
-  // auto-clone trata o caso de repo não clonado
-  const canExecute = !!selectedSlug && !!selectedBranch && !!input.trim() && !streaming
+  const canExecute = selectedRepos.length > 0 && selectedRepos.every(r => !!r.base_branch) && !!input.trim() && !streaming
 
+  // Fetch branches when a repo is added
   useEffect(() => {
-    if (!selectedSlug) return
-    let cancelled = false
-    fetchBranches(token, selectedSlug).then(({ branches: list, default: def }) => {
-      if (cancelled) return
-      setBranches(list)
-      setLoadedSlug(selectedSlug)
-      setSelectedBranch((prev) => (list.includes(prev) ? prev : def))
-    })
-    return () => { cancelled = true }
-  }, [selectedSlug, token, setSelectedBranch])
+    for (const repo of selectedRepos) {
+      if (branchCache[repo.slug] && !branchCache[repo.slug].loading) continue
+      if (branchCache[repo.slug]?.loading) continue
+      setBranchCache(prev => ({ ...prev, [repo.slug]: { branches: [], default: 'main', loading: true } }))
+      fetchBranches(token, repo.slug).then(({ branches: list, default: def }) => {
+        setBranchCache(prev => ({ ...prev, [repo.slug]: { branches: list, default: def, loading: false } }))
+        // Auto-set branch if not yet set
+        setSelectedRepos(prev => prev.map(r =>
+          r.slug === repo.slug && !r.base_branch ? { ...r, base_branch: def } : r
+        ))
+      })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRepos.map(r => r.slug).join(','), token])
+
+  function handleAddRepo(slug: string) {
+    if (!slug || selectedRepos.some(r => r.slug === slug)) return
+    setSelectedRepos(prev => [...prev, { slug, base_branch: '' }])
+  }
+
+  function handleRemoveRepo(slug: string) {
+    setSelectedRepos(prev => prev.filter(r => r.slug !== slug))
+  }
+
+  function handleBranchChange(slug: string, branch: string) {
+    setSelectedRepos(prev => prev.map(r => r.slug === slug ? { ...r, base_branch: branch } : r))
+  }
 
   function handleKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey && !streaming) {
@@ -874,10 +885,8 @@ function EmptyState({
     }
   }
 
-  const repoRequired = workspaces.length > 0 && !selectedSlug
-  const branchRequired = !!selectedSlug && !selectedBranch
-  const selectedWorkspaceName =
-    workspaces.find((workspace) => workspace.slug === selectedSlug)?.name ?? 'Escolha o repositório'
+  const availableWorkspaces = workspaces.filter(w => !selectedRepos.some(r => r.slug === w.slug))
+  const repoRequired = workspaces.length > 0 && selectedRepos.length === 0
   const selectedModelName =
     models.find((model) => model.model_id === selectedModelId)?.display_name ?? 'Modelo padrão'
 
@@ -892,7 +901,7 @@ function EmptyState({
           <span className={styles.welcomeEyebrow}>CappyCloud Command Center</span>
           <h1 className={styles.welcomeTitle}>Desenvolva com OpenClaude em worktrees isolados.</h1>
           <p className={styles.welcomeText}>
-            Escolha o repositório, descreva a tarefa e acompanhe execução, ferramentas,
+            Escolha os repositórios, descreva a tarefa e acompanhe execução, ferramentas,
             diff e PR a partir de uma única superfície.
           </p>
         </div>
@@ -908,6 +917,51 @@ function EmptyState({
         </div>
       </section>
 
+      {/* Selected repos list */}
+      {selectedRepos.length > 0 && (
+        <div className={styles.selectedReposList}>
+          {selectedRepos.map((repo) => {
+            const cache = branchCache[repo.slug]
+            const ws = workspaces.find(w => w.slug === repo.slug)
+            return (
+              <div key={repo.slug} className={styles.selectedRepoItem}>
+                <span className={styles.icon} style={{ fontSize: '0.9rem', opacity: 0.6 }}>source</span>
+                <span className={styles.selectedRepoName}>{ws?.name ?? repo.slug}</span>
+                <div className={`${styles.contextPill} ${!repo.base_branch ? styles.contextPillRequired : ''}`} style={{ marginLeft: '0.5rem' }}>
+                  <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>fork_right</span>
+                  <span className={styles.contextPillLabel} style={!repo.base_branch ? { opacity: 0.45 } : undefined}>
+                    {cache?.loading ? '…' : (repo.base_branch || 'Branch…')}
+                  </span>
+                  <span className={styles.icon} style={{ fontSize: '0.75rem', opacity: 0.35 }}>expand_more</span>
+                  <select
+                    className={styles.contextPillSelect}
+                    value={repo.base_branch}
+                    onChange={(e) => handleBranchChange(repo.slug, e.target.value)}
+                    disabled={cache?.loading}
+                    title="Selecionar branch"
+                  >
+                    {!repo.base_branch && !cache?.loading && (
+                      <option value="" disabled>Selecionar branch…</option>
+                    )}
+                    {(cache?.branches ?? []).map((b) => (
+                      <option key={b} value={b}>{b}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  className={styles.selectedRepoRemove}
+                  onClick={() => handleRemoveRepo(repo.slug)}
+                  title="Remover repositório"
+                >
+                  <span className={styles.icon} style={{ fontSize: '0.85rem' }}>close</span>
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Premium Command Bar */}
       <div className={styles.commandBarWrapper}>
         <div className={styles.commandBarGlow} />
@@ -919,23 +973,23 @@ function EmptyState({
                 ref={inputRef}
                 className={styles.commandTextarea}
                 placeholder={
-                  !selectedSlug
-                    ? 'Selecione um repositório e branch antes de continuar…'
-                    : !selectedBranch
-                      ? 'Selecione uma branch antes de continuar…'
+                  selectedRepos.length === 0
+                    ? 'Selecione ao menos um repositório para continuar…'
+                    : selectedRepos.some(r => !r.base_branch)
+                      ? 'Selecione a branch de cada repositório…'
                       : 'Descreva o que o agente deve fazer…'
                 }
                 rows={2}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKey}
-                disabled={!selectedSlug || !selectedBranch}
+                disabled={selectedRepos.length === 0 || selectedRepos.some(r => !r.base_branch)}
               />
             </div>
 
             <div className={styles.commandToolbar}>
               <div className={styles.commandToolbarLeft}>
-                <button className={styles.toolbarBtn} title="Anexar" disabled={!selectedSlug || !selectedBranch}>
+                <button className={styles.toolbarBtn} title="Anexar" disabled={selectedRepos.length === 0}>
                   <span className={styles.icon}>attachment</span>
                 </button>
                 {workspaces.length > 0 ? (
@@ -944,24 +998,22 @@ function EmptyState({
                     style={{ marginLeft: '0.5rem' }}
                   >
                     <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
-                      source
+                      add_circle
                     </span>
-                    <span className={styles.contextPillLabel} style={!selectedSlug ? { opacity: 0.45 } : undefined}>
-                      {workspaces.find(w => w.slug === selectedSlug)?.name ?? 'Repositório…'}
+                    <span className={styles.contextPillLabel} style={selectedRepos.length === 0 ? { opacity: 0.45 } : undefined}>
+                      {selectedRepos.length === 0 ? 'Adicionar repo…' : `${selectedRepos.length} repo(s)`}
                     </span>
                     <span className={styles.icon} style={{ fontSize: '0.75rem', opacity: 0.35 }}>
                       expand_more
                     </span>
                     <select
                       className={styles.contextPillSelect}
-                      value={selectedSlug}
-                      onChange={(e) => setSelectedSlug(e.target.value)}
-                      title="Selecionar repositório"
+                      value=""
+                      onChange={(e) => handleAddRepo(e.target.value)}
+                      title="Adicionar repositório"
                     >
-                      {!selectedSlug && (
-                        <option value="" disabled>Selecionar repositório…</option>
-                      )}
-                      {workspaces.map((w) => (
+                      <option value="" disabled>Adicionar repositório…</option>
+                      {availableWorkspaces.map((w) => (
                         <option key={w.slug} value={w.slug}>{w.name}</option>
                       ))}
                     </select>
@@ -970,36 +1022,6 @@ function EmptyState({
                   <div className={`${styles.contextPill} ${styles.contextPillRequired}`} style={{ marginLeft: '0.5rem' }}>
                     <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.5 }}>source</span>
                     <span className={styles.contextPillLabel} style={{ opacity: 0.45 }}>Nenhum repositório</span>
-                  </div>
-                )}
-                {selectedSlug && (
-                  <div
-                    className={`${styles.contextPill} ${branchRequired ? styles.contextPillRequired : ''}`}
-                    style={{ marginLeft: '0.25rem' }}
-                  >
-                    <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
-                      fork_right
-                    </span>
-                    <span className={styles.contextPillLabel} style={!selectedBranch ? { opacity: 0.45 } : undefined}>
-                      {branchesLoading ? '…' : (selectedBranch || 'Branch…')}
-                    </span>
-                    <span className={styles.icon} style={{ fontSize: '0.75rem', opacity: 0.35 }}>
-                      expand_more
-                    </span>
-                    <select
-                      className={styles.contextPillSelect}
-                      value={selectedBranch}
-                      onChange={(e) => setSelectedBranch(e.target.value)}
-                      disabled={branchesLoading}
-                      title="Selecionar branch"
-                    >
-                      {!selectedBranch && !branchesLoading && (
-                        <option value="" disabled>Selecionar branch…</option>
-                      )}
-                      {branches.map((b) => (
-                        <option key={b} value={b}>{b}</option>
-                      ))}
-                    </select>
                   </div>
                 )}
                 {models.length > 0 && (
@@ -1036,8 +1058,8 @@ function EmptyState({
                   onClick={() => canExecute && onExecute(input)}
                   disabled={!canExecute}
                   title={
-                    !selectedSlug ? 'Selecione um repositório' :
-                    !selectedBranch ? 'Selecione uma branch' :
+                    selectedRepos.length === 0 ? 'Selecione ao menos um repositório' :
+                    selectedRepos.some(r => !r.base_branch) ? 'Selecione a branch de cada repositório' :
                     !input.trim() ? 'Digite uma mensagem' : undefined
                   }
                 >
@@ -1055,7 +1077,7 @@ function EmptyState({
         <QuickActionCard
           icon="source"
           iconColor="var(--cc-secondary)"
-          title={selectedWorkspaceName}
+          title={selectedRepos.length > 0 ? `${selectedRepos.length} repositório(s)` : 'Nenhum selecionado'}
           desc="Sessões isoladas por worktree, prontas para diff e PR."
           href="/settings"
         />
@@ -1113,9 +1135,7 @@ interface ActiveChatProps {
   onSend: () => void
   onStop: () => void
   onActionReply: (r: string) => void
-  activeEnvSlug: string | null
-  activeEnvName: string | null
-  activeBaseBranch: string | null
+  activeRepos: Array<Record<string, unknown>>
   workspaces: Workspace[]
   diffStats: { added: number; removed: number } | null
   prLoading: boolean
@@ -1126,6 +1146,8 @@ interface ActiveChatProps {
   activeTitle: string
   token: string
   conversationId: string
+  conversations: Conversation[]
+  setConversations: Dispatch<SetStateAction<Conversation[]>>
   sidePanel: 'none' | 'diff' | 'files'
   diff: ConversationDiff | null
   diffLoading: boolean
@@ -1141,11 +1163,11 @@ interface ActiveChatProps {
 function ActiveChat({
   messages, messagesLoading, messagesError, sessionProgressAnchor, pendingText, pendingTools, sessionProgress, pendingAction,
   showThinking, streaming, input, setInput, inputRef,
-  onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch,
+  onSend, onStop, onActionReply, activeRepos,
   workspaces,
   diffStats, prLoading, prUrl, prError, headBranch, onCreatePr,
   activeTitle: _activeTitle,
-  token, conversationId, sidePanel, diff, diffLoading, onOpenDiff, onToggleFiles,
+  token, conversationId, conversations, setConversations, sidePanel, diff, diffLoading, onOpenDiff, onToggleFiles,
   models, selectedModelId, setSelectedModelId,
   convUsage, liveUsage,
 }: ActiveChatProps) {
@@ -1224,18 +1246,27 @@ function ActiveChat({
       <div className={styles.sessionHeader}>
         <div className={styles.sessionHeaderInner}>
           <div className={styles.sessionHeaderLeft}>
-          {activeEnvSlug ? (
+          {activeRepos.length > 0 ? (
             <>
-              <span className={`${styles.icon} ${styles.sessionHeaderIcon}`}>source</span>
-              <span className={styles.sessionHeaderEnv}>{activeEnvName ?? activeEnvSlug}</span>
-              {activeBaseBranch && (
-                <>
-                  <span className={styles.sessionHeaderArrow}>›</span>
-                  <span className={styles.sessionHeaderBranch}>
-                    {headBranch ?? activeBaseBranch}
+              {activeRepos.map((repo, idx) => {
+                const slug = String(repo.slug ?? '')
+                const alias = String(repo.alias ?? slug)
+                const branch = String(repo.base_branch ?? '')
+                const ws = workspaces.find(w => w.slug === slug)
+                return (
+                  <span key={alias} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                    {idx > 0 && <span style={{ opacity: 0.3, margin: '0 0.35rem' }}>·</span>}
+                    <span className={`${styles.icon} ${styles.sessionHeaderIcon}`}>source</span>
+                    <span className={styles.sessionHeaderEnv}>{ws?.name ?? alias}</span>
+                    {branch && (
+                      <>
+                        <span className={styles.sessionHeaderArrow}>›</span>
+                        <span className={styles.sessionHeaderBranch}>{branch}</span>
+                      </>
+                    )}
                   </span>
-                </>
-              )}
+                )
+              })}
             </>
           ) : (
             <span className={styles.sessionHeaderEnv} style={{ opacity: 0.85 }}>
@@ -1248,7 +1279,7 @@ function ActiveChat({
             <>
               <span className={styles.diffAdded}>+{diffStats.added}</span>
               <span className={styles.diffRemoved}>-{diffStats.removed}</span>
-              {activeEnvSlug && (
+              {activeRepos.length > 0 && (
                 prUrl ? (
                   <a
                     href={prUrl}
@@ -1440,20 +1471,27 @@ function ActiveChat({
           )}
           </div>
 
-          {/* Context status bar — repo + branch */}
+          {/* Context status bar — repos + branches */}
           <div className={styles.chatContextBar}>
-          <div className={styles.chatContextPill}>
-            <span className={`${styles.icon} ${styles.chatContextIcon}`}>source</span>
-            <span className={styles.chatContextText}>
-              {activeEnvName ?? activeEnvSlug ?? workspaces[0]?.name ?? '—'}
-            </span>
-          </div>
-          {activeBaseBranch && (
-            <div className={styles.chatContextPill} style={{ marginLeft: '0.35rem' }}>
-              <span className={`${styles.icon} ${styles.chatContextIcon}`}>fork_right</span>
-              <span className={styles.chatContextText}>
-                {headBranch ?? activeBaseBranch}
-              </span>
+          {activeRepos.length > 0 ? (
+            activeRepos.map((repo) => {
+              const slug = String(repo.slug ?? '')
+              const alias = String(repo.alias ?? slug)
+              const branch = String(repo.base_branch ?? '')
+              const ws = workspaces.find(w => w.slug === slug)
+              return (
+                <div key={alias} className={styles.chatContextPill} style={{ marginRight: '0.35rem' }}>
+                  <span className={`${styles.icon} ${styles.chatContextIcon}`}>source</span>
+                  <span className={styles.chatContextText}>
+                    {ws?.name ?? alias}{branch ? ` › ${branch}` : ''}
+                  </span>
+                </div>
+              )
+            })
+          ) : (
+            <div className={styles.chatContextPill}>
+              <span className={`${styles.icon} ${styles.chatContextIcon}`}>source</span>
+              <span className={styles.chatContextText}>—</span>
             </div>
           )}
           {models.length > 0 && (
@@ -1506,13 +1544,6 @@ function ActiveChat({
               </span>
             </div>
           )}
-          <span
-            className={styles.chatContextText}
-            style={{ opacity: 0.35, fontSize: '0.7rem', marginLeft: '0.5rem' }}
-            title="Para mudar repositório ou branch, crie uma Nova Sessão"
-          >
-            · fixo
-          </span>
           </div>
         </div>
       </div>

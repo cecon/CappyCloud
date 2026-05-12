@@ -70,10 +70,38 @@ class EnvironmentManager:
 
         session_server.js is idempotent: if session_root already exists it
         returns 200 immediately, so we call create on every request.
+
+        When an existing session is found but the repos list has changed,
+        removed worktrees are physically deleted via session_server and new
+        ones are created via the same POST /sessions call.
         """
         record = await self._store.get(user_id, chat_id)
         if record:
             await self._store.refresh_ttl(user_id, chat_id)
+
+            # ── Reconcile repos if the caller provides a different list ──
+            incoming_repos = repos or []
+            if incoming_repos:
+                old_aliases = {r.get("alias") or r.get("slug") for r in record.repos}
+                new_aliases = {r.get("alias") or r.get("slug") for r in incoming_repos}
+                removed_aliases = old_aliases - new_aliases
+
+                if removed_aliases:
+                    await self._remove_worktrees(record, removed_aliases)
+
+                if removed_aliases or new_aliases - old_aliases:
+                    record = SandboxRecord(
+                        user_id=record.user_id,
+                        chat_id=record.chat_id,
+                        sandbox_id=record.sandbox_id,
+                        sandbox_name=record.sandbox_name,
+                        grpc_host=record.grpc_host,
+                        grpc_port=record.grpc_port,
+                        session_root=record.session_root,
+                        repos=incoming_repos,
+                    )
+                    await self._store.save(record)
+
             await self._ensure_session(record)
             return SessionLease(record=record, created=False)
 
@@ -118,6 +146,43 @@ class EnvironmentManager:
             await self.destroy_session(row["user_id"], row["chat_id"])
 
     # ── Internal ─────────────────────────────────────────────────
+
+    async def _remove_worktrees(
+        self,
+        record: SandboxRecord,
+        aliases_to_remove: set[str],
+    ) -> None:
+        """Delete specific worktree directories via session_server."""
+        host = record.grpc_host or self._default_host
+        base = self._session_base(host, self._default_session_port)
+        session_id = record.chat_id.replace("-", "")[:12]
+
+        for alias in aliases_to_remove:
+            # Find the slug for this alias to pass to git worktree prune
+            slug = alias
+            for repo in record.repos:
+                if (repo.get("alias") or repo.get("slug")) == alias:
+                    slug = repo.get("slug", alias)
+                    break
+
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    await client.delete(
+                        f"{base}/sessions/{session_id}/worktree/{alias}",
+                        params={
+                            "session_root": record.session_root,
+                            "slug": slug,
+                        },
+                    )
+                log.info(
+                    "Removed worktree %s from session %s",
+                    alias,
+                    session_id,
+                )
+            except Exception as exc:
+                log.warning(
+                    "Failed to remove worktree %s: %s", alias, exc
+                )
 
     async def _ensure_session(self, record: SandboxRecord) -> None:
         """Re-create worktrees if the volume was wiped (idempotent)."""
@@ -172,6 +237,9 @@ class EnvironmentManager:
                     f"session_server returned {resp.status_code}: {resp.text}"
                 )
             resp_data = resp.json()
+            # Log worktrees que falharam (falha parcial — sessão continua com os que funcionaram)
+            for warn in resp_data.get("warnings") or []:
+                log.warning("session_server worktree warning: %s", warn)
         except httpx.ConnectError as exc:
             raise RuntimeError(
                 f"Cannot reach sandbox session server at {base}. "
