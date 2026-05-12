@@ -75,15 +75,50 @@ async def connect_with_retry(
     )
 
 
-SESSION_START_ERROR = (
-    "O agente não conseguiu iniciar a sessão. "
-    "Possíveis causas: worktree não criado (branch base não existe), "
-    "path de sessão inválido, ou erro no modelo. "
-    "Verifique se o repositório e branch estão configurados correctamente."
-)
-
 GRPC_CONNECTION_LOST = (
     "Conexão com o sandbox perdida. Envie sua mensagem novamente para reconectar."
 )
 
 GRPC_UNEXPECTED_END = "O agente encerrou a conexão inesperadamente (possível rate limit ou timeout do modelo)."
+
+
+def build_done_empty_error(
+    *, model: str, session_id: str, working_directory: str
+) -> str:
+    """Mensagem detalhada para o caso `done` sem texto/tokens.
+
+    Inclui o modelo realmente usado e o working_directory para que o utilizador
+    consiga identificar a causa (key/provider/modelo BYOK vs worktree
+    ausente/path inválido) sem ter de cavar nos logs.
+    """
+    return (
+        f"O agente não devolveu resposta nem tokens. "
+        f"Modelo: `{model}`. "
+        f"Sessão: `{session_id}`. "
+        f"Working directory: `{working_directory}`. "
+        "Causas mais prováveis: "
+        "(1) chave OpenRouter inválida ou modelo BYOK sem provider configurado; "
+        "(2) modelo indisponível ou rate-limited; "
+        "(3) `working_directory` inexistente dentro do sandbox; "
+        "(4) o openclaude rejeitou o pedido. "
+        "Para diagnosticar: `docker logs cappycloud-sandbox -n 200`."
+    )
+
+
+def build_worktree_missing_error(
+    *, repo_slugs: list[str], working_directory: str, detail: str = ""
+) -> str:
+    """Erro emitido quando o worktree esperado não existe no sandbox."""
+    repos = ", ".join(repo_slugs) if repo_slugs else "<sem repos>"
+    base = (
+        f"Worktree não foi materializado para os repositórios: {repos}. "
+        f"Path esperado: `{working_directory}`. "
+        "Causas mais prováveis: "
+        "(1) a branch base não existe no remote; "
+        "(2) o clone falhou silenciosamente no sandbox; "
+        "(3) o `session_start.sh` abortou. "
+        "Para diagnosticar: `docker logs cappycloud-sandbox -n 200`."
+    )
+    if detail:
+        return f"{base} Detalhe: {detail}"
+    return base

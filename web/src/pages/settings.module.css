@@ -192,6 +192,61 @@
   border-color: var(--cc-error);
 }
 
+/*
+ * CTA primário — botão grande com ícone + label, p.ex. "Sync OpenRouter".
+ * Cumpre ui-ux-pro-max:
+ *   §2 Touch & Interaction → min-height 44pt, gap visível entre ícone e label
+ *   §4 Style → primary-action: cor accent, only one per screen
+ *   §6 Color → tokens semânticos (cc-primary)
+ *   §7 Animation → transição de cor (sem transform que provoque layout shift)
+ *   Common Rules → "Stable Interaction States": sem mover o botão no hover
+ */
+.primaryBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0 1.1rem;
+  background: var(--cc-primary, #2563eb);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 6px 18px -10px rgba(37, 99, 235, 0.7);
+}
+
+.primaryBtn:hover:not(:disabled) {
+  background: var(--cc-primary-hover, #1d4ed8);
+}
+
+.primaryBtn:active:not(:disabled) {
+  background: var(--cc-primary-active, #1e40af);
+}
+
+.primaryBtn:focus-visible {
+  outline: 2px solid var(--cc-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+.primaryBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.primaryBtn .icon {
+  font-size: 1.125rem;
+  line-height: 1;
+}
+
 /* ── Form ── */
 .form {
   display: flex;

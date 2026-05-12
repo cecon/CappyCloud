@@ -14,6 +14,7 @@ import {
   cancelConversation,
   createConversation,
   createConversationPr,
+  deleteAttachment,
   fetchAiModels,
   fetchBranches,
   fetchConversationDiff,
@@ -24,6 +25,7 @@ import {
   getToken,
   setToken,
   streamAssistantReply,
+  uploadAttachment,
   errorToUserMessage,
   type ActionRequiredEvent,
   type AiModel,
@@ -36,11 +38,22 @@ import {
   type Workspace,
 } from '../api'
 import { ActionRequiredCard } from '../components/ActionRequiredCard'
+import { AttachmentTray, type TrayItem } from '../components/AttachmentTray'
 import { DiffViewer } from '../components/DiffViewer'
 import { FileExplorer } from '../components/FileExplorer'
+import { ModelPicker } from '../components/ModelPicker'
 import { ThinkingIndicator } from '../components/ThinkingIndicator'
-import { ToolCallCard, type ToolCallState } from '../components/ToolCallCard'
+import { ThinkingStream, type ThoughtStep } from '../components/ThinkingStream'
 import styles from '../components/chat.module.css'
+
+const ALLOWED_ATTACHMENT_MIME = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/gif',
+])
+const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
 
 const STICKY_SCROLL_THRESHOLD_PX = 96
 
@@ -53,20 +66,6 @@ function formatCostUsd(value: number | null | undefined): string {
   if (value === 0) return 'free'
   if (value < 0.01) return `$${value.toFixed(4)}`
   return `$${value.toFixed(2)}`
-}
-
-/**
- * Constrói a etiqueta de um modelo para o select: "Display Name · $0.15/$0.60".
- * Modelos sem pricing recebem apenas o display_name.
- */
-function modelOptionLabel(model: AiModel): string {
-  const ic = model.input_cost_per_1m_usd
-  const oc = model.output_cost_per_1m_usd
-  if (ic == null && oc == null) return model.display_name
-  if ((ic ?? 0) === 0 && (oc ?? 0) === 0) return `${model.display_name} · free`
-  const inStr = ic == null ? '?' : `$${Number(ic).toFixed(2)}`
-  const outStr = oc == null ? '?' : `$${Number(oc).toFixed(2)}`
-  return `${model.display_name} · ${inStr}/${outStr} per 1M`
 }
 
 /**
@@ -204,6 +203,56 @@ function reduceSessionProgress(
 }
 
 /**
+ * Timeline cronológica do "pensamento" do agente.
+ * Concatena chunks de texto consecutivos no último step de tipo 'text' para
+ * preservar a ordem natural texto→tool→texto→tool→… Quando chega um tool_start,
+ * congela o texto atual e abre um novo step de tool. Tool_result actualiza o
+ * step correspondente.
+ */
+function appendTextToThoughts(
+  prev: ThoughtStep[],
+  delta: string,
+): ThoughtStep[] {
+  if (!delta) return prev
+  const last = prev[prev.length - 1]
+  if (last && last.kind === 'text') {
+    return [...prev.slice(0, -1), { ...last, content: last.content + delta }]
+  }
+  return [
+    ...prev,
+    { kind: 'text', id: `t-${prev.length}-${Date.now()}`, content: delta },
+  ]
+}
+
+function appendToolStartToThoughts(
+  prev: ThoughtStep[],
+  tool: { id: string; name: string; input: string },
+): ThoughtStep[] {
+  if (prev.some((s) => s.kind === 'tool' && s.id === tool.id)) return prev
+  return [
+    ...prev,
+    {
+      kind: 'tool',
+      id: tool.id,
+      name: tool.name,
+      input: tool.input,
+      done: false,
+    },
+  ]
+}
+
+function applyToolResultToThoughts(
+  prev: ThoughtStep[],
+  result: { id: string; output: string; is_error: boolean },
+): ThoughtStep[] {
+  return prev.map((step) =>
+    step.kind === 'tool' && step.id === result.id
+      ? { ...step, output: result.output, isError: result.is_error, done: true }
+      : step,
+  )
+}
+
+/**
  * UI principal: layout IDE estilo "The Silent Architect".
  * Estado vazio → command bar premium centralizada.
  * Estado ativo  → lista de mensagens + input compacto.
@@ -235,11 +284,146 @@ export function ChatPage() {
 
   const sortedModels = useMemo(() => sortModelsForSelect(models), [models])
 
-  const [pendingText, setPendingText] = useState('')
-  const [pendingTools, setPendingTools] = useState<ToolCallState[]>([])
+  const [thoughtSteps, setThoughtSteps] = useState<ThoughtStep[]>([])
+  const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null)
+  const [streamElapsedMs, setStreamElapsedMs] = useState(0)
   const [pendingAction, setPendingAction] = useState<ActionRequiredEvent | null>(null)
   const [sessionProgress, setSessionProgress] = useState<SessionStageState[]>([])
   const [sessionProgressAnchor, setSessionProgressAnchor] = useState<SessionProgressAnchor | null>(null)
+
+  // Anexos pendentes de envio (uploads em curso, concluídos ou falhados).
+  // Apenas itens `kind === 'uploaded'` viajam no payload do streamAssistantReply.
+  const [trayItems, setTrayItems] = useState<TrayItem[]>([])
+  const [isDragOver, setIsDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  /**
+   * Faz upload de uma lista de imagens, registando placeholders na tray
+   * enquanto a Promise resolve. Anexos exigem `activeId` — antes de criar
+   * a conversa o input file fica desativado.
+   */
+  const uploadFiles = useCallback(
+    (files: File[]) => {
+      if (!activeId || files.length === 0) return
+      for (const file of files) {
+        if (!ALLOWED_ATTACHMENT_MIME.has(file.type)) {
+          setTrayItems((prev) => [
+            ...prev,
+            {
+              kind: 'failed',
+              localId: crypto.randomUUID(),
+              filename: file.name,
+              error: 'Tipo não suportado (use PNG, JPG, WebP ou GIF)',
+            },
+          ])
+          continue
+        }
+        if (file.size > MAX_ATTACHMENT_BYTES) {
+          setTrayItems((prev) => [
+            ...prev,
+            {
+              kind: 'failed',
+              localId: crypto.randomUUID(),
+              filename: file.name,
+              error: `Acima de ${(MAX_ATTACHMENT_BYTES / 1024 / 1024).toFixed(0)} MB`,
+            },
+          ])
+          continue
+        }
+        const localId = crypto.randomUUID()
+        const ctrl = new AbortController()
+        setTrayItems((prev) => [
+          ...prev,
+          {
+            kind: 'uploading',
+            localId,
+            filename: file.name,
+            abort: () => ctrl.abort(),
+          },
+        ])
+        uploadAttachment(token, activeId, file, ctrl.signal)
+          .then((att) => {
+            setTrayItems((prev) =>
+              prev.map((it) =>
+                it.localId === localId
+                  ? { kind: 'uploaded', localId, attachment: att }
+                  : it,
+              ),
+            )
+          })
+          .catch((e) => {
+            if (e instanceof Error && e.name === 'AbortError') {
+              setTrayItems((prev) => prev.filter((it) => it.localId !== localId))
+              return
+            }
+            setTrayItems((prev) =>
+              prev.map((it) =>
+                it.localId === localId
+                  ? {
+                      kind: 'failed',
+                      localId,
+                      filename: file.name,
+                      error: e instanceof Error ? e.message : String(e),
+                    }
+                  : it,
+              ),
+            )
+          })
+      }
+    },
+    [activeId, token],
+  )
+
+  /** Remove um item da tray; aborta uploads em curso e apaga uploads concluídos no backend. */
+  const removeTrayItem = useCallback(
+    (localId: string) => {
+      const item = trayItems.find((it) => it.localId === localId)
+      if (!item) return
+      if (item.kind === 'uploading') item.abort()
+      if (item.kind === 'uploaded' && activeId) {
+        deleteAttachment(token, activeId, item.attachment.id).catch(() => {
+          // melhor-esforço; o registo expira com a conversa via FK CASCADE
+        })
+      }
+      setTrayItems((prev) => prev.filter((it) => it.localId !== localId))
+    },
+    [trayItems, activeId, token],
+  )
+
+  /** Limpa a tray sem chamar DELETE — usado após envio bem-sucedido (anexos
+   *  ficam vinculados à conversa e sobrevivem como histórico no banco). */
+  const clearTrayLocal = useCallback(() => setTrayItems([]), [])
+
+  /** Handler para input file e drag&drop. */
+  const handleFileSelection = useCallback(
+    (fileList: FileList | null | undefined) => {
+      if (!fileList || fileList.length === 0) return
+      const files = Array.from(fileList)
+      uploadFiles(files)
+    },
+    [uploadFiles],
+  )
+
+  /** Handler para colar imagem do clipboard (Ctrl+V no textarea). */
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = e.clipboardData?.items
+      if (!items) return
+      const images: File[] = []
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i]
+        if (it.kind === 'file' && it.type.startsWith('image/')) {
+          const f = it.getAsFile()
+          if (f) images.push(f)
+        }
+      }
+      if (images.length > 0) {
+        e.preventDefault()
+        uploadFiles(images)
+      }
+    },
+    [uploadFiles],
+  )
 
   const [sidePanel, setSidePanel] = useState<'none' | 'diff' | 'files'>('none')
   const [diff, setDiff] = useState<ConversationDiff | null>(null)
@@ -255,6 +439,17 @@ export function ChatPage() {
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  /** Comprimento do `accumulated` text já aplicado à timeline thoughtSteps. */
+  const lastTextOffsetRef = useRef(0)
+
+  // Tick do contador de tempo decorrido enquanto o stream está activo.
+  useEffect(() => {
+    if (streamStartedAt === null) return
+    const id = window.setInterval(() => {
+      setStreamElapsedMs(Date.now() - streamStartedAt)
+    }, 200)
+    return () => window.clearInterval(id)
+  }, [streamStartedAt])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -265,7 +460,6 @@ export function ChatPage() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -407,8 +601,7 @@ export function ChatPage() {
     abortControllerRef.current?.abort()
     abortControllerRef.current = null
     setStreaming(false)
-    setPendingText('')
-    setPendingTools([])
+    setThoughtSteps([])
     setPendingAction(null)
     setSessionProgress([])
     setSessionProgressAnchor(null)
@@ -436,8 +629,10 @@ export function ChatPage() {
     setInput('')
 
     setStreaming(true)
-    setPendingText('')
-    setPendingTools([])
+    setThoughtSteps([])
+    lastTextOffsetRef.current = 0
+    setStreamStartedAt(Date.now())
+    setStreamElapsedMs(0)
     setPendingAction(null)
     setSessionProgress([])
 
@@ -456,22 +651,17 @@ export function ChatPage() {
     try {
       await streamAssistantReply(token, c.id, text, {
         onText(accumulated) {
-          setPendingText(accumulated)
+          const delta = accumulated.slice(lastTextOffsetRef.current)
+          lastTextOffsetRef.current = accumulated.length
+          if (delta) {
+            setThoughtSteps((prev) => appendTextToThoughts(prev, delta))
+          }
         },
         onToolStart(tool) {
-          setPendingTools((prev) => [
-            ...prev,
-            { id: tool.id, name: tool.name, input: tool.input, done: false },
-          ])
+          setThoughtSteps((prev) => appendToolStartToThoughts(prev, tool))
         },
         onToolResult(result) {
-          setPendingTools((prev) =>
-            prev.map((t) =>
-              t.id === result.id
-                ? { ...t, output: result.output, isError: result.is_error, done: true }
-                : t
-            )
-          )
+          setThoughtSteps((prev) => applyToolResultToThoughts(prev, result))
         },
         onActionRequired(action) { setPendingAction(action) },
         onStatus(status) {
@@ -497,7 +687,9 @@ export function ChatPage() {
         onDone(usage) { setLiveUsage(usage) },
         signal: ctrl.signal,
       }, selectedModelId || null)
-      setPendingText('')
+      setThoughtSteps([])
+      setStreamStartedAt(null)
+      clearTrayLocal()
       const [msgs, totals] = await Promise.all([
         fetchMessages(token, c.id),
         fetchConversationUsage(token, c.id),
@@ -523,6 +715,7 @@ export function ChatPage() {
       }
     } finally {
       setStreaming(false)
+      setStreamStartedAt(null)
       abortControllerRef.current = null
       fetchConversationDiff(token, c.id).then((d) => setDiffStats(d.stats)).catch(() => {})
     }
@@ -532,12 +725,22 @@ export function ChatPage() {
     const text = (textOverride ?? input).trim()
     if (!text || !activeId || streaming) return
 
+    // Bloqueia envio enquanto houver uploads em curso para não perder o
+    // anexo no meio do streaming. Failed items podem ficar — o utilizador
+    // já viu o erro e decide se remove ou tenta de novo.
+    if (trayItems.some((it) => it.kind === 'uploading')) return
+    const uploadedAttachmentIds = trayItems
+      .filter((it): it is Extract<TrayItem, { kind: 'uploaded' }> => it.kind === 'uploaded')
+      .map((it) => it.attachment.id)
+
     const sessionMode: SessionMode = 'resuming'
 
     if (!textOverride) setInput('')
     setStreaming(true)
-    setPendingText('')
-    setPendingTools([])
+    setThoughtSteps([])
+    lastTextOffsetRef.current = 0
+    setStreamStartedAt(Date.now())
+    setStreamElapsedMs(0)
     setPendingAction(null)
     setSessionProgress([])
 
@@ -566,22 +769,17 @@ export function ChatPage() {
     try {
       await streamAssistantReply(token, activeId, text, {
         onText(accumulated) {
-          setPendingText(accumulated)
+          const delta = accumulated.slice(lastTextOffsetRef.current)
+          lastTextOffsetRef.current = accumulated.length
+          if (delta) {
+            setThoughtSteps((prev) => appendTextToThoughts(prev, delta))
+          }
         },
         onToolStart(tool) {
-          setPendingTools((prev) => [
-            ...prev,
-            { id: tool.id, name: tool.name, input: tool.input, done: false },
-          ])
+          setThoughtSteps((prev) => appendToolStartToThoughts(prev, tool))
         },
         onToolResult(result) {
-          setPendingTools((prev) =>
-            prev.map((t) =>
-              t.id === result.id
-                ? { ...t, output: result.output, isError: result.is_error, done: true }
-                : t
-            )
-          )
+          setThoughtSteps((prev) => applyToolResultToThoughts(prev, result))
         },
         onActionRequired(action) { setPendingAction(action) },
         onStatus(status) {
@@ -606,8 +804,10 @@ export function ChatPage() {
         },
         onDone(usage) { setLiveUsage(usage) },
         signal: ctrl.signal,
-      }, selectedModelId || null)
-      setPendingText('')
+      }, selectedModelId || null, uploadedAttachmentIds.length ? uploadedAttachmentIds : null)
+      setThoughtSteps([])
+      setStreamStartedAt(null)
+      clearTrayLocal()
       const [msgs, totals] = await Promise.all([
         fetchMessages(token, activeId),
         fetchConversationUsage(token, activeId),
@@ -633,6 +833,7 @@ export function ChatPage() {
       }
     } finally {
       setStreaming(false)
+      setStreamStartedAt(null)
       abortControllerRef.current = null
       if (activeId) fetchConversationDiff(token, activeId).then((d) => setDiffStats(d.stats)).catch(() => {})
     }
@@ -648,7 +849,10 @@ export function ChatPage() {
   const activeConv = conversations.find((c) => c.id === activeId)
   const activeEnvSlug = activeConv?.repos?.[0]?.slug ?? null
   const showThinking =
-    streaming && !pendingText && !sessionProgress.length && pendingTools.every((t) => t.done) && !pendingAction
+    streaming &&
+    !sessionProgress.length &&
+    thoughtSteps.length === 0 &&
+    !pendingAction
 
   const groups = groupConversations(conversations)
 
@@ -779,8 +983,8 @@ export function ChatPage() {
               messagesLoading={messagesLoading}
               messagesError={messagesError}
               sessionProgressAnchor={sessionProgressAnchor}
-              pendingText={pendingText}
-              pendingTools={pendingTools}
+              thoughtSteps={thoughtSteps}
+              streamElapsedMs={streamElapsedMs}
               sessionProgress={sessionProgress}
               pendingAction={pendingAction}
               showThinking={showThinking}
@@ -814,6 +1018,13 @@ export function ChatPage() {
               setSelectedModelId={setSelectedModelId}
               convUsage={convUsage}
               liveUsage={liveUsage}
+              trayItems={trayItems}
+              onPickFiles={handleFileSelection}
+              onPasteFiles={handlePaste}
+              onRemoveTrayItem={removeTrayItem}
+              fileInputRef={fileInputRef}
+              isDragOver={isDragOver}
+              setDragOver={setIsDragOver}
             />
           )}
         </main>
@@ -1003,29 +1214,12 @@ function EmptyState({
                   </div>
                 )}
                 {models.length > 0 && (
-                  <div className={styles.contextPill} style={{ marginLeft: '0.25rem' }}>
-                    <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
-                      smart_toy
-                    </span>
-                    <span className={styles.contextPillLabel}>
-                      {models.find((m) => m.model_id === selectedModelId)?.display_name ?? 'Modelo…'}
-                    </span>
-                    <span className={styles.icon} style={{ fontSize: '0.75rem', opacity: 0.35 }}>
-                      expand_more
-                    </span>
-                    <select
-                      className={styles.contextPillSelect}
+                  <div style={{ marginLeft: '0.25rem' }}>
+                    <ModelPicker
+                      models={models}
                       value={selectedModelId}
-                      onChange={(e) => setSelectedModelId(e.target.value)}
-                      title="Selecionar modelo (preço por 1M tokens: input/output)"
-                    >
-                      <option value="">— modelo padrão —</option>
-                      {models.map((m) => (
-                        <option key={m.id} value={m.model_id}>
-                          {modelOptionLabel(m)}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setSelectedModelId}
+                    />
                   </div>
                 )}
               </div>
@@ -1101,8 +1295,8 @@ interface ActiveChatProps {
   messagesLoading: boolean
   messagesError: string | null
   sessionProgressAnchor: SessionProgressAnchor | null
-  pendingText: string
-  pendingTools: ToolCallState[]
+  thoughtSteps: ThoughtStep[]
+  streamElapsedMs: number
   sessionProgress: SessionStageState[]
   pendingAction: ActionRequiredEvent | null
   showThinking: boolean
@@ -1136,10 +1330,18 @@ interface ActiveChatProps {
   setSelectedModelId: (id: string) => void
   convUsage: ConversationUsage
   liveUsage: DoneEvent | null
+  // Anexos
+  trayItems: TrayItem[]
+  onPickFiles: (files: FileList | null | undefined) => void
+  onPasteFiles: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void
+  onRemoveTrayItem: (localId: string) => void
+  fileInputRef: React.RefObject<HTMLInputElement | null>
+  isDragOver: boolean
+  setDragOver: (v: boolean) => void
 }
 
 function ActiveChat({
-  messages, messagesLoading, messagesError, sessionProgressAnchor, pendingText, pendingTools, sessionProgress, pendingAction,
+  messages, messagesLoading, messagesError, sessionProgressAnchor, thoughtSteps, streamElapsedMs, sessionProgress, pendingAction,
   showThinking, streaming, input, setInput, inputRef,
   onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch,
   workspaces,
@@ -1148,6 +1350,7 @@ function ActiveChat({
   token, conversationId, sidePanel, diff, diffLoading, onOpenDiff, onToggleFiles,
   models, selectedModelId, setSelectedModelId,
   convUsage, liveUsage,
+  trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
 }: ActiveChatProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const shouldStickToBottomRef = useRef(true)
@@ -1194,7 +1397,7 @@ function ActiveChat({
     } else {
       requestAnimationFrame(() => setShowJumpToLatest(true))
     }
-  }, [messages, pendingText, pendingTools, sessionProgress, pendingAction, streaming, scrollToLatest])
+  }, [messages, thoughtSteps, sessionProgress, pendingAction, streaming, scrollToLatest])
 
   let sessionProgressAfterIndex = -1
   if (sessionProgressAnchor) {
@@ -1351,18 +1554,18 @@ function ActiveChat({
                   )}
                 </Fragment>
               ))}
-              {pendingTools.map((tool) => (
-                <ToolCallCard key={tool.id} tool={tool} />
-              ))}
-
-              {streaming && (
+              {(thoughtSteps.length > 0 || streaming) && (
                 <Stack gap="xs">
-                  {sessionProgress.length === 0 && (showThinking || (streaming && pendingTools.some(t => !t.done))) && (
-                    <ThinkingIndicator label={pendingTools.some(t => !t.done) ? 'A executar…' : undefined} />
+                  {thoughtSteps.length > 0 && (
+                    <ThinkingStream
+                      steps={thoughtSteps}
+                      streaming={streaming}
+                      elapsedMs={streamElapsedMs}
+                    />
                   )}
-                  {pendingText && (
-                    <PaperMessage role="assistant" content={pendingText} streaming />
-                  )}
+                  {streaming &&
+                    sessionProgress.length === 0 &&
+                    showThinking && <ThinkingIndicator />}
                 </Stack>
               )}
 
@@ -1406,7 +1609,22 @@ function ActiveChat({
       </div>
 
       {/* Compact input bar */}
-      <div className={styles.chatInputBar}>
+      <div
+        className={`${styles.chatInputBar} ${isDragOver ? styles.chatInputBarDragOver : ''}`}
+        onDragOver={(e) => {
+          if (!e.dataTransfer?.types?.includes('Files')) return
+          e.preventDefault()
+          setDragOver(true)
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget === e.target) setDragOver(false)
+        }}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragOver(false)
+          onPickFiles(e.dataTransfer?.files)
+        }}
+      >
         <div className={styles.chatInputBarShell}>
           <div
             className={`${styles.chatInputStatusRow} ${streaming && !pendingAction ? styles.visible : ''}`}
@@ -1414,18 +1632,54 @@ function ActiveChat({
           >
             {streaming && !pendingAction && (
               <ThinkingIndicator
-                label={pendingTools.some((t) => !t.done) ? 'A executar…' : undefined}
+                label={
+                  thoughtSteps.some((t) => t.kind === 'tool' && !t.done)
+                    ? 'A executar…'
+                    : undefined
+                }
               />
             )}
           </div>
+          <AttachmentTray
+            items={trayItems}
+            token={token}
+            conversationId={conversationId}
+            onRemove={onRemoveTrayItem}
+          />
           <div className={styles.chatInputWrapper}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+            multiple
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              onPickFiles(e.target.files)
+              if (e.target) e.target.value = ''
+            }}
+          />
+          <button
+            type="button"
+            className={styles.attachBtn}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={streaming}
+            title="Anexar imagem (PNG, JPG, WebP, GIF — até 8MB)"
+            aria-label="Anexar imagem"
+          >
+            <span className={styles.icon}>attachment</span>
+          </button>
           <textarea
             ref={inputRef}
             className={styles.chatTextarea}
-            placeholder="Mensagem ao agente… (Enter para enviar)"
+            placeholder={
+              isDragOver
+                ? 'Solte para anexar a imagem…'
+                : 'Mensagem ao agente… (Enter para enviar, cole imagens com Ctrl+V)'
+            }
             rows={2}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onPaste={onPasteFiles}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !streaming) {
                 e.preventDefault()
@@ -1443,7 +1697,16 @@ function ActiveChat({
           <button
             className={styles.sendBtn}
             onClick={onSend}
-            disabled={(!input.trim() && !pendingAction) || (streaming && !pendingAction)}
+            disabled={
+              (!input.trim() && !pendingAction) ||
+              (streaming && !pendingAction) ||
+              trayItems.some((it) => it.kind === 'uploading')
+            }
+            title={
+              trayItems.some((it) => it.kind === 'uploading')
+                ? 'Aguarde os anexos terminarem o envio…'
+                : undefined
+            }
           >
             <span className={styles.icon}>keyboard_return</span>
           </button>
@@ -1467,28 +1730,14 @@ function ActiveChat({
             </div>
           )}
           {models.length > 0 && (
-            <div className={`${styles.chatContextPill} ${styles.contextPill}`} style={{ marginLeft: '0.35rem' }}>
-              <span className={`${styles.icon} ${styles.chatContextIcon}`}>smart_toy</span>
-              <span className={styles.chatContextText}>
-                {models.find((m) => m.model_id === selectedModelId)?.display_name ?? 'Padrão'}
-              </span>
-              <span className={styles.icon} style={{ fontSize: '0.65rem', opacity: 0.35 }}>
-                expand_more
-              </span>
-              <select
-                className={styles.contextPillSelect}
+            <div style={{ marginLeft: '0.35rem' }}>
+              <ModelPicker
+                models={models}
                 value={selectedModelId}
-                onChange={(e) => setSelectedModelId(e.target.value)}
-                title="Mudar modelo (preço por 1M tokens: input/output)"
+                onChange={setSelectedModelId}
                 disabled={streaming}
-              >
-                <option value="">— modelo padrão —</option>
-                {models.map((m) => (
-                  <option key={m.id} value={m.model_id}>
-                    {modelOptionLabel(m)}
-                  </option>
-                ))}
-              </select>
+                compact
+              />
             </div>
           )}
           {(convUsage.total_prompt_tokens > 0 || convUsage.total_completion_tokens > 0) && (
@@ -1539,8 +1788,16 @@ function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
     ? resuming ? 'Sessão reiniciada' : 'Sessão inicializada'
     : resuming ? 'Reiniciando sessão' : 'Inicializando sessão'
 
+  const doneCount = stages.filter((s) => s.status === 'done').length
+  const progressPct = stages.length > 0 ? (doneCount / stages.length) * 100 : 0
+
   return (
-    <div className={styles.sessionProgressCard}>
+    <div
+      className={`${styles.sessionProgressCard} ${
+        completed ? styles.sessionProgressCardComplete : ''
+      }`}
+      style={{ ['--cc-progress' as string]: `${progressPct}%` }}
+    >
       <button
         type="button"
         className={styles.sessionProgressHeader}
@@ -1552,8 +1809,12 @@ function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
 
       {expanded && (
         <div className={styles.sessionProgressList}>
-          {stages.map((stage) => (
-            <div key={stage.key} className={styles.sessionProgressItem}>
+          {stages.map((stage, index) => (
+            <div
+              key={stage.key}
+              className={styles.sessionProgressItem}
+              style={{ ['--cc-step-delay' as string]: `${index * 90}ms` }}
+            >
               <span
                 className={`${styles.sessionProgressIcon} ${
                   stage.status === 'done' ? styles.sessionProgressIconDone : ''
@@ -1571,7 +1832,15 @@ function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
                 {stage.status === 'done' ? '✓' : ''}
               </span>
               <div>
-                <Text size="sm" c={stage.status === 'pending' ? 'dimmed' : undefined}>
+                <Text
+                  size="sm"
+                  c={stage.status === 'pending' ? 'dimmed' : undefined}
+                  className={
+                    stage.status === 'done'
+                      ? styles.sessionProgressLabelDone
+                      : undefined
+                  }
+                >
                   {stage.label}
                 </Text>
                 {stage.detail && (
@@ -1611,6 +1880,7 @@ function PaperMessage({
   const isUser = role === 'user'
   const hasUsage =
     !isUser && ((promptTokens ?? 0) > 0 || (completionTokens ?? 0) > 0 || !!modelUsed)
+  const showCopy = !isUser && !streaming && content.trim().length > 0
   return (
     <div className={`${styles.message} ${isUser ? styles.messageUser : styles.messageAgent}`}>
       <Text
@@ -1645,6 +1915,7 @@ function PaperMessage({
           {streaming && <span className={styles.streamingCursor} aria-hidden />}
         </div>
       )}
+      {showCopy && <CopyMessageButton content={content} />}
       {hasUsage && (
         <div className={styles.messageUsageFooter}>
           {modelUsed && <span className={styles.messageUsageModel}>{modelUsed}</span>}
@@ -1657,5 +1928,49 @@ function PaperMessage({
         </div>
       )}
     </div>
+  )
+}
+
+/** Botão de copiar conteúdo da resposta do agente. Feedback visual por 1.6s. */
+function CopyMessageButton({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false)
+
+  async function handleCopy() {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(content)
+      } else {
+        const ta = document.createElement('textarea')
+        ta.value = content
+        ta.setAttribute('readonly', '')
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+      }
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1600)
+    } catch {
+      /* silently ignore — clipboard pode estar bloqueado */
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className={`${styles.messageCopyBtn} ${copied ? styles.messageCopyBtnCopied : ''}`}
+      onClick={handleCopy}
+      aria-label={copied ? 'Resposta copiada' : 'Copiar resposta do agente'}
+      title={copied ? 'Copiado!' : 'Copiar'}
+    >
+      <span className={styles.messageCopyIcon} aria-hidden="true">
+        {copied ? 'check' : 'content_copy'}
+      </span>
+      <span className={styles.messageCopyLabel}>
+        {copied ? 'Copiado' : 'Copiar'}
+      </span>
+    </button>
   )
 }

@@ -9,7 +9,14 @@ from __future__ import annotations
 import uuid
 from abc import ABC, abstractmethod
 
-from app.domain.entities import Conversation, Message, RepoEnvironment, Repository, User
+from app.domain.entities import (
+    Conversation,
+    Message,
+    MessageAttachment,
+    RepoEnvironment,
+    Repository,
+    User,
+)
 
 
 class UserRepository(ABC):
@@ -116,3 +123,52 @@ class MessageRepository(ABC):
         Lookup pelo ``model_id`` do catálogo de ``ai_models`` activos. Usado
         para calcular o ``cost_usd`` no fim de cada turno do agente.
         """
+
+
+class AttachmentRepository(ABC):
+    """Port para metadado de anexos de conversas."""
+
+    @abstractmethod
+    async def save(self, attachment: MessageAttachment) -> MessageAttachment:
+        """Persiste um novo anexo e devolve-o."""
+
+    @abstractmethod
+    async def get(
+        self, attachment_id: uuid.UUID, conversation_id: uuid.UUID
+    ) -> MessageAttachment | None:
+        """Devolve anexo pertencente à conversa, ou ``None``."""
+
+    @abstractmethod
+    async def list_by_ids(
+        self, attachment_ids: list[uuid.UUID], conversation_id: uuid.UUID
+    ) -> list[MessageAttachment]:
+        """Lista anexos pelos ids, garantindo que pertencem à conversa.
+
+        Resultado ordenado pelo ``uploaded_at`` ascendente.
+        """
+
+    @abstractmethod
+    async def delete(self, attachment_id: uuid.UUID, conversation_id: uuid.UUID) -> bool:
+        """Remove o registo. Devolve ``True`` se algo foi apagado."""
+
+    @abstractmethod
+    async def update_description(
+        self,
+        attachment_id: uuid.UUID,
+        description: str,
+        model_used: str,
+    ) -> None:
+        """Persiste a descrição textual gerada pelo vision describer."""
+
+
+class AiModelCapabilityLookup(ABC):
+    """Port para consulta rápida de capacidades de modelo IA.
+
+    Usado por ``StreamMessage`` para decidir se anexa imagens nativamente
+    (Caminho A — modelos vision-capazes) ou cai para descrição textual
+    pré-gerada pelo vision describer (Caminho C — modelos text-only).
+    """
+
+    @abstractmethod
+    async def is_vision_capable(self, model_id: str) -> bool:
+        """``True`` se ``model_id`` tem ``"vision"`` em ``capabilities``."""

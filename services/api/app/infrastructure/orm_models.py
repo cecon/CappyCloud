@@ -221,6 +221,42 @@ class Message(Base):
     conversation: Mapped[Conversation] = relationship("Conversation", back_populates="messages")
 
 
+class MessageAttachment(Base):
+    """Anexo carregado pelo utilizador (inicialmente imagens).
+
+    O ficheiro físico vive num volume Docker (``storage_path``); aqui
+    armazenamos apenas o metadado e a descrição textual gerada pelo modelo
+    de visão (``vision_description``) que é injetada no prompt do agente.
+    """
+
+    __tablename__ = "message_attachments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUIDType,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    message_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUIDType,
+        ForeignKey("messages.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, default="image")
+    mime_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    storage_path: Mapped[str] = mapped_column(Text, nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    vision_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    vision_model_used: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(UUIDType, nullable=True)
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 # Import sub-modules last — registers tables with Base.metadata for Alembic.
 from app.infrastructure.orm_models_agent import (  # noqa: F401, E402
     Skill,

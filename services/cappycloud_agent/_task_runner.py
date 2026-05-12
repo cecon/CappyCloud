@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -23,8 +24,15 @@ import asyncpg
 
 from ._grpc_helpers import PendingAction
 from ._grpc_session import GrpcSession
+from ._task_usage import persist_usage
 
 log = logging.getLogger(__name__)
+
+# Janela de silêncio (sem QUALQUER evento do stream gRPC) antes de matar a
+# sessão. Em tasks longas de análise/relatório o LLM pode passar minutos a
+# pensar entre chunks; um valor pequeno mata investigações legítimas. Cada
+# chunk recebido reinicia o relógio (ver _run loop).
+STREAM_IDLE_TIMEOUT_S = float(os.getenv("AGENT_STREAM_IDLE_TIMEOUT_S", "900"))
 
 
 class TaskRunner:
@@ -57,9 +65,13 @@ class TaskRunner:
         """Repassa a resposta do utilizador ao stream gRPC pausado."""
         await self._session.send_input(reply)
 
-    async def send_message(self, message: str) -> None:
+    async def send_message(
+        self,
+        message: str,
+        attachments: list[dict] | None = None,
+    ) -> None:
         """Envia uma nova mensagem numa sessão já activa."""
-        await self._session.send_message(message)
+        await self._session.send_message(message, attachments=attachments)
 
     def is_alive(self) -> bool:
         return self._task is not None and not self._task.done()
@@ -82,23 +94,53 @@ class TaskRunner:
     # ── Internal ──────────────────────────────────────────────────
 
     async def _run(self) -> None:
-        """Loop principal: drena o stream gRPC e persiste eventos no DB."""
+        """Loop principal: drena o stream gRPC e persiste eventos no DB.
+
+        O timeout (``STREAM_IDLE_TIMEOUT_S``) reinicia a cada evento recebido —
+        é uma janela de silêncio, não um wall-clock total. Permite tasks de
+        análise/relatório de 30+ min desde que o LLM emita chunks regulares.
+        """
         await self._update_task(status="running", started_at=_now())
+        agent_stage_marked = False
         try:
             while True:
                 try:
                     event_type, data = await asyncio.wait_for(
-                        self._session._out_queue.get(), timeout=300.0
+                        self._session._out_queue.get(),
+                        timeout=STREAM_IDLE_TIMEOUT_S,
                     )
                 except asyncio.TimeoutError:
+                    minutes = int(STREAM_IDLE_TIMEOUT_S // 60)
                     await self._insert_event(
-                        "timeout", {"message": "Stream silencioso por 5 min."}
+                        "timeout",
+                        {"message": f"Stream silencioso por {minutes} min."},
                     )
                     await self._update_task(status="error", completed_at=_now())
                     return
 
                 await self._insert_event(event_type, _normalise(data))
                 await self._touch_task()
+
+                # Marca o stage 'agent' como done apenas quando o LLM responde
+                # de facto (text/tool/action). Se nunca chegar resposta — caso
+                # típico de done-vazio ou erro de provider — o passo "Agente
+                # iniciado" fica explicitamente pending e o erro detalhado
+                # aparece logo abaixo, sem o falso "tudo verde".
+                if not agent_stage_marked and event_type in (
+                    "text",
+                    "tool_start",
+                    "tool_result",
+                    "action_required",
+                ):
+                    agent_stage_marked = True
+                    await self._insert_event(
+                        "status",
+                        {
+                            "message": "Agente respondeu",
+                            "stage": "agent",
+                            "mode": "initializing",
+                        },
+                    )
 
                 if event_type == "action_required":
                     await self._update_task(status="paused")
@@ -204,61 +246,9 @@ class TaskRunner:
         prompt_tokens: int,
         completion_tokens: int,
     ) -> None:
-        """Calcula custo via lookup em ``ai_models`` e grava em ``agent_tasks``.
-
-        Quando o ``model_used`` não estiver no catálogo, gravamos os tokens
-        e ``cost_usd=0`` (e logamos um aviso para que o admin sincronize via
-        ``POST /api/ai-models/sync-from-openrouter``).
-        """
-        if not self._pool:
-            return
-        try:
-            async with self._pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    SELECT input_cost_per_1m_usd, output_cost_per_1m_usd
-                    FROM ai_models
-                    WHERE model_id = $1 AND active = TRUE
-                    LIMIT 1
-                    """,
-                    model_used,
-                )
-                input_cost = float(row["input_cost_per_1m_usd"] or 0) if row else 0.0
-                output_cost = float(row["output_cost_per_1m_usd"] or 0) if row else 0.0
-                cost_usd = round(
-                    (prompt_tokens * input_cost + completion_tokens * output_cost)
-                    / 1_000_000.0,
-                    6,
-                )
-                if not row:
-                    log.warning(
-                        "[TaskRunner %s] modelo '%s' não consta de ai_models — "
-                        "custo=0. Faça sync OpenRouter.",
-                        self._task_id[:8],
-                        model_used,
-                    )
-                await conn.execute(
-                    """
-                    UPDATE agent_tasks
-                    SET model_used=$1,
-                        prompt_tokens=$2,
-                        completion_tokens=$3,
-                        cost_usd=$4,
-                        last_event_at=NOW()
-                    WHERE id=$5::uuid
-                    """,
-                    model_used,
-                    prompt_tokens,
-                    completion_tokens,
-                    cost_usd,
-                    self._task_id,
-                )
-        except Exception as exc:
-            log.error(
-                "[TaskRunner %s] persist_usage failed: %s",
-                self._task_id[:8],
-                exc,
-            )
+        await persist_usage(
+            self._pool, self._task_id, model_used, prompt_tokens, completion_tokens
+        )
 
 
 def _now() -> datetime:

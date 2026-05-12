@@ -1,6 +1,7 @@
 'use strict'
 // ──────────────────────────────────────────────────────────────
 // Handlers HTTP de gestão de clones de repositórios:
+//   GET    /repos/list            → lista slugs clonados em /repos/<slug>/.git
 //   POST   /repos/clone           → clona ou faz fetch (com PAT inline opcional)
 //   DELETE /repos/:slug           → remove o clone do volume
 // Exporta `tryHandle(req, res, helpers)`.
@@ -81,6 +82,22 @@ async function postClone(body, json, res, injectToken) {
   }
 }
 
+function listRepos(json, res) {
+  try {
+    const root = '/repos'
+    if (!fs.existsSync(root)) return json(res, 200, { repos: [] })
+    const entries = fs.readdirSync(root, { withFileTypes: true })
+    const repos = entries
+      .filter((e) => e.isDirectory() && e.name !== 'sessions')
+      .map((e) => e.name)
+      .filter((slug) => fs.existsSync(path.join(root, slug, '.git')))
+      .sort()
+    return json(res, 200, { repos })
+  } catch (err) {
+    return json(res, 500, { error: err.message })
+  }
+}
+
 async function deleteRepo(slug, json, res) {
   try {
     await execFileAsync('rm', ['-rf', `/repos/${slug}`], { timeout: 60_000 })
@@ -98,6 +115,9 @@ async function tryHandle(req, res, { json, readBody, injectToken }) {
   if (!req.url) return false
   const path = req.url.split('?')[0]
 
+  if (req.method === 'GET' && path === '/repos/list') {
+    return listRepos(json, res) && true
+  }
   if (req.method === 'POST' && path === '/repos/clone') {
     const body = await readBody(req)
     return postClone(body, json, res, injectToken) && true

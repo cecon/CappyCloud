@@ -104,14 +104,16 @@ export function AiModelsPanel({ token }: AiModelsPanelProps) {
         </div>
         <button
           type="button"
-          className={styles.actionBtn}
+          className={styles.primaryBtn}
           onClick={handleSync}
           disabled={syncing}
-          style={{ padding: '0.45rem 0.9rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+          aria-label="Sincronizar catálogo de modelos do OpenRouter"
           title="Buscar /api/v1/models do OpenRouter e atualizar pricing"
         >
-          <span className={styles.icon}>{syncing ? 'hourglass_empty' : 'cloud_download'}</span>
-          {syncing ? 'Sincronizando…' : 'Sync OpenRouter'}
+          <span className={styles.icon} aria-hidden="true">
+            {syncing ? 'hourglass_empty' : 'cloud_download'}
+          </span>
+          <span>{syncing ? 'Sincronizando…' : 'Sync OpenRouter'}</span>
         </button>
       </div>
 
