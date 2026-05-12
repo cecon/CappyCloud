@@ -1408,6 +1408,16 @@ function ActiveChat({
       {/* Compact input bar */}
       <div className={styles.chatInputBar}>
         <div className={styles.chatInputBarShell}>
+          <div
+            className={`${styles.chatInputStatusRow} ${streaming && !pendingAction ? styles.visible : ''}`}
+            aria-hidden={!streaming || !!pendingAction}
+          >
+            {streaming && !pendingAction && (
+              <ThinkingIndicator
+                label={pendingTools.some((t) => !t.done) ? 'A executar…' : undefined}
+              />
+            )}
+          </div>
           <div className={styles.chatInputWrapper}>
           <textarea
             ref={inputRef}

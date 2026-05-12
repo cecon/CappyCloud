@@ -973,6 +973,23 @@
   background: var(--cc-surface);
 }
 
+.chatInputStatusRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+  padding: 0 6px 6px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: none;
+}
+
+.chatInputStatusRow.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .chatInputWrapper {
   display: flex;
   align-items: flex-end;
