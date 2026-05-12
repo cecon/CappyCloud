@@ -1626,6 +1626,20 @@ function ActiveChat({
         }}
       >
         <div className={styles.chatInputBarShell}>
+          <div
+            className={`${styles.chatInputStatusRow} ${streaming && !pendingAction ? styles.visible : ''}`}
+            aria-hidden={!streaming || !!pendingAction}
+          >
+            {streaming && !pendingAction && (
+              <ThinkingIndicator
+                label={
+                  thoughtSteps.some((t) => t.kind === 'tool' && !t.done)
+                    ? 'A executar…'
+                    : undefined
+                }
+              />
+            )}
+          </div>
           <AttachmentTray
             items={trayItems}
             token={token}
