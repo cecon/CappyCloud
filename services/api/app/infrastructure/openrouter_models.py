@@ -42,7 +42,7 @@ def _to_per_1m(price_str: Any) -> float | None:
         return None
     try:
         per_token = float(price_str)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     if per_token < 0:
         return None
@@ -86,7 +86,7 @@ def _normalize(raw: dict[str, Any]) -> NormalizedModel | None:
     )
     try:
         context_window = int(context_window_raw or 0) or 200_000
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         context_window = 200_000
     return NormalizedModel(
         model_id=model_id,
