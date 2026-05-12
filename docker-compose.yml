@@ -103,10 +103,161 @@ services:
 
   # web roda localmente com `pnpm dev` (não usa Docker)
 
+  # -------------------------------------------------------------------
+  # Observabilidade de agentes (Langfuse v3)
+  # -------------------------------------------------------------------
+  # Sobe só com o profile "observability":
+  #   docker compose --profile observability up
+  #
+  # Pré-requisito (uma vez): criar a base "langfuse" no Postgres existente
+  #   docker exec -it cappycloud-postgres \
+  #     psql -U ${POSTGRES_USER:-cappy} -d ${POSTGRES_DB:-cappycloud} \
+  #     -c "CREATE DATABASE langfuse;"
+  #
+  # UI em http://localhost:${LANGFUSE_PORT:-3001}
+  # Reutiliza o Postgres e o Redis principais; ClickHouse + MinIO são exclusivos.
+  # -------------------------------------------------------------------
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: cappycloud-clickhouse
+    profiles: ["observability"]
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+    networks:
+      - cappycloud_net
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: cappycloud-minio
+    profiles: ["observability"]
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniominio}
+    volumes:
+      - minio_data:/data
+    networks:
+      - cappycloud_net
+    ports:
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Cria o bucket de eventos no MinIO antes do Langfuse subir.
+  minio-init:
+    image: minio/mc:latest
+    container_name: cappycloud-minio-init
+    profiles: ["observability"]
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - cappycloud_net
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio} ${MINIO_ROOT_PASSWORD:-miniominio} &&
+      mc mb -p local/langfuse || true &&
+      exit 0;
+      "
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: cappycloud-langfuse-worker
+    profiles: ["observability"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment: &langfuse_env
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cappy}:${POSTGRES_PASSWORD:-cappypass}@postgres:5432/${LANGFUSE_DB:-langfuse}
+      DIRECT_URL: postgresql://${POSTGRES_USER:-cappy}:${POSTGRES_PASSWORD:-cappypass}@postgres:5432/${LANGFUSE_DB:-langfuse}
+      SALT: ${LANGFUSE_SALT:-CHANGE_ME_langfuse_salt}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      TELEMETRY_ENABLED: "true"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "true"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-miniominio}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-miniominio}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    networks:
+      - cappycloud_net
+
+  langfuse-web:
+    image: langfuse/langfuse:3
+    container_name: cappycloud-langfuse-web
+    profiles: ["observability"]
+    restart: unless-stopped
+    depends_on:
+      langfuse-worker:
+        condition: service_started
+    environment:
+      <<: *langfuse_env
+      NEXTAUTH_URL: ${LANGFUSE_PUBLIC_URL:-http://localhost:3001}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-CHANGE_ME_langfuse_nextauth_secret}
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-}
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:-}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:-}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
+    networks:
+      - cappycloud_net
+    ports:
+      - "${LANGFUSE_PORT:-3001}:3000"
+
 volumes:
   postgres_data:
   redis_data:
   repos_data: # apenas o sandbox monta isto em /repos
+  clickhouse_data:
+  clickhouse_logs:
+  minio_data:
 
 networks:
   cappycloud_net:
