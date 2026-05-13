@@ -99,6 +99,7 @@ COPY env_init.sh /env_init.sh
 COPY session_start.sh /session_start.sh
 COPY session_server.js /session_server.js
 COPY git_handlers.js /git_handlers.js
+COPY mcp_handler.js /mcp_handler.js
 COPY repo_handlers.js /repo_handlers.js
 COPY task_handler.js /task_handler.js
 COPY worktree_handlers.js /worktree_handlers.js
