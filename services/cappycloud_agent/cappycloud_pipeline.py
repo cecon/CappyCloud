@@ -24,7 +24,7 @@ from ._agent_context import (
     load_agent_context,
 )
 from ._environment_manager import EnvironmentManager
-from ._pipeline_helpers import db_url, inject_repo_context, sse
+from ._pipeline_helpers import db_url, inject_repo_context, push_mcp_config, sse
 from ._session_store import SessionStore
 from ._task_dispatcher import TaskDispatcher
 
@@ -183,6 +183,13 @@ class Pipeline:
             "sandbox_session_url": sandbox_session_url,
             "attachments": attachments_payload,
         }
+
+        # Envia config MCP ao sandbox antes de cada dispatch (idempotente).
+        user_id_str = str(body.get("user_id") or "")
+        self._run(
+            push_mcp_config(db_url(), user_id_str, sandbox_session_url),
+            timeout=8,
+        )
 
         if runner and runner.is_alive() and runner.pending_action:
             self._run(self._dispatcher.send_input(task_id, user_message), timeout=10)

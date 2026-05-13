@@ -1,6 +1,10 @@
 import json
 import logging
 import os
+import uuid
+
+import asyncpg
+import httpx
 
 from ._agent_context import (
     fetch_worktree_top_levels,
@@ -67,3 +71,52 @@ async def build_prompt_with_worktree_context(
     except Exception as exc:  # noqa: BLE001
         log.warning("[Dispatcher] worktree top-level fetch falhou: %s", exc)
     return prompt
+
+
+async def push_mcp_config(
+    database_url: str,
+    user_id: str,
+    sandbox_session_url: str,
+) -> None:
+    """Busca MCPs ativos do utilizador no DB e envia ao sandbox via POST /mcp/configure.
+
+    Degrada graciosamente: qualquer erro é logado como warning sem interromper o dispatch.
+    """
+    if not user_id or not sandbox_session_url or not database_url:
+        return
+    try:
+        uid = uuid.UUID(user_id)
+    except ValueError:
+        return
+    try:
+        conn = await asyncpg.connect(database_url)
+        try:
+            rows = await conn.fetch(
+                "SELECT name, command, args, env FROM mcp_servers "
+                "WHERE user_id = $1 AND enabled = true",
+                uid,
+            )
+        finally:
+            await conn.close()
+
+        mcp_servers: dict = {}
+        for row in rows:
+            entry: dict = {"command": row["command"]}
+            if row["args"]:
+                entry["args"] = list(row["args"])
+            if row["env"]:
+                entry["env"] = dict(row["env"])
+            mcp_servers[row["name"]] = entry
+
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"{sandbox_session_url}/mcp/configure",
+                json={"mcpServers": mcp_servers},
+            )
+        log.info(
+            "[MCP] config enviada ao sandbox: %d servidores → %s",
+            len(mcp_servers),
+            resp.status_code,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[MCP] falha ao enviar config ao sandbox: %s", exc)
