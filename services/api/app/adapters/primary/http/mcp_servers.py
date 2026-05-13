@@ -25,7 +25,7 @@ from app.application.use_cases.mcp_servers import (
 )
 from app.domain.entities import User
 from app.ports.mcp_repository import McpServerRepository
-from app.schemas import McpServerCreate, McpServerOut, McpServerUpdate
+from app.schemas_mcp import McpServerCreate, McpServerOut, McpServerUpdate
 
 router = APIRouter(prefix="/mcp-servers", tags=["mcp-servers"])
 
