@@ -119,8 +119,14 @@ async function tryHandle(req, res, { json, readBody, injectToken }) {
     return listRepos(json, res) && true
   }
   if (req.method === 'POST' && path === '/repos/clone') {
-    const body = await readBody(req)
-    return postClone(body, json, res, injectToken) && true
+    try {
+      const body = await readBody(req)
+      return postClone(body, json, res, injectToken) && true
+    } catch (err) {
+      console.error('[repo_handlers] Error reading body:', err.message)
+      json(res, 500, { error: 'Internal server error' })
+      return true
+    }
   }
   const m = path.match(/^\/repos\/([^/]+)$/)
   if (req.method === 'DELETE' && m) {

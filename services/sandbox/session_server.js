@@ -60,6 +60,7 @@ function injectToken(url, explicitToken = '', providerType = '') {
 }
 
 function json(res, status, body) {
+  if (res.headersSent) return
   const payload = JSON.stringify(body)
   res.writeHead(status, {
     'Content-Type': 'application/json',

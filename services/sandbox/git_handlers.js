@@ -122,14 +122,20 @@ async function tryHandle(req, res, { json, readBody, injectToken }) {
 
   if (req.method !== 'POST') return false
 
-  if (urlPath === '/git/ls-remote-branches') {
-    return lsRemoteBranches(await readBody(req), json, res, injectToken) && true
-  }
-  if (urlPath === '/git/origin-head-branch') {
-    return originHeadBranch(await readBody(req), json, res) && true
-  }
-  if (urlPath === '/git/branch-r') {
-    return branchR(await readBody(req), json, res) && true
+  try {
+    if (urlPath === '/git/ls-remote-branches') {
+      return lsRemoteBranches(await readBody(req), json, res, injectToken) && true
+    }
+    if (urlPath === '/git/origin-head-branch') {
+      return originHeadBranch(await readBody(req), json, res) && true
+    }
+    if (urlPath === '/git/branch-r') {
+      return branchR(await readBody(req), json, res) && true
+    }
+  } catch (err) {
+    console.error('[git_handlers] Error:', err.message)
+    json(res, 500, { error: 'Internal server error' })
+    return true
   }
   return false
 }

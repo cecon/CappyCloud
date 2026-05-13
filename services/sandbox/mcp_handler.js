@@ -6,12 +6,14 @@ const path = require('path')
 
 async function tryHandle(req, res, { json, readBody }) {
   if (req.method !== 'POST' || (req.url || '').split('?')[0] !== '/mcp/configure') return false
-  const body = await readBody(req)
-  const mcpServers = body.mcpServers || {}
-  const settingsPath = process.env.HOME
-    ? `${process.env.HOME}/.claude/settings.json`
-    : '/root/.claude/settings.json'
+  
   try {
+    const body = await readBody(req)
+    const mcpServers = body.mcpServers || {}
+    const settingsPath = process.env.HOME
+      ? `${process.env.HOME}/.claude/settings.json`
+      : '/root/.claude/settings.json'
+    
     let current = {}
     try { current = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) } catch {}
     current.mcpServers = mcpServers
