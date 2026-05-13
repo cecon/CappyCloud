@@ -1,0 +1,35 @@
+diff --git a/src/grpc/server.ts b/src/grpc/server.ts
+index 69bfdf4..7f9d9e4 100644
+--- a/src/grpc/server.ts
++++ b/src/grpc/server.ts
+@@ -7,6 +7,7 @@ import { getTools } from '../tools.js'
+ import { getDefaultAppState } from '../state/AppStateStore.js'
+ import { AppState } from '../state/AppState.js'
+ import { FileStateCache, READ_FILE_STATE_CACHE_SIZE } from '../utils/fileStateCache.js'
++import { getMcpToolsCommandsAndResources } from '../services/mcp/client.js'
+ 
+ const PROTO_PATH = path.resolve(import.meta.dirname, '../proto/openclaude.proto')
+ 
+@@ -85,11 +86,21 @@ export class GrpcServer {
+ 
+           const toolNameById = new Map<string, string>()
+ 
++          // Load MCP servers from ~/.claude/settings.json (written by CappyCloud pipeline)
++          const grpcMcpClients: any[] = []
++          try {
++            await getMcpToolsCommandsAndResources(({ client }) => {
++              grpcMcpClients.push(client)
++            })
++          } catch (mcpErr: any) {
++            console.warn("[grpc] MCP load warning:", mcpErr?.message ?? mcpErr)
++          }
++
+           engine = new QueryEngine({
+             cwd: req.working_directory || process.cwd(),
+             tools: getTools(appState.toolPermissionContext), // Gets all available tools
+             commands: [], // Slash commands
+-            mcpClients: [],
++            mcpClients: grpcMcpClients,
+             agents: [],
+             ...(previousMessages.length > 0 ? { initialMessages: previousMessages } : {}),
+             includePartialMessages: true,
