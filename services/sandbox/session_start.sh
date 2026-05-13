@@ -209,4 +209,12 @@ elif [ -f /app/CLAUDE.md ]; then
     cp /app/CLAUDE.md "$WORKTREE_PATH/CLAUDE.md"
 fi
 
+# ── sandbox/skills (global skills) ──────────────────────────────
+# Copia skills globais referenciadas em CLAUDE.md, se ainda não existem
+# no worktree. Assim o agente pode acessar sandbox/skills/*/SKILL.md
+if [ ! -d "$WORKTREE_PATH/sandbox/skills" ] && [ -d /app/sandbox/skills ]; then
+    echo "[session_start] Copiando global skills para worktree…"
+    cp -r /app/sandbox/skills "$WORKTREE_PATH/sandbox/" 2>/dev/null || true
+fi
+
 echo "[session_start] OK — worktree=${WORKTREE_PATH}  branch=${BRANCH_NAME}"
