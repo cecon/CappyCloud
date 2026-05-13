@@ -17,6 +17,9 @@
 //   POST   /git/origin-head-branch → default local (symbolic-ref)
 //   POST   /git/branch-r           → git branch -r no clone /repos/...
 //   POST   /worktree/*              → worktree_handlers.js (ls-files, diff, PR, …)
+//   GET    /git/ls-files           → git ls-files num worktree (lista ficheiros tracked)
+//   GET    /git/file               → conteúdo de ficheiro num worktree
+//   POST   /mcp/configure          → escreve mcpServers em ~/.claude/settings.json
 //   GET    /health                 → liveness probe
 // ──────────────────────────────────────────────────────────────
 
@@ -258,7 +261,7 @@ const server = http.createServer(async (req, res) => {
 
     if (await worktreeHandlers.tryHandle(req, res, { json, readBody })) return
 
-    // POST /git-auth — reconfigura credenciais git (token actualizado no DB)
+    // POST /git-auth — reconfigura credenciais git (token atualizado no DB)
     if (req.method === 'POST' && pathname === '/git-auth') {
       const { provider_type, token, base_url } = await readBody(req)
       try {
@@ -279,6 +282,63 @@ const server = http.createServer(async (req, res) => {
         console.log(`[session_server] git-auth updated for ${provider_type}`)
         return json(res, 200, { updated: true })
       } catch (err) {
+        return json(res, 500, { error: err.message })
+      }
+    }
+
+    // POST /mcp/configure — escreve mcpServers em ~/.claude/settings.json
+    if (req.method === 'POST' && pathname === '/mcp/configure') {
+      const body = await readBody(req)
+      const mcpServers = body.mcpServers || {}
+      const settingsPath = process.env.HOME
+        ? `${process.env.HOME}/.claude/settings.json`
+        : '/root/.claude/settings.json'
+      try {
+        let current = {}
+        try { current = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) } catch {}
+        current.mcpServers = mcpServers
+        fs.mkdirSync(require('path').dirname(settingsPath), { recursive: true })
+        fs.writeFileSync(settingsPath, JSON.stringify(current, null, 2), 'utf8')
+        console.log(`[session_server] MCP config updated: ${Object.keys(mcpServers).join(', ') || '(none)'}`)
+        return json(res, 200, { updated: true, servers: Object.keys(mcpServers) })
+      } catch (err) {
+        return json(res, 500, { error: err.message })
+      }
+    }
+
+    // GET /git/ls-files?worktree_path=... — lista ficheiros tracked (git ls-files)
+    if (req.method === 'GET' && pathname === '/git/ls-files') {
+      const worktree_path = url.searchParams.get('worktree_path') || ''
+      if (!worktree_path) return json(res, 400, { error: 'worktree_path is required' })
+      try {
+        const { stdout } = await execFileAsync(
+          'git', ['-C', worktree_path, 'ls-files'],
+          { timeout: 15_000, maxBuffer: 4 * 1024 * 1024 }
+        )
+        const files = stdout.split('\n').filter(Boolean)
+        return json(res, 200, { worktree_path, files })
+      } catch (err) {
+        const msg = ((err.stdout || '') + (err.stderr || '')).trim() || err.message
+        return json(res, 500, { error: msg })
+      }
+    }
+
+    // GET /git/file?worktree_path=...&path=... — conteúdo de um ficheiro do worktree
+    if (req.method === 'GET' && pathname === '/git/file') {
+      const worktree_path = url.searchParams.get('worktree_path') || ''
+      const filePath = url.searchParams.get('path') || ''
+      if (!worktree_path) return json(res, 400, { error: 'worktree_path is required' })
+      if (!filePath) return json(res, 400, { error: 'path is required' })
+      // Previne path traversal
+      const resolved = path.resolve(worktree_path, filePath)
+      if (!resolved.startsWith(path.resolve(worktree_path))) {
+        return json(res, 400, { error: 'Caminho inválido' })
+      }
+      try {
+        const content = fs.readFileSync(resolved, 'utf8')
+        return json(res, 200, { path: filePath, content })
+      } catch (err) {
+        if (err.code === 'ENOENT') return json(res, 404, { error: 'Ficheiro não encontrado' })
         return json(res, 500, { error: err.message })
       }
     }

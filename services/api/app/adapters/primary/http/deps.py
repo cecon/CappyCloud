@@ -15,6 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.adapters.secondary.persistence.sqlalchemy_message_repo import (
     SQLAlchemyMessageRepository,
 )
+from app.adapters.secondary.persistence.sqlalchemy_mcp_repo import (
+    SQLAlchemyMcpRepository,
+)
 from app.adapters.secondary.persistence.sqlalchemy_repo_env_repo import (
     SQLAlchemyRepoEnvironmentRepository,
 )
@@ -24,11 +27,15 @@ from app.adapters.secondary.persistence.sqlalchemy_repository_repo import (
 from app.adapters.secondary.persistence.sqlalchemy_user_repo import (
     SQLAlchemyUserRepository,
 )
+from app.application.use_cases.ai_models import ListAiModels
 from app.application.use_cases.auth import GetCurrentUser, LoginUser, RegisterUser
 from app.application.use_cases.conversations import (
     CreateConversation,
+    DeleteConversation,
+    ForkConversation,
     ListConversations,
     ListMessages,
+    RenameConversation,
     StreamMessage,
 )
 from app.application.use_cases.repo_environments import (
@@ -38,6 +45,7 @@ from app.application.use_cases.repo_environments import (
 )
 from app.domain.entities import User
 from app.ports.agent import AgentPort
+from app.ports.mcp_repository import McpServerRepository
 from app.ports.repositories import (
     AiModelCapabilityLookup,
     AttachmentRepository,
@@ -88,6 +96,12 @@ def get_repository_repo(
     return SQLAlchemyRepositoryRepository(session)
 
 
+def get_mcp_repo(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> McpServerRepository:
+    return SQLAlchemyMcpRepository(session)
+
+
 # ---------------------------------------------------------------------------
 # Service dependencies
 # ---------------------------------------------------------------------------
@@ -103,6 +117,12 @@ def get_token_service() -> TokenService:
     from app.infrastructure.security import JWTTokenService
 
     return JWTTokenService()
+
+
+def get_model_catalog_service() -> ModelCatalogService:
+    from app.adapters.secondary.openrouter_catalog import OpenRouterModelCatalog
+
+    return OpenRouterModelCatalog()
 
 
 def get_agent(request: Request) -> AgentPort:
@@ -135,6 +155,12 @@ def get_current_user_uc(
     tokens: Annotated[TokenService, Depends(get_token_service)],
 ) -> GetCurrentUser:
     return GetCurrentUser(users, tokens)
+
+
+def get_list_ai_models_uc(
+    catalog: Annotated[ModelCatalogService, Depends(get_model_catalog_service)],
+) -> ListAiModels:
+    return ListAiModels(catalog)
 
 
 async def get_authenticated_user(
@@ -190,6 +216,25 @@ def get_stream_msg_uc(
         attachment_storage=storage,
         model_caps=model_caps,
     )
+
+
+def get_rename_conv_uc(
+    convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
+) -> RenameConversation:
+    return RenameConversation(convs)
+
+
+def get_delete_conv_uc(
+    convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
+) -> DeleteConversation:
+    return DeleteConversation(convs)
+
+
+def get_fork_conv_uc(
+    convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
+    msgs: Annotated[MessageRepository, Depends(get_msg_repo)],
+) -> ForkConversation:
+    return ForkConversation(convs, msgs)
 
 
 def get_list_repo_envs_uc(

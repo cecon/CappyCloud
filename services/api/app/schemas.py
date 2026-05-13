@@ -121,6 +121,12 @@ class ConversationCreate(BaseModel):
     repos: list[RepoSelection] = Field(default_factory=list)
 
 
+class ConversationRename(BaseModel):
+    """Payload para renomear uma conversa."""
+
+    title: str = Field(min_length=1, max_length=512)
+
+
 class ConversationOut(BaseModel):
     """Metadados da conversa."""
 
@@ -296,3 +302,56 @@ from app.schemas_documents import (  # noqa: E402, F401
     DocumentCreate,
     DocumentOut,
 )
+
+
+# ── MCP Servers ───────────────────────────────────────────────
+
+_MCP_NAME_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,64}$")
+
+
+class McpServerCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    command: str = Field(min_length=1, max_length=256)
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    enabled: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def name_valido(cls, v: str) -> str:
+        if not _MCP_NAME_RE.match(v):
+            raise ValueError(
+                "Nome de MCP inválido. Use apenas letras, números, hífens e sublinhados."
+            )
+        return v
+
+
+class McpServerUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    command: str = Field(min_length=1, max_length=256)
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    enabled: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def name_valido(cls, v: str) -> str:
+        if not _MCP_NAME_RE.match(v):
+            raise ValueError(
+                "Nome de MCP inválido. Use apenas letras, números, hífens e sublinhados."
+            )
+        return v
+
+
+class McpServerOut(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    name: str
+    command: str
+    args: list[str]
+    env: dict[str, str]
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}

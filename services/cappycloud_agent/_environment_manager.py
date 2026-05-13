@@ -74,6 +74,18 @@ class EnvironmentManager:
         record = await self._store.get(user_id, chat_id)
         if record:
             await self._store.refresh_ttl(user_id, chat_id)
+            # Upgrade stale records: repos from the main DB (pipeline body) are
+            # authoritative.  Old session records may have repos=[] or may lack
+            # worktree_path; merge the fresh data so working_directory is correct.
+            updated = False
+            if repos and not any(r.get("worktree_path") for r in record.repos):
+                record.repos = list(repos)
+                updated = True
+            if session_root and not record.session_root:
+                record.session_root = session_root
+                updated = True
+            if updated:
+                await self._store.save(record)
             await self._ensure_session(record)
             return SessionLease(record=record, created=False)
 

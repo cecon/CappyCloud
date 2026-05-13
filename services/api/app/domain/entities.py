@@ -206,3 +206,25 @@ class MessageAttachment:
     vision_model_used: str | None = None
     uploaded_by: uuid.UUID | None = None
     uploaded_at: datetime = field(default_factory=_utcnow)
+
+
+# ── MCP (Model Context Protocol) ─────────────────────────────
+
+@dataclass
+class McpServer:
+    """Servidor MCP configurado pelo utilizador.
+
+    Mapeia para uma entrada em mcpServers no ~/.claude/settings.json do openclaude.
+    command + args definem como lançar o servidor MCP.
+    env são variáveis de ambiente injetadas no processo.
+    """
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    name: str          # chave única por utilizador (ex: "github", "filesystem")
+    command: str       # ex: "npx", "uvx", "python"
+    args: list[str] = field(default_factory=list)   # ex: ["-y", "@mcp/server-github"]
+    env: dict = field(default_factory=dict)         # ex: {"GITHUB_TOKEN": "..."}
+    enabled: bool = True
+    created_at: datetime = field(default_factory=_utcnow)
+    updated_at: datetime = field(default_factory=_utcnow)

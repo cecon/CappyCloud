@@ -8,6 +8,11 @@ import uuid
 
 import asyncpg
 
+from ._agent_context import (
+    fetch_worktree_top_levels,
+    inject_section_before_user_message,
+    render_worktree_top_level_section,
+)
 from ._environment_manager import EnvironmentManager
 from ._grpc_session import GrpcSession
 from ._orphan_recovery import reconnect_orphaned_tasks
@@ -230,7 +235,31 @@ class TaskDispatcher:
             await insert_error_event(self._pool, task_id, str(exc))
             return
 
+        # Derive working_directory from pipeline repos (authoritative, come from
+        # the main DB) rather than from the stored session record, which may be
+        # stale (e.g. created before worktree_path was tracked).
         working_directory = sandbox.working_directory
+        if repos and len(repos) == 1 and repos[0].get("worktree_path"):
+            working_directory = repos[0]["worktree_path"]
+        log.debug(
+            "[Dispatcher] working_directory=%r for task %s", working_directory, task_id[:8]
+        )
+
+        # Materializa um snapshot barato do worktree no prompt. Isso evita que
+        # modelos menores respondam "pasta vazia" sem consultar o repositório.
+        sandbox_session_url = f"http://{sandbox.grpc_host}:8080"
+        if repos:
+            try:
+                top_level = await fetch_worktree_top_levels(
+                    sandbox_session_url,
+                    repos,
+                    session_root or sandbox.session_root,
+                )
+                section = render_worktree_top_level_section(top_level)
+                if section:
+                    prompt = inject_section_before_user_message(prompt, section)
+            except Exception as exc:  # noqa: BLE001 - degrada graciosamente
+                log.warning("[Dispatcher] worktree top-level fetch falhou: %s", exc)
 
         # Validamos worktree ANTES do gRPC: openclaude com wd inexistente
         # devolve `done` vazio (erro genérico). Falha cedo com causa específica.

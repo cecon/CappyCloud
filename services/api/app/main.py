@@ -21,6 +21,7 @@ from app.adapters.primary.http import conversations as conv_router
 from app.adapters.primary.http import documents as documents_router
 from app.adapters.primary.http import environments as env_router
 from app.adapters.primary.http import git_providers as git_providers_router
+from app.adapters.primary.http import mcp_servers as mcp_servers_router
 from app.adapters.primary.http import repositories_admin as repos_admin_router
 from app.adapters.primary.http import routines as routines_router
 from app.adapters.primary.http import sandboxes as sandboxes_router
@@ -140,6 +141,7 @@ app.include_router(repos_admin_router.router, prefix="/api")
 app.include_router(documents_router.router, prefix="/api")
 app.include_router(skills_router.router, prefix="/api")
 app.include_router(skills_search_router.router, prefix="/api")
+app.include_router(mcp_servers_router.router, prefix="/api")
 
 
 @app.get("/health")
