@@ -34,6 +34,25 @@ cat > ~/.claude/settings.json <<EOF
 }
 EOF
 
+# ── Merge MCP servers from environment ───────────────────────
+# Se MCP_SERVERS_JSON estiver definido (JSON object com formato mcpServers),
+# merge no settings.json antes de iniciar o openclaude.
+if [ -n "${MCP_SERVERS_JSON:-}" ] && command -v node >/dev/null 2>&1; then
+    node - <<'JSEOF'
+const fs = require('fs')
+const settingsPath = `${process.env.HOME || '/root'}/.claude/settings.json`
+try {
+  const current = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  const mcpServers = JSON.parse(process.env.MCP_SERVERS_JSON)
+  current.mcpServers = mcpServers
+  fs.writeFileSync(settingsPath, JSON.stringify(current, null, 2), 'utf8')
+  console.log('[entrypoint] MCP servers merged:', Object.keys(mcpServers).join(', ') || '(none)')
+} catch (e) {
+  console.error('[entrypoint] Failed to merge MCP_SERVERS_JSON:', e.message)
+}
+JSEOF
+fi
+
 echo "Provider: OpenRouter  model=${OPENAI_MODEL}  env=${ENV_SLUG}"
 
 # ── Configure git authentication ─────────────────────────────

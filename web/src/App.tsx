@@ -11,6 +11,7 @@ const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m
 const RegisterPage = lazy(() => import('./pages/RegisterPage').then(m => ({ default: m.RegisterPage })))
 const RunsPage = lazy(() => import('./pages/RunsPage').then(m => ({ default: m.RunsPage })))
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })))
+const McpPage = lazy(() => import('./pages/McpPage').then(m => ({ default: m.McpPage })))
 
 function PageLoader() {
   return (
@@ -54,6 +55,12 @@ export default function App() {
           path="/runs"
           element={
             token ? <RunsPage /> : <Navigate to="/login" replace />
+          }
+        />
+        <Route
+          path="/mcp"
+          element={
+            token ? <McpPage /> : <Navigate to="/login" replace />
           }
         />
         <Route

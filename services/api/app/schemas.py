@@ -296,3 +296,4 @@ from app.schemas_documents import (  # noqa: E402, F401
     DocumentCreate,
     DocumentOut,
 )
+from app.schemas_mcp import McpServerCreate, McpServerOut, McpServerUpdate  # noqa: E402, F401

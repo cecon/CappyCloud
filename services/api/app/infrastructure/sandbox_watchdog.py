@@ -4,9 +4,10 @@ Roda a cada 10 s via APScheduler. Pega itens pending/error da sandbox_sync_queue
 executa a operação via HTTP na session_server.js e marca done/error.
 
 Operações suportadas:
-  clone_repo      → POST /repos/clone
-  remove_repo     → DELETE /repos/:slug
-  update_git_auth → POST /git-auth
+  clone_repo       → POST /repos/clone
+  remove_repo      → DELETE /repos/:slug
+  update_git_auth  → POST /git-auth
+  reconfigure_mcp  → POST /mcp/configure  (escreve ~/.claude/settings.json)
   reconfigure_model → ignorado por ora (configuração via env no openclaude)
 """
 
@@ -128,6 +129,12 @@ class SandboxWatchdog:
 
             elif operation == "reconfigure_model":
                 log.info("[watchdog] reconfigure_model não implementado no session_server ainda")
+
+            elif operation == "reconfigure_mcp":
+                # payload: {"mcpServers": {...}} no formato do openclaude
+                r = await client.post(f"{base}/mcp/configure", json=payload)
+                r.raise_for_status()
+                log.info("[watchdog] MCP reconfigured on sandbox %s", sandbox.name)
 
             else:
                 raise ValueError(f"operação desconhecida: {operation}")

@@ -2,6 +2,12 @@ import json
 import logging
 import os
 
+from ._agent_context import (
+    fetch_worktree_top_levels,
+    inject_section_before_user_message,
+    render_worktree_top_level_section,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -42,3 +48,22 @@ def inject_repo_context(user_message: str, repos: list, session_root: str) -> st
         return user_message
 
     return "\n".join(add_lines) + "\n\n" + user_message
+
+
+async def build_prompt_with_worktree_context(
+    prompt: str,
+    sandbox_session_url: str,
+    repos: list[dict],
+    session_root: str | None,
+) -> str:
+    """Injeta snapshot do worktree no prompt. Degrada graciosamente em caso de erro."""
+    if not repos:
+        return prompt
+    try:
+        top_level = await fetch_worktree_top_levels(sandbox_session_url, repos, session_root)
+        section = render_worktree_top_level_section(top_level)
+        if section:
+            return inject_section_before_user_message(prompt, section)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[Dispatcher] worktree top-level fetch falhou: %s", exc)
+    return prompt

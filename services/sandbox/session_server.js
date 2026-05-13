@@ -13,10 +13,9 @@
 // Endpoints:
 //   POST   /sessions               → cria session_root + worktrees
 //   DELETE /sessions/:id           → remove session_root e faz worktree prune
-//   POST   /git/ls-remote-branches → git ls-remote --heads (URL com ou sem PAT)
-//   POST   /git/origin-head-branch → default local (symbolic-ref)
-//   POST   /git/branch-r           → git branch -r no clone /repos/...
-//   POST   /worktree/*              → worktree_handlers.js (ls-files, diff, PR, …)
+//   POST   /git/*                  → git_handlers.js (ls-remote, branch-r, ls-files, file)
+//   POST   /worktree/*             → worktree_handlers.js (ls-files, diff, PR, …)
+//   POST   /mcp/configure          → escreve mcpServers em ~/.claude/settings.json
 //   GET    /health                 → liveness probe
 // ──────────────────────────────────────────────────────────────
 
@@ -27,6 +26,7 @@ const { execFile, execFileSync } = require('child_process')
 const { promisify } = require('util')
 
 const gitHandlers = require('./git_handlers')
+const mcpHandler = require('./mcp_handler')
 const repoHandlers = require('./repo_handlers')
 const taskHandler = require('./task_handler')
 const worktreeHandlers = require('./worktree_handlers')
@@ -258,7 +258,7 @@ const server = http.createServer(async (req, res) => {
 
     if (await worktreeHandlers.tryHandle(req, res, { json, readBody })) return
 
-    // POST /git-auth — reconfigura credenciais git (token actualizado no DB)
+    // POST /git-auth — reconfigura credenciais git (token atualizado no DB)
     if (req.method === 'POST' && pathname === '/git-auth') {
       const { provider_type, token, base_url } = await readBody(req)
       try {
@@ -282,6 +282,9 @@ const server = http.createServer(async (req, res) => {
         return json(res, 500, { error: err.message })
       }
     }
+
+    // POST /mcp/configure — delega para mcp_handler.js
+    if (await mcpHandler.tryHandle(req, res, { json, readBody })) return
 
     return json(res, 404, { error: 'Not found' })
   } catch (err) {

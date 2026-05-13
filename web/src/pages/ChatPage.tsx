@@ -903,6 +903,7 @@ export function ChatPage() {
               { to: '/runs', icon: 'history', label: 'Runs' },
               { to: '/analytics', icon: 'analytics', label: 'Analytics' },
               { to: '/skills', icon: 'menu_book', label: 'Skills' },
+              { to: '/mcp', icon: 'extension', label: 'MCP' },
               { to: '/settings', icon: 'settings', label: 'Configurações' },
             ].map(({ to, icon, label }) => {
               const isActive = pathname === to

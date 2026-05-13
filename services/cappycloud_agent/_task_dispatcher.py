@@ -8,6 +8,7 @@ import uuid
 
 import asyncpg
 
+from ._pipeline_helpers import build_prompt_with_worktree_context
 from ._environment_manager import EnvironmentManager
 from ._grpc_session import GrpcSession
 from ._orphan_recovery import reconnect_orphaned_tasks
@@ -231,6 +232,14 @@ class TaskDispatcher:
             return
 
         working_directory = sandbox.working_directory
+        if repos and len(repos) == 1 and repos[0].get("worktree_path"):
+            working_directory = repos[0]["worktree_path"]
+        log.debug("[Dispatcher] working_directory=%r for task %s", working_directory, task_id[:8])
+
+        sandbox_session_url = f"http://{sandbox.grpc_host}:8080"
+        prompt = await build_prompt_with_worktree_context(
+            prompt, sandbox_session_url, repos, session_root or sandbox.session_root
+        )
 
         # Validamos worktree ANTES do gRPC: openclaude com wd inexistente
         # devolve `done` vazio (erro genérico). Falha cedo com causa específica.

@@ -1208,3 +1208,95 @@ export async function deleteRepoDocument(token: string, docId: string): Promise<
   })
   if (!res.ok) throw new Error('Falha ao remover documento')
 }
+
+// ── MCP Servers ───────────────────────────────────────────────────────────────
+
+export type McpServer = {
+  id: string
+  user_id: string
+  name: string
+  command: string
+  args: string[]
+  env: Record<string, string>
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type McpServerCreate = {
+  name: string
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+  enabled?: boolean
+}
+
+export type McpServerUpdate = {
+  name?: string
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  enabled?: boolean
+}
+
+export async function fetchMcpServers(token: string): Promise<McpServer[]> {
+  const res = await apiFetch('/api/mcp-servers', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function createMcpServer(
+  token: string,
+  data: McpServerCreate,
+): Promise<McpServer> {
+  const res = await apiFetch('/api/mcp-servers', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar servidor MCP')
+  }
+  return res.json()
+}
+
+export async function updateMcpServer(
+  token: string,
+  id: string,
+  data: McpServerUpdate,
+): Promise<McpServer> {
+  const res = await apiFetch(`/api/mcp-servers/${id}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar servidor MCP')
+  }
+  return res.json()
+}
+
+export async function deleteMcpServer(token: string, id: string): Promise<void> {
+  const res = await apiFetch(`/api/mcp-servers/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao eliminar servidor MCP')
+  }
+}
+
+export async function exportMcpConfig(
+  token: string,
+): Promise<Record<string, unknown>> {
+  const res = await apiFetch('/api/mcp-servers/export', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error('Falha ao exportar configuração MCP')
+  return res.json()
+}
