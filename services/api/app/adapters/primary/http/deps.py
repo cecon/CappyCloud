@@ -12,11 +12,11 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.secondary.persistence.sqlalchemy_message_repo import (
-    SQLAlchemyMessageRepository,
-)
 from app.adapters.secondary.persistence.sqlalchemy_mcp_repo import (
     SQLAlchemyMcpRepository,
+)
+from app.adapters.secondary.persistence.sqlalchemy_message_repo import (
+    SQLAlchemyMessageRepository,
 )
 from app.adapters.secondary.persistence.sqlalchemy_repo_env_repo import (
     SQLAlchemyRepoEnvironmentRepository,
@@ -55,7 +55,7 @@ from app.ports.repositories import (
     RepositoryRepository,
     UserRepository,
 )
-from app.ports.services import AttachmentStorage, PasswordService, TokenService
+from app.ports.services import AttachmentStorage, ModelCatalogService, PasswordService, TokenService
 
 from . import deps_attachments as _attach_deps
 from .deps_base import get_conv_repo, get_db_session  # re-export

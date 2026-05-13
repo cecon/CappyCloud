@@ -5,6 +5,7 @@ Revises: 50ceffcbc437
 Create Date: 2026-05-12 22:38:15.000000
 
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -53,9 +54,7 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("user_id", "name", name="uq_mcp_user_name"),
     )

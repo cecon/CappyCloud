@@ -210,6 +210,7 @@ class MessageAttachment:
 
 # ── MCP (Model Context Protocol) ─────────────────────────────
 
+
 @dataclass
 class McpServer:
     """Servidor MCP configurado pelo utilizador.
@@ -221,10 +222,10 @@ class McpServer:
 
     id: uuid.UUID
     user_id: uuid.UUID
-    name: str          # chave única por utilizador (ex: "github", "filesystem")
-    command: str       # ex: "npx", "uvx", "python"
-    args: list[str] = field(default_factory=list)   # ex: ["-y", "@mcp/server-github"]
-    env: dict = field(default_factory=dict)         # ex: {"GITHUB_TOKEN": "..."}
+    name: str  # chave única por utilizador (ex: "github", "filesystem")
+    command: str  # ex: "npx", "uvx", "python"
+    args: list[str] = field(default_factory=list)  # ex: ["-y", "@mcp/server-github"]
+    env: dict = field(default_factory=dict)  # ex: {"GITHUB_TOKEN": "..."}
     enabled: bool = True
     created_at: datetime = field(default_factory=_utcnow)
     updated_at: datetime = field(default_factory=_utcnow)

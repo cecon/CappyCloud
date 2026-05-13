@@ -38,9 +38,7 @@ class McpServer(Base):
     args: Mapped[list] = mapped_column(JSONBType, nullable=False, server_default="[]")
     env: Mapped[dict] = mapped_column(JSONBType, nullable=False, server_default="{}")
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
