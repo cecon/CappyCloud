@@ -7,6 +7,7 @@ import json
 import uuid
 from collections.abc import AsyncGenerator
 
+from app.application.use_cases._conversation_helpers import compute_cost, next_chunk, resolve_repos
 from app.application.use_cases._stream_helpers import inject_diff_comments
 from app.domain.entities import Conversation, Message
 from app.ports.agent import AgentPort
@@ -18,25 +19,6 @@ from app.ports.repositories import (
 
 _TITLE_MAX_LEN = 80
 _DEFAULT_TITLE = "Nova conversa"
-
-async def _resolve_repos(repos: list[dict], short_id: str, repositories: RepositoryRepository | None) -> list[dict]:
-    resolved = []
-    for r in repos:
-        slug, alias, base = r["slug"], r.get("alias") or r["slug"], r.get("base_branch") or "main"
-        repo_entity = await repositories.get_by_slug(slug) if repositories else None
-        resolved.append({
-            "slug": slug, "alias": alias, "base_branch": base,
-            "branch_name": f"cappy/{slug}/{short_id}-{alias}",
-            "worktree_path": f"/repos/sessions/{short_id}/{alias}",
-            "repo_id": str(repo_entity.id) if repo_entity else None,
-        })
-    return resolved
-
-def _next_chunk(gen):
-    try:
-        return next(gen)
-    except StopIteration:
-        return None
 
 
 class ListConversations:
@@ -65,7 +47,7 @@ class CreateConversation:
     ) -> Conversation:
         conv_id = uuid.uuid4()
         short_id = conv_id.hex[:12]
-        resolved_repos = await _resolve_repos(repos or [], short_id, self._repositories)
+        resolved_repos = await resolve_repos(repos or [], short_id, self._repositories)
 
         session_root = f"/repos/sessions/{short_id}"
 
@@ -98,8 +80,9 @@ class UpdateConversationRepos:
         repos: list[dict],
     ) -> Conversation:
         conv = await self._conversations.get(conversation_id, user_id)
-        if not conv: raise LookupError("Conversa não encontrada.")
-        conv.repos = await _resolve_repos(repos, conv.id.hex[:12], self._repositories)
+        if not conv:
+            raise LookupError("Conversa não encontrada.")
+        conv.repos = await resolve_repos(repos, conv.id.hex[:12], self._repositories)
 
         return await self._conversations.update(conv)
 
@@ -207,10 +190,19 @@ class StreamMessage:
             enriched.append(r)
         return enriched
 
-    async def _build_pipeline_body(self, conv: Conversation, user_id: uuid.UUID, cursor: int | None, override_model: str | None = None) -> dict:
+    async def _build_pipeline_body(
+        self,
+        conv: Conversation,
+        user_id: uuid.UUID,
+        cursor: int | None,
+        override_model: str | None = None,
+    ) -> dict:
         return {
-            "user_id": str(user_id), "conversation_id": str(conv.id), "user": {"id": str(user_id)},
-            "cursor": cursor, "repos": await self._enrich_repos_for_pipeline(conv.repos),
+            "user_id": str(user_id),
+            "conversation_id": str(conv.id),
+            "user": {"id": str(user_id)},
+            "cursor": cursor,
+            "repos": await self._enrich_repos_for_pipeline(conv.repos),
             "session_root": conv.session_root or "",
             "sandbox_id": str(conv.sandbox_id) if conv.sandbox_id else "",
             "override_model": override_model,
@@ -230,7 +222,7 @@ class StreamMessage:
         gen = self._agent.pipe(content, model_id, messages_payload, pipeline_body)
 
         while True:
-            chunk = await asyncio.to_thread(_next_chunk, gen)
+            chunk = await asyncio.to_thread(next_chunk, gen)
             if chunk is None:
                 break
             line = chunk.strip()
@@ -238,19 +230,22 @@ class StreamMessage:
                 try:
                     evt = json.loads(line[6:])
                     t = evt.get("type")
-                    if t == "text": accumulated_text.append(evt.get("content", ""))
-                    elif t == "error": accumulated_error.append(evt.get("message", ""))
+                    if t == "text":
+                        accumulated_text.append(evt.get("content", ""))
+                    elif t == "error":
+                        accumulated_error.append(evt.get("message", ""))
                     elif t == "done":
                         usage = {
                             "model_used": evt.get("model_used") or "",
                             "prompt_tokens": int(evt.get("prompt_tokens") or 0),
                             "completion_tokens": int(evt.get("completion_tokens") or 0),
                         }
-                except Exception: pass
+                except Exception:
+                    pass
             yield chunk.encode("utf-8")
 
         assistant_text = "".join(accumulated_text).strip()
-        cost_usd = await self._compute_cost(usage)
+        cost_usd = await compute_cost(usage, self._messages)
         if assistant_text:
             await self._messages.save(
                 Message(

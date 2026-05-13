@@ -20,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # A extensão pgvector é garantida no script de inicialização do volume.
-    
+
     # ── agents ────────────────────────────────────────────────
     op.create_table(
         "agents",
