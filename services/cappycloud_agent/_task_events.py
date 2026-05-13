@@ -88,7 +88,7 @@ async def emit_session_setup_events(
 ) -> None:
     mode = "initializing" if is_created else "resuming"
     repo_slugs = ", ".join(str(r.get("slug") or r.get("alias") or "?") for r in repos) if repos else ""
-    
+
     if repo_slugs:
         await insert_status_event(pool, task_id, f"Preparando: {repo_slugs}", "indexing_start", "initializing")
 
