@@ -24,7 +24,14 @@ from ._agent_context import (
     load_agent_context,
 )
 from ._environment_manager import EnvironmentManager
-from ._pipeline_helpers import db_url, inject_repo_context, push_mcp_config, sse
+from ._pipeline_helpers import (
+    build_signoz_context_section,
+    db_url,
+    fetch_signoz_service_names,
+    inject_repo_context,
+    push_mcp_config,
+    sse,
+)
 from ._session_store import SessionStore
 from ._task_dispatcher import TaskDispatcher
 
@@ -163,6 +170,21 @@ class Pipeline:
             worktree_top_level=None,
         )
         prompt = inject_repo_context(prompt, repos, session_root)
+
+        # Injeta contexto SigNoz (service.name por repo) se houver configuração.
+        repo_ids_for_signoz = [r["repo_id"] for r in repos if r.get("repo_id")]
+        if repo_ids_for_signoz:
+            try:
+                signoz_names = self._run(
+                    fetch_signoz_service_names(db_url(), repo_ids_for_signoz),
+                    timeout=5,
+                )
+                signoz_section = build_signoz_context_section(repos, signoz_names)
+                if signoz_section:
+                    from ._agent_context import inject_section_before_user_message
+                    prompt = inject_section_before_user_message(prompt, signoz_section)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("[Signoz] falha ao injetar contexto: %s", exc)
 
         task_id: Optional[str] = self._run(
             self._dispatcher.get_active_task_id(conversation_id or "__none__"),

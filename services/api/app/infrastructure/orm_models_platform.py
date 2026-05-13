@@ -118,6 +118,7 @@ class Repository(Base):
     sandbox_path: Mapped[str] = mapped_column(Text, nullable=False, default="")
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    signoz_service_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

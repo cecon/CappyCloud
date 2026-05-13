@@ -101,6 +101,7 @@ class Repository:
     sandbox_path: str = ""
     last_sync_at: datetime | None = None
     error_message: str | None = None
+    signoz_service_name: str | None = None
     active: bool = True
     created_at: datetime = field(default_factory=_utcnow)
     updated_at: datetime = field(default_factory=_utcnow)

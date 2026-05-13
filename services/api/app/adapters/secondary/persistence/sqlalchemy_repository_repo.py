@@ -84,6 +84,7 @@ class SQLAlchemyRepositoryRepository(RepositoryRepository):
             sandbox_path=row.sandbox_path,
             last_sync_at=row.last_sync_at,
             error_message=row.error_message,
+            signoz_service_name=row.signoz_service_name,
             active=row.active,
             created_at=row.created_at,
             updated_at=row.updated_at,

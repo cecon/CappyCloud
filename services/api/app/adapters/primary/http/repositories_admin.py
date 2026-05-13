@@ -160,6 +160,7 @@ async def create_repository(
         default_branch=body.default_branch,
         provider_id=provider_id,
         sandbox_id=sandbox_id,
+        signoz_service_name=body.signoz_service_name or None,
     )
     session.add(repo)
     await session.flush()
@@ -195,6 +196,7 @@ async def update_repository(
     repo.clone_url = body.clone_url
     repo.default_branch = body.default_branch
     repo.provider_id = new_provider_id
+    repo.signoz_service_name = body.signoz_service_name or None
     if body.sandbox_id:
         repo.sandbox_id = body.sandbox_id
     await session.flush()

@@ -120,3 +120,62 @@ async def push_mcp_config(
         )
     except Exception as exc:  # noqa: BLE001
         log.warning("[MCP] falha ao enviar config ao sandbox: %s", exc)
+
+
+async def fetch_signoz_service_names(
+    database_url: str,
+    repo_ids: list[str],
+) -> dict[str, str]:
+    """Retorna {repo_id: signoz_service_name} para os repos que têm o campo preenchido.
+
+    Degrada graciosamente: retorna dict vazio em caso de erro.
+    """
+    if not database_url or not repo_ids:
+        return {}
+    try:
+        valid_ids = []
+        for rid in repo_ids:
+            try:
+                valid_ids.append(uuid.UUID(rid))
+            except ValueError:
+                pass
+        if not valid_ids:
+            return {}
+        conn = await asyncpg.connect(database_url)
+        try:
+            rows = await conn.fetch(
+                "SELECT id::text, signoz_service_name FROM repositories "
+                "WHERE id = ANY($1) AND signoz_service_name IS NOT NULL",
+                valid_ids,
+            )
+        finally:
+            await conn.close()
+        return {row["id"]: row["signoz_service_name"] for row in rows}
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[Signoz] falha ao buscar service names: %s", exc)
+        return {}
+
+
+def build_signoz_context_section(
+    repos: list[dict],
+    signoz_names: dict[str, str],
+) -> str:
+    """Monta bloco de contexto SigNoz para injetar no prompt.
+
+    Retorna string vazia se nenhum repo da sessão tiver service_name configurado.
+    """
+    lines: list[str] = []
+    for repo in repos:
+        repo_id = str(repo.get("repo_id") or "")
+        svc = signoz_names.get(repo_id)
+        if svc:
+            alias = repo.get("alias") or repo.get("slug") or repo_id[:8]
+            lines.append(f"- **{alias}** → `service.name = '{svc}'`")
+    if not lines:
+        return ""
+    return (
+        "## Observabilidade (SigNoz MCP)\n\n"
+        "Os seguintes repositórios têm telemetria configurada no SigNoz. "
+        "Ao consultar logs, traces ou métricas, use o `service.name` correspondente:\n\n"
+        + "\n".join(lines)
+    )
