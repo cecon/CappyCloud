@@ -86,6 +86,16 @@ RUN git clone --depth=1 https://github.com/Gitlawb/openclaude.git . \
     && bun install \
     && bun run build
 
+# ── signoz-mcp-server (binário Go, modo stdio) ────────────────
+# Detecta a arquitetura em runtime para suportar amd64 e arm64.
+# Usado pelo openclaude via MCP stdio quando o utilizador configura
+# o MCP "signoz" na interface. command = /usr/local/bin/signoz-mcp-server
+RUN ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') \
+    && curl -fsSL \
+       "https://github.com/SigNoz/signoz-mcp-server/releases/latest/download/signoz-mcp-server_linux_${ARCH}.tar.gz" \
+       | tar xz -C /usr/local/bin/ signoz-mcp-server \
+    && chmod +x /usr/local/bin/signoz-mcp-server
+
 # ── /repos layout (volume montado em runtime) ─────────────────
 # O volume repos_data é montado aqui. RUN mkdir garante que o
 # diretório existe na imagem para o caso de inicialização sem volume.
