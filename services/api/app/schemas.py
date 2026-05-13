@@ -303,7 +303,6 @@ from app.schemas_documents import (  # noqa: E402, F401
     DocumentOut,
 )
 
-
 # ── MCP Servers ───────────────────────────────────────────────
 
 _MCP_NAME_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,64}$")

@@ -13,7 +13,6 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Numeric,
     Boolean,
     DateTime,
     ForeignKey,
@@ -271,6 +270,7 @@ from app.infrastructure.orm_models_execution import (  # noqa: F401, E402
     Routine,
     RoutineRun,
 )
+from app.infrastructure.orm_models_mcp import McpServer  # noqa: F401, E402
 from app.infrastructure.orm_models_platform import (  # noqa: F401, E402
     AiModel,
     AiProvider,
@@ -279,4 +279,3 @@ from app.infrastructure.orm_models_platform import (  # noqa: F401, E402
     Repository,
     SandboxSyncQueue,
 )
-from app.infrastructure.orm_models_mcp import McpServer  # noqa: F401, E402
