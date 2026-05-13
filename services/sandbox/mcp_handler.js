@@ -18,9 +18,11 @@ async function tryHandle(req, res, { json, readBody }) {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(settingsPath, JSON.stringify(current, null, 2), 'utf8')
     console.log(`[session_server] MCP config updated: ${Object.keys(mcpServers).join(', ') || '(none)'}`)
-    return json(res, 200, { updated: true, servers: Object.keys(mcpServers) })
+    json(res, 200, { updated: true, servers: Object.keys(mcpServers) })
+    return true
   } catch (err) {
-    return json(res, 500, { error: err.message })
+    json(res, 500, { error: err.message })
+    return true
   }
 }
 

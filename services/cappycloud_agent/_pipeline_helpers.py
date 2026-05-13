@@ -103,9 +103,15 @@ async def push_mcp_config(
         for row in rows:
             entry: dict = {"command": row["command"]}
             if row["args"]:
-                entry["args"] = list(row["args"])
+                args_val = row["args"]
+                if isinstance(args_val, str):
+                    args_val = json.loads(args_val)
+                entry["args"] = list(args_val)
             if row["env"]:
-                entry["env"] = dict(row["env"])
+                env_val = row["env"]
+                if isinstance(env_val, str):
+                    env_val = json.loads(env_val)
+                entry["env"] = env_val if isinstance(env_val, dict) else dict(env_val)
             mcp_servers[row["name"]] = entry
 
         async with httpx.AsyncClient(timeout=10) as client:
