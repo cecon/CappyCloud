@@ -31,11 +31,8 @@ from app.application.use_cases.ai_models import ListAiModels
 from app.application.use_cases.auth import GetCurrentUser, LoginUser, RegisterUser
 from app.application.use_cases.conversations import (
     CreateConversation,
-    DeleteConversation,
-    ForkConversation,
     ListConversations,
     ListMessages,
-    RenameConversation,
     StreamMessage,
 )
 from app.application.use_cases.repo_environments import (
@@ -216,25 +213,6 @@ def get_stream_msg_uc(
         attachment_storage=storage,
         model_caps=model_caps,
     )
-
-
-def get_rename_conv_uc(
-    convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
-) -> RenameConversation:
-    return RenameConversation(convs)
-
-
-def get_delete_conv_uc(
-    convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
-) -> DeleteConversation:
-    return DeleteConversation(convs)
-
-
-def get_fork_conv_uc(
-    convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
-    msgs: Annotated[MessageRepository, Depends(get_msg_repo)],
-) -> ForkConversation:
-    return ForkConversation(convs, msgs)
 
 
 def get_list_repo_envs_uc(

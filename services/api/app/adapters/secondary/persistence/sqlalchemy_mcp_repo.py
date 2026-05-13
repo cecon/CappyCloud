@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import delete, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities import McpServer as McpServerEntity
@@ -68,7 +69,7 @@ class SQLAlchemyMcpRepository(McpServerRepository):
         return self._to_entity(orm)
 
     async def delete(self, mcp_id: uuid.UUID, user_id: uuid.UUID) -> bool:
-        result = await self._session.execute(
+        result: CursorResult = await self._session.execute(  # type: ignore[assignment]
             delete(McpServerORM).where(
                 McpServerORM.id == mcp_id,
                 McpServerORM.user_id == user_id,

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import uuid
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from app.domain.entities import AiModel
 
 
 class PasswordService(ABC):
@@ -67,3 +71,11 @@ class VisionDescriber(ABC):
         ``hint`` (opcional) dá contexto adicional ao modelo de visão (ex.:
         "esta imagem foi anexada a uma pergunta sobre arquitetura").
         """
+
+
+class ModelCatalogService(ABC):
+    """Port para catálogo externo de modelos de IA."""
+
+    @abstractmethod
+    async def list_models(self, provider_id: uuid.UUID) -> list[AiModel]:
+        """Retorna lista de modelos disponíveis para o provider."""
