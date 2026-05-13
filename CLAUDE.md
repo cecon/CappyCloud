@@ -25,6 +25,9 @@ desenvolvedores ou analistas.
 
 As skills do projeto estão cadastradas em [skills-registry.json](skills-registry.json).
 
+**Skill de Referência Global (Sandbox):**
+- **global** — Padrões globais, naming conventions, arquitetura hexagonal, tratamento de erros, estrutura de projeto. Ver [sandbox/skills/global/SKILL.md](sandbox/skills/global/SKILL.md)
+
 **Skills de Domínio (Agents):**
 - **api-ux** — Melhorar experiência do usuário no FastAPI (mensagens de erro, SSE, paginação)
 - **code-review** — Revisão de código técnica e conformidade com padrões hexagonais
@@ -39,7 +42,7 @@ As skills do projeto estão cadastradas em [skills-registry.json](skills-registr
 - **ui-styling** — shadcn/ui, Tailwind CSS, dark mode, componentes acessíveis
 - **ui-ux-pro-max** — UI/UX design intelligence (50+ estilos, 161 paletas, 99 guidelines)
 
-**Para invocar uma skill:** Use `read_file` para ler o arquivo `SKILL.md` correspondente em `.agents/skills/<skill-name>/SKILL.md` ou `.claude/skills/<skill-name>/SKILL.md`.
+**Para invocar uma skill:** Use `read_file` para ler o arquivo `SKILL.md` correspondente em `.agents/skills/<skill-name>/SKILL.md`, `.claude/skills/<skill-name>/SKILL.md` ou `sandbox/skills/<skill-name>/SKILL.md`.
 
 ## O que você não faz
 

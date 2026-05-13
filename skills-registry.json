@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "lastUpdated": "2026-05-13T13:17:07.104824",
-  "totalSkills": 10,
+  "lastUpdated": "2026-05-13T15:30:52.573168",
+  "totalSkills": 12,
   "description": "Central registry of all available skills for CappyCloud",
   "skills": {
     "api-ux": {
@@ -39,12 +39,26 @@
       "category": "agents",
       "description": "Use esta habilidade quando precisar implementar interfaces e componentes no frontend do CappyCloud (React 19 + Mantine 9). Use esta habilidade para criar páginas, componentes reutilizáveis e integrar com a API."
     },
+    "global": {
+      "name": "global",
+      "path": "sandbox/skills/global",
+      "file": "sandbox/skills/global/SKILL.md",
+      "category": "global",
+      "description": "Padrões globais, naming conventions, arquitetura hexagonal, tratamento de erros e estrutura de projeto — válido para todos os repositórios e agentes."
+    },
     "service-implementation": {
       "name": "service-implementation",
       "path": ".agents/skills/service-implementation",
       "file": ".agents/skills/service-implementation/SKILL.md",
       "category": "agents",
       "description": "Use esta habilidade quando precisar implementar novas funcionalidades nos serviços de backend (API, Agente, CLI, Pipelines) seguindo os padrões arquiteturais específicos de cada componente do CappyCloud."
+    },
+    "signoz-observability": {
+      "name": "signoz-observability",
+      "path": "sandbox/skills/signoz-observability",
+      "file": "sandbox/skills/signoz-observability/SKILL.md",
+      "category": "global",
+      "description": "Guia completo de observabilidade com SignOz — instrumentação, rastreamento distribuído, métricas e logs. Quando usar e quando não usar."
     },
     "ui-styling": {
       "name": "ckm:ui-styling",

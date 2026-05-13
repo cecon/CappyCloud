@@ -51,7 +51,7 @@ def extract_skill_info(skill_file: Path) -> dict:
 
 
 def discover_skills() -> dict:
-    """Discover all skills in .agents/skills and .claude/skills"""
+    """Discover all skills in .agents/skills, .claude/skills, and sandbox/skills"""
     skills = {}
     
     # Search in .agents/skills
@@ -83,6 +83,22 @@ def discover_skills() -> dict:
                         "path": str(skill_dir),
                         "file": str(skill_file),
                         "category": "claude",
+                        "description": info.get("description", "")
+                    }
+    
+    # Search in sandbox/skills (GLOBAL)
+    sandbox_skills_dir = Path("sandbox/skills")
+    if sandbox_skills_dir.exists():
+        for skill_dir in sandbox_skills_dir.iterdir():
+            if skill_dir.is_dir():
+                skill_file = skill_dir / "SKILL.md"
+                if skill_file.exists():
+                    info = extract_skill_info(skill_file)
+                    skills[skill_dir.name] = {
+                        "name": info.get("name", skill_dir.name),
+                        "path": str(skill_dir),
+                        "file": str(skill_file),
+                        "category": "global",
                         "description": info.get("description", "")
                     }
     
@@ -118,6 +134,14 @@ def main():
     # Display by category
     agents_skills = [s for s in skills.values() if s["category"] == "agents"]
     claude_skills = [s for s in skills.values() if s["category"] == "claude"]
+    global_skills = [s for s in skills.values() if s["category"] == "global"]
+    
+    if global_skills:
+        print("🌍 Global Skills:")
+        for skill in global_skills:
+            desc = skill["description"][:50] + "..." if len(skill["description"]) > 50 else skill["description"]
+            print(f"   • {skill['name']:<30} — {desc}")
+        print()
     
     if agents_skills:
         print("📌 Agents Skills:")
