@@ -80,6 +80,7 @@ RUN git clone --depth=1 https://github.com/Gitlawb/openclaude.git . \
     && git apply /tmp/auto-approve-tools.patch \
     && git apply /tmp/multimodal-proto.patch \
     && git apply /tmp/multimodal-grpc-handler.patch \
+    && sed -i 's/^detectStubLeaks()$/setImmediate(() => detectStubLeaks())/' src/entrypoints/sdk/index.ts \
     && rm -f /tmp/grep-tool-n-alias.patch /tmp/auto-approve-tools.patch \
             /tmp/multimodal-proto.patch /tmp/multimodal-grpc-handler.patch \
     && bun install \
