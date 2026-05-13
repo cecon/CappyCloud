@@ -19,6 +19,18 @@ from app.ports.repositories import (
 _TITLE_MAX_LEN = 80
 _DEFAULT_TITLE = "Nova conversa"
 
+async def _resolve_repos(repos: list[dict], short_id: str, repositories: RepositoryRepository | None) -> list[dict]:
+    resolved = []
+    for r in repos:
+        slug, alias, base = r["slug"], r.get("alias") or r["slug"], r.get("base_branch") or "main"
+        repo_entity = await repositories.get_by_slug(slug) if repositories else None
+        resolved.append({
+            "slug": slug, "alias": alias, "base_branch": base,
+            "branch_name": f"cappy/{slug}/{short_id}-{alias}",
+            "worktree_path": f"/repos/sessions/{short_id}/{alias}",
+            "repo_id": str(repo_entity.id) if repo_entity else None,
+        })
+    return resolved
 
 def _next_chunk(gen):
     try:
@@ -53,25 +65,7 @@ class CreateConversation:
     ) -> Conversation:
         conv_id = uuid.uuid4()
         short_id = conv_id.hex[:12]
-
-        resolved_repos: list[dict] = []
-        for r in repos or []:
-            slug = r["slug"]
-            alias = r.get("alias") or slug
-            base = r.get("base_branch") or "main"
-            branch_name = f"cappy/{slug}/{short_id}-{alias}"
-            worktree_path = f"/repos/sessions/{short_id}/{alias}"
-            repo_entity = await self._repositories.get_by_slug(slug) if self._repositories else None
-            resolved_repos.append(
-                {
-                    "slug": slug,
-                    "alias": alias,
-                    "base_branch": base,
-                    "branch_name": branch_name,
-                    "worktree_path": worktree_path,
-                    "repo_id": str(repo_entity.id) if repo_entity else None,
-                }
-            )
+        resolved_repos = await _resolve_repos(repos or [], short_id, self._repositories)
 
         session_root = f"/repos/sessions/{short_id}"
 
@@ -104,33 +98,9 @@ class UpdateConversationRepos:
         repos: list[dict],
     ) -> Conversation:
         conv = await self._conversations.get(conversation_id, user_id)
-        if not conv:
-            raise LookupError("Conversa não encontrada.")
+        if not conv: raise LookupError("Conversa não encontrada.")
+        conv.repos = await _resolve_repos(repos, conv.id.hex[:12], self._repositories)
 
-        short_id = conv.id.hex[:12]
-
-        resolved_repos: list[dict] = []
-        for r in repos:
-            slug = r["slug"]
-            alias = r.get("alias") or slug
-            base = r.get("base_branch") or "main"
-            branch_name = f"cappy/{slug}/{short_id}-{alias}"
-            worktree_path = f"/repos/sessions/{short_id}/{alias}"
-            repo_entity = (
-                await self._repositories.get_by_slug(slug) if self._repositories else None
-            )
-            resolved_repos.append(
-                {
-                    "slug": slug,
-                    "alias": alias,
-                    "base_branch": base,
-                    "branch_name": branch_name,
-                    "worktree_path": worktree_path,
-                    "repo_id": str(repo_entity.id) if repo_entity else None,
-                }
-            )
-
-        conv.repos = resolved_repos
         return await self._conversations.update(conv)
 
 
@@ -237,20 +207,10 @@ class StreamMessage:
             enriched.append(r)
         return enriched
 
-    async def _build_pipeline_body(
-        self,
-        conv: Conversation,
-        user_id: uuid.UUID,
-        cursor: int | None,
-        override_model: str | None = None,
-    ) -> dict:
-        repos_for_pipeline = await self._enrich_repos_for_pipeline(conv.repos)
+    async def _build_pipeline_body(self, conv: Conversation, user_id: uuid.UUID, cursor: int | None, override_model: str | None = None) -> dict:
         return {
-            "user_id": str(user_id),
-            "conversation_id": str(conv.id),
-            "user": {"id": str(user_id)},
-            "cursor": cursor,
-            "repos": repos_for_pipeline,
+            "user_id": str(user_id), "conversation_id": str(conv.id), "user": {"id": str(user_id)},
+            "cursor": cursor, "repos": await self._enrich_repos_for_pipeline(conv.repos),
             "session_root": conv.session_root or "",
             "sandbox_id": str(conv.sandbox_id) if conv.sandbox_id else "",
             "override_model": override_model,
@@ -277,21 +237,16 @@ class StreamMessage:
             if line.startswith("data: "):
                 try:
                     evt = json.loads(line[6:])
-                    evt_type = evt.get("type")
-                    if evt_type == "text":
-                        accumulated_text.append(evt.get("content", ""))
-                    elif evt_type == "error":
-                        accumulated_error.append(evt.get("message", ""))
-                    elif evt_type == "done":
-                        # O TaskRunner enriquece o evento done com tokens/modelo
-                        # para que possamos persistir o uso na mensagem assistant.
+                    t = evt.get("type")
+                    if t == "text": accumulated_text.append(evt.get("content", ""))
+                    elif t == "error": accumulated_error.append(evt.get("message", ""))
+                    elif t == "done":
                         usage = {
                             "model_used": evt.get("model_used") or "",
                             "prompt_tokens": int(evt.get("prompt_tokens") or 0),
                             "completion_tokens": int(evt.get("completion_tokens") or 0),
                         }
-                except Exception:
-                    pass
+                except Exception: pass
             yield chunk.encode("utf-8")
 
         assistant_text = "".join(accumulated_text).strip()
