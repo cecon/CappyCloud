@@ -279,6 +279,8 @@ class SendMessageBody(BaseModel):
     content: str = Field(min_length=1, max_length=1_000_000)
     # OpenRouter model ID (ex.: anthropic/claude-3.5-sonnet). None usa default.
     model_id: str | None = Field(default=None, max_length=256)
+    # Anexos previamente carregados via POST /conversations/{id}/attachments.
+    attachment_ids: list[uuid.UUID] | None = None
 
 
 # ── Re-export schemas de Skills (definidos em ``schemas_agents``) ───────────
@@ -289,7 +291,9 @@ from app.schemas_agents import (  # noqa: E402, F401
     SkillSearchResult,
     SkillUpdate,
 )
+from app.schemas_attachments import AttachmentOut  # noqa: E402, F401
 from app.schemas_documents import (  # noqa: E402, F401
     DocumentCreate,
     DocumentOut,
 )
+from app.schemas_mcp import McpServerCreate, McpServerOut, McpServerUpdate  # noqa: E402, F401

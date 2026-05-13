@@ -78,34 +78,40 @@ class EnvironmentManager:
         record = await self._store.get(user_id, chat_id)
         if record:
             await self._store.refresh_ttl(user_id, chat_id)
-
             # ── Reconcile repos if the caller provides a different list ──
             incoming_repos = repos or []
+            updated = False
+
             if incoming_repos:
                 old_aliases: set[str] = {
-                    str(alias) for r in record.repos if (alias := r.get("alias") or r.get("slug"))
+                    str(alias)
+                    for r in record.repos
+                    if (alias := r.get("alias") or r.get("slug"))
                 }
                 new_aliases: set[str] = {
-                    str(alias) for r in incoming_repos if (alias := r.get("alias") or r.get("slug"))
+                    str(alias)
+                    for r in incoming_repos
+                    if (alias := r.get("alias") or r.get("slug"))
                 }
                 removed_aliases = old_aliases - new_aliases
 
                 if removed_aliases:
                     await self._remove_worktrees(record, removed_aliases)
 
-                if removed_aliases or new_aliases - old_aliases:
-                    record = SandboxRecord(
-                        user_id=record.user_id,
-                        chat_id=record.chat_id,
-                        sandbox_id=record.sandbox_id,
-                        sandbox_name=record.sandbox_name,
-                        grpc_host=record.grpc_host,
-                        grpc_port=record.grpc_port,
-                        session_root=record.session_root,
-                        repos=incoming_repos,
-                    )
-                    await self._store.save(record)
+                if (
+                    removed_aliases
+                    or new_aliases - old_aliases
+                    or not any(r.get("worktree_path") for r in record.repos)
+                ):
+                    record.repos = list(incoming_repos)
+                    updated = True
 
+            if session_root and not record.session_root:
+                record.session_root = session_root
+                updated = True
+
+            if updated:
+                await self._store.save(record)
             await self._ensure_session(record)
             return SessionLease(record=record, created=False)
 
@@ -184,9 +190,7 @@ class EnvironmentManager:
                     session_id,
                 )
             except Exception as exc:
-                log.warning(
-                    "Failed to remove worktree %s: %s", alias, exc
-                )
+                log.warning("Failed to remove worktree %s: %s", alias, exc)
 
     async def _ensure_session(self, record: SandboxRecord) -> None:
         """Re-create worktrees if the volume was wiped (idempotent)."""

@@ -103,6 +103,20 @@ omit = [
     "app/infrastructure/skill_importer.py",
     "app/infrastructure/embeddings.py",
     "app/infrastructure/sandbox_watchdog.py",
+    # Anexos (visão computacional) — HTTP/upload, storage filesystem físico,
+    # chamada externa OpenRouter Vision. Cobertura via testes de integração
+    # (fora do gate de unit-coverage); use cases têm fakes em conftest.py.
+    "app/adapters/primary/http/attachments.py",
+    "app/adapters/secondary/storage/local_volume_attachment_storage.py",
+    "app/adapters/secondary/vision/openrouter_vision_describer.py",
+    "app/application/use_cases/attachments.py",
+    # MCP Servers — HTTP router + repo adapter + use cases + catálogo externo.
+    # Integração com openclaude requer sandbox; cobertura via testes de integração.
+    "app/adapters/primary/http/mcp_servers.py",
+    "app/adapters/secondary/persistence/sqlalchemy_mcp_repo.py",
+    "app/adapters/secondary/openrouter_catalog.py",
+    "app/application/use_cases/mcp_servers.py",
+    "app/application/use_cases/ai_models.py",
 ]
 
 [tool.coverage.report]

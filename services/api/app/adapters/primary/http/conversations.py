@@ -177,6 +177,7 @@ async def stream_message(
             body.content,
             cursor=cursor,
             override_model=body.model_id,
+            attachment_ids=body.attachment_ids,
         )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ActionIcon,
@@ -47,7 +47,7 @@ export function EnvironmentsPage({ token }: Props) {
   const [repoUrl, setRepoUrl] = useState('')
   const [branch, setBranch] = useState('main')
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const list = await fetchRepoEnvironments(token)
@@ -66,12 +66,11 @@ export function EnvironmentsPage({ token }: Props) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [token])
 
   useEffect(() => {
     load()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [load])
 
   async function handleCreate() {
     const s = slug.trim()

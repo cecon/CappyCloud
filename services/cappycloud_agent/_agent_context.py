@@ -14,111 +14,13 @@ from typing import Optional
 import asyncpg
 import httpx
 
+from ._other_repos import fetch_other_repos, render_other_repos_section  # noqa: F401
+
 log = logging.getLogger(__name__)
 
 _RAG_TOP_N = int(os.getenv("RAG_TOP_N", "3"))
 _SKILL_CONTENT_MAX_CHARS = int(os.getenv("SKILL_CONTENT_MAX_CHARS", "1200"))
-_TOPLEVEL_LIMIT = int(os.getenv("WORKTREE_TOPLEVEL_LIMIT", "20"))
-
-
-async def fetch_worktree_top_levels(
-    session_url: str,
-    repos: list[dict] | None,
-    session_root: str = "",
-    limit: int = _TOPLEVEL_LIMIT,
-) -> dict[str, list[str]]:
-    """Faz fetch da estrutura top-level para todos os worktrees configurados.
-
-    Deve ser chamada **depois** de o worktree existir (após
-    ``EnvironmentManager.get_or_create_session``); caso contrário
-    ``/worktree/ls-files`` devolve 500 e o resultado fica vazio.
-    """
-    if not session_url or not repos:
-        return {}
-    out: dict[str, list[str]] = {}
-    for repo in repos:
-        wt = repo.get("worktree_path")
-        if not wt and session_root:
-            alias = repo.get("alias") or repo.get("slug", "")
-            if alias:
-                wt = f"{session_root.rstrip('/')}/{alias}"
-        if not wt:
-            continue
-        entries = await _fetch_worktree_top_level(session_url, wt, limit=limit)
-        if entries:
-            out[wt] = entries
-    return out
-
-
-def render_worktree_top_level_section(
-    worktree_top_level: dict[str, list[str]],
-) -> str:
-    """Renderiza o bloco markdown com a estrutura top-level dos worktrees."""
-    if not worktree_top_level:
-        return ""
-    sections: list[str] = []
-    for path, entries in worktree_top_level.items():
-        if not entries:
-            continue
-        listing = "\n".join(f"- {e}" for e in entries)
-        sections.append(f"### `{path}`\n{listing}")
-    if not sections:
-        return ""
-    return (
-        "## Estrutura do worktree (top-level)\n\n"
-        "Confirma com `ls`/`git ls-files` antes de afirmar que "
-        "alguma pasta não existe:\n\n" + "\n\n".join(sections)
-    )
-
-
-def inject_section_before_user_message(prompt: str, section: str) -> str:
-    """Insere ``section`` antes de ``## Mensagem do utilizador`` (ou append)."""
-    if not section:
-        return prompt
-    marker = "## Mensagem do utilizador"
-    idx = prompt.rfind(marker)
-    sep = "\n\n---\n\n"
-    if idx == -1:
-        return prompt + sep + section
-    sep_idx = prompt.rfind(sep, 0, idx)
-    if sep_idx == -1:
-        return section + sep + prompt
-    return prompt[:sep_idx] + sep + section + prompt[sep_idx:]
-
-
-async def _fetch_worktree_top_level(
-    session_url: str, worktree_path: str, limit: int = _TOPLEVEL_LIMIT
-) -> list[str]:
-    """Lista entradas top-level do worktree via ``/worktree/ls-files``.
-
-    Dá ao modelo um snapshot inicial barato em vez de o forçar a descobrir
-    a estrutura com sucessivos ``ls``/``Glob``.
-    """
-    if not session_url or not worktree_path:
-        return []
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.post(
-                f"{session_url.rstrip('/')}/worktree/ls-files",
-                json={"worktree_path": worktree_path},
-            )
-        if resp.status_code != 200:
-            return []
-        files = resp.json().get("files") or []
-    except Exception as exc:  # noqa: BLE001 - degrada graciosamente
-        log.debug("ls-files falhou para %s: %s", worktree_path, exc)
-        return []
-
-    top: dict[str, bool] = {}
-    for f in files:
-        if not f:
-            continue
-        head = f.split("/", 1)[0]
-        is_dir = "/" in f
-        if head not in top or is_dir:
-            top[head] = is_dir
-    out = sorted(top.items(), key=lambda kv: (not kv[1], kv[0].lower()))
-    return [f"{name}/" if is_dir else name for name, is_dir in out[:limit]]
+_TOPLEVEL_LIMIT = int(os.getenv("WORKTREE_TOPLEVEL_LIMIT", "80"))
 
 
 def _trim_skill_content(content: str | None) -> str:
@@ -129,6 +31,93 @@ def _trim_skill_content(content: str | None) -> str:
     if len(text) <= _SKILL_CONTENT_MAX_CHARS:
         return text
     return text[:_SKILL_CONTENT_MAX_CHARS].rstrip() + "\n..."
+
+
+async def fetch_worktree_top_levels(
+    session_url: str,
+    repos: list[dict] | None,
+    session_root: str = "",
+    limit: int = _TOPLEVEL_LIMIT,
+) -> dict[str, list[str]]:
+    """Busca uma amostra top-level dos worktrees já criados no sandbox."""
+    if not session_url or not repos:
+        return {}
+    out: dict[str, list[str]] = {}
+    for repo in repos:
+        worktree_path = repo.get("worktree_path")
+        if not worktree_path and session_root:
+            alias = repo.get("alias") or repo.get("slug", "")
+            if alias:
+                worktree_path = f"{session_root.rstrip('/')}/{alias}"
+        if not worktree_path:
+            continue
+        entries = await _fetch_worktree_top_level(session_url, worktree_path, limit)
+        if entries:
+            out[worktree_path] = entries
+    return out
+
+
+def render_worktree_top_level_section(
+    worktree_top_level: dict[str, list[str]],
+) -> str:
+    """Renderiza o snapshot top-level para injetar antes da mensagem do usuário."""
+    if not worktree_top_level:
+        return ""
+    sections: list[str] = []
+    for path, entries in worktree_top_level.items():
+        if entries:
+            body = "\n".join(f"- {entry}" for entry in entries)
+            sections.append(f"`{path}`:\n{body}")
+    if not sections:
+        return ""
+    return (
+        "## Estrutura do worktree\n\n"
+        "O repositório já foi provisionado. Use estes caminhos absolutos ao "
+        "consultar arquivos e nunca conclua que a pasta está vazia sem rodar "
+        "`ls` ou `git ls-files` no worktree:\n\n" + "\n\n".join(sections)
+    )
+
+
+def inject_section_before_user_message(prompt: str, section: str) -> str:
+    """Insere um bloco de contexto imediatamente antes da mensagem do usuário."""
+    if not section.strip():
+        return prompt
+    marker = "## Mensagem do utilizador"
+    if marker not in prompt:
+        return f"{section.strip()}\n\n---\n\n{prompt}"
+    return prompt.replace(marker, f"{section.strip()}\n\n---\n\n{marker}", 1)
+
+
+async def _fetch_worktree_top_level(
+    session_url: str,
+    worktree_path: str,
+    limit: int,
+) -> list[str]:
+    """Lista entradas top-level tracked via endpoint HTTP do sandbox."""
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(
+                f"{session_url.rstrip('/')}/git/ls-files",
+                params={"worktree_path": worktree_path},
+            )
+        if resp.status_code != 200:
+            return []
+        files = resp.json().get("files") or []
+    except Exception as exc:  # noqa: BLE001 - contexto opcional
+        log.debug("ls-files falhou para %s: %s", worktree_path, exc)
+        return []
+
+    top_level: list[str] = []
+    seen: set[str] = set()
+    for raw in files:
+        name = str(raw).split("/", 1)[0].strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        top_level.append(name)
+        if len(top_level) >= limit:
+            break
+    return top_level
 
 
 async def _load_repo_skills(
@@ -206,23 +195,17 @@ def build_prompt_with_agent(
     repos: list[dict] | None = None,
     session_root: str = "",
     worktree_top_level: dict[str, list[str]] | None = None,
+    other_repos: list[str] | None = None,
 ) -> str:
     """Monta o prompt final colando top-N skills + msg do user.
 
-    Inclui também o **caminho absoluto do worktree** quando há repos
-    associados — necessário porque o openclaude por vezes executa tools
-    no CWD do servidor (``/openclaude``) em vez do worktree, e usar
-    paths absolutos resolve esse bug. Também instrui a chamar
-    ``GET <sandbox>/skills/search?q=...`` via Bash para RAG por demanda.
-
-    ``worktree_top_level`` (opcional) mapeia ``worktree_path`` → lista de
-    entradas top-level do repo (pastas/ficheiros). Quando presente, é
-    incluído no prompt para dar fundação a modelos pequenos.
+    Inclui o caminho absoluto do worktree quando há repos associados (workaround
+    para bug de CWD do openclaude) e instrui o uso de ``GET <sandbox>/skills/
+    search?q=...`` via Bash para RAG sob demanda. ``worktree_top_level`` mapeia
+    ``worktree_path`` → entradas top-level do repo (fundação p/ modelos pequenos).
     """
     parts: list[str] = []
 
-    # Worktree paths absolutos — força o agente a usá-los em todos os comandos
-    # (rg, find, ls, cat) para evitar o bug de CWD do openclaude.
     worktree_paths: list[str] = []
     for r in repos or []:
         wt = r.get("worktree_path")
@@ -260,6 +243,10 @@ def build_prompt_with_agent(
                     "alguma pasta não existe:\n\n" + "\n\n".join(sections)
                 )
 
+    other_section = render_other_repos_section(other_repos or [])
+    if other_section:
+        parts.append(other_section)
+
     if skills:
         kb_lines = ["## Conhecimento disponível (top resultados)"]
         for s in skills:
@@ -285,7 +272,7 @@ def build_prompt_with_agent(
             "```bash\n"
             f"curl -s -X POST '{sandbox_session_url}/task' \\\n"
             "  -H 'Content-Type: application/json' \\\n"
-            "  -d '{\"description\":\"<título>\",\"prompt\":\"<instrução completa>\"}'\n"
+            '  -d \'{"description":"<título>","prompt":"<instrução completa>"}\'\n'
             "```\n"
             "O campo `result` da resposta contém o texto produzido pelo sub-agente.\n"
             "Use `jq -r '.result'` para extrair apenas o texto."

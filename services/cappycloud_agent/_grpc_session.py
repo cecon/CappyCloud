@@ -14,18 +14,39 @@ import grpc.aio
 import openclaude_pb2  # type: ignore[import-not-found]
 import openclaude_pb2_grpc  # type: ignore[import-not-found]
 
+from . import _grpc_event_handlers as handlers
 from ._grpc_helpers import (
     GRPC_CONNECTION_LOST,
     GRPC_UNEXPECTED_END,
-    SESSION_START_ERROR,
     PendingAction,
     connect_with_retry,
-    parse_choices,
 )
 
 log = logging.getLogger(__name__)
 
 _DONE = object()
+
+
+def _build_attachments_pb(attachments: list[dict] | None) -> list:
+    """Constrói a lista ``Attachment`` do protobuf a partir de dicts.
+
+    Aceita-se ``None``/``[]`` — devolve lista vazia (campo ``repeated`` no
+    proto absorve sem erro). O fork do openclaude (patch ``multimodal-*``)
+    converte cada item num bloco ``image`` e prepende-o à mensagem antes de
+    chamar ``QueryEngine.submitMessage()``.
+    """
+    if not attachments:
+        return []
+    out = []
+    for att in attachments:
+        out.append(
+            openclaude_pb2.Attachment(
+                mime_type=att.get("mime_type", "application/octet-stream"),
+                data=att["data"],
+                original_filename=att.get("original_filename", ""),
+            )
+        )
+    return out
 
 
 class GrpcSession:
@@ -56,8 +77,16 @@ class GrpcSession:
 
     # ── Startup ──────────────────────────────────────────────────
 
-    async def start(self, message: str) -> None:
-        """Open the gRPC channel, seed the first ChatRequest, launch the Task."""
+    async def start(
+        self,
+        message: str,
+        attachments: list[dict] | None = None,
+    ) -> None:
+        """Open the gRPC channel, seed the first ChatRequest, launch the Task.
+
+        ``attachments``: lista de ``{"mime_type": str, "data": bytes,
+        "original_filename": str}``. Quando vazia, o pedido viaja como antes.
+        """
         self._channel = await connect_with_retry(self._ip, self._port, self._session_id)
         stub = openclaude_pb2_grpc.AgentServiceStub(self._channel)
 
@@ -68,6 +97,7 @@ class GrpcSession:
                     working_directory=self._wd,
                     session_id=self._session_id,
                     model=self._model,
+                    attachments=_build_attachments_pb(attachments),
                 )
             )
         )
@@ -93,7 +123,11 @@ class GrpcSession:
         )
         self.pending_action = None
 
-    async def send_message(self, message: str) -> None:
+    async def send_message(
+        self,
+        message: str,
+        attachments: list[dict] | None = None,
+    ) -> None:
         """Send a new message in an existing conversation (no pending action)."""
         await self._req_queue.put(
             openclaude_pb2.ClientMessage(
@@ -101,6 +135,7 @@ class GrpcSession:
                     message=message,
                     working_directory=self._wd,
                     session_id=self._session_id,
+                    attachments=_build_attachments_pb(attachments),
                 )
             )
         )
@@ -180,98 +215,42 @@ class GrpcSession:
 
                 if event == "text_chunk":
                     streamed_text = True
-                    await self._out_queue.put(
-                        ("text", {"content": msg.text_chunk.text})
-                    )
+                    await self._out_queue.put(handlers.text_chunk_event(msg))
 
                 elif event == "tool_start":
-                    ts = msg.tool_start
-                    log.info("[%s] Tool: %s", self._session_id, ts.tool_name)
                     await self._out_queue.put(
-                        (
-                            "tool_start",
-                            {
-                                "name": ts.tool_name,
-                                "input": ts.arguments_json,
-                                "id": ts.tool_use_id,
-                            },
-                        )
+                        handlers.tool_start_event(msg, self._session_id)
                     )
 
                 elif event == "tool_result":
-                    tr = msg.tool_result
-                    await self._out_queue.put(
-                        (
-                            "tool_result",
-                            {
-                                "name": tr.tool_name,
-                                "output": tr.output,
-                                "is_error": tr.is_error,
-                                "id": tr.tool_use_id,
-                            },
-                        )
-                    )
+                    await self._out_queue.put(handlers.tool_result_event(msg))
 
                 elif event == "action_required":
-                    ar = msg.action_required
-                    action = PendingAction(
-                        prompt_id=ar.prompt_id,
-                        question=ar.question,
-                        action_type=ar.type,
-                        choices=parse_choices(ar.question),
-                    )
-                    self.pending_action = action
-                    await self._out_queue.put(("action_required", action))
+                    out, pending = handlers.action_required_event(msg)
+                    self.pending_action = pending
+                    await self._out_queue.put(out)
 
                 elif event == "done":
-                    done = msg.done
-                    # done com 0 tokens + sem texto = openclaude não chamou o LLM
-                    # (working_directory inválido, worktree ausente, erro de modelo).
-                    if (
-                        not streamed_text
-                        and done.prompt_tokens == 0
-                        and done.completion_tokens == 0
-                    ):
-                        log.warning(
-                            "[%s] Done with 0 tokens/no text — likely failed to start. (Model: %s)",
-                            self._session_id,
-                            self._model,
-                        )
-                        await self._out_queue.put(("error", SESSION_START_ERROR))
-                        received_done = True
-                        return
-                    log.info(
-                        "[%s] Done model=%s in=%d out=%d",
-                        self._session_id,
-                        self._model,
-                        done.prompt_tokens,
-                        done.completion_tokens,
-                    )
                     received_done = True
                     await self._out_queue.put(
-                        (
-                            "done",
-                            {
-                                "prompt_tokens": int(done.prompt_tokens),
-                                "completion_tokens": int(done.completion_tokens),
-                                "model_used": self._model,
-                            },
+                        handlers.done_event(
+                            msg,
+                            session_id=self._session_id,
+                            model=self._model,
+                            wd=self._wd,
+                            streamed_text=streamed_text,
                         )
                     )
                     return
 
                 elif event == "error":
-                    log.error(
-                        "[%s] Error [%s]: %s",
-                        self._session_id,
-                        msg.error.code,
-                        msg.error.message,
-                    )
                     received_done = True
-                    await self._out_queue.put(("error", msg.error.message))
+                    await self._out_queue.put(
+                        handlers.error_event(msg, self._session_id)
+                    )
                     return
 
-            # gRPC stream closed without a done/error event (e.g. rate limit or server crash)
+            # gRPC stream closed without a done/error event (e.g. rate limit ou crash)
             if not received_done:
                 log.warning(
                     "[%s] gRPC stream ended without done/error event", self._session_id

@@ -2,10 +2,10 @@
 
 from pathlib import Path
 
-import pytest
 
 # Add parent directory to path for imports
 import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tailwind_config_gen import TailwindConfigGenerator
@@ -85,10 +85,7 @@ class TestTailwindConfigGenerator:
     def test_add_colors(self):
         """Test adding custom colors."""
         generator = TailwindConfigGenerator()
-        colors = {
-            "brand": "#3b82f6",
-            "accent": "#8b5cf6"
-        }
+        colors = {"brand": "#3b82f6", "accent": "#8b5cf6"}
         generator.add_colors(colors)
 
         assert "colors" in generator.config["theme"]["extend"]
@@ -124,7 +121,7 @@ class TestTailwindConfigGenerator:
         generator = TailwindConfigGenerator()
         fonts = {
             "sans": ["Inter", "system-ui", "sans-serif"],
-            "display": ["Playfair Display", "serif"]
+            "display": ["Playfair Display", "serif"],
         }
         generator.add_fonts(fonts)
 
@@ -135,10 +132,7 @@ class TestTailwindConfigGenerator:
     def test_add_spacing(self):
         """Test adding custom spacing."""
         generator = TailwindConfigGenerator()
-        spacing = {
-            "18": "4.5rem",
-            "navbar": "4rem"
-        }
+        spacing = {"18": "4.5rem", "navbar": "4rem"}
         generator.add_spacing(spacing)
 
         spacing_config = generator.config["theme"]["extend"]["spacing"]
@@ -148,10 +142,7 @@ class TestTailwindConfigGenerator:
     def test_add_breakpoints(self):
         """Test adding custom breakpoints."""
         generator = TailwindConfigGenerator()
-        breakpoints = {
-            "3xl": "1920px",
-            "tablet": "768px"
-        }
+        breakpoints = {"3xl": "1920px", "tablet": "768px"}
         generator.add_breakpoints(breakpoints)
 
         screens = generator.config["theme"]["extend"]["screens"]
@@ -289,9 +280,7 @@ class TestTailwindConfigGenerator:
         """Test generating complete TypeScript configuration."""
         output_path = tmp_path / "tailwind.config.ts"
         generator = TailwindConfigGenerator(
-            typescript=True,
-            framework="nextjs",
-            output_path=output_path
+            typescript=True, framework="nextjs", output_path=output_path
         )
 
         # Add various customizations
@@ -318,9 +307,7 @@ class TestTailwindConfigGenerator:
         """Test generating complete JavaScript configuration."""
         output_path = tmp_path / "tailwind.config.js"
         generator = TailwindConfigGenerator(
-            typescript=False,
-            framework="react",
-            output_path=output_path
+            typescript=False, framework="react", output_path=output_path
         )
 
         generator.add_colors({"primary": "#3b82f6"})

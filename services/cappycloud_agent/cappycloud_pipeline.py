@@ -170,12 +170,18 @@ class Pipeline:
         )
         runner = self._dispatcher.get_runner(task_id) if task_id else None
 
+        # ``attachments_payload`` chega da API como lista de dicts já com bytes.
+        # Carregar bytes de imagens em memória aqui é aceitável: o pipeline já
+        # tem o upper-bound do upload (8MB cada) validado no endpoint HTTP.
+        attachments_payload = body.get("attachments_payload") or None
+
         dispatch_kwargs = {
             "repos": repos,
             "session_root": session_root,
             "sandbox_id": sandbox_id,
             "override_model": body.get("override_model"),
             "sandbox_session_url": sandbox_session_url,
+            "attachments": attachments_payload,
         }
 
         if runner and runner.is_alive() and runner.pending_action:

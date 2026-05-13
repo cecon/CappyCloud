@@ -14,7 +14,7 @@ import subprocess
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent
-UNIFIED_VALIDATOR = SCRIPT_DIR / 'html-token-validator.py'
+UNIFIED_VALIDATOR = SCRIPT_DIR / "html-token-validator.py"
 
 
 def main():
@@ -22,8 +22,8 @@ def main():
     args = sys.argv[1:]
 
     # If no files specified, default to slides type
-    if not args or all(arg.startswith('-') for arg in args):
-        cmd = [sys.executable, str(UNIFIED_VALIDATOR), '--type', 'slides'] + args
+    if not args or all(arg.startswith("-") for arg in args):
+        cmd = [sys.executable, str(UNIFIED_VALIDATOR), "--type", "slides"] + args
     else:
         cmd = [sys.executable, str(UNIFIED_VALIDATOR)] + args
 
@@ -31,5 +31,5 @@ def main():
     sys.exit(result.returncode)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

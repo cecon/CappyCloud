@@ -45,10 +45,8 @@ class TailwindConfigGenerator:
         return {
             "darkMode": ["class"],
             "content": self._default_content_paths(),
-            "theme": {
-                "extend": {}
-            },
-            "plugins": []
+            "theme": {"extend": {}},
+            "plugins": [],
         }
 
     def _default_content_paths(self) -> List[str]:
@@ -234,9 +232,7 @@ module.exports = {{
         if not self.config["plugins"]:
             return ""
 
-        plugin_requires = [
-            f"require('{plugin}')" for plugin in self.config["plugins"]
-        ]
+        plugin_requires = [f"require('{plugin}')" for plugin in self.config["plugins"]]
         return ", ".join(plugin_requires)
 
     def _indent_json(self, json_str: str, level: int) -> str:

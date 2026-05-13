@@ -12,8 +12,8 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.secondary.persistence.sqlalchemy_conversation_repo import (
-    SQLAlchemyConversationRepository,
+from app.adapters.secondary.persistence.sqlalchemy_mcp_repo import (
+    SQLAlchemyMcpRepository,
 )
 from app.adapters.secondary.persistence.sqlalchemy_message_repo import (
     SQLAlchemyMessageRepository,
@@ -27,6 +27,7 @@ from app.adapters.secondary.persistence.sqlalchemy_repository_repo import (
 from app.adapters.secondary.persistence.sqlalchemy_user_repo import (
     SQLAlchemyUserRepository,
 )
+from app.application.use_cases.ai_models import ListAiModels
 from app.application.use_cases.auth import GetCurrentUser, LoginUser, RegisterUser
 from app.application.use_cases.conversations import (
     CreateConversation,
@@ -41,28 +42,27 @@ from app.application.use_cases.repo_environments import (
     ListRepoEnvironments,
 )
 from app.domain.entities import User
-from app.infrastructure.database import get_db
 from app.ports.agent import AgentPort
+from app.ports.mcp_repository import McpServerRepository
 from app.ports.repositories import (
+    AiModelCapabilityLookup,
+    AttachmentRepository,
     ConversationRepository,
     MessageRepository,
     RepoEnvironmentRepository,
     RepositoryRepository,
     UserRepository,
 )
-from app.ports.services import PasswordService, TokenService
+from app.ports.services import AttachmentStorage, ModelCatalogService, PasswordService, TokenService
+
+from . import deps_attachments as _attach_deps
+from .deps_base import get_conv_repo, get_db_session  # re-export
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 # ---------------------------------------------------------------------------
 # Infrastructure dependencies
 # ---------------------------------------------------------------------------
-
-
-async def get_db_session(
-    session: Annotated[AsyncSession, Depends(get_db)],
-) -> AsyncSession:
-    return session
 
 
 # ---------------------------------------------------------------------------
@@ -74,12 +74,6 @@ def get_user_repo(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> UserRepository:
     return SQLAlchemyUserRepository(session)
-
-
-def get_conv_repo(
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-) -> ConversationRepository:
-    return SQLAlchemyConversationRepository(session)
 
 
 def get_msg_repo(
@@ -100,6 +94,12 @@ def get_repository_repo(
     return SQLAlchemyRepositoryRepository(session)
 
 
+def get_mcp_repo(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> McpServerRepository:
+    return SQLAlchemyMcpRepository(session)
+
+
 # ---------------------------------------------------------------------------
 # Service dependencies
 # ---------------------------------------------------------------------------
@@ -115,6 +115,12 @@ def get_token_service() -> TokenService:
     from app.infrastructure.security import JWTTokenService
 
     return JWTTokenService()
+
+
+def get_model_catalog_service() -> ModelCatalogService:
+    from app.adapters.secondary.openrouter_catalog import OpenRouterModelCatalog
+
+    return OpenRouterModelCatalog()
 
 
 def get_agent(request: Request) -> AgentPort:
@@ -147,6 +153,12 @@ def get_current_user_uc(
     tokens: Annotated[TokenService, Depends(get_token_service)],
 ) -> GetCurrentUser:
     return GetCurrentUser(users, tokens)
+
+
+def get_list_ai_models_uc(
+    catalog: Annotated[ModelCatalogService, Depends(get_model_catalog_service)],
+) -> ListAiModels:
+    return ListAiModels(catalog)
 
 
 async def get_authenticated_user(
@@ -189,8 +201,19 @@ def get_stream_msg_uc(
     msgs: Annotated[MessageRepository, Depends(get_msg_repo)],
     agent: Annotated[AgentPort, Depends(get_agent)],
     repos: Annotated[RepositoryRepository, Depends(get_repository_repo)],
+    attachments: Annotated[AttachmentRepository, Depends(_attach_deps.get_attachment_repo)],
+    storage: Annotated[AttachmentStorage, Depends(_attach_deps.get_attachment_storage)],
+    model_caps: Annotated[AiModelCapabilityLookup, Depends(_attach_deps.get_ai_model_caps)],
 ) -> StreamMessage:
-    return StreamMessage(convs, msgs, agent, repos)
+    return StreamMessage(
+        convs,
+        msgs,
+        agent,
+        repos,
+        attachments=attachments,
+        attachment_storage=storage,
+        model_caps=model_caps,
+    )
 
 
 def get_update_conv_repos_uc(

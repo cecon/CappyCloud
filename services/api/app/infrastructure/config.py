@@ -30,6 +30,20 @@ class Settings(BaseSettings):
     github_webhook_secret: str = ""
     gitlab_webhook_secret: str = ""
 
+    # Storage local de anexos (volume Docker dentro do container da API).
+    # Cada conversa ganha o seu subdiretório; nomes aleatórios (uuid+ext).
+    attachments_dir: str = "/var/cappycloud/attachments"
+    attachments_max_bytes: int = 8 * 1024 * 1024  # 8 MB por anexo
+
+    # Vision describer (Caminho C - V1): pré-processa imagens via modelo
+    # multimodal e injeta descrição textual no prompt. Permite que modelos
+    # text-only no agente raciocinem sobre imagens anexadas.
+    vision_provider_base_url: str = "https://openrouter.ai/api/v1"
+    vision_provider_api_key: str = ""  # env: VISION_PROVIDER_API_KEY
+    vision_model: str = "openai/gpt-4o-mini"
+    vision_max_tokens: int = 800
+    vision_timeout_s: int = 60
+
 
 @lru_cache
 def get_settings() -> Settings:

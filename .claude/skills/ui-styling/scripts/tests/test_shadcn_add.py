@@ -3,12 +3,13 @@
 import json
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 # Add parent directory to path for imports
 import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shadcn_add import ShadcnInstaller
@@ -26,13 +27,12 @@ class TestShadcnInstaller:
         # Create components.json
         components_json = project_root / "components.json"
         components_json.write_text(
-            json.dumps({
-                "style": "new-york",
-                "aliases": {
-                    "components": "@/components",
-                    "utils": "@/lib/utils"
+            json.dumps(
+                {
+                    "style": "new-york",
+                    "aliases": {"components": "@/components", "utils": "@/lib/utils"},
                 }
-            })
+            )
         )
 
         # Create components directory
@@ -129,8 +129,7 @@ class TestShadcnInstaller:
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
-                stdout="Component added successfully",
-                returncode=0
+                stdout="Component added successfully", returncode=0
             )
 
             success, message = installer.add_components(["button"], overwrite=True)
@@ -157,9 +156,7 @@ class TestShadcnInstaller:
     def test_add_components_success(self, mock_run, temp_project):
         """Test successful component addition."""
         mock_run.return_value = MagicMock(
-            stdout="Components added successfully",
-            stderr="",
-            returncode=0
+            stdout="Components added successfully", stderr="", returncode=0
         )
 
         installer = ShadcnInstaller(project_root=temp_project)
@@ -221,10 +218,7 @@ class TestShadcnInstaller:
     @patch("subprocess.run")
     def test_add_all_components_success(self, mock_run, temp_project):
         """Test successful addition of all components."""
-        mock_run.return_value = MagicMock(
-            stdout="All components added",
-            returncode=0
-        )
+        mock_run.return_value = MagicMock(stdout="All components added", returncode=0)
 
         installer = ShadcnInstaller(project_root=temp_project)
         success, message = installer.add_all_components()

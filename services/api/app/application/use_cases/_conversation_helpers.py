@@ -33,14 +33,3 @@ def next_chunk(gen):
         return next(gen)
     except StopIteration:
         return None
-
-
-async def compute_cost(usage: dict, messages_repo) -> float:
-    model_used = usage.get("model_used") or ""
-    prompt_tokens = int(usage.get("prompt_tokens") or 0)
-    completion_tokens = int(usage.get("completion_tokens") or 0)
-    if not model_used or (prompt_tokens == 0 and completion_tokens == 0):
-        return 0.0
-    pricing = await messages_repo.get_model_pricing(model_used)
-    input_cost, output_cost = pricing or (0.0, 0.0)
-    return round((prompt_tokens * input_cost + completion_tokens * output_cost) / 1_000_000.0, 6)

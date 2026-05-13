@@ -17,24 +17,82 @@ MAX_RESULTS = 3
 CSV_CONFIG = {
     "strategy": {
         "file": "slide-strategies.csv",
-        "search_cols": ["strategy_name", "keywords", "goal", "audience", "narrative_arc"],
-        "output_cols": ["strategy_name", "keywords", "slide_count", "structure", "goal", "audience", "tone", "narrative_arc", "sources"]
+        "search_cols": [
+            "strategy_name",
+            "keywords",
+            "goal",
+            "audience",
+            "narrative_arc",
+        ],
+        "output_cols": [
+            "strategy_name",
+            "keywords",
+            "slide_count",
+            "structure",
+            "goal",
+            "audience",
+            "tone",
+            "narrative_arc",
+            "sources",
+        ],
     },
     "layout": {
         "file": "slide-layouts.csv",
         "search_cols": ["layout_name", "keywords", "use_case", "recommended_for"],
-        "output_cols": ["layout_name", "keywords", "use_case", "content_zones", "visual_weight", "cta_placement", "recommended_for", "avoid_for", "css_structure"]
+        "output_cols": [
+            "layout_name",
+            "keywords",
+            "use_case",
+            "content_zones",
+            "visual_weight",
+            "cta_placement",
+            "recommended_for",
+            "avoid_for",
+            "css_structure",
+        ],
     },
     "copy": {
         "file": "slide-copy.csv",
-        "search_cols": ["formula_name", "keywords", "use_case", "emotion_trigger", "slide_type"],
-        "output_cols": ["formula_name", "keywords", "components", "use_case", "example_template", "emotion_trigger", "slide_type", "source"]
+        "search_cols": [
+            "formula_name",
+            "keywords",
+            "use_case",
+            "emotion_trigger",
+            "slide_type",
+        ],
+        "output_cols": [
+            "formula_name",
+            "keywords",
+            "components",
+            "use_case",
+            "example_template",
+            "emotion_trigger",
+            "slide_type",
+            "source",
+        ],
     },
     "chart": {
         "file": "slide-charts.csv",
-        "search_cols": ["chart_type", "keywords", "best_for", "when_to_use", "slide_context"],
-        "output_cols": ["chart_type", "keywords", "best_for", "data_type", "when_to_use", "when_to_avoid", "max_categories", "slide_context", "css_implementation", "accessibility_notes"]
-    }
+        "search_cols": [
+            "chart_type",
+            "keywords",
+            "best_for",
+            "when_to_use",
+            "slide_context",
+        ],
+        "output_cols": [
+            "chart_type",
+            "keywords",
+            "best_for",
+            "data_type",
+            "when_to_use",
+            "when_to_avoid",
+            "max_categories",
+            "slide_context",
+            "css_implementation",
+            "accessibility_notes",
+        ],
+    },
 }
 
 AVAILABLE_DOMAINS = list(CSV_CONFIG.keys())
@@ -56,7 +114,7 @@ class BM25:
 
     def tokenize(self, text):
         """Lowercase, split, remove punctuation, filter short words"""
-        text = re.sub(r'[^\w\s]', ' ', str(text).lower())
+        text = re.sub(r"[^\w\s]", " ", str(text).lower())
         return [w for w in text.split() if len(w) > 2]
 
     def fit(self, documents):
@@ -95,7 +153,9 @@ class BM25:
                     tf = term_freqs[token]
                     idf = self.idf[token]
                     numerator = tf * (self.k1 + 1)
-                    denominator = tf + self.k1 * (1 - self.b + self.b * doc_len / self.avgdl)
+                    denominator = tf + self.k1 * (
+                        1 - self.b + self.b * doc_len / self.avgdl
+                    )
                     score += idf * numerator / denominator
 
             scores.append((idx, score))
@@ -106,7 +166,7 @@ class BM25:
 # ============ SEARCH FUNCTIONS ============
 def _load_csv(filepath):
     """Load CSV and return list of dicts"""
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, "r", encoding="utf-8") as f:
         return list(csv.DictReader(f))
 
 
@@ -140,17 +200,77 @@ def detect_domain(query):
     query_lower = query.lower()
 
     domain_keywords = {
-        "strategy": ["pitch", "deck", "investor", "yc", "seed", "series", "demo", "sales", "webinar",
-                     "conference", "board", "qbr", "all-hands", "duarte", "kawasaki", "structure"],
-        "layout": ["slide", "layout", "grid", "column", "title", "hero", "section", "cta",
-                   "screenshot", "quote", "timeline", "comparison", "pricing", "team"],
-        "copy": ["headline", "copy", "formula", "aida", "pas", "hook", "cta", "benefit",
-                 "objection", "proof", "testimonial", "urgency", "scarcity"],
-        "chart": ["chart", "graph", "bar", "line", "pie", "funnel", "metrics", "data",
-                  "visualization", "kpi", "trend", "comparison", "heatmap", "gauge"]
+        "strategy": [
+            "pitch",
+            "deck",
+            "investor",
+            "yc",
+            "seed",
+            "series",
+            "demo",
+            "sales",
+            "webinar",
+            "conference",
+            "board",
+            "qbr",
+            "all-hands",
+            "duarte",
+            "kawasaki",
+            "structure",
+        ],
+        "layout": [
+            "slide",
+            "layout",
+            "grid",
+            "column",
+            "title",
+            "hero",
+            "section",
+            "cta",
+            "screenshot",
+            "quote",
+            "timeline",
+            "comparison",
+            "pricing",
+            "team",
+        ],
+        "copy": [
+            "headline",
+            "copy",
+            "formula",
+            "aida",
+            "pas",
+            "hook",
+            "cta",
+            "benefit",
+            "objection",
+            "proof",
+            "testimonial",
+            "urgency",
+            "scarcity",
+        ],
+        "chart": [
+            "chart",
+            "graph",
+            "bar",
+            "line",
+            "pie",
+            "funnel",
+            "metrics",
+            "data",
+            "visualization",
+            "kpi",
+            "trend",
+            "comparison",
+            "heatmap",
+            "gauge",
+        ],
     }
 
-    scores = {domain: sum(1 for kw in keywords if kw in query_lower) for domain, keywords in domain_keywords.items()}
+    scores = {
+        domain: sum(1 for kw in keywords if kw in query_lower)
+        for domain, keywords in domain_keywords.items()
+    }
     best = max(scores, key=scores.get)
     return best if scores[best] > 0 else "strategy"
 
@@ -166,14 +286,16 @@ def search(query, domain=None, max_results=MAX_RESULTS):
     if not filepath.exists():
         return {"error": f"File not found: {filepath}", "domain": domain}
 
-    results = _search_csv(filepath, config["search_cols"], config["output_cols"], query, max_results)
+    results = _search_csv(
+        filepath, config["search_cols"], config["output_cols"], query, max_results
+    )
 
     return {
         "domain": domain,
         "query": query,
         "file": config["file"],
         "count": len(results),
-        "results": results
+        "results": results,
     }
 
 
@@ -193,22 +315,10 @@ def search_all(query, max_results=2):
 
 # New CSV configurations for decision system
 DECISION_CSV_CONFIG = {
-    "layout-logic": {
-        "file": "slide-layout-logic.csv",
-        "key_col": "goal"
-    },
-    "typography": {
-        "file": "slide-typography.csv",
-        "key_col": "content_type"
-    },
-    "color-logic": {
-        "file": "slide-color-logic.csv",
-        "key_col": "emotion"
-    },
-    "backgrounds": {
-        "file": "slide-backgrounds.csv",
-        "key_col": "slide_type"
-    }
+    "layout-logic": {"file": "slide-layout-logic.csv", "key_col": "goal"},
+    "typography": {"file": "slide-typography.csv", "key_col": "content_type"},
+    "color-logic": {"file": "slide-color-logic.csv", "key_col": "emotion"},
+    "backgrounds": {"file": "slide-backgrounds.csv", "key_col": "slide_type"},
 }
 
 

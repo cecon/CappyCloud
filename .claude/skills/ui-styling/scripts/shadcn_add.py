@@ -168,7 +168,9 @@ class ShadcnInstaller:
             return True, success_msg
 
         except subprocess.CalledProcessError as e:
-            error_msg = f"Failed to add all components: {e.stderr or e.stdout or str(e)}"
+            error_msg = (
+                f"Failed to add all components: {e.stderr or e.stdout or str(e)}"
+            )
             return False, error_msg
         except FileNotFoundError:
             return False, "npx not found. Ensure Node.js is installed"
@@ -188,7 +190,9 @@ class ShadcnInstaller:
         if not installed:
             return True, "No components installed"
 
-        return True, f"Installed components:\n" + "\n".join(f"  - {c}" for c in sorted(installed))
+        return True, "Installed components:\n" + "\n".join(
+            f"  - {c}" for c in sorted(installed)
+        )
 
 
 def main():

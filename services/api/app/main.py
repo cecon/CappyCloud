@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.adapters.primary.http import ai_models as ai_models_router
+from app.adapters.primary.http import attachments as attachments_router
 from app.adapters.primary.http import auth as auth_router
 from app.adapters.primary.http import conversation_diff as conv_diff_router
 from app.adapters.primary.http import conversation_files as conv_files_router
@@ -20,6 +21,7 @@ from app.adapters.primary.http import conversations as conv_router
 from app.adapters.primary.http import documents as documents_router
 from app.adapters.primary.http import environments as env_router
 from app.adapters.primary.http import git_providers as git_providers_router
+from app.adapters.primary.http import mcp_servers as mcp_servers_router
 from app.adapters.primary.http import repositories_admin as repos_admin_router
 from app.adapters.primary.http import routines as routines_router
 from app.adapters.primary.http import sandboxes as sandboxes_router
@@ -122,6 +124,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router.router, prefix="/api")
+app.include_router(attachments_router.router)
 app.include_router(conv_router.router, prefix="/api")
 app.include_router(conv_diff_router.router, prefix="/api")
 app.include_router(conv_files_router.router, prefix="/api")
@@ -138,6 +141,7 @@ app.include_router(repos_admin_router.router, prefix="/api")
 app.include_router(documents_router.router, prefix="/api")
 app.include_router(skills_router.router, prefix="/api")
 app.include_router(skills_search_router.router, prefix="/api")
+app.include_router(mcp_servers_router.router, prefix="/api")
 
 
 @app.get("/health")

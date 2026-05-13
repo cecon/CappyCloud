@@ -1,8 +1,23 @@
 #!/usr/bin/env node
 'use strict'
-// Session Server — Sidecar para gerenciar sessões multi-repo e Git.
-// POST /sessions → cria worktrees; DELETE /sessions/:id → remove.
-// Proxy para git-handlers, repo-handlers, task-handler e worktree-handlers.
+// ──────────────────────────────────────────────────────────────
+// Session Server — HTTP sidecar para gerenciar sessões multi-repo
+//
+// Substitui o docker exec que o EnvironmentManager usava.
+// Cada sessão tem um session_root que contém um worktree por repo:
+//
+//   /repos/sessions/<session_id>/
+//     <alias-1>/   ← git worktree de /repos/<slug-1> (branch: branch_name)
+//     <alias-2>/   ← git worktree de /repos/<slug-2> (branch: branch_name)
+//
+// Endpoints:
+//   POST   /sessions               → cria session_root + worktrees
+//   DELETE /sessions/:id           → remove session_root e faz worktree prune
+//   POST   /git/*                  → git_handlers.js (ls-remote, branch-r, ls-files, file)
+//   POST   /worktree/*             → worktree_handlers.js (ls-files, diff, PR, …)
+//   POST   /mcp/configure          → escreve mcpServers em ~/.claude/settings.json
+//   GET    /health                 → liveness probe
+// ──────────────────────────────────────────────────────────────
 
 const http = require('http')
 const fs = require('fs')
@@ -11,6 +26,7 @@ const { execFile, execFileSync } = require('child_process')
 const { promisify } = require('util')
 
 const gitHandlers = require('./git_handlers')
+const mcpHandler = require('./mcp_handler')
 const repoHandlers = require('./repo_handlers')
 const taskHandler = require('./task_handler')
 const worktreeHandlers = require('./worktree_handlers')
@@ -175,7 +191,7 @@ const server = http.createServer(async (req, res) => {
 
     if (await worktreeHandlers.tryHandle(req, res, { json, readBody })) return
 
-    // POST /git-auth — reconfigura credenciais git (token actualizado no DB)
+    // POST /git-auth — reconfigura credenciais git (token atualizado no DB)
     if (req.method === 'POST' && pathname === '/git-auth') {
       const { provider_type, token, base_url } = await readBody(req)
       try {
@@ -199,6 +215,9 @@ const server = http.createServer(async (req, res) => {
         return json(res, 500, { error: err.message })
       }
     }
+
+    // POST /mcp/configure — delega para mcp_handler.js
+    if (await mcpHandler.tryHandle(req, res, { json, readBody })) return
 
     return json(res, 404, { error: 'Not found' })
   } catch (err) {
