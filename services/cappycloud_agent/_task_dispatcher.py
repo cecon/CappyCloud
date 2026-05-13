@@ -18,6 +18,7 @@ from ._task_events import (
     insert_status_event,
     insert_task,
     update_task_status,
+    emit_session_setup_events,
 )
 from ._task_runner import TaskRunner
 from ._worktree_validation import validate_and_inject_worktree
@@ -206,24 +207,7 @@ class TaskDispatcher:
         """Cria a sessão, inicia a GrpcSession e arranca o TaskRunner."""
         user_id = conversation_id or "system"
         chat_id = conversation_id or task_id
-
-        mode = "initializing"
-
         try:
-            repo_slugs = (
-                ", ".join(str(r.get("slug") or r.get("alias") or "?") for r in repos)
-                if repos
-                else ""
-            )
-            if repo_slugs:
-                await insert_status_event(
-                    self._pool,
-                    task_id,
-                    f"Preparando: {repo_slugs}",
-                    "indexing_start",
-                    mode,
-                )
-
             lease = await self._env_manager.get_or_create_session(
                 user_id=user_id,
                 chat_id=chat_id,
@@ -232,35 +216,8 @@ class TaskDispatcher:
                 sandbox_id=sandbox_id,
             )
             sandbox = lease.record
-            mode = "initializing" if lease.created else "resuming"
-            await insert_status_event(
-                self._pool, task_id, "Sessão preparada.", "session", mode
-            )
-
-            if repo_slugs:
-                msg = (
-                    "Repositório preparado"
-                    if lease.created
-                    else "Repositório sincronizado"
-                )
-                await insert_status_event(
-                    self._pool, task_id, f"{msg}: {repo_slugs}.", "repository", mode
-                )
-                await insert_status_event(
-                    self._pool,
-                    task_id,
-                    f"Repositórios prontos: {repo_slugs}",
-                    "indexing_ready",
-                    mode,
-                )
-
-            msg_sess = "Sessão criada" if lease.created else "Sessão retomada"
-            await insert_status_event(
-                self._pool,
-                task_id,
-                f"{msg_sess} em {sandbox.working_directory}",
-                "ready",
-                mode,
+            await emit_session_setup_events(
+                self._pool, task_id, repos, lease.created, sandbox.working_directory
             )
         except Exception as exc:
             log.exception(
@@ -270,9 +227,9 @@ class TaskDispatcher:
             await insert_error_event(self._pool, task_id, str(exc))
             return
 
-        working_directory = sandbox.working_directory
-        if repos and len(repos) == 1 and repos[0].get("worktree_path"):
-            working_directory = repos[0]["worktree_path"]
+        working_directory = (
+            repos[0].get("worktree_path") if repos and len(repos) == 1 else None
+        ) or sandbox.working_directory
         log.debug(
             "[Dispatcher] working_directory=%r for task %s",
             working_directory,
