@@ -11,7 +11,6 @@ Key behaviours:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 from collections.abc import Generator
@@ -24,7 +23,17 @@ from ._agent_context import (
     load_agent_context,
 )
 from ._environment_manager import EnvironmentManager
-from ._pipeline_helpers import db_url, inject_repo_context, sse
+from ._pipeline_event_stream import stream_task_events
+from ._pipeline_helpers import (
+    build_signoz_context_section,
+    db_url,
+    fetch_default_text_model_id,
+    fetch_signoz_service_names,
+    has_enabled_signoz_mcp,
+    inject_repo_context,
+    push_mcp_config,
+    sse,
+)
 from ._session_store import SessionStore
 from ._task_dispatcher import TaskDispatcher
 
@@ -164,6 +173,29 @@ class Pipeline:
         )
         prompt = inject_repo_context(prompt, repos, session_root)
 
+        # Injeta contexto SigNoz (service.name por repo) se houver configuração.
+        repo_ids_for_signoz = [r["repo_id"] for r in repos if r.get("repo_id")]
+        if repo_ids_for_signoz:
+            try:
+                signoz_names = self._run(
+                    fetch_signoz_service_names(db_url(), repo_ids_for_signoz),
+                    timeout=5,
+                )
+                signoz_mcp_available = self._run(
+                    has_enabled_signoz_mcp(db_url(), str(body.get("user_id") or "")),
+                    timeout=5,
+                )
+                signoz_section = build_signoz_context_section(
+                    repos,
+                    signoz_names,
+                    mcp_available=signoz_mcp_available,
+                )
+                if signoz_section:
+                    from ._agent_context import inject_section_before_user_message
+                    prompt = inject_section_before_user_message(prompt, signoz_section)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("[Signoz] falha ao injetar contexto: %s", exc)
+
         task_id: Optional[str] = self._run(
             self._dispatcher.get_active_task_id(conversation_id or "__none__"),
             timeout=10,
@@ -175,14 +207,31 @@ class Pipeline:
         # tem o upper-bound do upload (8MB cada) validado no endpoint HTTP.
         attachments_payload = body.get("attachments_payload") or None
 
+        override_model = body.get("override_model")
+        if not override_model:
+            try:
+                override_model = self._run(
+                    fetch_default_text_model_id(db_url()),
+                    timeout=5,
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning("[Models] fallback default falhou: %s", exc)
+
         dispatch_kwargs = {
             "repos": repos,
             "session_root": session_root,
             "sandbox_id": sandbox_id,
-            "override_model": body.get("override_model"),
+            "override_model": override_model,
             "sandbox_session_url": sandbox_session_url,
             "attachments": attachments_payload,
         }
+
+        # Envia config MCP ao sandbox antes de cada dispatch (idempotente).
+        user_id_str = str(body.get("user_id") or "")
+        self._run(
+            push_mcp_config(db_url(), user_id_str, sandbox_session_url),
+            timeout=8,
+        )
 
         if runner and runner.is_alive() and runner.pending_action:
             self._run(self._dispatcher.send_input(task_id, user_message), timeout=10)
@@ -220,58 +269,14 @@ class Pipeline:
     def _stream_events(
         self, task_id: str, cursor: Optional[int]
     ) -> Generator[str, None, None]:
-        import queue as _queue
-
-        import asyncpg as _asyncpg
-
-        db_url = self.valves.DATABASE_URL
-        out_q: _queue.Queue = _queue.Queue()
-
-        async def _produce() -> None:
-            pool = await _asyncpg.create_pool(db_url, min_size=1, max_size=2)
-            try:
-                last_id = cursor
-                while True:
-                    if last_id is None:
-                        rows = await pool.fetch(
-                            "SELECT id, event_type, data FROM agent_events "
-                            "WHERE task_id=$1::uuid ORDER BY id LIMIT 50",
-                            task_id,
-                        )
-                    else:
-                        rows = await pool.fetch(
-                            "SELECT id, event_type, data FROM agent_events "
-                            "WHERE task_id=$1::uuid AND id>$2 ORDER BY id LIMIT 50",
-                            task_id,
-                            last_id,
-                        )
-                    for row in rows:
-                        last_id = row["id"]
-                        data = row["data"]
-                        if isinstance(data, str):
-                            data = json.loads(data)
-                        out_q.put((row["event_type"], data, last_id))
-                    status_row = await pool.fetchrow(
-                        "SELECT status FROM agent_tasks WHERE id=$1::uuid", task_id
-                    )
-                    if (
-                        status_row and status_row["status"] in ("done", "error")
-                    ) and not rows:
-                        break
-                    if not rows:
-                        await asyncio.sleep(0.5)
-            finally:
-                out_q.put(None)
-                await pool.close()
-
-        asyncio.run_coroutine_threadsafe(_produce(), self._loop)
-
-        while True:
-            item = out_q.get(timeout=310)
-            if item is None:
-                break
-            event_type, data, eid = item
-            yield sse({"type": event_type, "cursor": eid, **(data if data else {})})
+        if self._loop is None:
+            return
+        yield from stream_task_events(
+            loop=self._loop,
+            database_url=self.valves.DATABASE_URL,
+            task_id=task_id,
+            cursor=cursor,
+        )
 
     async def _gc_loop(self) -> None:
         while True:

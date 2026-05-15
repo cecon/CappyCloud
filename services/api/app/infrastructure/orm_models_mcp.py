@@ -11,7 +11,7 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.infrastructure.orm_models import Base, JSONBType, UUIDType
+from app.infrastructure.orm_base import Base, JSONBType, UUIDType
 
 
 class McpServer(Base):

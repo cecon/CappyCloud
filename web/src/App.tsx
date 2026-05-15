@@ -1,6 +1,7 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { getToken } from './api'
+import { AppLayout } from './components/AppLayout'
 import { ThinkingIndicator } from './components/ThinkingIndicator'
 
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })))
@@ -21,6 +22,11 @@ function PageLoader() {
   )
 }
 
+function ProtectedPage({ children }: { children: ReactNode }) {
+  const token = getToken()
+  return token ? <AppLayout>{children}</AppLayout> : <Navigate to="/login" replace />
+}
+
 export default function App() {
   const token = getToken()
 
@@ -30,43 +36,43 @@ export default function App() {
         <Route
           path="/"
           element={
-            token ? <DashboardPage /> : <Navigate to="/login" replace />
+            <ProtectedPage><DashboardPage /></ProtectedPage>
           }
         />
         <Route
           path="/chat"
           element={
-            token ? <ChatPage /> : <Navigate to="/login" replace />
+            <ProtectedPage><ChatPage /></ProtectedPage>
           }
         />
         <Route
           path="/settings"
           element={
-            token ? <SettingsPage /> : <Navigate to="/login" replace />
+            <ProtectedPage><SettingsPage /></ProtectedPage>
           }
         />
         <Route
           path="/skills"
           element={
-            token ? <SkillsPage /> : <Navigate to="/login" replace />
+            <ProtectedPage><SkillsPage /></ProtectedPage>
           }
         />
         <Route
           path="/runs"
           element={
-            token ? <RunsPage /> : <Navigate to="/login" replace />
+            <ProtectedPage><RunsPage /></ProtectedPage>
           }
         />
         <Route
           path="/mcp"
           element={
-            token ? <McpPage /> : <Navigate to="/login" replace />
+            <ProtectedPage><McpPage /></ProtectedPage>
           }
         />
         <Route
           path="/analytics"
           element={
-            token ? <AnalyticsPage /> : <Navigate to="/login" replace />
+            <ProtectedPage><AnalyticsPage /></ProtectedPage>
           }
         />
         <Route

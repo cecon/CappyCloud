@@ -16,11 +16,22 @@ import httpx
 
 log = logging.getLogger(__name__)
 
+from ._agent_prompt_sections import (  # noqa: E402
+    render_repo_skills,
+    render_response_rules,
+    render_session_tools,
+)
 from ._other_repos import fetch_other_repos, render_other_repos_section  # noqa: F401
 
 _RAG_TOP_N = int(os.getenv("RAG_TOP_N", "3"))
+_REPO_SKILLS_LIMIT = int(os.getenv("REPO_SKILLS_LIMIT", "20"))
 _SKILL_CONTENT_MAX_CHARS = int(os.getenv("SKILL_CONTENT_MAX_CHARS", "1200"))
 _TOPLEVEL_LIMIT = int(os.getenv("WORKTREE_TOPLEVEL_LIMIT", "80"))
+
+
+def _asyncpg_dsn(db_url: str) -> str:
+    """Converte DSN SQLAlchemy async em DSN aceita por asyncpg."""
+    return (db_url or "").replace("postgresql+asyncpg://", "postgresql://", 1)
 
 
 def _trim_skill_content(content: str | None) -> str:
@@ -131,16 +142,12 @@ async def _load_repo_skills(
     if not repo_ids:
         return []
 
-    keywords = [w for w in user_message.split() if len(w) > 4][:6]
-    pattern = f"%{keywords[0]}%" if keywords else "%"
-
-    placeholders = ", ".join(f"${i + 3}::uuid" for i in range(len(repo_ids)))
+    placeholders = ", ".join(f"${i + 2}::uuid" for i in range(len(repo_ids)))
     rows = await conn.fetch(
         f"SELECT title, summary, content, source_url FROM skills "
         f"WHERE active = TRUE AND repository_id IN ({placeholders}) "
-        f"AND (title ILIKE $1 OR summary ILIKE $1 OR content ILIKE $1) "
-        f"ORDER BY title LIMIT $2",
-        pattern,
+        f"AND document_id IS NULL "
+        f"ORDER BY title LIMIT $1",
         top_n,
         *repo_ids,
     )
@@ -166,14 +173,14 @@ async def load_agent_context(
 
     conn: Optional[asyncpg.Connection] = None
     try:
-        conn = await asyncpg.connect(db_url)
+        conn = await asyncpg.connect(_asyncpg_dsn(db_url))
 
         skills: list[dict] = []
 
         # Skills vinculadas ao(s) repositório(s) da sessão.
         if repo_ids:
             repo_skills = await _load_repo_skills(
-                conn, repo_ids, user_message, _RAG_TOP_N
+                conn, repo_ids, user_message, _REPO_SKILLS_LIMIT
             )
             existing_titles = {s["title"] for s in skills}
             for rs in repo_skills:
@@ -249,35 +256,12 @@ def build_prompt_with_agent(
         parts.append(other_section)
 
     if skills:
-        kb_lines = ["## Conhecimento disponível (top resultados)"]
-        for s in skills:
-            line = f"- **{s['title']}**"
-            if s.get("summary"):
-                line += f" — {s['summary']}"
-            if s.get("source_url"):
-                line += f"  \n  Fonte: {s['source_url']}"
-            kb_lines.append(line)
-            if s.get("content"):
-                kb_lines.append(f"\n{s['content']}")
-        parts.append("\n".join(kb_lines))
+        parts.append(render_repo_skills(skills))
 
     if sandbox_session_url:
-        parts.append(
-            "## Ferramentas do servidor de sessão\n\n"
-            "### Busca de documentação\n"
-            "Para consultar mais documentação relevante, executa via Bash:\n"
-            f"`curl -s '{sandbox_session_url}/skills/search?q=<termo>'`\n"
-            "(retorna JSON com slug/title/summary/content das skills mais próximas).\n\n"
-            "### Sub-agente de investigação\n"
-            "Para delegar uma investigação a um sub-agente especializado, executa via Bash:\n"
-            "```bash\n"
-            f"curl -s -X POST '{sandbox_session_url}/task' \\\n"
-            "  -H 'Content-Type: application/json' \\\n"
-            "  -d '{\"description\":\"<título>\",\"prompt\":\"<instrução completa>\"}'\n"
-            "```\n"
-            "O campo `result` da resposta contém o texto produzido pelo sub-agente.\n"
-            "Use `jq -r '.result'` para extrair apenas o texto."
-        )
+        parts.append(render_session_tools(sandbox_session_url))
+
+    parts.append(render_response_rules())
 
     parts.append("## Mensagem do utilizador\n\n" + user_message)
 

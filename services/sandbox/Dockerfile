@@ -74,16 +74,33 @@ COPY patches/grep-tool-n-alias.patch /tmp/grep-tool-n-alias.patch
 COPY patches/auto-approve-tools.patch /tmp/auto-approve-tools.patch
 COPY patches/multimodal-proto.patch /tmp/multimodal-proto.patch
 COPY patches/multimodal-grpc-handler.patch /tmp/multimodal-grpc-handler.patch
+COPY patches/mcp-grpc-integration.patch /tmp/mcp-grpc-integration.patch
 WORKDIR /openclaude
 RUN git clone --depth=1 https://github.com/Gitlawb/openclaude.git . \
     && git apply /tmp/grep-tool-n-alias.patch \
     && git apply /tmp/auto-approve-tools.patch \
     && git apply /tmp/multimodal-proto.patch \
     && git apply /tmp/multimodal-grpc-handler.patch \
+    && git apply /tmp/mcp-grpc-integration.patch \
+    && sed -i 's/^detectStubLeaks()$/setImmediate(() => detectStubLeaks())/' src/entrypoints/sdk/index.ts \
     && rm -f /tmp/grep-tool-n-alias.patch /tmp/auto-approve-tools.patch \
             /tmp/multimodal-proto.patch /tmp/multimodal-grpc-handler.patch \
+            /tmp/mcp-grpc-integration.patch \
     && bun install \
     && bun run build
+
+# ── signoz-mcp-server (binário Go, modo stdio) ────────────────
+# Detecta a arquitetura em runtime para suportar amd64 e arm64.
+# Extrai para /tmp e move o binário para evitar problemas com paths internos
+# do tarball. command = /usr/local/bin/signoz-mcp-server
+RUN ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') \
+    && mkdir /tmp/signoz-extract \
+    && curl -fsSL \
+       "https://github.com/SigNoz/signoz-mcp-server/releases/latest/download/signoz-mcp-server_linux_${ARCH}.tar.gz" \
+       | tar xz -C /tmp/signoz-extract \
+    && find /tmp/signoz-extract -maxdepth 3 \( -name 'signoz-mcp-server' -o -name 'server' \) -type f \
+       | head -1 | xargs -I{} install -m 755 {} /usr/local/bin/signoz-mcp-server \
+    && rm -rf /tmp/signoz-extract
 
 # ── /repos layout (volume montado em runtime) ─────────────────
 # O volume repos_data é montado aqui. RUN mkdir garante que o
@@ -99,10 +116,14 @@ COPY env_init.sh /env_init.sh
 COPY session_start.sh /session_start.sh
 COPY session_server.js /session_server.js
 COPY git_handlers.js /git_handlers.js
+COPY mcp_handler.js /mcp_handler.js
+COPY confluence_handler.js /confluence_handler.js
 COPY repo_handlers.js /repo_handlers.js
 COPY task_handler.js /task_handler.js
 COPY worktree_handlers.js /worktree_handlers.js
+COPY confluence_mcp_lib.py /usr/local/bin/confluence_mcp_lib.py
+COPY confluence_mcp_server.py /usr/local/bin/confluence-mcp-server
 RUN sed -i 's/\r//' /env_init.sh /session_start.sh \
-    && chmod +x /env_init.sh /session_start.sh
+    && chmod +x /env_init.sh /session_start.sh /usr/local/bin/confluence-mcp-server
 
 ENTRYPOINT ["/env_init.sh"]

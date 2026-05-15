@@ -35,6 +35,7 @@ def _slugify(text: str, max_len: int = 80) -> str:
 def _to_out(skill: Skill) -> SkillOut:
     return SkillOut(
         id=skill.id,
+        repository_id=skill.repository_id,
         slug=skill.slug,
         title=skill.title,
         summary=skill.summary,
@@ -80,11 +81,14 @@ async def _set_embedding(skill: Skill) -> None:
 async def list_skills(
     _current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    active: bool | None = Query(default=None),
+    active: Annotated[bool | None, Query()] = None,
+    repository_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> list[SkillOut]:
-    q = select(Skill).order_by(Skill.title)
+    q = select(Skill).where(Skill.document_id.is_(None)).order_by(Skill.title)
     if active is not None:
         q = q.where(Skill.active.is_(active))
+    if repository_id is not None:
+        q = q.where(Skill.repository_id == repository_id)
     rows = await session.execute(q)
     return [_to_out(s) for s in rows.scalars()]
 
@@ -109,12 +113,17 @@ async def create_skill(
 ) -> SkillOut:
     base_slug = body.slug or _slugify(body.title)
     slug = await _ensure_unique_slug(session, base_slug)
+    description = body.summary.strip()
+    content = (body.content or description).strip()
+    if not content:
+        raise HTTPException(status_code=422, detail="Descrição da skill é obrigatória")
     skill = Skill(
         id=uuid.uuid4(),
+        repository_id=body.repository_id,
         slug=slug,
         title=body.title,
-        summary=body.summary,
-        content=body.content,
+        summary=description,
+        content=content,
         tags=body.tags,
         source_url=body.source_url,
         active=True,

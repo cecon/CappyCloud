@@ -288,8 +288,9 @@ export async function streamAssistantReply(
   const dec = new TextDecoder()
   let buf = ''
   let accText = ''
+  let sawDone = false
 
-  while (true) {
+  while (!sawDone) {
     const { done, value } = await reader.read()
     if (done) break
     buf += dec.decode(value, { stream: true })
@@ -352,11 +353,19 @@ export async function streamAssistantReply(
               prompt_tokens: (evt.prompt_tokens as number) ?? 0,
               completion_tokens: (evt.completion_tokens as number) ?? 0,
             })
+            sawDone = true
             break
         }
       } catch {
         // Ignore malformed SSE lines
       }
+    }
+  }
+  if (sawDone) {
+    try {
+      await reader.cancel()
+    } catch {
+      // Stream already closed.
     }
   }
 }
@@ -605,6 +614,7 @@ export interface ConversationDiff {
 }
 
 export interface Workspace {
+  id: string
   slug: string
   name: string
   url: string
@@ -1024,6 +1034,7 @@ export async function fetchAgentTaskEvents(
 
 export interface Skill {
   id: string
+  repository_id: string | null
   slug: string
   title: string
   summary: string
@@ -1037,10 +1048,11 @@ export interface Skill {
 }
 
 export interface SkillCreate {
+  repository_id: string
   title: string
   slug?: string
   summary?: string
-  content: string
+  content?: string | null
   tags?: string[]
   source_url?: string | null
 }

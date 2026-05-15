@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import {
   SkillsPageSections,
   type FilterMode,
@@ -9,21 +8,21 @@ import {
   createSkill,
   deleteSkill,
   fetchSkills,
+  fetchWorkspaces,
   getToken,
-  importSkillFromUrl,
   setToken,
   updateSkill,
   type Skill,
   type SkillCreate,
+  type Workspace,
 } from '../api'
 import styles from './settings.module.css'
 
 const EMPTY_SKILL: SkillCreate = {
+  repository_id: '',
   title: '',
   summary: '',
-  content: '',
-  tags: [],
-  source_url: null,
+  content: null,
 }
 
 /**
@@ -34,17 +33,16 @@ export function SkillsPage() {
   const token = getToken()!
 
   const [allSkills, setAllSkills] = useState<Skill[]>([])
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filterMode, setFilterMode] = useState<FilterMode>('all')
 
   const [skillForm, setSkillForm] = useState<SkillCreate>(EMPTY_SKILL)
+  const [editingSkillId, setEditingSkillId] = useState<string | null>(null)
+  const [formOpen, setFormOpen] = useState(false)
   const [savingSkill, setSavingSkill] = useState(false)
   const [skillFormError, setSkillFormError] = useState<string | null>(null)
-
-  const [importUrl, setImportUrl] = useState('')
-  const [importing, setImporting] = useState(false)
-  const [importError, setImportError] = useState<string | null>(null)
 
   const filteredSkills = useMemo(() => {
     if (filterMode === 'all') return allSkills
@@ -60,8 +58,16 @@ export function SkillsPage() {
     setLoading(true)
     setError(null)
     try {
-      const skillList = await fetchSkills(token)
+      const [skillList, workspaceList] = await Promise.all([
+        fetchSkills(token),
+        fetchWorkspaces(token),
+      ])
       setAllSkills(skillList)
+      setWorkspaces(workspaceList)
+      setSkillForm((prev) => ({
+        ...prev,
+        repository_id: prev.repository_id || workspaceList[0]?.id || '',
+      }))
     } catch (err) {
       if (err instanceof AuthError) {
         setToken(null)
@@ -79,14 +85,52 @@ export function SkillsPage() {
     setSavingSkill(true)
     setSkillFormError(null)
     try {
-      const created = await createSkill(token, skillForm)
-      setAllSkills((prev) => [...prev, created])
-      setSkillForm(EMPTY_SKILL)
+      const description = (skillForm.summary || '').trim()
+      const payload = {
+        repository_id: skillForm.repository_id,
+        title: skillForm.title.trim(),
+        summary: description,
+        content: description,
+      }
+      if (editingSkillId) {
+        const updated = await updateSkill(token, editingSkillId, payload)
+        setAllSkills((prev) => prev.map((skill) => (skill.id === editingSkillId ? updated : skill)))
+      } else {
+        const created = await createSkill(token, payload)
+        setAllSkills((prev) => [...prev, created])
+      }
+      closeForm(skillForm.repository_id)
     } catch (err) {
       setSkillFormError(err instanceof Error ? err.message : 'Erro desconhecido')
     } finally {
       setSavingSkill(false)
     }
+  }
+
+  function openCreateForm() {
+    setEditingSkillId(null)
+    setSkillForm({ ...EMPTY_SKILL, repository_id: workspaces[0]?.id || '' })
+    setSkillFormError(null)
+    setFormOpen(true)
+  }
+
+  function openEditForm(skill: Skill) {
+    setEditingSkillId(skill.id)
+    setSkillForm({
+      repository_id: skill.repository_id || workspaces[0]?.id || '',
+      title: skill.title,
+      summary: skill.summary || skill.content,
+      content: skill.summary || skill.content,
+    })
+    setSkillFormError(null)
+    setFormOpen(true)
+  }
+
+  function closeForm(repositoryId = skillForm.repository_id) {
+    setEditingSkillId(null)
+    setSkillForm({ ...EMPTY_SKILL, repository_id: repositoryId || workspaces[0]?.id || '' })
+    setSkillFormError(null)
+    setFormOpen(false)
   }
 
   async function handleDeleteSkill(id: string) {
@@ -108,32 +152,12 @@ export function SkillsPage() {
     }
   }
 
-  async function handleImportUrl(e: React.FormEvent) {
-    e.preventDefault()
-    if (!importUrl) return
-    setImporting(true)
-    setImportError(null)
-    try {
-      const created = await importSkillFromUrl(token, importUrl)
-      setAllSkills((prev) => [...prev, created])
-      setImportUrl('')
-    } catch (err) {
-      setImportError(err instanceof Error ? err.message : 'Erro desconhecido')
-    } finally {
-      setImporting(false)
-    }
-  }
-
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <Link to="/chat" className={styles.backLink}>
-          <span className={styles.icon}>arrow_back</span>
-          Voltar ao chat
-        </Link>
         <h1 className={styles.title}>Skills</h1>
         <p className={styles.sectionDesc} style={{ marginTop: '0.35rem' }}>
-          Documentação que o fluxo de desenvolvimento consulta por RAG.
+          Regras curtas por repositório que entram no contexto do openclaude.
         </p>
       </header>
 
@@ -142,12 +166,13 @@ export function SkillsPage() {
         onFilterChange={setFilterMode}
         loading={loading}
         error={error}
-        importUrl={importUrl}
-        setImportUrl={setImportUrl}
-        importing={importing}
-        importError={importError}
-        onImportSubmit={handleImportUrl}
+        workspaces={workspaces}
         filteredSkills={filteredSkills}
+        formOpen={formOpen}
+        editingSkillId={editingSkillId}
+        onCreate={openCreateForm}
+        onEdit={openEditForm}
+        onCancelForm={() => closeForm()}
         onToggleActive={handleToggleSkillActive}
         onDelete={handleDeleteSkill}
         skillForm={skillForm}

@@ -11,15 +11,17 @@ from pydantic import BaseModel, Field
 
 
 class SkillCreate(BaseModel):
+    repository_id: uuid.UUID
     title: str = Field(min_length=1, max_length=512)
     slug: str | None = Field(default=None, max_length=256)
     summary: str = Field(default="", max_length=2048)
-    content: str = Field(min_length=1, max_length=500_000)
+    content: str | None = Field(default=None, max_length=500_000)
     tags: list[str] = Field(default_factory=list)
     source_url: str | None = Field(default=None, max_length=2048)
 
 
 class SkillUpdate(BaseModel):
+    repository_id: uuid.UUID | None = None
     title: str | None = Field(default=None, max_length=512)
     summary: str | None = Field(default=None, max_length=2048)
     content: str | None = Field(default=None, max_length=500_000)
@@ -30,6 +32,7 @@ class SkillUpdate(BaseModel):
 
 class SkillOut(BaseModel):
     id: uuid.UUID
+    repository_id: uuid.UUID | None = None
     slug: str
     title: str
     summary: str
