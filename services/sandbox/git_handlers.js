@@ -93,41 +93,61 @@ async function tryHandle(req, res, { json, readBody, injectToken }) {
 
   if (req.method === 'GET' && urlPath === '/git/ls-files') {
     const worktree_path = url.searchParams.get('worktree_path') || ''
-    if (!worktree_path) return json(res, 400, { error: 'worktree_path is required' })
+    if (!worktree_path) {
+      await json(res, 400, { error: 'worktree_path is required' })
+      return true
+    }
     try {
       const { stdout } = await execFileAsync('git', ['-C', worktree_path, 'ls-files'],
         { timeout: 15_000, maxBuffer: 4 * 1024 * 1024 })
-      return json(res, 200, { worktree_path, files: stdout.split('\n').filter(Boolean) })
+      await json(res, 200, { worktree_path, files: stdout.split('\n').filter(Boolean) })
     } catch (err) {
-      return json(res, 500, { error: ((err.stdout || '') + (err.stderr || '')).trim() || err.message })
+      await json(res, 500, { error: ((err.stdout || '') + (err.stderr || '')).trim() || err.message })
     }
+    return true
   }
 
   if (req.method === 'GET' && urlPath === '/git/file') {
     const worktree_path = url.searchParams.get('worktree_path') || ''
     const filePath = url.searchParams.get('path') || ''
-    if (!worktree_path) return json(res, 400, { error: 'worktree_path is required' })
-    if (!filePath) return json(res, 400, { error: 'path is required' })
-    const resolved = path.resolve(worktree_path, filePath)
-    if (!resolved.startsWith(path.resolve(worktree_path))) return json(res, 400, { error: 'Caminho inválido' })
-    try {
-      return json(res, 200, { path: filePath, content: fs.readFileSync(resolved, 'utf8') })
-    } catch (err) {
-      if (err.code === 'ENOENT') return json(res, 404, { error: 'Ficheiro não encontrado' })
-      return json(res, 500, { error: err.message })
+    if (!worktree_path) {
+      await json(res, 400, { error: 'worktree_path is required' })
+      return true
     }
+    if (!filePath) {
+      await json(res, 400, { error: 'path is required' })
+      return true
+    }
+    const resolved = path.resolve(worktree_path, filePath)
+    if (!resolved.startsWith(path.resolve(worktree_path))) {
+      await json(res, 400, { error: 'Caminho inválido' })
+      return true
+    }
+    try {
+      await json(res, 200, { path: filePath, content: fs.readFileSync(resolved, 'utf8') })
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        await json(res, 404, { error: 'Ficheiro não encontrado' })
+      } else {
+        await json(res, 500, { error: err.message })
+      }
+    }
+    return true
   }
 
   if (req.method !== 'POST') return false
 
   if (urlPath === '/git/ls-remote-branches') {
-    return lsRemoteBranches(await readBody(req), json, res, injectToken) && true
+    await lsRemoteBranches(await readBody(req), json, res, injectToken)
+    return true
   }
   if (urlPath === '/git/origin-head-branch') {
-    return originHeadBranch(await readBody(req), json, res) && true
+    await originHeadBranch(await readBody(req), json, res)
+    return true
   }
   if (urlPath === '/git/branch-r') {
-    return branchR(await readBody(req), json, res) && true
+    await branchR(await readBody(req), json, res)
+    return true
   }
   return false
 }
