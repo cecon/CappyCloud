@@ -116,15 +116,18 @@ async function tryHandle(req, res, { json, readBody, injectToken }) {
   const path = req.url.split('?')[0]
 
   if (req.method === 'GET' && path === '/repos/list') {
-    return listRepos(json, res) && true
+    await listRepos(json, res)
+    return true
   }
   if (req.method === 'POST' && path === '/repos/clone') {
     const body = await readBody(req)
-    return postClone(body, json, res, injectToken) && true
+    await postClone(body, json, res, injectToken)
+    return true
   }
   const m = path.match(/^\/repos\/([^/]+)$/)
   if (req.method === 'DELETE' && m) {
-    return deleteRepo(m[1], json, res) && true
+    await deleteRepo(m[1], json, res)
+    return true
   }
   return false
 }

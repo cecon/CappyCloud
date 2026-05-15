@@ -362,11 +362,9 @@ export async function streamAssistantReply(
     }
   }
   if (sawDone) {
-    try {
-      await reader.cancel()
-    } catch {
+    reader.cancel().catch(() => {
       // Stream already closed.
-    }
+    })
   }
 }
 

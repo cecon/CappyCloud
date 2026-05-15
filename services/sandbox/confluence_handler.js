@@ -176,7 +176,8 @@ async function tryHandle(req, res, { json }) {
       const page = await fetchJson(`${BASE_URL}/rest/api/content/${pageIdFromUrl(MAIN_MENU_URL)}`, {
         expand: 'body.storage,body.view,version,space,ancestors',
       })
-      return json(res, 200, compactPage(page))
+      await json(res, 200, compactPage(page))
+      return true
     }
 
     if (pathname === '/confluence/page') {
@@ -184,14 +185,18 @@ async function tryHandle(req, res, { json }) {
       const page = await fetchJson(`${BASE_URL}/rest/api/content/${id}`, {
         expand: 'body.storage,body.view,version,space,ancestors',
       })
-      return json(res, 200, compactPage(page))
+      await json(res, 200, compactPage(page))
+      return true
     }
 
     if (pathname === '/confluence/search') {
       const q = url.searchParams.get('q') || ''
       const limit = Math.max(1, Math.min(Number(url.searchParams.get('limit') || 5), 10))
       const space = url.searchParams.get('space') || 'POSTOS'
-      if (!q) return json(res, 400, { error: 'q is required' })
+      if (!q) {
+        await json(res, 400, { error: 'q is required' })
+        return true
+      }
       const escaped = q.replace(/"/g, '\\"')
       const cql = `space="${space}" AND type=page AND text ~ "${escaped}"`
       const data = await fetchJson(`${BASE_URL}/rest/api/content/search`, {
@@ -216,18 +221,21 @@ async function tryHandle(req, res, { json }) {
         source = 'site-search'
       }
 
-      return json(res, 200, {
+      await json(res, 200, {
         query: q,
         source,
         total,
         count: results.length,
         results,
       })
+      return true
     }
 
-    return json(res, 404, { error: 'Unknown confluence endpoint' })
+    await json(res, 404, { error: 'Unknown confluence endpoint' })
+    return true
   } catch (err) {
-    return json(res, 502, { error: err.message })
+    await json(res, 502, { error: err.message })
+    return true
   }
 }
 

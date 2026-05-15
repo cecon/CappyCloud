@@ -26,7 +26,10 @@ qualquer uma dessas regras.
 
 ## 4. Tamanho de Arquivo
 
-- **Máximo 300 linhas por arquivo**. Dividir por responsabilidade única se exceder.
+- **Máximo 300 linhas por arquivo de código**. Dividir por responsabilidade única se
+  exceder. Arquivos Markdown (`.md`, `.mdx`, `.markdown`) ficam fora deste gate
+  para permitir documentação técnica completa. Linhas em branco e linhas compostas
+  apenas por comentário também não contam no limite.
 
 ## 5. Type Annotations
 

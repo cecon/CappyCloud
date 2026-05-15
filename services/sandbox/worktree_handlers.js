@@ -82,6 +82,48 @@ async function tryHandle(req, res, { json, readBody }) {
     return true
   }
 
+  if (pathname === '/worktree/search') {
+    const body = await readBody(req)
+    try {
+      const wt = resolveSafeWorktree(body.worktree_path)
+      const query = String(body.query || '').trim()
+      const limit = Math.max(1, Math.min(Number(body.limit || 20), 50))
+      if (!query) {
+        await json(res, 400, { error: 'query é obrigatório' })
+        return true
+      }
+      const { stdout } = await execFileAsync(
+        'rg',
+        ['--line-number', '--ignore-case', '--fixed-strings', '--max-count', '3', '--', query, wt],
+        { timeout: 45_000, maxBuffer: 2 * 1024 * 1024 },
+      ).catch((err) => {
+        if (err.code === 1) return { stdout: '' }
+        throw err
+      })
+      const matches = String(stdout || '')
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .slice(0, limit)
+        .map((line) => {
+          const parts = line.split(':')
+          const file = parts.shift() || ''
+          const lineNo = Number(parts.shift() || 0)
+          const rel = path.relative(wt, file)
+          return {
+            path: rel && !rel.startsWith('..') ? rel : file,
+            line: lineNo,
+            text: parts.join(':').trim().slice(0, 500),
+          }
+        })
+      await json(res, 200, { worktree_path: wt, query, matches })
+    } catch (err) {
+      const detail = (err.stderr && String(err.stderr)) || err.message || String(err)
+      console.error('[worktree/search]', detail)
+      await json(res, 500, { error: 'busca no worktree falhou', detail })
+    }
+    return true
+  }
+
   if (pathname === '/worktree/diff') {
     const body = await readBody(req)
     const baseBranch = (body.base_branch || 'main').trim()

@@ -23,8 +23,8 @@ repos:
   - repo: local
     hooks:
       - id: max-file-length
-        name: "Máximo 300 linhas por arquivo"
-        entry: python scripts/check_file_length.py
+        name: "Máximo 300 linhas por arquivo de código"
+        entry: python3 scripts/check_file_length.py
         language: system
         types_or: [python, ts, tsx, javascript, jsx]
         exclude: ^(web/|\.claude/)
