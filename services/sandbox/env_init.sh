@@ -177,6 +177,114 @@ console.log('[env_init] openclaude context window patch applied.');
 PATCH_EOF
 fi
 
+# ── Patch openclaude OpenAI shim: usage real em stream ────────
+# Alguns gateways OpenAI-compatible (incluindo OpenRouter em rotas com tools)
+# enviam o bloco `usage` em chunk separado do `finish_reason`. O QueryEngine só
+# acumula usage recebido antes de `message_stop`; portanto guardamos o último
+# usage real recebido no stream e emitimos um `message_delta` final antes do stop
+# quando o fluxo normal não o emitiu.
+_OPENAI_SHIM_TS=/openclaude/src/services/api/openaiShim.ts
+if [ -f "$_OPENAI_SHIM_TS" ]; then
+    node - "$_OPENAI_SHIM_TS" << 'PATCH_EOF'
+const fs = require('fs');
+const file = process.argv[2];
+let c = fs.readFileSync(file, 'utf8');
+if (c.includes('CappyCloud final stream usage')) {
+  console.log('[env_init] OpenAI shim usage patch: already present.');
+  process.exit(0);
+}
+const stateNeedle = "  let hasEmittedFinalUsage = false\n  let hasProcessedFinishReason = false";
+const stateReplacement = "  let hasEmittedFinalUsage = false\n  let pendingFinalUsage: Partial<AnthropicUsage> | undefined\n  let hasProcessedFinishReason = false";
+if (c.includes(stateNeedle)) {
+  c = c.replace(stateNeedle, stateReplacement);
+} else {
+  console.log('[env_init] OpenAI shim usage patch: state needle not found, skipping.');
+  process.exit(0);
+}
+const chunkNeedle = "      const chunkUsage = convertChunkUsage(chunk.usage)\n\n      for (const choice of chunk.choices ?? []) {";
+const chunkReplacement = "      const chunkUsage = convertChunkUsage(chunk.usage)\n      if (chunkUsage) {\n        // CappyCloud final stream usage: preserve real provider usage even when it arrives in a standalone chunk.\n        pendingFinalUsage = chunkUsage\n      }\n\n      for (const choice of chunk.choices ?? []) {";
+if (c.includes(chunkNeedle)) {
+  c = c.replace(chunkNeedle, chunkReplacement);
+} else {
+  console.log('[env_init] OpenAI shim usage patch: chunk needle not found, skipping.');
+  process.exit(0);
+}
+const stopNeedle = "  yield { type: 'message_stop' }";
+const stopReplacement = "  if (!hasEmittedFinalUsage && pendingFinalUsage) {\n    yield {\n      type: 'message_delta',\n      delta: { stop_reason: lastStopReason ?? 'end_turn', stop_sequence: null },\n      usage: pendingFinalUsage,\n    }\n    hasEmittedFinalUsage = true\n  }\n\n  yield { type: 'message_stop' }";
+if (c.includes(stopNeedle)) {
+  c = c.replace(stopNeedle, stopReplacement);
+} else {
+  console.log('[env_init] OpenAI shim usage patch: stop needle not found, skipping.');
+  process.exit(0);
+}
+fs.writeFileSync(file, c);
+console.log('[env_init] OpenAI shim usage patch applied.');
+PATCH_EOF
+fi
+
+# ── Patch openclaude gRPC: modelo dinâmico por request ───────
+# O QueryEngine recebe `userSpecifiedModel`, mas partes do shim OpenAI ainda
+# consultam process.env.OPENAI_MODEL. Em modo gRPC/headless, alinhar a env ao
+# ChatRequest.model garante que o modelo escolhido na UI chegue ao OpenRouter.
+_GRPC_TS=/openclaude/src/grpc/server.ts
+if [ -f "$_GRPC_TS" ]; then
+    node - "$_GRPC_TS" << 'PATCH_EOF'
+const fs = require('fs');
+const file = process.argv[2];
+let c = fs.readFileSync(file, 'utf8');
+if (c.includes('CappyCloud dynamic model override') && c.includes('CappyCloud billable usage')) {
+  console.log('[env_init] gRPC dynamic model patch: already present.');
+  process.exit(0);
+}
+const importNeedle = "import { QueryEngine } from '../QueryEngine.js'";
+if (c.includes(importNeedle) && !c.includes("from '../cost-tracker.js'")) {
+  c = c.replace(importNeedle, importNeedle + "\nimport { getModelUsage } from '../cost-tracker.js'");
+}
+const needle = "          const req = clientMessage.request\n          sessionId = req.session_id || ''";
+const replacement = "          const req = clientMessage.request\n          const requestedModel = String(req.model || '').trim()\n          const previousOpenAIModel = process.env.OPENAI_MODEL\n          if (requestedModel) {\n            // CappyCloud dynamic model override: OpenAI shim fallback paths read OPENAI_MODEL.\n            process.env.OPENAI_MODEL = requestedModel\n            console.log(`[grpc] dynamic model override: ${requestedModel}`)\n          }\n          sessionId = req.session_id || ''";
+if (c.includes(needle)) {
+  c = c.replace(needle, replacement);
+} else if (!c.includes('CappyCloud dynamic model override')) {
+  console.log('[env_init] gRPC dynamic model patch: needle not found, skipping.');
+  process.exit(0);
+}
+const usageNeedle = "          // Track accumulated response data for FinalResponse\n          let fullText = ''";
+const usageReplacement = "          // Track accumulated response data for FinalResponse\n          const usageBefore = JSON.parse(JSON.stringify(getModelUsage()))\n          let fullText = ''";
+if (c.includes(usageNeedle) && !c.includes('const usageBefore = JSON.parse')) {
+  c = c.replace(usageNeedle, usageReplacement);
+}
+const resultUsageNeedle = "                promptTokens = msg.usage?.input_tokens ?? 0\n                completionTokens = msg.usage?.output_tokens ?? 0";
+const resultUsageReplacement = "                const freshInputTokens = msg.usage?.input_tokens ?? 0\n                const cacheReadTokens = msg.usage?.cache_read_input_tokens ?? 0\n                const cacheCreationTokens = msg.usage?.cache_creation_input_tokens ?? 0\n                // CappyCloud billable usage: OpenRouter's Input column includes fresh + cache tokens.\n                promptTokens = freshInputTokens + cacheReadTokens + cacheCreationTokens\n                completionTokens = msg.usage?.output_tokens ?? 0";
+if (c.includes(resultUsageNeedle)) {
+  c = c.replace(resultUsageNeedle, resultUsageReplacement);
+} else if (!c.includes('CappyCloud billable usage')) {
+  console.log('[env_init] gRPC result usage patch: needle not found, skipping result cache totals.');
+}
+const doneNeedle = "            call.write({\n              done: {\n                full_text: fullText,\n                prompt_tokens: promptTokens,\n                completion_tokens: completionTokens\n              }\n            })";
+const doneReplacement = "            const usageAfter = getModelUsage()\n            let accumulatedInputTokens = 0\n            let accumulatedOutputTokens = 0\n            for (const [modelName, usage] of Object.entries(usageAfter)) {\n              const before = usageBefore[modelName] || {}\n              const freshDelta = Math.max(0, (usage.inputTokens || 0) - (before.inputTokens || 0))\n              const cacheReadDelta = Math.max(0, (usage.cacheReadInputTokens || 0) - (before.cacheReadInputTokens || 0))\n              const cacheCreationDelta = Math.max(0, (usage.cacheCreationInputTokens || 0) - (before.cacheCreationInputTokens || 0))\n              // CappyCloud billable usage: OpenRouter bills every tool-loop API call and its Input column includes cache tokens.\n              accumulatedInputTokens += freshDelta + cacheReadDelta + cacheCreationDelta\n              accumulatedOutputTokens += Math.max(0, (usage.outputTokens || 0) - (before.outputTokens || 0))\n            }\n            if (accumulatedInputTokens > 0 || accumulatedOutputTokens > 0) {\n              promptTokens = accumulatedInputTokens\n              completionTokens = accumulatedOutputTokens\n            }\n            call.write({\n              done: {\n                full_text: fullText,\n                prompt_tokens: promptTokens,\n                completion_tokens: completionTokens\n              }\n            })";
+if (c.includes(doneNeedle)) {
+  c = c.replace(doneNeedle, doneReplacement);
+} else if (!c.includes('CappyCloud billable usage')) {
+  console.log('[env_init] gRPC accumulated usage patch: needle not found, skipping usage totals.');
+}
+if (c.includes('CappyCloud accumulated usage: OpenRouter bills every tool-loop API call, not only the final result.')) {
+  c = c.replace(
+    "              // CappyCloud accumulated usage: OpenRouter bills every tool-loop API call, not only the final result.\n              accumulatedInputTokens += Math.max(0, (usage.inputTokens || 0) - (before.inputTokens || 0))\n              accumulatedOutputTokens += Math.max(0, (usage.outputTokens || 0) - (before.outputTokens || 0))",
+    "              const freshDelta = Math.max(0, (usage.inputTokens || 0) - (before.inputTokens || 0))\n              const cacheReadDelta = Math.max(0, (usage.cacheReadInputTokens || 0) - (before.cacheReadInputTokens || 0))\n              const cacheCreationDelta = Math.max(0, (usage.cacheCreationInputTokens || 0) - (before.cacheCreationInputTokens || 0))\n              // CappyCloud billable usage: OpenRouter bills every tool-loop API call and its Input column includes cache tokens.\n              accumulatedInputTokens += freshDelta + cacheReadDelta + cacheCreationDelta\n              accumulatedOutputTokens += Math.max(0, (usage.outputTokens || 0) - (before.outputTokens || 0))"
+  );
+}
+const resetNeedle = "          engine = null\n\n        } else if (clientMessage.input) {";
+const resetReplacement = "          engine = null\n          if (typeof previousOpenAIModel === 'string') {\n            process.env.OPENAI_MODEL = previousOpenAIModel\n          } else {\n            delete process.env.OPENAI_MODEL\n          }\n\n        } else if (clientMessage.input) {";
+if (!c.includes(resetNeedle)) {
+  console.log('[env_init] gRPC dynamic model reset patch: needle not found, skipping reset.');
+} else {
+  c = c.replace(resetNeedle, resetReplacement);
+}
+fs.writeFileSync(file, c);
+console.log('[env_init] gRPC dynamic model patch applied.');
+PATCH_EOF
+fi
+
 # ── Exporta vars para openclaude e session_server ────────────
 export CLAUDE_CODE_USE_OPENAI="${CLAUDE_CODE_USE_OPENAI}"
 export OPENAI_BASE_URL="${OPENAI_BASE_URL}"

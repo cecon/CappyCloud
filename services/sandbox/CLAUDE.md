@@ -162,6 +162,39 @@ não estão disponíveis no sandbox.
   ficam isoladas até abrir um Pull Request.
 - Python 3, Node 20, Bun, ripgrep, jq, gh, az e graphviz estão instalados.
 
+### MCP Servers disponíveis
+
+O openclaude carrega MCPs configurados pelo utilizador em
+`~/.openclaude.json` no início de cada sessão gRPC. O sandbox também mantém
+`~/.claude/settings.json` como espelho legado para inspeção.
+
+**Restrições do ambiente sandbox:**
+
+- ✅ Binários instalados no PATH (ex.: `/usr/local/bin/signoz-mcp-server`)
+- ✅ Comandos Node.js via `npx` ou binários em `node_modules/.bin`
+- ✅ Scripts Python via `python3`
+- ❌ **`docker` não está disponível** — MCPs que usam `docker run` falharão
+  silenciosamente. Não configure MCP com `command: docker`.
+
+**MCP pré-instalado:**
+
+| Nome | Binário | Notas |
+|------|---------|-------|
+| `signoz-mcp-server` | `/usr/local/bin/signoz-mcp-server` | Observabilidade (métricas, traces, logs, alertas). Requer `SIGNOZ_URL` e `SIGNOZ_API_KEY` no env. |
+| `confluence-mcp-server` | `/usr/local/bin/confluence-mcp-server` | Consulta read-only ao Confluence via REST. Requer `CONFLUENCE_BASE_URL` e credencial (`CONFLUENCE_EMAIL` + `CONFLUENCE_API_TOKEN` ou `CONFLUENCE_PAT`). Opcional: `CONFLUENCE_MAIN_MENU_URL`. |
+
+Se um MCP estiver configurado mas as ferramentas não aparecerem, verifique se
+o `command` aponta para um executável existente no container.
+
+### Documentação pública Linx Share
+
+Para dúvidas do AutoSystem, consulte a documentação pública como fonte normal de
+pesquisa. Se a MCP tool não estiver disponível, use HTTP via `curl`:
+
+- Menu principal: `curl -s "$SANDBOX_SESSION_URL/confluence/main"`
+- Busca: `curl -s "$SANDBOX_SESSION_URL/confluence/search?q=<termo>&limit=5"`
+- Página: `curl -s "$SANDBOX_SESSION_URL/confluence/page?id=<pageId>"`
+
 ---
 
 ## Regras absolutas

@@ -1,6 +1,6 @@
 """add_mcp_servers_table
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: 20260512_223815
 Revises: 50ceffcbc437
 Create Date: 2026-05-12 22:38:15.000000
 
@@ -15,7 +15,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "a1b2c3d4e5f6"
+revision: str = "20260512_223815"
 down_revision: str | Sequence[str] | None = "50ceffcbc437"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

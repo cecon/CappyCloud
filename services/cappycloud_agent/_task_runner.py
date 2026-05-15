@@ -118,6 +118,14 @@ class TaskRunner:
                     await self._update_task(status="error", completed_at=_now())
                     return
 
+                if event_type == "done":
+                    usage = data if isinstance(data, dict) else {}
+                    await self._persist_usage(
+                        model_used=str(usage.get("model_used") or self._model_used),
+                        prompt_tokens=int(usage.get("prompt_tokens") or 0),
+                        completion_tokens=int(usage.get("completion_tokens") or 0),
+                    )
+
                 await self._insert_event(event_type, _normalise(data))
                 await self._touch_task()
 
@@ -150,12 +158,6 @@ class TaskRunner:
                     await self._update_task(status="running")
 
                 elif event_type in ("done",):
-                    usage = data if isinstance(data, dict) else {}
-                    await self._persist_usage(
-                        model_used=str(usage.get("model_used") or self._model_used),
-                        prompt_tokens=int(usage.get("prompt_tokens") or 0),
-                        completion_tokens=int(usage.get("completion_tokens") or 0),
-                    )
                     await self._update_task(status="done", completed_at=_now())
                     return
 

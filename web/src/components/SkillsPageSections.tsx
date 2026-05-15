@@ -1,4 +1,4 @@
-import type { Skill, SkillCreate } from '../api'
+import type { Skill, SkillCreate, Workspace } from '../api'
 import styles from '../pages/settings.module.css'
 
 type FilterMode = 'all' | 'active'
@@ -8,12 +8,13 @@ type SkillsPageSectionsProps = {
   onFilterChange: (mode: FilterMode) => void
   loading: boolean
   error: string | null
-  importUrl: string
-  setImportUrl: (v: string) => void
-  importing: boolean
-  importError: string | null
-  onImportSubmit: (e: React.FormEvent) => void
+  workspaces: Workspace[]
   filteredSkills: Skill[]
+  formOpen: boolean
+  editingSkillId: string | null
+  onCreate: () => void
+  onEdit: (s: Skill) => void
+  onCancelForm: () => void
   onToggleActive: (s: Skill) => void
   onDelete: (id: string) => void
   skillForm: SkillCreate
@@ -24,117 +25,87 @@ type SkillsPageSectionsProps = {
 }
 
 /**
- * Blocos de UI da página Skills (filtro, import, tabela, formulário de criação).
+ * Blocos de UI da página Skills: CRUD simples com lista e painel de edição.
  */
 export function SkillsPageSections(p: SkillsPageSectionsProps) {
+  const repoNameById = new Map(p.workspaces.map((workspace) => [workspace.id, workspace.name]))
+  const editing = p.editingSkillId !== null
+
   return (
-    <>
+    <div className={styles.crudLayout}>
       <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Filtro</h2>
-        <div className={styles.formRow}>
-          <label className={styles.label} style={{ flex: 1 }}>
-            Mostrar
+        <div className={styles.crudHeader}>
+          <div>
+            <h2 className={styles.sectionTitle}>Skills cadastradas</h2>
+            <p className={styles.sectionDesc}>
+              {p.filteredSkills.length} item(ns) para uso dinâmico no contexto do agente.
+            </p>
+          </div>
+          <div className={styles.crudToolbar}>
             <select
-              className={styles.input}
+              className={`${styles.input} ${styles.compactSelect}`}
               value={p.filterMode}
               onChange={(e) => p.onFilterChange(e.target.value as FilterMode)}
+              aria-label="Filtrar skills"
             >
-              <option value="all">Todas as skills</option>
-              <option value="active">Somente ativas</option>
+              <option value="all">Todas</option>
+              <option value="active">Ativas</option>
             </select>
-          </label>
+            <button type="button" className={styles.submitBtn} onClick={p.onCreate}>
+              <span className={styles.icon}>add</span>
+              Nova skill
+            </button>
+          </div>
         </div>
         {p.loading && <p className={styles.hint}>Carregando…</p>}
         {p.error && <p className={styles.errorMsg}>{p.error}</p>}
-      </section>
 
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Importar de URL</h2>
-        <form onSubmit={p.onImportSubmit} className={styles.form}>
-          <div className={styles.formRow}>
-            <label className={styles.label} style={{ flex: 2 }}>
-              URL
-              <input
-                className={styles.input}
-                value={p.importUrl}
-                onChange={(e) => p.setImportUrl(e.target.value)}
-                placeholder="https://…"
-                type="url"
-              />
-            </label>
-            <button
-              type="submit"
-              className={styles.submitBtn}
-              disabled={!p.importUrl || p.importing}
-              style={{ alignSelf: 'flex-end' }}
-            >
-              {p.importing ? 'Importando…' : 'Importar'}
-            </button>
-          </div>
-          {p.importError && <p className={styles.errorMsg}>{p.importError}</p>}
-        </form>
-      </section>
-
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Lista ({p.filteredSkills.length})</h2>
         {p.filteredSkills.length === 0 && !p.loading ? (
           <p className={styles.hint}>Nenhuma skill neste filtro.</p>
         ) : (
           <table className={styles.table}>
             <thead>
               <tr>
+                <th>Repo</th>
                 <th>Título</th>
-                <th>Slug</th>
-                <th>Embed</th>
+                <th>Descrição</th>
                 <th>Status</th>
-                <th>Fonte</th>
-                <th></th>
+                <th style={{ textAlign: 'right' }}>Ações</th>
               </tr>
             </thead>
             <tbody>
               {p.filteredSkills.map((s) => (
-                <tr key={s.id}>
+                <tr key={s.id} className={p.editingSkillId === s.id ? styles.selectedRow : undefined}>
+                  <td>{s.repository_id ? repoNameById.get(s.repository_id) ?? 'Repo removido' : 'Global'}</td>
                   <td>{s.title}</td>
                   <td>
-                    <code>{s.slug}</code>
-                  </td>
-                  <td>
-                    <span
-                      className={styles.badge}
-                      title={
-                        s.has_embedding
-                          ? 'Embedding calculado'
-                          : 'Sem embedding (busca lexical apenas)'
-                      }
-                    >
-                      {s.has_embedding ? '✓' : '—'}
+                    <span className={styles.descriptionCell} title={s.summary || s.content}>
+                      {s.summary || s.content}
                     </span>
                   </td>
                   <td>
                     <button
-                      className={styles.actionBtn}
+                      className={`${styles.statusPill} ${s.active ? styles.statusPillOn : styles.statusPillOff}`}
                       onClick={() => p.onToggleActive(s)}
                       title={s.active ? 'Desactivar' : 'Activar'}
                     >
-                      <span className={styles.icon}>
-                        {s.active ? 'visibility' : 'visibility_off'}
-                      </span>
+                      {s.active ? 'Ativa' : 'Inativa'}
                     </button>
                   </td>
-                  <td className={styles.urlCell} title={s.source_url ?? ''}>
-                    {s.source_url ? (
-                      <a href={s.source_url} target="_blank" rel="noreferrer">
-                        link
-                      </a>
-                    ) : (
-                      <span style={{ opacity: 0.5 }}>manual</span>
-                    )}
-                  </td>
                   <td className={styles.actions}>
+                    <button
+                      className={styles.actionBtn}
+                      onClick={() => p.onEdit(s)}
+                      title="Editar"
+                      aria-label={`Editar ${s.title}`}
+                    >
+                      <span className={styles.icon}>edit</span>
+                    </button>
                     <button
                       className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
                       onClick={() => p.onDelete(s.id)}
                       title="Remover"
+                      aria-label={`Remover ${s.title}`}
                     >
                       <span className={styles.icon}>delete</span>
                     </button>
@@ -146,9 +117,34 @@ export function SkillsPageSections(p: SkillsPageSectionsProps) {
         )}
       </section>
 
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Criar skill manualmente</h2>
+      {p.formOpen && (
+      <section className={`${styles.section} ${styles.editPanel}`}>
+        <div className={styles.crudHeader}>
+          <div>
+            <h2 className={styles.sectionTitle}>{editing ? 'Editar skill' : 'Nova skill'}</h2>
+            <p className={styles.sectionDesc}>Defina o repo, título e a regra curta que o agente deve receber.</p>
+          </div>
+          <button type="button" className={styles.actionBtn} onClick={p.onCancelForm} title="Fechar">
+            <span className={styles.icon}>close</span>
+          </button>
+        </div>
         <form onSubmit={p.onSaveSkill} className={styles.form}>
+          <label className={styles.label}>
+            Repositório
+            <select
+              className={styles.input}
+              value={p.skillForm.repository_id}
+              onChange={(e) => p.setSkillForm((prev) => ({ ...prev, repository_id: e.target.value }))}
+              required
+            >
+              {!p.skillForm.repository_id && (
+                <option value="" disabled>Selecione um repositório…</option>
+              )}
+              {p.workspaces.map((workspace) => (
+                <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
+              ))}
+            </select>
+          </label>
           <label className={styles.label}>
             Título
             <input
@@ -160,32 +156,30 @@ export function SkillsPageSections(p: SkillsPageSectionsProps) {
             />
           </label>
           <label className={styles.label}>
-            Resumo (curto, mostrado no contexto do LLM)
-            <input
+            Descrição
+            <textarea
               className={styles.input}
               value={p.skillForm.summary ?? ''}
               onChange={(e) => p.setSkillForm((prev) => ({ ...prev, summary: e.target.value }))}
-              placeholder="Descrição em uma linha"
-            />
-          </label>
-          <label className={styles.label}>
-            Conteúdo (markdown)
-            <textarea
-              className={styles.input}
-              value={p.skillForm.content}
-              onChange={(e) => p.setSkillForm((prev) => ({ ...prev, content: e.target.value }))}
-              rows={10}
-              style={{ fontFamily: 'monospace', resize: 'vertical' }}
+              placeholder="Quando esta skill deve ser usada e qual regra o agente precisa seguir."
+              rows={4}
+              style={{ resize: 'vertical' }}
               required
             />
           </label>
           {p.skillFormError && <p className={styles.errorMsg}>{p.skillFormError}</p>}
-          <button className={styles.submitBtn} type="submit" disabled={p.savingSkill}>
-            {p.savingSkill ? 'Salvando…' : 'Criar skill'}
-          </button>
+          <div className={styles.formActions}>
+            <button type="button" className={styles.secondaryBtn} onClick={p.onCancelForm}>
+              Cancelar
+            </button>
+            <button className={styles.submitBtn} type="submit" disabled={p.savingSkill}>
+              {p.savingSkill ? 'Salvando…' : editing ? 'Salvar alterações' : 'Criar skill'}
+            </button>
+          </div>
         </form>
       </section>
-    </>
+      )}
+    </div>
   )
 }
 

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import {
   AuthError,
   createMcpServer,
@@ -167,9 +166,6 @@ export function McpPage() {
   return (
     <div className={styles.page}>
       <div className={styles.header}>
-        <Link to="/" className={styles.backLink}>
-          ← Voltar ao chat
-        </Link>
         <h1 className={styles.title}>Servidores MCP</h1>
         <p className={styles.sectionDesc}>
           Configure servidores Model Context Protocol (MCP) que o openclaude usará nas sessões de agente.
