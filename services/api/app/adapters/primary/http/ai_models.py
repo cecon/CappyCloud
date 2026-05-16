@@ -175,9 +175,7 @@ async def sync_ai_models_from_openrouter(
         await session.flush()
 
     try:
-        catalog = [
-            entry for entry in await fetch_openrouter_models() if is_free_text_entry(entry)
-        ]
+        catalog = [entry for entry in await fetch_openrouter_models() if is_free_text_entry(entry)]
     except Exception as exc:
         log.exception("Falha ao buscar catálogo OpenRouter")
         raise HTTPException(status_code=502, detail=f"OpenRouter indisponível: {exc}") from exc
