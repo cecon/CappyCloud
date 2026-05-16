@@ -259,7 +259,7 @@ def build_prompt_with_agent(
         parts.append(render_repo_skills(skills))
 
     if sandbox_session_url:
-        parts.append(render_session_tools(sandbox_session_url))
+        parts.append(render_session_tools(sandbox_session_url, repos))
 
     parts.append(render_response_rules())
 

@@ -109,6 +109,7 @@ class Repository(Base):
     )
     clone_url: Mapped[str] = mapped_column(Text, nullable=False)
     default_branch: Mapped[str] = mapped_column(String(256), nullable=False, default="main")
+    confluence_url: Mapped[str] = mapped_column(Text, nullable=False, default="")
     sandbox_id: Mapped[uuid.UUID | None] = mapped_column(
         UUIDType, ForeignKey("sandboxes.id", ondelete="SET NULL"), nullable=True, index=True
     )

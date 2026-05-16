@@ -39,7 +39,7 @@ O CappyCloud transforma esse ciclo em uma experiencia unica: abrir uma conversa,
 
 Este projeto nao assume que os repositorios sao os mesmos em todos os ambientes.
 
-Em uma instalacao, voce pode ter `autosystem`, `smartpos`, `erp-core` e documentacao Linx. Em outra, pode haver outros repos, outras skills, outros MCPs, outro provedor de observabilidade e outro conjunto de modelos liberados.
+Em uma instalacao, voce pode ter repositorios de produto, servicos internos e documentacao corporativa. Em outra, pode haver outros repos, outras skills, outros MCPs, outro provedor de observabilidade e outro conjunto de modelos liberados.
 
 Por isso:
 

@@ -56,7 +56,7 @@ async def inject_evidence_prefetch(
         return prompt
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(12.0)) as client:
-        docs_task = asyncio.create_task(_fetch_docs(client, sandbox_session_url, terms))
+        docs_task = asyncio.create_task(_fetch_docs(client, sandbox_session_url, repos, terms))
         code_task = asyncio.create_task(
             _fetch_code(client, sandbox_session_url, repos, session_root, terms)
         )
@@ -78,26 +78,24 @@ def _terms_for(message: str) -> list[str]:
     quoted = re.findall(r'"([^"]{3,60})"', message)
     terms.extend(q.strip() for q in quoted)
 
-    domain_pairs = [
-        "shell select",
-        "shell box",
-        "promoção",
-        "promocao",
-        "bloqueio",
-        "bloqueado",
-        "permite_venda_dist",
-        "data_bloq_venda",
-        "pdv",
-        "venda",
-    ]
-    for term in domain_pairs:
-        if term in raw:
-            terms.append(term)
+    for token in re.findall(r"[a-zA-Z_][\w_]{3,}", message):
+        token_lower = token.lower()
+        if "_" in token and token_lower not in _STOP_TERMS:
+            terms.append(token)
+
+    phrase_candidates = re.findall(
+        r"[a-zA-ZÀ-ÿ0-9_][\wÀ-ÿ_]*(?:[\s\-/]+[a-zA-ZÀ-ÿ0-9_][\wÀ-ÿ_]*){1,3}",
+        message,
+    )
+    for phrase in phrase_candidates:
+        phrase = " ".join(phrase.split())
+        if 4 <= len(phrase) <= 60 and phrase.lower() in raw:
+            terms.append(phrase)
 
     # Tokens técnicos úteis: identificadores, palavras acentuadas normalizadas
     # e termos de domínio com tamanho suficiente.
     for token in re.findall(r"[a-zA-Z_][\w_]{3,}", message):
-        if token.lower() in {"autosystem", "investigue", "evidência", "documentação"}:
+        if token.lower() in _STOP_TERMS:
             continue
         terms.append(token)
 
@@ -107,9 +105,17 @@ def _terms_for(message: str) -> list[str]:
 async def _fetch_docs(
     client: httpx.AsyncClient,
     session_url: str,
+    repos: list[dict],
     terms: list[str],
 ) -> list[_DocHit]:
-    tasks = [_fetch_docs_for(client, session_url, term) for term in terms[:4]]
+    confluence_urls = _confluence_urls(repos)
+    if not confluence_urls:
+        return []
+    tasks = [
+        _fetch_docs_for(client, session_url, base_url, term)
+        for base_url in confluence_urls
+        for term in terms[:4]
+    ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     hits: list[_DocHit] = []
     for result in results:
@@ -121,11 +127,12 @@ async def _fetch_docs(
 async def _fetch_docs_for(
     client: httpx.AsyncClient,
     session_url: str,
+    base_url: str,
     term: str,
 ) -> list[_DocHit]:
     resp = await client.get(
         f"{session_url.rstrip('/')}/confluence/search",
-        params={"q": term, "limit": str(_DOC_RESULTS_PER_TERM)},
+        params={"base_url": base_url, "q": term, "limit": str(_DOC_RESULTS_PER_TERM)},
     )
     if resp.status_code != 200:
         return []
@@ -239,6 +246,37 @@ def _dedupe(items: list[str]) -> list[str]:
             seen.add(key)
             out.append(value)
     return out
+
+
+def _confluence_urls(repos: list[dict]) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+    for repo in repos or []:
+        value = str(repo.get("confluence_url") or "").strip().rstrip("/")
+        if value and value not in seen:
+            seen.add(value)
+            urls.append(value)
+    return urls
+
+
+_STOP_TERMS = {
+    "analise",
+    "análise",
+    "codigo",
+    "código",
+    "documentacao",
+    "documentação",
+    "evidencia",
+    "evidência",
+    "investigue",
+    "mapeie",
+    "mostre",
+    "procure",
+    "repo",
+    "repositorio",
+    "repositório",
+    "sobre",
+}
 
 
 def _unique_docs(hits: list[_DocHit]) -> list[_DocHit]:

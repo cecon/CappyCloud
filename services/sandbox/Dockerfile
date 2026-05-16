@@ -47,7 +47,23 @@ RUN pip3 install --no-cache-dir --break-system-packages \
         weasyprint==62.3 \
         pyyaml==6.0.2 \
         jinja2==3.1.4 \
-        requests==2.32.3
+        requests==2.32.3 \
+        ruff==0.15.13 \
+        libcst==1.8.6 \
+        basedpyright==1.39.4
+
+# ── Semantic code tooling (on-demand LSP/AST helpers) ─────────
+# Estes binários ficam disponíveis para o agente e para MCPs configurados pelo
+# utilizador, mas nenhum language server fica residente por padrão.
+RUN npm install -g \
+        typescript@6.0.3 \
+        typescript-language-server@5.2.0 \
+        pyright@1.1.409 \
+        @ast-grep/cli@0.42.2 \
+        tree-sitter-cli@0.22.6 \
+        ts-morph@28.0.0 \
+    && npm cache clean --force
+ENV NODE_PATH="/usr/local/lib/node_modules"
 
 # ── GitHub CLI (gh) ───────────────────────────────────────────
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \

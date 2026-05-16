@@ -70,6 +70,10 @@ class SQLAlchemyRepositoryRepository(RepositoryRepository):
 
         return _inject_token_in_url(repo_row.clone_url, token, provider_row.provider_type)
 
+    async def get_confluence_url(self, repo_id: uuid.UUID) -> str:
+        repo_row = await self._session.get(RepositoryORM, repo_id)
+        return str(repo_row.confluence_url or "").strip() if repo_row else ""
+
     @staticmethod
     def _to_entity(row: RepositoryORM) -> RepositoryEntity:
         return RepositoryEntity(
@@ -78,6 +82,7 @@ class SQLAlchemyRepositoryRepository(RepositoryRepository):
             name=row.name,
             clone_url=row.clone_url,
             default_branch=row.default_branch,
+            confluence_url=row.confluence_url,
             provider_id=row.provider_id,
             sandbox_id=row.sandbox_id,
             sandbox_status=row.sandbox_status,

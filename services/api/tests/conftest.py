@@ -97,6 +97,10 @@ class InMemoryRepositoryRepository(RepositoryRepository):
         repo = self._store.get(repo_id)
         return repo.clone_url if repo else None
 
+    async def get_confluence_url(self, repo_id: uuid.UUID) -> str:
+        repo = self._store.get(repo_id)
+        return repo.confluence_url if repo else ""
+
     def add(self, repo: Repository) -> None:
         """T\u00e9cnica de teste: insere reposit\u00f3rio diretamente sem rota HTTP."""
         self._store[repo.id] = repo
