@@ -101,7 +101,25 @@ services:
       sandbox:
         condition: service_started
 
-  # web roda localmente com `pnpm dev` (não usa Docker)
+  # Frontend React servido por Nginx. Use WEB_PORT para expor via túnel.
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    container_name: cappycloud-web
+    restart: unless-stopped
+    networks:
+      - cappycloud_net
+    ports:
+      - "${WEB_PORT:-8013}:80"
+    depends_on:
+      api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1/health >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:

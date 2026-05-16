@@ -10,24 +10,35 @@ index 69bfdf4..7f9d9e4 100644
  
  const PROTO_PATH = path.resolve(import.meta.dirname, '../proto/openclaude.proto')
  
-@@ -85,11 +86,21 @@ export class GrpcServer {
+@@ -85,11 +86,30 @@ export class GrpcServer {
  
            const toolNameById = new Map<string, string>()
  
 +          // Load MCP servers from ~/.claude/settings.json (written by CappyCloud pipeline)
 +          const grpcMcpClients: any[] = []
++          const grpcMcpTools: any[] = []
++          const grpcMcpCommands: any[] = []
 +          try {
-+            await getMcpToolsCommandsAndResources(({ client }) => {
++            await getMcpToolsCommandsAndResources(({ client, tools, commands }) => {
 +              grpcMcpClients.push(client)
++              grpcMcpTools.push(...tools)
++              grpcMcpCommands.push(...commands)
 +            })
 +          } catch (mcpErr: any) {
 +            console.warn("[grpc] MCP load warning:", mcpErr?.message ?? mcpErr)
 +          }
++          const grpcBaseTools = getTools(appState.toolPermissionContext)
++          const grpcToolsByName = new Map<string, any>()
++          for (const tool of [...grpcBaseTools, ...grpcMcpTools]) {
++            grpcToolsByName.set(tool.name, tool)
++          }
 +
            engine = new QueryEngine({
              cwd: req.working_directory || process.cwd(),
-             tools: getTools(appState.toolPermissionContext), // Gets all available tools
-             commands: [], // Slash commands
+-            tools: getTools(appState.toolPermissionContext), // Gets all available tools
+-            commands: [], // Slash commands
++            tools: Array.from(grpcToolsByName.values()),
++            commands: grpcMcpCommands,
 -            mcpClients: [],
 +            mcpClients: grpcMcpClients,
              agents: [],

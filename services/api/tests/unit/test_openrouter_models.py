@@ -59,6 +59,20 @@ class TestExtractCapabilities:
         assert set(caps) == {"text", "audio", "video"}
 
 
+class TestFreeTextModel:
+    def test_accepts_openrouter_free_suffix(self) -> None:
+        assert adapter.is_free_text_model("openai/gpt-oss-120b:free", ["text"])
+
+    def test_accepts_free_router(self) -> None:
+        assert adapter.is_free_text_model("openrouter/free", ["text", "vision"])
+
+    def test_rejects_paid_text_model(self) -> None:
+        assert not adapter.is_free_text_model("openai/gpt-4o-mini", ["text"])
+
+    def test_rejects_free_non_text_model(self) -> None:
+        assert not adapter.is_free_text_model("openai/text-embedding-3-small:free", ["embedding"])
+
+
 class TestNormalize:
     def test_minimal_payload(self) -> None:
         result = adapter._normalize(

@@ -75,6 +75,7 @@ COPY patches/auto-approve-tools.patch /tmp/auto-approve-tools.patch
 COPY patches/multimodal-proto.patch /tmp/multimodal-proto.patch
 COPY patches/multimodal-grpc-handler.patch /tmp/multimodal-grpc-handler.patch
 COPY patches/mcp-grpc-integration.patch /tmp/mcp-grpc-integration.patch
+RUN sed -i 's/\r$//' /tmp/*.patch
 WORKDIR /openclaude
 RUN git clone --depth=1 https://github.com/Gitlawb/openclaude.git . \
     && git apply /tmp/grep-tool-n-alias.patch \

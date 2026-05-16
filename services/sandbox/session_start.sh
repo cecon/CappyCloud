@@ -31,9 +31,67 @@ echo "[session_start] slug=${ENV_SLUG}  session=${SESSION_ID}  worktree=${WORKTR
 
 mkdir -p "$(dirname "$WORKTREE_PATH")"
 
+# ── Helper: overlay .sendbox/ → .claude/ na worktree ─────────
+# .sendbox fica versionado no clone principal do repo e é copiado como
+# configuração local da sessão. Copiamos apenas arquivos regulares para evitar
+# symlinks apontando para fora do repo/sessão.
+_copy_regular_tree() {
+    local src="$1"
+    local dest="$2"
+    [ -d "$src" ] || return 0
+    mkdir -p "$dest"
+    (
+        cd "$src"
+        find . -type f -print0
+    ) | while IFS= read -r -d '' rel; do
+        rel="${rel#./}"
+        mkdir -p "$(dirname "$dest/$rel")"
+        cp -p "$src/$rel" "$dest/$rel"
+    done
+}
+
+_exclude_injected_claude_dirs() {
+    local worktree_path="$1"
+    local exclude_file
+    exclude_file=$(git -C "$worktree_path" rev-parse --git-path info/exclude 2>/dev/null || true)
+    [ -n "$exclude_file" ] || return 0
+    mkdir -p "$(dirname "$exclude_file")"
+    touch "$exclude_file"
+    for pattern in ".claude/skills/" ".claude/commands/" ".claude/agents/"; do
+        grep -qxF "$pattern" "$exclude_file" || echo "$pattern" >> "$exclude_file"
+    done
+}
+
+_inject_sendbox_overlay() {
+    local main_repo="$1"
+    local worktree_path="$2"
+    local overlay_dir="${main_repo}/.sendbox"
+    [ -d "$overlay_dir" ] || return 0
+
+    local injected=()
+    if [ -d "$overlay_dir/skills" ]; then
+        _copy_regular_tree "$overlay_dir/skills" "$worktree_path/.claude/skills"
+        injected+=("skills")
+    fi
+    if [ -d "$overlay_dir/commands" ]; then
+        _copy_regular_tree "$overlay_dir/commands" "$worktree_path/.claude/commands"
+        injected+=("commands")
+    fi
+    if [ -d "$overlay_dir/agents" ]; then
+        _copy_regular_tree "$overlay_dir/agents" "$worktree_path/.claude/agents"
+        injected+=("agents")
+    fi
+
+    if [ "${#injected[@]}" -gt 0 ]; then
+        _exclude_injected_claude_dirs "$worktree_path"
+        echo "[session_start] .sendbox overlay injetado em .claude/: ${injected[*]}"
+    fi
+}
+
 # ── Idempotente: worktree saudável já existe ──────────────────
 if [ -d "$WORKTREE_PATH/.git" ] || [ -f "$WORKTREE_PATH/.git" ]; then
     echo "[session_start] Worktree já existe — reutilizando."
+    _inject_sendbox_overlay "$MAIN_REPO" "$WORKTREE_PATH" || true
     exit 0
 fi
 
@@ -208,5 +266,7 @@ if [ -f "$WORKTREE_PATH/CLAUDE.md" ] || [ -f "$WORKTREE_PATH/AGENTS.md" ]; then
 elif [ -f /app/CLAUDE.md ]; then
     cp /app/CLAUDE.md "$WORKTREE_PATH/CLAUDE.md"
 fi
+
+_inject_sendbox_overlay "$MAIN_REPO" "$WORKTREE_PATH" || true
 
 echo "[session_start] OK — worktree=${WORKTREE_PATH}  branch=${BRANCH_NAME}"
