@@ -68,12 +68,12 @@ INSERT INTO ai_models (provider_id, model_id, display_name, capabilities, is_def
 SELECT p.id, m.model_id, m.display_name, m.capabilities::jsonb, m.is_default::jsonb, m.ctx
 FROM ai_providers p
 CROSS JOIN (VALUES
-    ('anthropic/claude-3.5-sonnet', 'Claude 3.5 Sonnet',   '["text","vision"]',        '{"text":true}',      200000),
-    ('anthropic/claude-3-haiku',    'Claude 3 Haiku',       '["text","vision"]',        '{}',                 200000),
-    ('openai/gpt-4o',               'GPT-4o',               '["text","vision"]',        '{"vision":true}',   128000),
-    ('openai/gpt-4o-mini',          'GPT-4o mini',          '["text"]',                 '{}',                128000),
-    ('openai/text-embedding-3-large','Embedding 3 Large',   '["embedding"]',            '{"embedding":true}',8192),
-    ('openai/gpt-4.1',              'GPT-4.1',              '["text","vision"]',        '{}',               1047576)
+    ('openai/gpt-oss-120b:free',               'OpenAI: gpt-oss-120b (free)',         '["text"]',          '{"text":true}', 131072),
+    ('openai/gpt-oss-20b:free',                'OpenAI: gpt-oss-20b (free)',          '["text"]',          '{}',            131072),
+    ('qwen/qwen3-coder:free',                  'Qwen: Qwen3 Coder 480B A35B (free)',  '["text"]',          '{}',            262000),
+    ('meta-llama/llama-3.3-70b-instruct:free', 'Meta: Llama 3.3 70B Instruct (free)', '["text"]',          '{}',             65536),
+    ('google/gemma-3-27b-it:free',             'Google: Gemma 3 27B (free)',          '["text","vision"]', '{}',            131072),
+    ('openrouter/free',                        'Free Models Router',                  '["text","vision"]', '{}',            200000)
 ) AS m(model_id, display_name, capabilities, is_default, ctx)
 WHERE p.name = 'openrouter'
 ON CONFLICT (provider_id, model_id) DO NOTHING;

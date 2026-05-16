@@ -30,6 +30,18 @@ class NormalizedModel(TypedDict):
     capabilities: list[str]
 
 
+def is_free_text_model(model_id: str, capabilities: list[str]) -> bool:
+    """True para modelos OpenRouter grátis que servem como LLM de texto."""
+    return "text" in capabilities and (
+        model_id.endswith(":free") or model_id == "openrouter/free"
+    )
+
+
+def is_free_text_entry(entry: NormalizedModel) -> bool:
+    """Versão do predicado para entradas já normalizadas do catálogo."""
+    return is_free_text_model(entry["model_id"], entry["capabilities"])
+
+
 def _to_per_1m(price_str: Any) -> float | None:
     """Converte preço do OpenRouter (USD/token, string) para USD por 1M tokens.
 
@@ -42,7 +54,7 @@ def _to_per_1m(price_str: Any) -> float | None:
         return None
     try:
         per_token = float(price_str)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     if per_token < 0:
         return None
@@ -86,7 +98,7 @@ def _normalize(raw: dict[str, Any]) -> NormalizedModel | None:
     )
     try:
         context_window = int(context_window_raw or 0) or 200_000
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         context_window = 200_000
     return NormalizedModel(
         model_id=model_id,

@@ -8,13 +8,13 @@ from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import and_, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
 from app.domain.entities import User
 from app.infrastructure.encryption import get_encryptor
-from app.infrastructure.openrouter_models import fetch_openrouter_models
+from app.infrastructure.openrouter_models import fetch_openrouter_models, is_free_text_entry
 from app.infrastructure.orm_models import AiModel, AiProvider
 from app.schemas import (
     AiModelCreate,
@@ -28,6 +28,24 @@ log = logging.getLogger(__name__)
 router = APIRouter(tags=["ai"])
 _OPENROUTER_PROVIDER_NAME = "OpenRouter"
 _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+_DEFAULT_FREE_TEXT_MODEL_ID = "openai/gpt-oss-120b:free"
+
+
+def _free_text_model_filter():
+    return and_(
+        AiModel.active == True,  # noqa: E712
+        text("ai_models.capabilities ? 'text'"),
+        or_(AiModel.model_id.like("%:free"), AiModel.model_id == "openrouter/free"),
+    )
+
+
+def _text_default_flags(model_id: str, current: dict | None = None) -> dict:
+    flags = dict(current or {})
+    if model_id == _DEFAULT_FREE_TEXT_MODEL_ID:
+        flags["text"] = True
+    else:
+        flags.pop("text", None)
+    return flags
 
 
 # ── AI Providers ──────────────────────────────────────────────
@@ -86,7 +104,7 @@ async def list_ai_models(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> list[AiModelOut]:
     rows = await session.execute(
-        select(AiModel).where(AiModel.active == True).order_by(AiModel.display_name)  # noqa: E712
+        select(AiModel).where(_free_text_model_filter()).order_by(AiModel.display_name)
     )
     return [AiModelOut.model_validate(r) for r in rows.scalars()]
 
@@ -157,7 +175,9 @@ async def sync_ai_models_from_openrouter(
         await session.flush()
 
     try:
-        catalog = await fetch_openrouter_models()
+        catalog = [
+            entry for entry in await fetch_openrouter_models() if is_free_text_entry(entry)
+        ]
     except Exception as exc:
         log.exception("Falha ao buscar catálogo OpenRouter")
         raise HTTPException(status_code=502, detail=f"OpenRouter indisponível: {exc}") from exc
@@ -189,7 +209,7 @@ async def sync_ai_models_from_openrouter(
                     model_id=entry["model_id"],
                     display_name=entry["display_name"],
                     capabilities=entry["capabilities"],
-                    is_default={},
+                    is_default=_text_default_flags(entry["model_id"]),
                     context_window=entry["context_window"],
                     input_cost_per_1m_usd=input_cost,
                     output_cost_per_1m_usd=output_cost,
@@ -203,6 +223,7 @@ async def sync_ai_models_from_openrouter(
             current.capabilities = entry["capabilities"]
             current.input_cost_per_1m_usd = input_cost
             current.output_cost_per_1m_usd = output_cost
+            current.is_default = _text_default_flags(entry["model_id"], current.is_default)
             current.active = True
             updated += 1
 

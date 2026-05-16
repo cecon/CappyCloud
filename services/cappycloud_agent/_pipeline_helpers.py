@@ -190,18 +190,21 @@ async def has_enabled_signoz_mcp(
 
 
 async def fetch_default_text_model_id(database_url: str) -> str | None:
-    """Busca o modelo texto default ativo no catálogo do banco."""
+    """Busca o modelo texto grátis default ativo no catálogo do banco."""
     if not database_url:
         return None
+    free_filter = """AND capabilities ? 'text'
+                  AND (model_id LIKE '%:free' OR model_id = 'openrouter/free')"""
     try:
         conn = await asyncpg.connect(database_url)
         try:
             row = await conn.fetchrow(
-                """
+                f"""
                 SELECT model_id
                 FROM ai_models
                 WHERE active = TRUE
                   AND COALESCE((is_default->>'text')::boolean, FALSE) = TRUE
+                  {free_filter}
                 ORDER BY display_name
                 LIMIT 1
                 """
@@ -209,11 +212,11 @@ async def fetch_default_text_model_id(database_url: str) -> str | None:
             if row:
                 return str(row["model_id"])
             row = await conn.fetchrow(
-                """
+                f"""
                 SELECT model_id
                 FROM ai_models
                 WHERE active = TRUE
-                  AND capabilities ? 'text'
+                  {free_filter}
                 ORDER BY display_name
                 LIMIT 1
                 """
@@ -224,6 +227,33 @@ async def fetch_default_text_model_id(database_url: str) -> str | None:
     except Exception as exc:  # noqa: BLE001
         log.warning("[Models] falha ao buscar modelo default: %s", exc)
         return None
+
+
+async def resolve_free_text_model_id(database_url: str, requested_model: str | None) -> str | None:
+    """Mantém o modelo pedido só se ele estiver liberado como free/text."""
+    if database_url and requested_model:
+        try:
+            conn = await asyncpg.connect(database_url)
+            try:
+                row = await conn.fetchrow(
+                    """
+                    SELECT 1
+                    FROM ai_models
+                    WHERE active = TRUE
+                      AND model_id = $1
+                      AND capabilities ? 'text'
+                      AND (model_id LIKE '%:free' OR model_id = 'openrouter/free')
+                    LIMIT 1
+                    """,
+                    requested_model,
+                )
+                if row:
+                    return requested_model
+            finally:
+                await conn.close()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("[Models] falha ao validar modelo pedido: %s", exc)
+    return await fetch_default_text_model_id(database_url)
 
 
 def build_signoz_context_section(

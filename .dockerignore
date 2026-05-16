@@ -1,6 +1,9 @@
 **/node_modules
+**/.pnpm-store
 **/.git
 **/dist
 **/__pycache__
 **/.venv
 **/_openclaude_src
+.agents
+.claude
