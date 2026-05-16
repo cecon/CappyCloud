@@ -1,9 +1,19 @@
 'use strict'
-// Read-only HTTP proxy for public Linx Share/Confluence docs.
+// Read-only HTTP proxy for a configured Confluence-compatible documentation site.
 
-const BASE_URL = 'https://share.linx.com.br'
-const MAIN_MENU_URL = `${BASE_URL}/pages/viewpage.action?pageId=11570159`
+const BASE_URL = (process.env.CONFLUENCE_BASE_URL || '').replace(/\/$/, '')
+const MAIN_MENU_URL = process.env.CONFLUENCE_MAIN_MENU_URL || ''
 const MAX_TEXT_CHARS = 18000
+
+function configuredBaseUrl(url) {
+  const value = (url.searchParams.get('base_url') || BASE_URL || '').trim().replace(/\/$/, '')
+  if (!value) return ''
+  const parsed = new URL(value)
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('CONFLUENCE_BASE_URL deve usar http(s)')
+  }
+  return value
+}
 
 function stripHtml(value) {
   return String(value || '')
@@ -23,8 +33,8 @@ function stripHtml(value) {
     .trim()
 }
 
-function absoluteUrl(href) {
-  return href.startsWith('http') ? href : `${BASE_URL}${href.startsWith('/') ? '' : '/'}${href}`
+function absoluteUrl(baseUrl, href) {
+  return href.startsWith('http') ? href : `${baseUrl}${href.startsWith('/') ? '' : '/'}${href}`
 }
 
 function clip(value, limit = MAX_TEXT_CHARS) {
@@ -32,11 +42,13 @@ function clip(value, limit = MAX_TEXT_CHARS) {
   return text.length <= limit ? text : `${text.slice(0, limit).trim()}\n...[truncado]`
 }
 
-function pageIdFromUrl(urlOrId) {
+function pageIdFromUrl(baseUrl, urlOrId) {
   const value = String(urlOrId || '').trim()
   if (/^\d+$/.test(value)) return value
   const parsed = new URL(value)
-  if (parsed.hostname !== 'share.linx.com.br') throw new Error('URL fora de share.linx.com.br')
+  if (parsed.hostname !== new URL(baseUrl).hostname) {
+    throw new Error('URL fora do Confluence configurado')
+  }
   const pageId = parsed.searchParams.get('pageId')
   if (pageId) return pageId
   const match = parsed.pathname.match(/\/pages\/(\d+)/)
@@ -44,13 +56,13 @@ function pageIdFromUrl(urlOrId) {
   throw new Error('Não foi possível extrair pageId')
 }
 
-async function resolvePageId(urlOrId) {
+async function resolvePageId(baseUrl, urlOrId) {
   try {
-    return pageIdFromUrl(urlOrId)
+    return pageIdFromUrl(baseUrl, urlOrId)
   } catch (err) {
     const value = String(urlOrId || '').trim()
     const parsed = new URL(value)
-    if (parsed.hostname !== 'share.linx.com.br') throw err
+    if (parsed.hostname !== new URL(baseUrl).hostname) throw err
     const html = await fetchText(value)
     const metaMatch = html.match(/<meta\s+name="ajs-page-id"\s+content="(\d+)"/i)
     if (metaMatch) return metaMatch[1]
@@ -58,10 +70,10 @@ async function resolvePageId(urlOrId) {
   }
 }
 
-function pageUrl(page) {
+function pageUrl(page, baseUrl) {
   const links = page._links || {}
   const webui = links.webui || ''
-  const base = links.base || BASE_URL
+  const base = links.base || baseUrl
   return webui.startsWith('/') ? `${base.replace(/\/$/, '')}${webui}` : webui
 }
 
@@ -102,22 +114,22 @@ async function fetchText(url, params = {}) {
   return text
 }
 
-function compactPage(page) {
+function compactPage(page, baseUrl) {
   return {
     id: page.id,
     title: page.title,
     space: page.space && page.space.key,
-    url: pageUrl(page),
+    url: pageUrl(page, baseUrl),
     version: page.version && page.version.number,
     text: clip(pageText(page)),
   }
 }
 
-function parseSiteSearchResults(html, limit) {
-  return parseSiteSearchResultsForSpace(html, limit, '')
+function parseSiteSearchResults(baseUrl, html, limit) {
+  return parseSiteSearchResultsForSpace(baseUrl, html, limit, '')
 }
 
-function parseSiteSearchResultsForSpace(html, limit, space) {
+function parseSiteSearchResultsForSpace(baseUrl, html, limit, space) {
   const totalMatch = html.match(/data-totalsize="(\d+)"/)
   const total = totalMatch ? Number(totalMatch[1]) : undefined
   const results = []
@@ -135,15 +147,11 @@ function parseSiteSearchResultsForSpace(html, limit, space) {
 
     const spaceMatch = item.match(/<a class="container"[^>]*>([\s\S]*?)<\/a>/i)
     const resultSpace = stripHtml(spaceMatch && spaceMatch[1])
-    if (
-      expectedSpace &&
-      expectedSpace !== 'all' &&
-      ![expectedSpace, 'postos'].includes(resultSpace.toLowerCase())
-    ) {
+    if (expectedSpace && expectedSpace !== 'all' && expectedSpace !== resultSpace.toLowerCase()) {
       continue
     }
 
-    const resultUrl = absoluteUrl(href.replace(/&amp;/g, '&'))
+    const resultUrl = absoluteUrl(baseUrl, href.replace(/&amp;/g, '&'))
     if (seen.has(resultUrl)) continue
     seen.add(resultUrl)
 
@@ -161,9 +169,9 @@ function parseSiteSearchResultsForSpace(html, limit, space) {
   return { total, results }
 }
 
-async function siteSearch(query, limit, space) {
-  const html = await fetchText(`${BASE_URL}/dosearchsite.action`, { queryString: query })
-  return parseSiteSearchResultsForSpace(html, limit, space)
+async function siteSearch(baseUrl, query, limit, space) {
+  const html = await fetchText(`${baseUrl}/dosearchsite.action`, { queryString: query })
+  return parseSiteSearchResultsForSpace(baseUrl, html, limit, space)
 }
 
 async function tryHandle(req, res, { json }) {
@@ -172,34 +180,46 @@ async function tryHandle(req, res, { json }) {
   if (req.method !== 'GET' || !pathname.startsWith('/confluence/')) return false
 
   try {
+    const baseUrl = configuredBaseUrl(url)
+    if (!baseUrl) {
+      await json(res, 503, { error: 'CONFLUENCE_BASE_URL não configurada' })
+      return true
+    }
+
     if (pathname === '/confluence/main') {
-      const page = await fetchJson(`${BASE_URL}/rest/api/content/${pageIdFromUrl(MAIN_MENU_URL)}`, {
+      const mainUrl = url.searchParams.get('main_url') || MAIN_MENU_URL
+      if (!mainUrl) {
+        await json(res, 503, { error: 'CONFLUENCE_MAIN_MENU_URL não configurada' })
+        return true
+      }
+      const page = await fetchJson(`${baseUrl}/rest/api/content/${pageIdFromUrl(baseUrl, mainUrl)}`, {
         expand: 'body.storage,body.view,version,space,ancestors',
       })
-      await json(res, 200, compactPage(page))
+      await json(res, 200, compactPage(page, baseUrl))
       return true
     }
 
     if (pathname === '/confluence/page') {
-      const id = await resolvePageId(url.searchParams.get('id') || url.searchParams.get('url'))
-      const page = await fetchJson(`${BASE_URL}/rest/api/content/${id}`, {
+      const id = await resolvePageId(baseUrl, url.searchParams.get('id') || url.searchParams.get('url'))
+      const page = await fetchJson(`${baseUrl}/rest/api/content/${id}`, {
         expand: 'body.storage,body.view,version,space,ancestors',
       })
-      await json(res, 200, compactPage(page))
+      await json(res, 200, compactPage(page, baseUrl))
       return true
     }
 
     if (pathname === '/confluence/search') {
       const q = url.searchParams.get('q') || ''
       const limit = Math.max(1, Math.min(Number(url.searchParams.get('limit') || 5), 10))
-      const space = url.searchParams.get('space') || 'POSTOS'
+      const space = url.searchParams.get('space') || 'all'
       if (!q) {
         await json(res, 400, { error: 'q is required' })
         return true
       }
       const escaped = q.replace(/"/g, '\\"')
-      const cql = `space="${space}" AND type=page AND text ~ "${escaped}"`
-      const data = await fetchJson(`${BASE_URL}/rest/api/content/search`, {
+      const spaceFilter = space && space !== 'all' ? `space="${space}" AND ` : ''
+      const cql = `${spaceFilter}type=page AND text ~ "${escaped}"`
+      const data = await fetchJson(`${baseUrl}/rest/api/content/search`, {
         cql,
         limit,
         expand: 'body.storage,body.view,version,space',
@@ -208,14 +228,14 @@ async function tryHandle(req, res, { json }) {
         id: page.id,
         title: page.title,
         space: page.space && page.space.key,
-        url: pageUrl(page),
+        url: pageUrl(page, baseUrl),
         excerpt: clip(pageText(page), 900),
       }))
       let total = data.size
       let source = 'rest-cql'
 
       if (results.length === 0) {
-        const fallback = await siteSearch(q, limit, space)
+        const fallback = await siteSearch(baseUrl, q, limit, space)
         results = fallback.results
         total = fallback.total
         source = 'site-search'

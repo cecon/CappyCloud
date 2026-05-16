@@ -31,6 +31,7 @@ const EMPTY_REPO_FORM: RepositoryCreate = {
   name: '',
   clone_url: '',
   default_branch: 'main',
+  confluence_url: '',
   provider_id: null,
   sandbox_id: null,
   pat_token: '',
@@ -125,6 +126,7 @@ export function SettingsPage() {
       name: r.name,
       clone_url: r.clone_url,
       default_branch: r.default_branch,
+      confluence_url: r.confluence_url ?? '',
       provider_id: r.provider_id ?? null,
       sandbox_id: r.sandbox_id ?? sandboxes[0]?.id ?? null,
       pat_token: '',
@@ -210,6 +212,7 @@ export function SettingsPage() {
                 <th>Nome</th>
                 <th>Slug</th>
                 <th>URL de clone</th>
+                <th>Confluence</th>
                 <th>Branch</th>
                 <th>Status</th>
                 <th></th>
@@ -225,6 +228,13 @@ export function SettingsPage() {
                     </td>
                     <td className={styles.urlCell} title={r.clone_url}>
                       {r.clone_url}
+                    </td>
+                    <td>
+                      {r.confluence_url ? (
+                        <span className={styles.badge}>configurado</span>
+                      ) : (
+                        <span className={styles.hint}>-</span>
+                      )}
                     </td>
                     <td>{r.default_branch}</td>
                     <td>
@@ -275,7 +285,7 @@ export function SettingsPage() {
                   </tr>
                   {docsOpenId === r.id && (
                     <tr>
-                      <td colSpan={6} style={{ padding: 0, background: 'transparent' }}>
+                      <td colSpan={7} style={{ padding: 0, background: 'transparent' }}>
                         <DocumentsPanel
                           token={token}
                           repositoryId={r.id}
@@ -345,6 +355,19 @@ export function SettingsPage() {
               placeholder="https://dev.azure.com/org/proj/_git/repo"
               required
             />
+          </label>
+
+          <label className={styles.label}>
+            URL do Confluence
+            <input
+              className={styles.input}
+              value={repoForm.confluence_url ?? ''}
+              onChange={(e) => set('confluence_url', e.target.value)}
+              placeholder="https://confluence.exemplo.com"
+            />
+            <span className={styles.hint}>
+              Opcional. Se ficar vazio, o agente não consulta Confluence para este repositório.
+            </span>
           </label>
 
           <div className={styles.formRow}>

@@ -84,6 +84,10 @@ class RepositoryRepository(ABC):
         session_start.sh consiga autenticar o clone/fetch sem env vars globais.
         """
 
+    @abstractmethod
+    async def get_confluence_url(self, repo_id: uuid.UUID) -> str:
+        """Retorna a URL de Confluence configurada para o repositório, ou string vazia."""
+
 
 class ConversationRepository(ABC):
     """Port for conversation persistence operations."""

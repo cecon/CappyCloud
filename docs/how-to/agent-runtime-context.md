@@ -32,7 +32,7 @@ resposta.
 
 ## Documentacao externa
 
-Fontes como Confluence, Linx Share, SigNoz ou outras APIs devem entrar por
+Fontes como Confluence, observabilidade ou outras APIs devem entrar por
 ferramentas configuradas no ambiente. O agente deve citar somente documentos que
 consultou de fato, com titulo e URL reais quando a ferramenta retornar esses
 campos.
