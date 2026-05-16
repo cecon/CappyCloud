@@ -85,8 +85,13 @@ class RepositoryRepository(ABC):
         """
 
     @abstractmethod
-    async def get_confluence_url(self, repo_id: uuid.UUID) -> str:
-        """Retorna a URL de Confluence configurada para o repositório, ou string vazia."""
+    async def get_confluence_settings(self, repo_id: uuid.UUID) -> tuple[str, str]:
+        """Retorna ``(confluence_url, confluence_space)`` configurados para o repositório.
+
+        Strings vazias quando o campo não está preenchido. ``space`` só faz
+        sentido quando ``url`` está preenchida — o caller decide se ignora ou
+        propaga o space órfão.
+        """
 
 
 class ConversationRepository(ABC):

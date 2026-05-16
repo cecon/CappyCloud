@@ -96,6 +96,7 @@ class Repository:
     clone_url: str
     default_branch: str = "main"
     confluence_url: str = ""
+    confluence_space: str = ""
     provider_id: uuid.UUID | None = None
     sandbox_id: uuid.UUID | None = None
     sandbox_status: str = "not_cloned"

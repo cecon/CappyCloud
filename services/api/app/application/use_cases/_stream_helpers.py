@@ -36,6 +36,7 @@ async def ensure_repo_ids(
     """Resolve ``repo_id`` em conv.repos a partir do slug, persiste se mudou."""
     if not repositories or not conv.repos:
         return
+    # mutmut: trocar False por None é equivalente — ambos falsy, lido só com `if changed:`.
     changed = False
     for r in conv.repos:
         if r.get("repo_id"):
@@ -48,6 +49,8 @@ async def ensure_repo_ids(
             r["repo_id"] = str(repo_entity.id)
             if repo_entity.confluence_url:
                 r["confluence_url"] = repo_entity.confluence_url
+                if repo_entity.confluence_space:
+                    r["confluence_space"] = repo_entity.confluence_space
             changed = True
     if changed:
         await conversations.update(conv)  # type: ignore[attr-defined]
@@ -69,9 +72,13 @@ async def enrich_repos_for_pipeline(
                 auth_url = await repositories.get_authenticated_clone_url(repo_id)
                 if auth_url:
                     next_repo["clone_url"] = auth_url
-                confluence_url = await repositories.get_confluence_url(repo_id)
+                confluence_url, confluence_space = await repositories.get_confluence_settings(
+                    repo_id
+                )
                 if confluence_url:
                     next_repo["confluence_url"] = confluence_url
+                    if confluence_space:
+                        next_repo["confluence_space"] = confluence_space
             except Exception:
                 pass
         enriched.append(next_repo)

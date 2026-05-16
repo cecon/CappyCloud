@@ -17,6 +17,12 @@ venv/
 .coverage
 htmlcov/
 
+# Mutation testing artifacts (mutmut copia o código mutado e gera meta)
+services/api/mutants/
+services/api/cappycloud_agent/
+**/.mutmut-cache
+**/*.py.meta
+
 # Node / frontend
 web/node_modules/
 web/.pnpm-store/
