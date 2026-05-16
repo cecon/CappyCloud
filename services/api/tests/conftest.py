@@ -95,11 +95,17 @@ class InMemoryRepositoryRepository(RepositoryRepository):
 
     async def get_authenticated_clone_url(self, repo_id: uuid.UUID) -> str | None:
         repo = self._store.get(repo_id)
-        return repo.clone_url if repo else None
+        if not repo:
+            return None
+        # Simula injeção de PAT — devolve URL distinta da bruta, para que
+        # testes consigam afirmar que o caller usou a versão autenticada.
+        return f"https://pat:fake-token@{repo.clone_url.removeprefix('https://')}"
 
-    async def get_confluence_url(self, repo_id: uuid.UUID) -> str:
+    async def get_confluence_settings(self, repo_id: uuid.UUID) -> tuple[str, str]:
         repo = self._store.get(repo_id)
-        return repo.confluence_url if repo else ""
+        if not repo:
+            return ("", "")
+        return (repo.confluence_url, repo.confluence_space)
 
     def add(self, repo: Repository) -> None:
         """T\u00e9cnica de teste: insere reposit\u00f3rio diretamente sem rota HTTP."""

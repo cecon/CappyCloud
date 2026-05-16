@@ -23,6 +23,7 @@ dev = [
     "mypy>=1.16",
     "pre-commit>=3.8",
     "types-passlib>=1.7",
+    "mutmut>=2.5",
 ]
 
 # ---------------------------------------------------------------------------
@@ -122,3 +123,25 @@ omit = [
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
+
+# ---------------------------------------------------------------------------
+# Mutmut — mutation testing (sob demanda, não roda no CI por padrão)
+#
+# Foco em módulos onde a lógica de negócio mora — não em DTOs, HTTP adapters
+# triviais ou wrappers. Cobertura ampla aqui custaria horas e geraria muito
+# mutante equivalente.
+#
+# Como rodar:
+#   pip install -e '.[dev]'
+#   mutmut run                       # roda contra paths-to-mutate
+#   mutmut results                   # lista sobreviventes
+#   mutmut show <id>                 # vê o diff do mutante #<id>
+#
+# Ver docs/AGENT_RULES.md (seção "Mutation Testing") para política e quando usar.
+# ---------------------------------------------------------------------------
+[tool.mutmut]
+paths_to_mutate = [
+    "app/application/use_cases/_stream_helpers.py",
+]
+tests_dir = ["tests/unit/use_cases/test_stream_helpers.py"]
+pytest_add_cli_args = ["-x", "-q", "--no-cov"]

@@ -224,7 +224,14 @@ prompt da sessão. Se nenhum repositório tiver URL configurada, não consulte
 `/confluence/*`.
 
 - Busca: `curl -s "$SANDBOX_SESSION_URL/confluence/search?base_url=<url>&q=<termo>&limit=5"`
+- Busca com filtro de space: `curl -s "$SANDBOX_SESSION_URL/confluence/search?base_url=<url>&space=<SPACE_KEY>&q=<termo>&limit=5"`
 - Página: `curl -s "$SANDBOX_SESSION_URL/confluence/page?base_url=<url>&id=<pageId>"`
+
+Quando o prompt da sessão lista um repositório com `space` (entre parênteses
+na seção "Documentação externa por repositório"), use **sempre** o parâmetro
+`&space=<SPACE_KEY>` nas buscas desse repositório. Sem o filtro, a busca
+retorna páginas de outros produtos do mesmo Confluence e o agente acaba
+abrindo pageId fora do contexto certo.
 
 ---
 

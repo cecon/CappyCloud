@@ -617,6 +617,7 @@ export interface Workspace {
   name: string
   url: string
   confluence_url: string
+  confluence_space: string
   sandbox_status: string
 }
 
@@ -793,6 +794,7 @@ export interface Repository {
   clone_url: string
   default_branch: string
   confluence_url: string
+  confluence_space: string
   provider_id: string | null
   sandbox_id: string | null
   sandbox_status: string
@@ -806,6 +808,7 @@ export interface RepositoryCreate {
   clone_url: string
   default_branch: string
   confluence_url?: string
+  confluence_space?: string
   provider_id?: string | null
   sandbox_id?: string | null
   /** PAT inline: se preenchido, o backend cria/atualiza um GitProvider implícito. */

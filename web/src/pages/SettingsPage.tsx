@@ -32,6 +32,7 @@ const EMPTY_REPO_FORM: RepositoryCreate = {
   clone_url: '',
   default_branch: 'main',
   confluence_url: '',
+  confluence_space: '',
   provider_id: null,
   sandbox_id: null,
   pat_token: '',
@@ -127,6 +128,7 @@ export function SettingsPage() {
       clone_url: r.clone_url,
       default_branch: r.default_branch,
       confluence_url: r.confluence_url ?? '',
+      confluence_space: r.confluence_space ?? '',
       provider_id: r.provider_id ?? null,
       sandbox_id: r.sandbox_id ?? sandboxes[0]?.id ?? null,
       pat_token: '',
@@ -231,7 +233,16 @@ export function SettingsPage() {
                     </td>
                     <td>
                       {r.confluence_url ? (
-                        <span className={styles.badge}>configurado</span>
+                        <span
+                          className={styles.badge}
+                          title={
+                            r.confluence_space
+                              ? `space: ${r.confluence_space}`
+                              : 'sem filtro de space'
+                          }
+                        >
+                          {r.confluence_space ? r.confluence_space : 'configurado'}
+                        </span>
                       ) : (
                         <span className={styles.hint}>-</span>
                       )}
@@ -367,6 +378,21 @@ export function SettingsPage() {
             />
             <span className={styles.hint}>
               Opcional. Se ficar vazio, o agente não consulta Confluence para este repositório.
+            </span>
+          </label>
+
+          <label className={styles.label}>
+            Space do Confluence
+            <input
+              className={styles.input}
+              value={repoForm.confluence_space ?? ''}
+              onChange={(e) => set('confluence_space', e.target.value)}
+              placeholder="EX: PRODUTO_X"
+            />
+            <span className={styles.hint}>
+              Opcional. Chave do space no Confluence (ex.: a parte em maiúsculas da URL).
+              Quando preenchido, a busca fica restrita a esse space — evita resultados de outros produtos.
+              Só faz sentido se a URL do Confluence acima estiver preenchida.
             </span>
           </label>
 

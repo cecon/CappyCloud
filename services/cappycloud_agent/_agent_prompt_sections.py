@@ -45,10 +45,26 @@ def render_session_tools(sandbox_session_url: str, repos: list[dict] | None = No
         for repo in confluence_repos:
             alias = repo.get("alias") or repo.get("slug") or "repo"
             confluence_url = str(repo.get("confluence_url") or "").strip()
-            encoded = quote(confluence_url, safe="")
+            confluence_space = str(repo.get("confluence_space") or "").strip()
+            encoded_url = quote(confluence_url, safe="")
+            base_query = f"base_url={encoded_url}"
+            space_label = ""
+            if confluence_space:
+                encoded_space = quote(confluence_space, safe="")
+                base_query = f"{base_query}&space={encoded_space}"
+                space_label = f" (space `{confluence_space}`)"
             lines.append(
-                f"- **{alias}**: `curl -s "
-                f"'{sandbox_session_url}/confluence/search?base_url={encoded}&q=<termo>&limit=5'`"
+                f"- **{alias}**{space_label}: `curl -s "
+                f"'{sandbox_session_url}/confluence/search?{base_query}&q=<termo>&limit=5'`"
+            )
+        any_space_configured = any(
+            str(repo.get("confluence_space") or "").strip() for repo in confluence_repos
+        )
+        if any_space_configured:
+            lines.append(
+                "Quando o repositório tem `space` configurado, mantenha o parâmetro "
+                "`&space=` em todas as buscas para esse repo — assim a busca fica "
+                "restrita ao produto correto e não vaza para outros spaces do Confluence."
             )
         lines.append(
             "Cruze o que vier da documentação externa com Grep/Read no repositório. "
