@@ -30,6 +30,7 @@ repos:
         exclude: ^(web/|\.claude/)
       - id: require-alembic-for-migrations
         name: "Migrations exigem comando alembic"
-        entry: python3 scripts/check_alembic_available_for_migrations.py
-        language: system
+        entry: python scripts/check_alembic_available_for_migrations.py
+        language: python
+        additional_dependencies: [alembic==1.18.4]
         files: ^services/api/alembic/versions/.*\.py$
