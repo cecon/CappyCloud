@@ -32,8 +32,9 @@ __all__ = ["Base", "JSONBType", "UUIDType"]
 class Sandbox(Base):
     """Instância do container sandbox que hospeda o openclaude gRPC.
 
-    Cada linha representa um container Docker independente.
-    status: active | draining | offline
+    Cada linha representa um container Docker independente (ADR-004).
+    ``status`` é o estado lógico (active|draining|offline); ``container_status``
+    é o estado físico do container no orquestrador.
     """
 
     __tablename__ = "sandboxes"
@@ -44,6 +45,18 @@ class Sandbox(Base):
     grpc_port: Mapped[int] = mapped_column(Integer, nullable=False, default=50051)
     session_port: Mapped[int] = mapped_column(Integer, nullable=False, default=8080)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", index=True)
+    runtime: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default="compose", default="compose"
+    )
+    image: Mapped[str] = mapped_column(String(512), nullable=False, server_default="", default="")
+    env_vars: Mapped[dict] = mapped_column(JSONBType, nullable=False, server_default="{}")
+    container_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        server_default="not_created",
+        default="not_created",
+        index=True,
+    )
     register_token: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -72,13 +85,20 @@ class RepoEnvironment(Base):
 
 
 class User(Base):
-    """Utilizador registado."""
+    """Utilizador registado.
+
+    O campo ``role`` é guardado em texto (``"admin" | "user"``) e mapeado para
+    o enum :class:`app.domain.entities.UserRole` na camada de domínio (ADR-005).
+    """
 
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="user", default="user", index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversations: Mapped[list[Conversation]] = relationship(

@@ -12,12 +12,21 @@ from collections.abc import Generator
 from typing import Any
 
 import pytest
-from app.domain.entities import Conversation, Message, Repository, User
+from app.domain.entities import (
+    ContainerStatus,
+    Conversation,
+    Message,
+    Repository,
+    Sandbox,
+    User,
+    UserRole,
+)
 from app.ports.agent import AgentPort
 from app.ports.repositories import (
     ConversationRepository,
     MessageRepository,
     RepositoryRepository,
+    SandboxRepository,
     UserRepository,
 )
 from app.ports.services import PasswordService, TokenService
@@ -51,6 +60,60 @@ class InMemoryUserRepository(UserRepository):
     async def save(self, user: User) -> User:
         self._store[user.id] = user
         return user
+
+    async def list_all(self) -> list[User]:
+        return sorted(self._store.values(), key=lambda u: u.created_at)
+
+    async def update_role(self, user_id: uuid.UUID, role: UserRole) -> User | None:
+        current = self._store.get(user_id)
+        if current is None:
+            return None
+        from dataclasses import replace
+
+        updated = replace(current, role=role)
+        self._store[user_id] = updated
+        return updated
+
+
+class InMemorySandboxRepository(SandboxRepository):
+    """In-memory sandbox store for testing (ADR-004)."""
+
+    def __init__(self) -> None:
+        self._store: dict[uuid.UUID, Sandbox] = {}
+
+    async def list_all(self) -> list[Sandbox]:
+        return sorted(self._store.values(), key=lambda s: s.created_at)
+
+    async def get(self, sandbox_id: uuid.UUID) -> Sandbox | None:
+        return self._store.get(sandbox_id)
+
+    async def get_by_name(self, name: str) -> Sandbox | None:
+        return next((s for s in self._store.values() if s.name == name), None)
+
+    async def save(self, sandbox: Sandbox) -> Sandbox:
+        self._store[sandbox.id] = sandbox
+        return sandbox
+
+    async def update(self, sandbox: Sandbox) -> Sandbox:
+        if sandbox.id not in self._store:
+            raise LookupError(f"Sandbox {sandbox.id} não encontrada.")
+        self._store[sandbox.id] = sandbox
+        return sandbox
+
+    async def update_container_status(
+        self, sandbox_id: uuid.UUID, status: ContainerStatus
+    ) -> Sandbox | None:
+        current = self._store.get(sandbox_id)
+        if current is None:
+            return None
+        from dataclasses import replace
+
+        updated = replace(current, container_status=status)
+        self._store[sandbox_id] = updated
+        return updated
+
+    async def delete(self, sandbox_id: uuid.UUID) -> bool:
+        return self._store.pop(sandbox_id, None) is not None
 
 
 class InMemoryConversationRepository(ConversationRepository):

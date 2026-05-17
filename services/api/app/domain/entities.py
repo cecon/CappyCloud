@@ -5,10 +5,50 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import StrEnum
 
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+class UserRole(StrEnum):
+    """Papel do utilizador no controlo de acesso.
+
+    Valores são strings persistidas em BD (lower-case), seguindo ADR-005.
+    ``ADMIN`` ignora tabelas de acesso (vê tudo); ``USER`` só acessa o que
+    lhe é atribuído explicitamente (sandboxes, repositórios, modelos).
+    """
+
+    ADMIN = "admin"
+    USER = "user"
+
+
+class SandboxRuntime(StrEnum):
+    """Orquestrador de containers usado para uma sandbox (ADR-004 §8).
+
+    ``COMPOSE`` é a única implementação completa hoje. ``SWARM`` é stub
+    até que o adapter de produção seja implementado.
+    """
+
+    COMPOSE = "compose"
+    SWARM = "swarm"
+
+
+class ContainerStatus(StrEnum):
+    """Estado do container no orquestrador (ADR-004 §3).
+
+    Independente do ``status`` lógico (active|draining|offline) — este
+    descreve o ciclo de vida físico do container, não o uso dele.
+    """
+
+    NOT_CREATED = "not_created"
+    STARTING = "starting"
+    RUNNING = "running"
+    CONFIGURING = "configuring"
+    CONFIGURED = "configured"
+    STOPPED = "stopped"
+    ERROR = "error"
 
 
 @dataclass
@@ -16,19 +56,38 @@ class User:
     id: uuid.UUID
     email: str
     hashed_password: str
+    role: UserRole = UserRole.USER
     created_at: datetime = field(default_factory=_utcnow)
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role is UserRole.ADMIN
 
 
 @dataclass
 class Sandbox:
-    """Container sandbox hospedando openclaude gRPC + session_server HTTP."""
+    """Container sandbox hospedando openclaude gRPC + session_server HTTP.
+
+    Após ADR-004, a sandbox é entidade cadastrável que descreve uma instância
+    a ser orquestrada (Docker Compose ou Swarm). Campos:
+
+    - ``runtime``: qual adapter usa para criar/iniciar o container.
+    - ``image``: imagem Docker.
+    - ``env_vars``: variáveis injetadas no container (não-sensíveis).
+    - ``container_status``: estado físico do container no orquestrador.
+    - ``status``: estado lógico (uso), independente.
+    """
 
     id: uuid.UUID
     name: str
     host: str
     grpc_port: int = 50051
     session_port: int = 8080
-    status: str = "active"  # active | draining | offline
+    status: str = "active"  # active | draining | offline (lógico)
+    runtime: SandboxRuntime = SandboxRuntime.COMPOSE
+    image: str = ""
+    env_vars: dict[str, str] = field(default_factory=dict)
+    container_status: ContainerStatus = ContainerStatus.NOT_CREATED
     register_token: str | None = None
     created_at: datetime = field(default_factory=_utcnow)
 

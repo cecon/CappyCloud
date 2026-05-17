@@ -10,13 +10,29 @@ import uuid
 from abc import ABC, abstractmethod
 
 from app.domain.entities import (
+    ContainerStatus,
     Conversation,
     Message,
     MessageAttachment,
     RepoEnvironment,
     Repository,
+    Sandbox,
     User,
+    UserRole,
 )
+
+__all__ = [
+    "AiModelCapabilityLookup",
+    "AttachmentRepository",
+    "ContainerStatus",
+    "ConversationRepository",
+    "MessageRepository",
+    "RepoEnvironmentRepository",
+    "RepositoryRepository",
+    "SandboxRepository",
+    "UserRepository",
+    "UserRole",
+]
 
 
 class UserRepository(ABC):
@@ -33,6 +49,59 @@ class UserRepository(ABC):
     @abstractmethod
     async def save(self, user: User) -> User:
         """Persist a new user and return it with any DB-generated fields."""
+
+    @abstractmethod
+    async def list_all(self) -> list[User]:
+        """Lista todos os utilizadores ordenados por ``created_at`` ascendente.
+
+        Sem paginação nesta 1ª iteração: o admin típico tem dezenas de users,
+        não milhares (ADR-005). Quando crescer, adicionar ``limit``/``offset``
+        explícitos sem quebrar o contrato.
+        """
+
+    @abstractmethod
+    async def update_role(self, user_id: uuid.UUID, role: UserRole) -> User | None:
+        """Atualiza apenas o papel. Devolve o utilizador atualizado, ou ``None``
+        se o id não existir. Não mexe noutros campos."""
+
+
+class SandboxRepository(ABC):
+    """Port para o cadastro de sandboxes (ADR-004).
+
+    Distinto do ``SandboxRuntimeGateway`` (que fala com Docker/Swarm). Este
+    apenas persiste/lê a entidade.
+    """
+
+    @abstractmethod
+    async def list_all(self) -> list[Sandbox]:
+        """Lista todas as sandboxes, ordem cronológica de criação."""
+
+    @abstractmethod
+    async def get(self, sandbox_id: uuid.UUID) -> Sandbox | None:
+        """Devolve sandbox por id, ou ``None`` se não existir."""
+
+    @abstractmethod
+    async def get_by_name(self, name: str) -> Sandbox | None:
+        """Devolve sandbox por nome único, ou ``None`` se não existir."""
+
+    @abstractmethod
+    async def save(self, sandbox: Sandbox) -> Sandbox:
+        """Insere uma nova sandbox e devolve-a com campos gerados."""
+
+    @abstractmethod
+    async def update(self, sandbox: Sandbox) -> Sandbox:
+        """Persiste alterações de uma sandbox existente."""
+
+    @abstractmethod
+    async def update_container_status(
+        self, sandbox_id: uuid.UUID, status: ContainerStatus
+    ) -> Sandbox | None:
+        """Atualiza apenas ``container_status``. Devolve a sandbox atualizada
+        ou ``None`` se o id não existir."""
+
+    @abstractmethod
+    async def delete(self, sandbox_id: uuid.UUID) -> bool:
+        """Remove a sandbox. Devolve ``True`` se algo foi apagado."""
 
 
 class RepoEnvironmentRepository(ABC):

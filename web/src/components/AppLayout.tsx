@@ -1,20 +1,63 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { setToken } from '../api'
+import { useCurrentUser } from '../hooks/useCurrentUser'
 import styles from './app-layout.module.css'
 
 type AppLayoutProps = {
   children: React.ReactNode
 }
 
-const NAV_ITEMS = [
-  { to: '/', icon: 'dashboard', label: 'Dashboard', section: 'Visão geral' },
-  { to: '/chat', icon: 'chat_bubble', label: 'Chat', section: 'Agente' },
-  { to: '/runs', icon: 'history', label: 'Runs', section: 'Operação' },
-  { to: '/analytics', icon: 'analytics', label: 'Analytics', section: 'Operação' },
-  { to: '/skills', icon: 'menu_book', label: 'Skills', section: 'Configuração' },
-  { to: '/mcp', icon: 'extension', label: 'MCP', section: 'Configuração' },
-  { to: '/settings', icon: 'settings', label: 'Configurações', section: 'Admin' },
+type NavItem = {
+  to: string
+  icon: string
+  label: string
+  /** Indicado quando o cadastro ainda não foi implementado — leva a stub. */
+  comingSoon?: boolean
+}
+
+type NavGroup = {
+  id: string
+  label: string
+  items: NavItem[]
+  /** Quando ``false``, o grupo nunca colapsa (útil para grupos curtos). */
+  collapsible?: boolean
+  /** Quando ``true``, o grupo só é renderizado para utilizadores ADMIN. */
+  adminOnly?: boolean
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    id: 'operacao',
+    label: 'Operação',
+    items: [
+      { to: '/', icon: 'dashboard', label: 'Dashboard' },
+      { to: '/chat', icon: 'chat_bubble', label: 'Chat' },
+      { to: '/runs', icon: 'history', label: 'Runs' },
+      { to: '/analytics', icon: 'analytics', label: 'Analytics' },
+    ],
+  },
+  {
+    id: 'cadastros',
+    label: 'Cadastros',
+    adminOnly: true,
+    items: [
+      { to: '/admin/users', icon: 'group', label: 'Usuários' },
+      { to: '/admin/sandboxes', icon: 'dns', label: 'Sandboxes' },
+      { to: '/admin/repositories', icon: 'folder_managed', label: 'Repositórios', comingSoon: true },
+      { to: '/skills', icon: 'menu_book', label: 'Skills (por repo)' },
+      { to: '/admin/skills-global', icon: 'library_books', label: 'Skills globais', comingSoon: true },
+      { to: '/mcp', icon: 'extension', label: 'MCPs' },
+      { to: '/admin/agents-global', icon: 'smart_toy', label: 'Subagents globais', comingSoon: true },
+      { to: '/admin/models', icon: 'token', label: 'Modelos LLM', comingSoon: true },
+      { to: '/admin/providers', icon: 'cloud', label: 'Providers LLM', comingSoon: true },
+    ],
+  },
+  {
+    id: 'sistema',
+    label: 'Sistema',
+    items: [{ to: '/settings', icon: 'settings', label: 'Configurações' }],
+  },
 ]
 
 const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
@@ -22,16 +65,57 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   '/chat': { title: 'Chat', subtitle: 'Agente com worktree isolado e contexto do projeto' },
   '/runs': { title: 'Runs', subtitle: 'Execuções, eventos e estado das sessões' },
   '/analytics': { title: 'Analytics', subtitle: 'Uso, custo e saúde operacional' },
-  '/skills': { title: 'Skills', subtitle: 'Regras curtas por repositório para o agente' },
-  '/mcp': { title: 'MCP', subtitle: 'Ferramentas externas conectadas ao sandbox' },
-  '/settings': { title: 'Configurações', subtitle: 'Provedores, modelos e preferências da plataforma' },
+  '/skills': { title: 'Skills (por repo)', subtitle: 'Regras curtas vinculadas a repositórios' },
+  '/mcp': { title: 'MCPs', subtitle: 'Servidores MCP carregados pelo sandbox' },
+  '/settings': {
+    title: 'Configurações',
+    subtitle: 'Provedores, modelos e preferências da plataforma',
+  },
+  '/admin/users': { title: 'Usuários', subtitle: 'Cadastro de utilizadores e papéis' },
+  '/admin/sandboxes': {
+    title: 'Sandboxes',
+    subtitle: 'Containers openclaude por cliente/squad',
+  },
+  '/admin/repositories': {
+    title: 'Repositórios',
+    subtitle: 'Catálogo Git, credenciais e branches default',
+  },
+  '/admin/skills-global': {
+    title: 'Skills globais',
+    subtitle: 'Skills materializadas em todos os worktrees do sandbox',
+  },
+  '/admin/agents-global': {
+    title: 'Subagents globais',
+    subtitle: 'Agents materializados no ~/.claude/agents do sandbox',
+  },
+  '/admin/models': { title: 'Modelos LLM', subtitle: 'Catálogo sincronizado do provider' },
+  '/admin/providers': { title: 'Providers LLM', subtitle: 'OpenRouter, Azure AI Foundry, ...' },
 }
 
 const APP_NAV_COLLAPSED_KEY = 'cappycloud.layout.navCollapsed'
+const GROUP_COLLAPSED_KEY = 'cappycloud.layout.groupsCollapsed'
+
+function readCollapsedGroups(): Record<string, boolean> {
+  try {
+    const raw = window.localStorage.getItem(GROUP_COLLAPSED_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    if (parsed && typeof parsed === 'object') {
+      return parsed as Record<string, boolean>
+    }
+  } catch {
+    // Preferência local não deve bloquear navegação.
+  }
+  return {}
+}
 
 export function AppLayout({ children }: AppLayoutProps) {
   const { pathname } = useLocation()
   const meta = PAGE_TITLES[pathname] ?? PAGE_TITLES['/']
+  const currentUserState = useCurrentUser()
+  const isAdmin =
+    currentUserState.status === 'ready' && currentUserState.user.role === 'admin'
+  const visibleGroups = NAV_GROUPS.filter((g) => !g.adminOnly || isAdmin)
   const [navCollapsed, setNavCollapsed] = useState(() => {
     try {
       return window.localStorage.getItem(APP_NAV_COLLAPSED_KEY) === 'true'
@@ -39,6 +123,8 @@ export function AppLayout({ children }: AppLayoutProps) {
       return false
     }
   })
+  const [collapsedGroups, setCollapsedGroups] =
+    useState<Record<string, boolean>>(readCollapsedGroups)
   const navToggleIcon = navCollapsed ? 'keyboard_double_arrow_right' : 'keyboard_double_arrow_left'
 
   useEffect(() => {
@@ -48,6 +134,18 @@ export function AppLayout({ children }: AppLayoutProps) {
       // Preferência visual local não deve bloquear navegação.
     }
   }, [navCollapsed])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(GROUP_COLLAPSED_KEY, JSON.stringify(collapsedGroups))
+    } catch {
+      // ignore
+    }
+  }, [collapsedGroups])
+
+  function toggleGroup(id: string) {
+    setCollapsedGroups((prev) => ({ ...prev, [id]: !prev[id] }))
+  }
 
   function logout() {
     setToken(null)
@@ -75,34 +173,94 @@ export function AppLayout({ children }: AppLayoutProps) {
         </div>
 
         <nav className={styles.nav}>
-          {NAV_ITEMS.map((item) => {
-            const active = pathname === item.to
+          {visibleGroups.map((group) => {
+            const isCollapsible = group.collapsible !== false && group.items.length > 1
+            const isCollapsed = isCollapsible && collapsedGroups[group.id] === true
+            const hasActive = group.items.some((it) => it.to === pathname)
+            const showItems = !isCollapsed || hasActive
             return (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={`${styles.navItem} ${active ? styles.navItemActive : ''}`}
-                aria-current={active ? 'page' : undefined}
-                aria-label={item.label}
-                title={item.label}
-              >
-                <span className={styles.icon}>{item.icon}</span>
-                <span className={styles.navLabel}>{item.label}</span>
-                <span className={styles.navSection}>{item.section}</span>
-              </Link>
+              <div key={group.id} className={styles.navGroup}>
+                {isCollapsible ? (
+                  <button
+                    type="button"
+                    className={styles.navGroupHeader}
+                    onClick={() => toggleGroup(group.id)}
+                    aria-expanded={!isCollapsed}
+                    aria-controls={`navgroup-${group.id}`}
+                  >
+                    <span className={styles.navGroupLabel}>{group.label}</span>
+                    <span
+                      className={`${styles.icon} ${styles.navGroupChevron} ${
+                        isCollapsed ? styles.navGroupChevronCollapsed : ''
+                      }`}
+                    >
+                      expand_more
+                    </span>
+                  </button>
+                ) : (
+                  <div className={styles.navGroupHeaderStatic}>
+                    <span className={styles.navGroupLabel}>{group.label}</span>
+                  </div>
+                )}
+
+                {showItems && (
+                  <div id={`navgroup-${group.id}`} className={styles.navGroupItems}>
+                    {group.items.map((item) => {
+                      const active = pathname === item.to
+                      return (
+                        <Link
+                          key={item.to}
+                          to={item.to}
+                          className={`${styles.navItem} ${active ? styles.navItemActive : ''}`}
+                          aria-current={active ? 'page' : undefined}
+                          aria-label={item.label}
+                          title={item.label}
+                        >
+                          <span className={styles.icon}>{item.icon}</span>
+                          <span className={styles.navLabel}>{item.label}</span>
+                          {item.comingSoon && (
+                            <span className={styles.navBadge} aria-label="Em breve">
+                              em breve
+                            </span>
+                          )}
+                        </Link>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             )
           })}
         </nav>
 
         <div className={styles.profile}>
           <button type="button" className={styles.profileButton} title="Perfil do usuário">
-            <span className={styles.avatar}>EM</span>
+            <span className={styles.avatar}>
+              {currentUserState.status === 'ready'
+                ? currentUserState.user.email.slice(0, 2).toUpperCase()
+                : 'EM'}
+            </span>
             <span className={styles.profileText}>
-              <span className={styles.profileName}>Usuário</span>
-              <span className={styles.profileMeta}>Perfil e preferências</span>
+              <span className={styles.profileName}>
+                {currentUserState.status === 'ready'
+                  ? currentUserState.user.email
+                  : 'Usuário'}
+              </span>
+              <span className={styles.profileMeta}>
+                {currentUserState.status === 'ready'
+                  ? currentUserState.user.role === 'admin'
+                    ? 'Administrador'
+                    : 'Utilizador'
+                  : 'Perfil e preferências'}
+              </span>
             </span>
           </button>
-          <button type="button" className={styles.logoutButton} onClick={logout} title="Sair">
+          <button
+            type="button"
+            className={styles.logoutButton}
+            onClick={logout}
+            title="Sair"
+          >
             <span className={styles.icon}>logout</span>
           </button>
         </div>
@@ -128,15 +286,18 @@ export function AppLayout({ children }: AppLayoutProps) {
               <span className={styles.icon}>menu_book</span>
               Skills
             </Link>
-            <Link to="/settings" className={styles.iconButton} title="Configurações" aria-label="Configurações">
+            <Link
+              to="/settings"
+              className={styles.iconButton}
+              title="Configurações"
+              aria-label="Configurações"
+            >
               <span className={styles.icon}>settings</span>
             </Link>
           </div>
         </header>
 
-        <main className={styles.content}>
-          {children}
-        </main>
+        <main className={styles.content}>{children}</main>
       </div>
     </div>
   )

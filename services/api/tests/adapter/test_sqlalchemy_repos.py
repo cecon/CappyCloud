@@ -18,14 +18,26 @@ from app.adapters.secondary.persistence.sqlalchemy_conversation_repo import (
 from app.adapters.secondary.persistence.sqlalchemy_message_repo import (
     SQLAlchemyMessageRepository,
 )
+from app.adapters.secondary.persistence.sqlalchemy_sandbox_repo import (
+    SQLAlchemySandboxRepository,
+)
 from app.adapters.secondary.persistence.sqlalchemy_user_repo import (
     SQLAlchemyUserRepository,
 )
-from app.domain.entities import Conversation, Message, User
+from app.domain.entities import (
+    ContainerStatus,
+    Conversation,
+    Message,
+    Sandbox,
+    SandboxRuntime,
+    User,
+    UserRole,
+)
 from app.infrastructure.orm_models import Base
 from app.ports.repositories import (
     ConversationRepository,
     MessageRepository,
+    SandboxRepository,
     UserRepository,
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -33,6 +45,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from tests.conftest import (
     InMemoryConversationRepository,
     InMemoryMessageRepository,
+    InMemorySandboxRepository,
     InMemoryUserRepository,
 )
 
@@ -96,6 +109,160 @@ class TestUserRepositoryContract:
         self, user_repo_impl: UserRepository
     ) -> None:
         assert await user_repo_impl.get_by_email("nobody@x.com") is None
+
+    async def test_role_defaults_to_user(self, user_repo_impl: UserRepository) -> None:
+        user = User(id=uuid.uuid4(), email="default@test.com", hashed_password="x")
+        await user_repo_impl.save(user)
+        found = await user_repo_impl.get_by_email("default@test.com")
+        assert found is not None
+        assert found.role is UserRole.USER
+
+    async def test_admin_role_is_persisted(self, user_repo_impl: UserRepository) -> None:
+        user = User(
+            id=uuid.uuid4(),
+            email="admin@test.com",
+            hashed_password="x",
+            role=UserRole.ADMIN,
+        )
+        await user_repo_impl.save(user)
+        found = await user_repo_impl.get_by_email("admin@test.com")
+        assert found is not None
+        assert found.role is UserRole.ADMIN
+        assert found.is_admin is True
+
+    async def test_list_all_returns_saved_users(self, user_repo_impl: UserRepository) -> None:
+        u1 = User(id=uuid.uuid4(), email="list1@test.com", hashed_password="x")
+        u2 = User(
+            id=uuid.uuid4(),
+            email="list2@test.com",
+            hashed_password="x",
+            role=UserRole.ADMIN,
+        )
+        await user_repo_impl.save(u1)
+        await user_repo_impl.save(u2)
+
+        all_users = await user_repo_impl.list_all()
+
+        emails = {u.email for u in all_users}
+        assert {"list1@test.com", "list2@test.com"}.issubset(emails)
+        # Papéis foram preservados na listagem (não voltam tudo USER):
+        by_email = {u.email: u for u in all_users}
+        assert by_email["list1@test.com"].role is UserRole.USER
+        assert by_email["list2@test.com"].role is UserRole.ADMIN
+
+    async def test_update_role_promotes_existing_user(self, user_repo_impl: UserRepository) -> None:
+        user = User(id=uuid.uuid4(), email="prom@test.com", hashed_password="x")
+        await user_repo_impl.save(user)
+
+        updated = await user_repo_impl.update_role(user.id, UserRole.ADMIN)
+
+        assert updated is not None
+        assert updated.role is UserRole.ADMIN
+        # Persistido — re-ler do repo confirma:
+        reread = await user_repo_impl.get_by_id(user.id)
+        assert reread is not None and reread.is_admin
+
+    async def test_update_role_returns_none_for_missing_user(
+        self, user_repo_impl: UserRepository
+    ) -> None:
+        assert await user_repo_impl.update_role(uuid.uuid4(), UserRole.ADMIN) is None
+
+
+# ---------------------------------------------------------------------------
+# SandboxRepository contract tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(params=["in_memory", "sqlite"])
+async def sandbox_repo_impl(
+    request: pytest.FixtureRequest, db_session: AsyncSession
+) -> SandboxRepository:
+    if request.param == "in_memory":
+        return InMemorySandboxRepository()
+    return SQLAlchemySandboxRepository(db_session)
+
+
+def _sandbox(name: str = "alpha") -> Sandbox:
+    return Sandbox(
+        id=uuid.uuid4(),
+        name=name,
+        host=name,
+        runtime=SandboxRuntime.COMPOSE,
+        image="cappy/sandbox:latest",
+        env_vars={"FOO": "bar"},
+    )
+
+
+class TestSandboxRepositoryContract:
+    async def test_save_and_get(self, sandbox_repo_impl: SandboxRepository) -> None:
+        sb = _sandbox("alpha")
+        saved = await sandbox_repo_impl.save(sb)
+
+        found = await sandbox_repo_impl.get(saved.id)
+
+        assert found is not None
+        assert found.name == "alpha"
+        assert found.runtime is SandboxRuntime.COMPOSE
+        assert found.env_vars == {"FOO": "bar"}
+        assert found.container_status is ContainerStatus.NOT_CREATED
+
+    async def test_get_by_name(self, sandbox_repo_impl: SandboxRepository) -> None:
+        sb = _sandbox("by-name")
+        await sandbox_repo_impl.save(sb)
+
+        found = await sandbox_repo_impl.get_by_name("by-name")
+        assert found is not None and found.id == sb.id
+
+    async def test_get_by_name_returns_none_for_missing(
+        self, sandbox_repo_impl: SandboxRepository
+    ) -> None:
+        assert await sandbox_repo_impl.get_by_name("nope") is None
+
+    async def test_list_all_orders_by_created_at(
+        self, sandbox_repo_impl: SandboxRepository
+    ) -> None:
+        a = await sandbox_repo_impl.save(_sandbox("alpha-list"))
+        b = await sandbox_repo_impl.save(_sandbox("beta-list"))
+
+        rows = await sandbox_repo_impl.list_all()
+
+        names = [s.name for s in rows]
+        assert "alpha-list" in names and "beta-list" in names
+        ids = [s.id for s in rows if s.name in {"alpha-list", "beta-list"}]
+        assert ids.index(a.id) < ids.index(b.id)
+
+    async def test_update_container_status(self, sandbox_repo_impl: SandboxRepository) -> None:
+        sb = await sandbox_repo_impl.save(_sandbox("alpha-status"))
+
+        updated = await sandbox_repo_impl.update_container_status(sb.id, ContainerStatus.RUNNING)
+
+        assert updated is not None
+        assert updated.container_status is ContainerStatus.RUNNING
+        # Outros campos preservados:
+        assert updated.image == "cappy/sandbox:latest"
+        # Persistido:
+        reread = await sandbox_repo_impl.get(sb.id)
+        assert reread is not None and reread.container_status is ContainerStatus.RUNNING
+
+    async def test_update_container_status_returns_none_for_missing(
+        self, sandbox_repo_impl: SandboxRepository
+    ) -> None:
+        result = await sandbox_repo_impl.update_container_status(
+            uuid.uuid4(), ContainerStatus.RUNNING
+        )
+        assert result is None
+
+    async def test_delete_returns_true_when_existed(
+        self, sandbox_repo_impl: SandboxRepository
+    ) -> None:
+        sb = await sandbox_repo_impl.save(_sandbox("to-delete"))
+        assert await sandbox_repo_impl.delete(sb.id) is True
+        assert await sandbox_repo_impl.get(sb.id) is None
+
+    async def test_delete_returns_false_when_missing(
+        self, sandbox_repo_impl: SandboxRepository
+    ) -> None:
+        assert await sandbox_repo_impl.delete(uuid.uuid4()) is False
 
 
 # ---------------------------------------------------------------------------

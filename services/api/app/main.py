@@ -11,6 +11,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.adapters.primary.http import admin_sandboxes as admin_sandboxes_router
+from app.adapters.primary.http import admin_users as admin_users_router
 from app.adapters.primary.http import ai_models as ai_models_router
 from app.adapters.primary.http import attachments as attachments_router
 from app.adapters.primary.http import auth as auth_router
@@ -48,11 +50,15 @@ async def lifespan(app: FastAPI):
 
     await init_db()
 
+    from app.infrastructure.database import async_session_factory
+    from app.infrastructure.first_admin_bootstrap import ensure_first_admin
+
+    await ensure_first_admin(get_settings(), async_session_factory)
+
     agent = PipelineAdapter()
     await agent.on_startup()
     app.state.agent = agent
 
-    from app.infrastructure.database import async_session_factory
     from app.infrastructure.sandbox_watchdog import SandboxWatchdog
 
     scheduler = AsyncIOScheduler()
@@ -124,6 +130,8 @@ app.add_middleware(
 )
 
 app.include_router(auth_router.router, prefix="/api")
+app.include_router(admin_users_router.router, prefix="/api")
+app.include_router(admin_sandboxes_router.router, prefix="/api")
 app.include_router(attachments_router.router)
 app.include_router(conv_router.router, prefix="/api")
 app.include_router(conv_diff_router.router, prefix="/api")

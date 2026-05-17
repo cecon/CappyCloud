@@ -126,23 +126,100 @@ export async function loginRequest(email: string, password: string): Promise<str
   return data.access_token
 }
 
-export async function registerRequest(email: string, password: string): Promise<void> {
+export type UserRole = 'admin' | 'user'
+
+export interface CurrentUser {
+  id: string
+  email: string
+  role: UserRole
+}
+
+/**
+ * Cria um novo utilizador. Apenas ADMINs autenticados podem chamar
+ * (ADR-005). O parâmetro {@link token} é o JWT do admin solicitante.
+ */
+export async function registerRequest(
+  token: string,
+  email: string,
+  password: string,
+  role: UserRole = 'user',
+): Promise<CurrentUser> {
   const payload = {
     email: String(email ?? '')
       .trim()
       .toLowerCase(),
     password: String(password ?? ''),
+    role,
   }
-  const res = await fetch('/api/auth/register', {
+  const res = await apiFetch('/api/auth/register', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      Authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify(payload),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    const text = formatApiErrorPayload(err) || 'Registo falhou'
+    const text = formatApiErrorPayload(err) || 'Falha ao criar utilizador'
     throw new Error(String(text))
   }
+  return (await res.json()) as CurrentUser
+}
+
+/**
+ * Devolve o utilizador autenticado (com {@link UserRole}). O frontend usa
+ * isto após login para decidir a navegação admin (ADR-005).
+ */
+export async function fetchCurrentUser(token: string): Promise<CurrentUser> {
+  const res = await apiFetch('/api/auth/me', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    throw new Error('Não foi possível carregar utilizador')
+  }
+  return (await res.json()) as CurrentUser
+}
+
+// ── Admin · Users ────────────────────────────────────────────────────────────
+
+export interface AdminUser {
+  id: string
+  email: string
+  role: UserRole
+}
+
+/** Lista todos os utilizadores (admin only). */
+export async function fetchAdminUsers(token: string): Promise<AdminUser[]> {
+  const res = await apiFetch('/api/admin/users', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao listar utilizadores')
+  }
+  return (await res.json()) as AdminUser[]
+}
+
+/** Altera o papel de um utilizador (admin only). */
+export async function updateAdminUserRole(
+  token: string,
+  userId: string,
+  role: UserRole,
+): Promise<AdminUser> {
+  const res = await apiFetch(`/api/admin/users/${userId}/role`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ role }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao alterar papel')
+  }
+  return (await res.json()) as AdminUser
 }
 
 export type RepoSelection = {
@@ -889,6 +966,17 @@ export async function fetchBranchesFromUrl(
 
 // ── Sandboxes ────────────────────────────────────────────────────────────────
 
+export type SandboxRuntime = 'compose' | 'swarm'
+
+export type ContainerStatus =
+  | 'not_created'
+  | 'starting'
+  | 'running'
+  | 'configuring'
+  | 'configured'
+  | 'stopped'
+  | 'error'
+
 export interface Sandbox {
   id: string
   name: string
@@ -896,6 +984,10 @@ export interface Sandbox {
   grpc_port: number
   session_port: number
   status: string
+  runtime: SandboxRuntime
+  image: string
+  env_vars: Record<string, string>
+  container_status: ContainerStatus
   created_at: string
 }
 
@@ -905,6 +997,133 @@ export async function fetchSandboxes(token: string): Promise<Sandbox[]> {
   })
   if (!res.ok) return []
   return res.json()
+}
+
+// ── Admin · Sandboxes ────────────────────────────────────────────────────────
+
+export interface SandboxAdminCreate {
+  name: string
+  runtime: SandboxRuntime
+  image: string
+  env_vars?: Record<string, string>
+  host?: string | null
+  grpc_port?: number
+  session_port?: number
+}
+
+export interface SandboxAdminUpdate {
+  image?: string
+  env_vars?: Record<string, string>
+  host?: string
+  grpc_port?: number
+  session_port?: number
+  status?: string
+}
+
+/** Lista todas as sandboxes cadastradas (admin only). */
+export async function fetchAdminSandboxes(token: string): Promise<Sandbox[]> {
+  const res = await apiFetch('/api/admin/sandboxes', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao listar sandboxes')
+  }
+  return (await res.json()) as Sandbox[]
+}
+
+export async function createAdminSandbox(
+  token: string,
+  data: SandboxAdminCreate,
+): Promise<Sandbox> {
+  const res = await apiFetch('/api/admin/sandboxes', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar sandbox')
+  }
+  return (await res.json()) as Sandbox
+}
+
+export async function updateAdminSandbox(
+  token: string,
+  sandboxId: string,
+  data: SandboxAdminUpdate,
+): Promise<Sandbox> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar sandbox')
+  }
+  return (await res.json()) as Sandbox
+}
+
+export async function deleteAdminSandbox(token: string, sandboxId: string): Promise<void> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao remover sandbox')
+  }
+}
+
+export async function cloneAdminSandbox(
+  token: string,
+  sandboxId: string,
+  newName: string,
+): Promise<Sandbox> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/clone`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ new_name: newName }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao clonar sandbox')
+  }
+  return (await res.json()) as Sandbox
+}
+
+export async function bootAdminSandbox(token: string, sandboxId: string): Promise<Sandbox> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/boot`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao iniciar sandbox')
+  }
+  return (await res.json()) as Sandbox
+}
+
+export async function stopAdminSandbox(token: string, sandboxId: string): Promise<Sandbox> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/stop`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao parar sandbox')
+  }
+  return (await res.json()) as Sandbox
 }
 
 // ── AI Models ────────────────────────────────────────────────────────────────
