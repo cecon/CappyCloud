@@ -1,7 +1,5 @@
 import React, { useState } from 'react'
-import { Link } from 'react-router-dom'
 import {
-  Anchor,
   Button,
   Container,
   Paper,
@@ -96,11 +94,8 @@ export function LoginPage({ onLoggedIn }: Props) {
             <Button type="submit" loading={loading} fullWidth>
               Entrar
             </Button>
-            <Text size="sm" ta="center">
-              Novo aqui?{' '}
-              <Anchor component={Link} to="/register" underline="hover">
-                Criar conta
-              </Anchor>
+            <Text size="xs" c="dimmed" ta="center">
+              Contas são criadas por um administrador.
             </Text>
           </Stack>
         </form>

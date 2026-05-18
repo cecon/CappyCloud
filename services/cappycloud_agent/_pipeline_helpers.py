@@ -17,9 +17,8 @@ log = logging.getLogger(__name__)
 
 def db_url() -> str:
     explicit = os.getenv("PIPELINE_DATABASE_URL", "").strip()
-    if explicit:
-        return explicit
-    return os.getenv("DATABASE_URL", "").replace(
+    raw = explicit or os.getenv("DATABASE_URL", "")
+    return raw.replace(
         "postgresql+asyncpg://", "postgresql://", 1
     )
 
@@ -162,9 +161,106 @@ async def fetch_signoz_service_names(
         return {}
 
 
+async def has_enabled_signoz_mcp(
+    database_url: str,
+    user_id: str | None,
+) -> bool:
+    """Retorna True quando o MCP SignOz está ativo para o utilizador."""
+    if not user_id:
+        return False
+    try:
+        uid = uuid.UUID(user_id)
+    except ValueError:
+        return False
+    try:
+        conn = await asyncpg.connect(database_url)
+        try:
+            row = await conn.fetchrow(
+                "SELECT 1 FROM mcp_servers "
+                "WHERE user_id = $1 AND name = 'signoz' AND enabled = true "
+                "LIMIT 1",
+                uid,
+            )
+        finally:
+            await conn.close()
+        return row is not None
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[Signoz] falha ao verificar MCP ativo: %s", exc)
+        return False
+
+
+async def fetch_default_text_model_id(database_url: str) -> str | None:
+    """Busca o modelo texto grátis default ativo no catálogo do banco."""
+    if not database_url:
+        return None
+    free_filter = """AND capabilities ? 'text'
+                  AND (model_id LIKE '%:free' OR model_id = 'openrouter/free')"""
+    try:
+        conn = await asyncpg.connect(database_url)
+        try:
+            row = await conn.fetchrow(
+                f"""
+                SELECT model_id
+                FROM ai_models
+                WHERE active = TRUE
+                  AND COALESCE((is_default->>'text')::boolean, FALSE) = TRUE
+                  {free_filter}
+                ORDER BY display_name
+                LIMIT 1
+                """
+            )
+            if row:
+                return str(row["model_id"])
+            row = await conn.fetchrow(
+                f"""
+                SELECT model_id
+                FROM ai_models
+                WHERE active = TRUE
+                  {free_filter}
+                ORDER BY display_name
+                LIMIT 1
+                """
+            )
+            return str(row["model_id"]) if row else None
+        finally:
+            await conn.close()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[Models] falha ao buscar modelo default: %s", exc)
+        return None
+
+
+async def resolve_free_text_model_id(database_url: str, requested_model: str | None) -> str | None:
+    """Mantém o modelo pedido só se ele estiver liberado como free/text."""
+    if database_url and requested_model:
+        try:
+            conn = await asyncpg.connect(database_url)
+            try:
+                row = await conn.fetchrow(
+                    """
+                    SELECT 1
+                    FROM ai_models
+                    WHERE active = TRUE
+                      AND model_id = $1
+                      AND capabilities ? 'text'
+                      AND (model_id LIKE '%:free' OR model_id = 'openrouter/free')
+                    LIMIT 1
+                    """,
+                    requested_model,
+                )
+                if row:
+                    return requested_model
+            finally:
+                await conn.close()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("[Models] falha ao validar modelo pedido: %s", exc)
+    return await fetch_default_text_model_id(database_url)
+
+
 def build_signoz_context_section(
     repos: list[dict],
     signoz_names: dict[str, str],
+    *,
+    mcp_available: bool = True,
 ) -> str:
     """Monta bloco de contexto SigNoz para injetar no prompt.
 
@@ -179,9 +275,25 @@ def build_signoz_context_section(
             lines.append(f"- **{alias}** → `service.name = '{svc}'`")
     if not lines:
         return ""
+    if not mcp_available:
+        return (
+            "## Observabilidade (SigNoz indisponível)\n\n"
+            "Os seguintes repositórios têm telemetria configurada no SigNoz, "
+            "mas o MCP `signoz` está desativado ou sem credencial funcional neste momento:\n\n"
+            + "\n".join(lines)
+            + "\n\nNão tente consultar logs, traces ou métricas do SigNoz nesta execução. "
+            "Informe ao utilizador que a integração SigNoz está temporariamente indisponível. "
+            "Não peça para configurar `service.name`: ele já está mapeado acima para estes repositórios."
+        )
     return (
         "## Observabilidade (SigNoz MCP)\n\n"
         "Os seguintes repositórios têm telemetria configurada no SigNoz. "
         "Ao consultar logs, traces ou métricas, use o `service.name` correspondente:\n\n"
         + "\n".join(lines)
+        + "\n\nRegras de consulta:\n"
+        "- Use SigNoz somente para repositórios listados acima.\n"
+        "- Não peça ao utilizador para configurar `service.name`; ele já está mapeado acima.\n"
+        "- Se o utilizador não informar período, consulte por padrão a última hora.\n"
+        "- Se a pergunta estiver ampla demais, peça um filtro operacional útil, como CNPJ, hardware/terminal, loja, endpoint, erro esperado ou janela de tempo específica.\n"
+        "- Se houver dados suficientes, consulte primeiro com o `service.name` e período padrão antes de pedir mais detalhes."
     )

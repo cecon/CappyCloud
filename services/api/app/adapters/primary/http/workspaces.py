@@ -49,9 +49,12 @@ async def _sandbox_post_json(path: str, payload: dict) -> dict | None:
 
 
 class WorkspaceOut(BaseModel):
+    id: str
     slug: str
     name: str
     url: str
+    confluence_url: str = ""
+    confluence_space: str = ""
     sandbox_status: str
 
 
@@ -135,7 +138,15 @@ async def list_workspaces(
         select(Repository).where(Repository.active.is_(True)).order_by(Repository.name)
     )
     return [
-        WorkspaceOut(slug=r.slug, name=r.name, url=r.clone_url, sandbox_status=r.sandbox_status)
+        WorkspaceOut(
+            id=str(r.id),
+            slug=r.slug,
+            name=r.name,
+            url=r.clone_url,
+            confluence_url=r.confluence_url,
+            confluence_space=r.confluence_space,
+            sandbox_status=r.sandbox_status,
+        )
         for r in rows.scalars()
     ]
 

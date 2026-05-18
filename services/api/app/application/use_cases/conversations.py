@@ -80,6 +80,8 @@ class CreateConversation:
                     "branch_name": branch_name,
                     "worktree_path": worktree_path,
                     "repo_id": str(repo_entity.id) if repo_entity else None,
+                    "confluence_url": repo_entity.confluence_url if repo_entity else "",
+                    "confluence_space": repo_entity.confluence_space if repo_entity else "",
                 }
             )
 
@@ -145,13 +147,6 @@ class StreamMessage:
         if not conv:
             raise LookupError("Conversa não encontrada.")
 
-        # Decisão de caminho:
-        #   A) modelo selecionado tem capability "vision" → carregar bytes e
-        #      enviar nativamente pelo gRPC (modelo "vê" a imagem)
-        #   C) caso contrário (text-only ou default desconhecido) → injetar
-        #      a descrição textual pré-gerada pelo vision describer no prompt
-        # As duas vias são mutuamente exclusivas: se A é viável, NÃO injetamos
-        # descrição (evita duplicar contexto).
         attachments_payload: list[dict] | None = None
         injected_prompt = await inject_diff_comments(conversation_id, content)
 
@@ -238,13 +233,45 @@ class StreamMessage:
         accumulated_text: list[str] = []
         accumulated_error: list[str] = []
         usage: dict = {}
+        assistant_saved = False
         gen = self._agent.pipe(content, model_id, messages_payload, pipeline_body)
+
+        async def save_assistant_once() -> None:
+            nonlocal assistant_saved
+            if assistant_saved:
+                return
+            assistant_saved = True
+            assistant_text = "".join(accumulated_text).strip()
+            cost_usd = await self._compute_cost(usage)
+            if assistant_text:
+                await self._messages.save(
+                    Message(
+                        id=uuid.uuid4(),
+                        conversation_id=conversation_id,
+                        role="assistant",
+                        content=assistant_text,
+                        model_used=usage.get("model_used") or None,
+                        prompt_tokens=int(usage.get("prompt_tokens") or 0),
+                        completion_tokens=int(usage.get("completion_tokens") or 0),
+                        cost_usd=cost_usd,
+                    )
+                )
+            elif accumulated_error:
+                await self._messages.save(
+                    Message(
+                        id=uuid.uuid4(),
+                        conversation_id=conversation_id,
+                        role="assistant",
+                        content="**Erro:** " + " ".join(accumulated_error),
+                    )
+                )
 
         while True:
             chunk = await asyncio.to_thread(_next_chunk, gen)
             if chunk is None:
                 break
             line = chunk.strip()
+            save_before_yield = False
             if line.startswith("data: "):
                 try:
                     evt = json.loads(line[6:])
@@ -261,34 +288,14 @@ class StreamMessage:
                             "prompt_tokens": int(evt.get("prompt_tokens") or 0),
                             "completion_tokens": int(evt.get("completion_tokens") or 0),
                         }
+                        save_before_yield = True
                 except Exception:
                     pass
+            if save_before_yield:
+                await save_assistant_once()
             yield chunk.encode("utf-8")
 
-        assistant_text = "".join(accumulated_text).strip()
-        cost_usd = await self._compute_cost(usage)
-        if assistant_text:
-            await self._messages.save(
-                Message(
-                    id=uuid.uuid4(),
-                    conversation_id=conversation_id,
-                    role="assistant",
-                    content=assistant_text,
-                    model_used=usage.get("model_used") or None,
-                    prompt_tokens=int(usage.get("prompt_tokens") or 0),
-                    completion_tokens=int(usage.get("completion_tokens") or 0),
-                    cost_usd=cost_usd,
-                )
-            )
-        elif accumulated_error:
-            await self._messages.save(
-                Message(
-                    id=uuid.uuid4(),
-                    conversation_id=conversation_id,
-                    role="assistant",
-                    content="**Erro:** " + " ".join(accumulated_error),
-                )
-            )
+        await save_assistant_once()
 
     async def _compute_cost(self, usage: dict) -> float:
         return await compute_cost(self._messages, usage)

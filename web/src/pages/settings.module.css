@@ -1,26 +1,23 @@
 .page {
-  min-height: 100vh;
-  background:
-    radial-gradient(circle at 18% 4%, rgba(59, 130, 246, 0.13), transparent 30%),
-    radial-gradient(circle at 84% 0%, rgba(34, 197, 94, 0.08), transparent 28%),
-    var(--cc-surface);
+  min-height: 100%;
+  background: transparent;
   color: var(--cc-on-surface);
   font-family: 'Inter', sans-serif;
-  padding: 2rem;
-  max-width: 1120px;
+  padding: 1.25rem;
+  max-width: 1180px;
   margin: 0 auto;
 }
 
 .header {
   position: relative;
   margin-bottom: 1.5rem;
-  padding: 1.5rem;
+  padding: 1.25rem;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018)),
     rgba(19, 19, 21, 0.82);
   border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 18px;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.26);
+  border-radius: 8px;
+  box-shadow: none;
   overflow: hidden;
 }
 
@@ -66,10 +63,10 @@
     linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
     rgba(19, 19, 21, 0.86);
   border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 16px;
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+  box-shadow: none;
 }
 
 .sectionTitle {
@@ -85,6 +82,82 @@
   font-size: 0.8125rem;
   color: var(--cc-on-surface-variant);
   margin: 0 0 1.25rem;
+}
+
+.crudLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.crudLayout:has(.editPanel) {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  align-items: start;
+}
+
+.crudHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.crudHeader .sectionDesc {
+  margin: 0.25rem 0 0;
+}
+
+.crudToolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-shrink: 0;
+}
+
+.compactSelect {
+  width: auto !important;
+  min-width: 120px;
+  min-height: 36px;
+  padding-block: 0.4rem !important;
+}
+
+.descriptionCell {
+  display: inline-block;
+  max-width: 460px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cc-on-surface-variant);
+}
+
+.selectedRow {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.statusPill {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.statusPillOn {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--cc-secondary);
+  border-color: rgba(34, 197, 94, 0.16);
+}
+
+.statusPillOff {
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--cc-on-surface-variant);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.editPanel {
+  position: sticky;
+  top: 1rem;
 }
 
 .hint {
@@ -253,6 +326,13 @@
   flex-direction: column;
   gap: 0.875rem;
 }
+
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.625rem;
+  padding-top: 0.25rem;
+}
 .formRow {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -294,6 +374,38 @@
   font-weight: 600;
   padding: 0.58rem 1.25rem;
   transition: opacity 0.12s, transform 0.12s;
+}
+
+.secondaryBtn {
+  padding: 0.625rem 0.95rem;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: var(--cc-on-surface-variant);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.secondaryBtn:hover {
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--cc-on-surface);
+}
+
+@media (max-width: 980px) {
+  .crudLayout:has(.editPanel) {
+    grid-template-columns: 1fr;
+  }
+
+  .editPanel {
+    position: static;
+  }
+
+  .crudHeader {
+    flex-direction: column;
+  }
 }
 .submitBtn:hover:not(:disabled) {
   opacity: 0.85;

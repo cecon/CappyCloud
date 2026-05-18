@@ -133,9 +133,16 @@ class SessionStore:
 
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT * FROM cappy_sessions WHERE user_id=$1 AND chat_id=$2",
+                """
+                SELECT *
+                FROM cappy_sessions
+                WHERE user_id=$1
+                  AND chat_id=$2
+                  AND last_active >= NOW() - make_interval(secs => $3)
+                """,
                 user_id,
                 chat_id,
+                float(self._idle_ttl),
             )
         if row:
             record = SandboxRecord.from_dict(dict(row))

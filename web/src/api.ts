@@ -126,23 +126,100 @@ export async function loginRequest(email: string, password: string): Promise<str
   return data.access_token
 }
 
-export async function registerRequest(email: string, password: string): Promise<void> {
+export type UserRole = 'admin' | 'user'
+
+export interface CurrentUser {
+  id: string
+  email: string
+  role: UserRole
+}
+
+/**
+ * Cria um novo utilizador. Apenas ADMINs autenticados podem chamar
+ * (ADR-005). O parâmetro {@link token} é o JWT do admin solicitante.
+ */
+export async function registerRequest(
+  token: string,
+  email: string,
+  password: string,
+  role: UserRole = 'user',
+): Promise<CurrentUser> {
   const payload = {
     email: String(email ?? '')
       .trim()
       .toLowerCase(),
     password: String(password ?? ''),
+    role,
   }
-  const res = await fetch('/api/auth/register', {
+  const res = await apiFetch('/api/auth/register', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      Authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify(payload),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    const text = formatApiErrorPayload(err) || 'Registo falhou'
+    const text = formatApiErrorPayload(err) || 'Falha ao criar utilizador'
     throw new Error(String(text))
   }
+  return (await res.json()) as CurrentUser
+}
+
+/**
+ * Devolve o utilizador autenticado (com {@link UserRole}). O frontend usa
+ * isto após login para decidir a navegação admin (ADR-005).
+ */
+export async function fetchCurrentUser(token: string): Promise<CurrentUser> {
+  const res = await apiFetch('/api/auth/me', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    throw new Error('Não foi possível carregar utilizador')
+  }
+  return (await res.json()) as CurrentUser
+}
+
+// ── Admin · Users ────────────────────────────────────────────────────────────
+
+export interface AdminUser {
+  id: string
+  email: string
+  role: UserRole
+}
+
+/** Lista todos os utilizadores (admin only). */
+export async function fetchAdminUsers(token: string): Promise<AdminUser[]> {
+  const res = await apiFetch('/api/admin/users', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao listar utilizadores')
+  }
+  return (await res.json()) as AdminUser[]
+}
+
+/** Altera o papel de um utilizador (admin only). */
+export async function updateAdminUserRole(
+  token: string,
+  userId: string,
+  role: UserRole,
+): Promise<AdminUser> {
+  const res = await apiFetch(`/api/admin/users/${userId}/role`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ role }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao alterar papel')
+  }
+  return (await res.json()) as AdminUser
 }
 
 export type RepoSelection = {
@@ -288,8 +365,9 @@ export async function streamAssistantReply(
   const dec = new TextDecoder()
   let buf = ''
   let accText = ''
+  let sawDone = false
 
-  while (true) {
+  while (!sawDone) {
     const { done, value } = await reader.read()
     if (done) break
     buf += dec.decode(value, { stream: true })
@@ -352,12 +430,18 @@ export async function streamAssistantReply(
               prompt_tokens: (evt.prompt_tokens as number) ?? 0,
               completion_tokens: (evt.completion_tokens as number) ?? 0,
             })
+            sawDone = true
             break
         }
       } catch {
         // Ignore malformed SSE lines
       }
     }
+  }
+  if (sawDone) {
+    reader.cancel().catch(() => {
+      // Stream already closed.
+    })
   }
 }
 
@@ -605,9 +689,12 @@ export interface ConversationDiff {
 }
 
 export interface Workspace {
+  id: string
   slug: string
   name: string
   url: string
+  confluence_url: string
+  confluence_space: string
   sandbox_status: string
 }
 
@@ -783,6 +870,8 @@ export interface Repository {
   name: string
   clone_url: string
   default_branch: string
+  confluence_url: string
+  confluence_space: string
   provider_id: string | null
   sandbox_id: string | null
   sandbox_status: string
@@ -796,6 +885,8 @@ export interface RepositoryCreate {
   name: string
   clone_url: string
   default_branch: string
+  confluence_url?: string
+  confluence_space?: string
   provider_id?: string | null
   sandbox_id?: string | null
   /** PAT inline: se preenchido, o backend cria/atualiza um GitProvider implícito. */
@@ -878,6 +969,17 @@ export async function fetchBranchesFromUrl(
 
 // ── Sandboxes ────────────────────────────────────────────────────────────────
 
+export type SandboxRuntime = 'compose' | 'swarm'
+
+export type ContainerStatus =
+  | 'not_created'
+  | 'starting'
+  | 'running'
+  | 'configuring'
+  | 'configured'
+  | 'stopped'
+  | 'error'
+
 export interface Sandbox {
   id: string
   name: string
@@ -885,6 +987,10 @@ export interface Sandbox {
   grpc_port: number
   session_port: number
   status: string
+  runtime: SandboxRuntime
+  image: string
+  env_vars: Record<string, string>
+  container_status: ContainerStatus
   created_at: string
 }
 
@@ -894,6 +1000,133 @@ export async function fetchSandboxes(token: string): Promise<Sandbox[]> {
   })
   if (!res.ok) return []
   return res.json()
+}
+
+// ── Admin · Sandboxes ────────────────────────────────────────────────────────
+
+export interface SandboxAdminCreate {
+  name: string
+  runtime: SandboxRuntime
+  image: string
+  env_vars?: Record<string, string>
+  host?: string | null
+  grpc_port?: number
+  session_port?: number
+}
+
+export interface SandboxAdminUpdate {
+  image?: string
+  env_vars?: Record<string, string>
+  host?: string
+  grpc_port?: number
+  session_port?: number
+  status?: string
+}
+
+/** Lista todas as sandboxes cadastradas (admin only). */
+export async function fetchAdminSandboxes(token: string): Promise<Sandbox[]> {
+  const res = await apiFetch('/api/admin/sandboxes', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao listar sandboxes')
+  }
+  return (await res.json()) as Sandbox[]
+}
+
+export async function createAdminSandbox(
+  token: string,
+  data: SandboxAdminCreate,
+): Promise<Sandbox> {
+  const res = await apiFetch('/api/admin/sandboxes', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar sandbox')
+  }
+  return (await res.json()) as Sandbox
+}
+
+export async function updateAdminSandbox(
+  token: string,
+  sandboxId: string,
+  data: SandboxAdminUpdate,
+): Promise<Sandbox> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar sandbox')
+  }
+  return (await res.json()) as Sandbox
+}
+
+export async function deleteAdminSandbox(token: string, sandboxId: string): Promise<void> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao remover sandbox')
+  }
+}
+
+export async function cloneAdminSandbox(
+  token: string,
+  sandboxId: string,
+  newName: string,
+): Promise<Sandbox> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/clone`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ new_name: newName }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao clonar sandbox')
+  }
+  return (await res.json()) as Sandbox
+}
+
+export async function bootAdminSandbox(token: string, sandboxId: string): Promise<Sandbox> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/boot`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao iniciar sandbox')
+  }
+  return (await res.json()) as Sandbox
+}
+
+export async function stopAdminSandbox(token: string, sandboxId: string): Promise<Sandbox> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/stop`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao parar sandbox')
+  }
+  return (await res.json()) as Sandbox
 }
 
 // ── AI Models ────────────────────────────────────────────────────────────────
@@ -1027,6 +1260,7 @@ export async function fetchAgentTaskEvents(
 
 export interface Skill {
   id: string
+  repository_id: string | null
   slug: string
   title: string
   summary: string
@@ -1040,10 +1274,11 @@ export interface Skill {
 }
 
 export interface SkillCreate {
+  repository_id: string
   title: string
   slug?: string
   summary?: string
-  content: string
+  content?: string | null
   tags?: string[]
   source_url?: string | null
 }
@@ -1212,11 +1447,11 @@ export async function deleteRepoDocument(token: string, docId: string): Promise<
   if (!res.ok) throw new Error('Falha ao remover documento')
 }
 
-// ── MCP Servers ───────────────────────────────────────────────────────────────
+// ── Admin · MCP Servers (por sandbox) ────────────────────────────────────────
 
 export type McpServer = {
   id: string
-  user_id: string
+  sandbox_id: string
   name: string
   command: string
   args: string[]
@@ -1234,72 +1469,240 @@ export type McpServerCreate = {
   enabled?: boolean
 }
 
-export type McpServerUpdate = {
-  name?: string
-  command?: string
-  args?: string[]
-  env?: Record<string, string>
-  enabled?: boolean
-}
+export type McpServerUpdate = McpServerCreate
 
-export async function fetchMcpServers(token: string): Promise<McpServer[]> {
-  const res = await apiFetch('/api/mcp-servers', {
+export async function fetchSandboxMcps(
+  token: string,
+  sandboxId: string,
+): Promise<McpServer[]> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/mcps`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  if (!res.ok) return []
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao listar MCPs')
+  }
   return res.json()
 }
 
-export async function createMcpServer(
+export async function createSandboxMcp(
   token: string,
+  sandboxId: string,
   data: McpServerCreate,
 ): Promise<McpServer> {
-  const res = await apiFetch('/api/mcp-servers', {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/mcps`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar servidor MCP')
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar MCP')
   }
   return res.json()
 }
 
-export async function updateMcpServer(
+export async function updateSandboxMcp(
   token: string,
-  id: string,
+  sandboxId: string,
+  mcpId: string,
   data: McpServerUpdate,
 ): Promise<McpServer> {
-  const res = await apiFetch(`/api/mcp-servers/${id}`, {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/mcps/${mcpId}`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar servidor MCP')
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar MCP')
   }
   return res.json()
 }
 
-export async function deleteMcpServer(token: string, id: string): Promise<void> {
-  const res = await apiFetch(`/api/mcp-servers/${id}`, {
+export async function deleteSandboxMcp(
+  token: string,
+  sandboxId: string,
+  mcpId: string,
+): Promise<void> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/mcps/${mcpId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok && res.status !== 204) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(formatApiErrorPayload(err) || 'Falha ao eliminar servidor MCP')
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao eliminar MCP')
   }
 }
 
-export async function exportMcpConfig(
+// ── Admin · Sandbox Skills (globais por sandbox) ─────────────────────────────
+
+export interface SandboxSkill {
+  id: string
+  sandbox_id: string
+  name: string
+  description: string
+  content: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface SandboxSkillPayload {
+  name: string
+  description?: string
+  content?: string
+  enabled?: boolean
+}
+
+export async function fetchSandboxSkills(
   token: string,
-): Promise<Record<string, unknown>> {
-  const res = await apiFetch('/api/mcp-servers/export', {
+  sandboxId: string,
+): Promise<SandboxSkill[]> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/skills`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  if (!res.ok) throw new Error('Falha ao exportar configuração MCP')
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao listar skills')
+  }
   return res.json()
+}
+
+export async function createSandboxSkill(
+  token: string,
+  sandboxId: string,
+  data: SandboxSkillPayload,
+): Promise<SandboxSkill> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/skills`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar skill')
+  }
+  return res.json()
+}
+
+export async function updateSandboxSkill(
+  token: string,
+  sandboxId: string,
+  skillId: string,
+  data: SandboxSkillPayload,
+): Promise<SandboxSkill> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/skills/${skillId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar skill')
+  }
+  return res.json()
+}
+
+export async function deleteSandboxSkill(
+  token: string,
+  sandboxId: string,
+  skillId: string,
+): Promise<void> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/skills/${skillId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao eliminar skill')
+  }
+}
+
+// ── Admin · Sandbox Agents (subagents globais por sandbox) ───────────────────
+
+export interface SandboxAgent {
+  id: string
+  sandbox_id: string
+  name: string
+  description: string
+  system_prompt: string
+  model: string
+  tools: string[]
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface SandboxAgentPayload {
+  name: string
+  description?: string
+  system_prompt?: string
+  model?: string
+  tools?: string[]
+  enabled?: boolean
+}
+
+export async function fetchSandboxAgents(
+  token: string,
+  sandboxId: string,
+): Promise<SandboxAgent[]> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/agents`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao listar agents')
+  }
+  return res.json()
+}
+
+export async function createSandboxAgent(
+  token: string,
+  sandboxId: string,
+  data: SandboxAgentPayload,
+): Promise<SandboxAgent> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/agents`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar agent')
+  }
+  return res.json()
+}
+
+export async function updateSandboxAgent(
+  token: string,
+  sandboxId: string,
+  agentId: string,
+  data: SandboxAgentPayload,
+): Promise<SandboxAgent> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/agents/${agentId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar agent')
+  }
+  return res.json()
+}
+
+export async function deleteSandboxAgent(
+  token: string,
+  sandboxId: string,
+  agentId: string,
+): Promise<void> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/agents/${agentId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao eliminar agent')
+  }
 }

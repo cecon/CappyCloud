@@ -13,8 +13,9 @@ FastAPI (StreamMessage use case)
 AgentPort.pipe()  →  Pipeline (cappycloud_pipeline.py)
     ↓
 EnvironmentManager (_environment_manager.py)
-    ↓  Docker SDK
-Container  cappy_env_<slug>
+    ↓  HTTP interno :8080
+Sandbox  cappycloud-sandbox
+    ↓  session_server cria /repos/sessions/<session_id>/<alias>
     ↓  gRPC :50051
 GrpcSession (_grpc_session.py)  →  openclaude
     ↓
@@ -27,10 +28,10 @@ OpenRouter LLM
 
 ```bash
 # Listar todos os containers do CappyCloud
-docker ps --filter "name=cappy_env_"
+docker ps --filter "name=cappycloud-sandbox"
 
-# Ver estado de um ambiente específico
-docker inspect cappy_env_<slug> --format '{{.State.Status}}'
+# Ver estado do sandbox
+docker inspect cappycloud-sandbox --format '{{.State.Status}}'
 ```
 
 Estados possíveis: `running`, `exited`, `created`, `paused`, `none` (não existe).
@@ -41,13 +42,13 @@ Estados possíveis: `running`, `exited`, `created`, `paused`, `none` (não exist
 
 ```bash
 # Últimas 100 linhas
-docker logs cappy_env_<slug> --tail 100
+docker logs cappycloud-sandbox --tail 100
 
 # Seguir em tempo real
-docker logs cappy_env_<slug> --follow
+docker logs cappycloud-sandbox --follow
 
 # Logs do processo openclaude dentro do container
-docker exec cappy_env_<slug> cat /tmp/openclaude.log
+docker exec cappycloud-sandbox cat /tmp/openclaude.log
 ```
 
 ---
@@ -64,17 +65,15 @@ redis-cli -u redis://localhost:16379
 KEYS session:*
 
 # Ver estado de uma sessão
-HGETALL session:<user_id>:<chat_id>
-
-# Ver estado de um ambiente
-HGETALL env:<slug>
+HGETALL sandbox:<user_id>:<chat_id>
 ```
 
 Campos relevantes:
-- `container_id` — ID do container Docker
-- `container_ip` — IP interno na rede `cappycloud_net`
+- `sandbox_id` — sandbox alocado para a conversa
+- `sandbox_name` — nome lógico do sandbox
 - `grpc_port` — porta gRPC (padrão 50051)
-- `worktree_path` — caminho do worktree git dentro do container
+- `session_root` — raiz da sessão em `/repos/sessions/<session_id>`
+- `repos` — repositórios e worktrees da conversa
 
 ---
 
@@ -82,10 +81,13 @@ Campos relevantes:
 
 ```bash
 # Verificar se o servidor gRPC está respondendo
-docker exec cappy_env_<slug> grpc_health_probe -addr=localhost:50051
+docker exec cappycloud-sandbox grpc_health_probe -addr=localhost:50051
 
 # Ou com nc
-docker exec cappy_env_<slug> nc -zv localhost 50051
+docker exec cappycloud-sandbox nc -zv localhost 50051
+
+# Verificar o sidecar HTTP de sessões
+docker exec cappycloud-sandbox curl -fsS http://localhost:8080/health
 ```
 
 ---
@@ -93,11 +95,12 @@ docker exec cappy_env_<slug> nc -zv localhost 50051
 ## 5. Inspecionar worktrees git
 
 ```bash
-# Listar worktrees do ambiente
-docker exec cappy_env_<slug> git -C /repos/<slug> worktree list
+# Listar worktrees do clone persistente
+docker exec cappycloud-sandbox git -C /repos/<slug> worktree list
 
 # Ver estado do worktree de uma sessão
-docker exec cappy_env_<slug> git -C /repos/<slug>/sessions/<chat_id> status
+docker exec cappycloud-sandbox \
+  git -C /repos/sessions/<session_id>/<repo-alias> status
 ```
 
 ---
@@ -107,20 +110,18 @@ docker exec cappy_env_<slug> git -C /repos/<slug>/sessions/<chat_id> status
 Se uma sessão ficou em estado inconsistente:
 
 ```bash
-# 1. Parar o container
-docker stop cappy_env_<slug>
+# 1. Remover a sessão do cache
+redis-cli -u redis://localhost:16379 DEL sandbox:<user_id>:<chat_id>
 
-# 2. Remover o container
-docker rm cappy_env_<slug>
+# 2. Remover o diretório da sessão no sandbox, se necessário
+docker exec cappycloud-sandbox rm -rf /repos/sessions/<session_id>
 
-# 3. Limpar chaves Redis do ambiente
-redis-cli -u redis://localhost:16379 DEL env:<slug>
-
-# 4. Limpar sessões desse ambiente (cuidado: apaga histórico em memória)
-redis-cli -u redis://localhost:16379 KEYS "session:*" | xargs redis-cli DEL
+# 3. Em último caso, reiniciar o sandbox inteiro
+docker restart cappycloud-sandbox
 ```
 
-O próximo request ao ambiente recriará o container automaticamente.
+O próximo request da conversa recriará a sessão e os worktrees de forma
+idempotente.
 
 ---
 

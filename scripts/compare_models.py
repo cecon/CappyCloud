@@ -17,7 +17,7 @@ Uso:
     # Lista de modelos (separados por vírgula). Ex.:
     $env:CAPPY_MODELS = "anthropic/claude-3.5-sonnet,openai/gpt-4o,deepseek/deepseek-chat"
 
-    python scripts/compare_models.py "olhe no /repos/autosystem e mapeie o impacto da NT 2025.001"
+    python scripts/compare_models.py "olhe no repositório selecionado e mapeie o impacto da mudança X"
 
 Saída: scripts/comparison_<timestamp>.md
 """

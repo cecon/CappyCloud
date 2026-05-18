@@ -73,8 +73,11 @@ Devolve dados do utilizador autenticado.
 
 ## Ambientes (`/environments`)
 
-Ambientes de repositório globais. Cada ambiente corresponde a um container
-Docker com o repositório clonado.
+Ambientes de repositório globais legados. Eles representam um repositório
+cadastrado, não um container Docker dedicado. O runtime atual usa sandboxes
+registrados e worktrees transitórios por conversa; ver
+`/repositories`, `/sandboxes` e
+[ADR-002](../decisions/adr-002-sandbox-runtime-and-worktree-sessions.md).
 
 ### `GET /environments`
 Lista todos os ambientes.
@@ -128,39 +131,12 @@ Detalhe de um ambiente pelo ID.
 ---
 
 ### `DELETE /environments/{env_id}`
-Remove o ambiente e para o container Docker se estiver em execução.
+Remove o registro do ambiente no banco. Não controla container Docker dedicado.
 
 **Response `204` (sem corpo)**
 
 **Erros:**
 - `404` — Ambiente não encontrado
-
----
-
-### `GET /environments/{env_id}/status`
-Estado atual do container Docker.
-
-**Response `200`:**
-```json
-{
-  "status": "running",
-  "container_id": "abc123def456"
-}
-```
-
-Valores de `status`: `"running"` | `"stopped"` | `"none"`
-
----
-
-### `POST /environments/{env_id}/wake`
-Inicia (ou reinicia) o container do ambiente. Operação **fire-and-forget** —
-retorna imediatamente. Faça polling em `GET /environments/{id}/status` até
-`status == "running"`.
-
-**Response `200`:**
-```json
-{ "status": "starting" }
-```
 
 ---
 
@@ -177,8 +153,17 @@ Lista conversas do utilizador autenticado (mais recentes primeiro).
     "title": "Minha conversa",
     "created_at": "2024-01-01T00:00:00Z",
     "updated_at": "2024-01-01T00:00:00Z",
-    "environment_id": "uuid-do-ambiente",
-    "env_slug": "meu-projeto"
+    "sandbox_id": "uuid-do-sandbox",
+    "ai_model_id": "uuid-do-modelo",
+    "repos": [
+      {
+        "slug": "meu-projeto",
+        "alias": "meu-projeto",
+        "base_branch": "main",
+        "worktree_path": "/repos/sessions/abc123/meu-projeto"
+      }
+    ],
+    "session_root": "/repos/sessions/abc123"
   }
 ]
 ```
@@ -192,14 +177,52 @@ Cria uma nova conversa.
 ```json
 {
   "title": "Nome da conversa",
-  "environment_id": "uuid-do-ambiente"
+  "sandbox_id": "uuid-do-sandbox",
+  "repos": [
+    {
+      "slug": "meu-projeto",
+      "alias": "meu-projeto",
+      "base_branch": "main"
+    }
+  ]
 }
 ```
 
 Se `title` for omitido: `"Nova conversa"`.
-Se `environment_id` for omitido: conversa sem ambiente associado.
+Se `repos` for omitido: conversa sem repositórios selecionados.
 
 **Response `201`:** objeto `ConversationOut`
+
+---
+
+## Repositórios (`/repositories`)
+
+Catálogo de repositórios disponíveis para seleção no chat. Cada repositório pode
+ter integrações opcionais próprias; campos vazios não devem acionar ferramentas
+externas.
+
+### `POST /repositories`
+
+**Request:**
+```json
+{
+  "slug": "meu-projeto",
+  "name": "Meu Projeto",
+  "clone_url": "https://github.com/org/repo.git",
+  "default_branch": "main",
+  "confluence_url": "https://confluence.example.com",
+  "sandbox_id": "uuid-do-sandbox",
+  "provider_id": null,
+  "pat_token": null,
+  "provider_type": "github"
+}
+```
+
+`confluence_url` é opcional. Quando vazio ou omitido, o agente não consulta
+`/confluence/*` para esse repositório.
+
+**Response `201`:** objeto `RepositoryOut` com o mesmo campo
+`confluence_url`.
 
 ---
 

@@ -223,3 +223,22 @@ class TestStreamMessage:
         assert "assistant" in roles
         assistant_msg = next(m for m in msgs if m.role == "assistant")
         assert assistant_msg.content == "Resposta do bot"
+
+    async def test_saves_assistant_message_when_client_stops_on_done(
+        self,
+        conv_repo: InMemoryConversationRepository,
+        msg_repo: InMemoryMessageRepository,
+        user_id: uuid.UUID,
+    ) -> None:
+        conv = await CreateConversation(conv_repo).execute(user_id, "Chat")
+        uc = StreamMessage(conv_repo, msg_repo, FakeAgent("Resposta antes do done"))
+        stream = await uc.execute(conv.id, user_id, "Pergunta")
+
+        async for chunk in stream:
+            if b'"done"' in chunk:
+                break
+        await stream.aclose()
+
+        msgs = await msg_repo.list_by_conversation(conv.id)
+        assistant_msg = next(m for m in msgs if m.role == "assistant")
+        assert assistant_msg.content == "Resposta antes do done"

@@ -8,14 +8,23 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.domain.entities import ContainerStatus, SandboxRuntime, UserRole
 from app.domain.value_objects import validate_email, validate_password
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{1,62}[a-z0-9]$")
 
 
 class UserCreate(BaseModel):
+    """Payload de criação de utilizador (uso administrativo).
+
+    O campo ``role`` é opcional; quando omitido, o novo utilizador é criado
+    como :attr:`UserRole.USER`. Apenas ADMINs podem chamar endpoints que
+    aceitam este body (ADR-005).
+    """
+
     email: str = Field(max_length=320)
     password: str = Field(max_length=128)
+    role: UserRole = UserRole.USER
 
     @field_validator("email")
     @classmethod
@@ -31,8 +40,15 @@ class UserCreate(BaseModel):
 class UserOut(BaseModel):
     id: uuid.UUID
     email: str
+    role: UserRole
 
     model_config = {"from_attributes": True}
+
+
+class UserRoleUpdate(BaseModel):
+    """Payload para alterar o papel de um utilizador (ADR-005)."""
+
+    role: UserRole
 
 
 class Token(BaseModel):
@@ -80,6 +96,10 @@ class SandboxOut(BaseModel):
     grpc_port: int
     session_port: int
     status: str
+    runtime: SandboxRuntime
+    image: str
+    env_vars: dict[str, str]
+    container_status: ContainerStatus
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -93,6 +113,33 @@ class SandboxRegister(BaseModel):
     grpc_port: int = Field(default=50051, ge=1, le=65535)
     session_port: int = Field(default=8080, ge=1, le=65535)
     register_token: str = Field(min_length=1, max_length=256)
+
+
+class SandboxAdminCreate(BaseModel):
+    """Payload para cadastro administrativo de sandbox (ADR-004)."""
+
+    name: str = Field(min_length=1, max_length=128)
+    runtime: SandboxRuntime = SandboxRuntime.COMPOSE
+    image: str = Field(default="", max_length=512)
+    env_vars: dict[str, str] = Field(default_factory=dict)
+    host: str | None = Field(default=None, max_length=256)
+    grpc_port: int = Field(default=50051, ge=1, le=65535)
+    session_port: int = Field(default=8080, ge=1, le=65535)
+
+
+class SandboxAdminUpdate(BaseModel):
+    """Patch de campos editáveis. ``name`` é imutável após criação."""
+
+    image: str | None = Field(default=None, max_length=512)
+    env_vars: dict[str, str] | None = None
+    host: str | None = Field(default=None, max_length=256)
+    grpc_port: int | None = Field(default=None, ge=1, le=65535)
+    session_port: int | None = Field(default=None, ge=1, le=65535)
+    status: str | None = Field(default=None, max_length=32)
+
+
+class SandboxCloneBody(BaseModel):
+    new_name: str = Field(min_length=1, max_length=128)
 
 
 # ── Conversations ─────────────────────────────────────────────
@@ -229,6 +276,8 @@ class RepositoryCreate(BaseModel):
     name: str = Field(min_length=1, max_length=256)
     clone_url: str = Field(min_length=1, max_length=2048)
     default_branch: str = Field(default="main", max_length=256)
+    confluence_url: str = Field(default="", max_length=2048)
+    confluence_space: str = Field(default="", max_length=128)
     provider_id: uuid.UUID | None = None
     sandbox_id: uuid.UUID | None = None
     # Inline PAT: se preenchido, cria/atualiza um provider implícito e associa.
@@ -244,6 +293,8 @@ class RepositoryOut(BaseModel):
     name: str
     clone_url: str
     default_branch: str
+    confluence_url: str = ""
+    confluence_space: str = ""
     provider_id: uuid.UUID | None = None
     sandbox_id: uuid.UUID | None = None
     sandbox_status: str

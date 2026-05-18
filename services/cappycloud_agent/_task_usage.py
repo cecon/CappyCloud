@@ -6,11 +6,100 @@ Extraído de ``_task_runner._persist_usage`` para manter o runner abaixo de
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
+import urllib.request
+from typing import Any
 
 import asyncpg
 
 log = logging.getLogger(__name__)
+
+_OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+_OPENROUTER_TIMEOUT_SECONDS = 30
+
+
+def _price_per_1m(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        per_token = float(value)
+    except (TypeError, ValueError):
+        return None
+    if per_token < 0:
+        return None
+    return round(per_token * 1_000_000, 6)
+
+
+def _fetch_openrouter_price_catalog() -> dict[str, tuple[float | None, float | None]]:
+    req = urllib.request.Request(
+        _OPENROUTER_MODELS_URL,
+        headers={"Accept": "application/json", "User-Agent": "CappyCloud/usage-pricing"},
+    )
+    with urllib.request.urlopen(req, timeout=_OPENROUTER_TIMEOUT_SECONDS) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    catalog: dict[str, tuple[float | None, float | None]] = {}
+    for item in payload.get("data") or []:
+        if not isinstance(item, dict):
+            continue
+        model_id = item.get("id")
+        pricing = item.get("pricing") or {}
+        if not isinstance(model_id, str) or not isinstance(pricing, dict):
+            continue
+        catalog[model_id] = (
+            _price_per_1m(pricing.get("prompt")),
+            _price_per_1m(pricing.get("completion")),
+        )
+    return catalog
+
+
+async def _refresh_openrouter_prices_for_configured_models(
+    conn: asyncpg.Connection,
+) -> int:
+    """Atualiza preços dos modelos OpenRouter ativos cadastrados no ambiente."""
+    rows = await conn.fetch(
+        """
+        SELECT m.model_id
+        FROM ai_models m
+        JOIN ai_providers p ON p.id = m.provider_id
+        WHERE m.active = TRUE
+          AND (
+            lower(p.name) = 'openrouter'
+            OR p.base_url ILIKE '%openrouter.ai%'
+          )
+        """
+    )
+    configured_ids = {str(row["model_id"]) for row in rows}
+    if not configured_ids:
+        return 0
+
+    catalog = await asyncio.to_thread(_fetch_openrouter_price_catalog)
+    updated = 0
+    for model_id in configured_ids:
+        prices = catalog.get(model_id)
+        if prices is None:
+            continue
+        input_cost, output_cost = prices
+        await conn.execute(
+            """
+            UPDATE ai_models
+            SET input_cost_per_1m_usd=$1,
+                output_cost_per_1m_usd=$2
+            WHERE model_id=$3
+              AND active = TRUE
+              AND provider_id IN (
+                SELECT id FROM ai_providers
+                WHERE lower(name) = 'openrouter'
+                   OR base_url ILIKE '%openrouter.ai%'
+              )
+            """,
+            input_cost,
+            output_cost,
+            model_id,
+        )
+        updated += 1
+    return updated
 
 
 async def persist_usage(
@@ -30,6 +119,21 @@ async def persist_usage(
         return
     try:
         async with pool.acquire() as conn:
+            try:
+                updated = await _refresh_openrouter_prices_for_configured_models(conn)
+                if updated:
+                    log.info(
+                        "[TaskRunner %s] preços OpenRouter atualizados para %d modelos",
+                        task_id[:8],
+                        updated,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "[TaskRunner %s] falha ao atualizar preços OpenRouter: %s",
+                    task_id[:8],
+                    exc,
+                )
+
             row = await conn.fetchrow(
                 """
                 SELECT input_cost_per_1m_usd, output_cost_per_1m_usd

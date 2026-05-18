@@ -36,16 +36,26 @@ EOF
 
 # ── Merge MCP servers from environment ───────────────────────
 # Se MCP_SERVERS_JSON estiver definido (JSON object com formato mcpServers),
-# merge no settings.json antes de iniciar o openclaude.
+# merge na configuração global antes de iniciar o openclaude.
 if [ -n "${MCP_SERVERS_JSON:-}" ] && command -v node >/dev/null 2>&1; then
     node - <<'JSEOF'
 const fs = require('fs')
-const settingsPath = `${process.env.HOME || '/root'}/.claude/settings.json`
+const path = require('path')
+const home = process.env.HOME || '/root'
+const settingsPaths = [
+  `${home}/.openclaude.json`,
+  `${home}/.claude/settings.json`,
+  `${home}/.openclaude/settings.json`,
+]
 try {
-  const current = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
   const mcpServers = JSON.parse(process.env.MCP_SERVERS_JSON)
-  current.mcpServers = mcpServers
-  fs.writeFileSync(settingsPath, JSON.stringify(current, null, 2), 'utf8')
+  for (const settingsPath of settingsPaths) {
+    let current = {}
+    try { current = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) } catch {}
+    current.mcpServers = mcpServers
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify(current, null, 2), 'utf8')
+  }
   console.log('[entrypoint] MCP servers merged:', Object.keys(mcpServers).join(', ') || '(none)')
 } catch (e) {
   console.error('[entrypoint] Failed to merge MCP_SERVERS_JSON:', e.message)

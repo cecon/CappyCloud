@@ -11,7 +11,6 @@ Key behaviours:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 from collections.abc import Generator
@@ -24,12 +23,15 @@ from ._agent_context import (
     load_agent_context,
 )
 from ._environment_manager import EnvironmentManager
+from ._pipeline_event_stream import stream_task_events
 from ._pipeline_helpers import (
     build_signoz_context_section,
     db_url,
     fetch_signoz_service_names,
+    has_enabled_signoz_mcp,
     inject_repo_context,
     push_mcp_config,
+    resolve_free_text_model_id,
     sse,
 )
 from ._session_store import SessionStore
@@ -179,7 +181,15 @@ class Pipeline:
                     fetch_signoz_service_names(db_url(), repo_ids_for_signoz),
                     timeout=5,
                 )
-                signoz_section = build_signoz_context_section(repos, signoz_names)
+                signoz_mcp_available = self._run(
+                    has_enabled_signoz_mcp(db_url(), str(body.get("user_id") or "")),
+                    timeout=5,
+                )
+                signoz_section = build_signoz_context_section(
+                    repos,
+                    signoz_names,
+                    mcp_available=signoz_mcp_available,
+                )
                 if signoz_section:
                     from ._agent_context import inject_section_before_user_message
                     prompt = inject_section_before_user_message(prompt, signoz_section)
@@ -197,11 +207,20 @@ class Pipeline:
         # tem o upper-bound do upload (8MB cada) validado no endpoint HTTP.
         attachments_payload = body.get("attachments_payload") or None
 
+        try:
+            override_model = self._run(
+                resolve_free_text_model_id(db_url(), body.get("override_model")),
+                timeout=5,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("[Models] resolução do modelo free falhou: %s", exc)
+            override_model = None
+
         dispatch_kwargs = {
             "repos": repos,
             "session_root": session_root,
             "sandbox_id": sandbox_id,
-            "override_model": body.get("override_model"),
+            "override_model": override_model,
             "sandbox_session_url": sandbox_session_url,
             "attachments": attachments_payload,
         }
@@ -249,58 +268,14 @@ class Pipeline:
     def _stream_events(
         self, task_id: str, cursor: Optional[int]
     ) -> Generator[str, None, None]:
-        import queue as _queue
-
-        import asyncpg as _asyncpg
-
-        db_url = self.valves.DATABASE_URL
-        out_q: _queue.Queue = _queue.Queue()
-
-        async def _produce() -> None:
-            pool = await _asyncpg.create_pool(db_url, min_size=1, max_size=2)
-            try:
-                last_id = cursor
-                while True:
-                    if last_id is None:
-                        rows = await pool.fetch(
-                            "SELECT id, event_type, data FROM agent_events "
-                            "WHERE task_id=$1::uuid ORDER BY id LIMIT 50",
-                            task_id,
-                        )
-                    else:
-                        rows = await pool.fetch(
-                            "SELECT id, event_type, data FROM agent_events "
-                            "WHERE task_id=$1::uuid AND id>$2 ORDER BY id LIMIT 50",
-                            task_id,
-                            last_id,
-                        )
-                    for row in rows:
-                        last_id = row["id"]
-                        data = row["data"]
-                        if isinstance(data, str):
-                            data = json.loads(data)
-                        out_q.put((row["event_type"], data, last_id))
-                    status_row = await pool.fetchrow(
-                        "SELECT status FROM agent_tasks WHERE id=$1::uuid", task_id
-                    )
-                    if (
-                        status_row and status_row["status"] in ("done", "error")
-                    ) and not rows:
-                        break
-                    if not rows:
-                        await asyncio.sleep(0.5)
-            finally:
-                out_q.put(None)
-                await pool.close()
-
-        asyncio.run_coroutine_threadsafe(_produce(), self._loop)
-
-        while True:
-            item = out_q.get(timeout=310)
-            if item is None:
-                break
-            event_type, data, eid = item
-            yield sse({"type": event_type, "cursor": eid, **(data if data else {})})
+        if self._loop is None:
+            return
+        yield from stream_task_events(
+            loop=self._loop,
+            database_url=self.valves.DATABASE_URL,
+            task_id=task_id,
+            cursor=cursor,
+        )
 
     async def _gc_loop(self) -> None:
         while True:

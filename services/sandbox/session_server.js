@@ -27,6 +27,7 @@ const { promisify } = require('util')
 
 const gitHandlers = require('./git_handlers')
 const mcpHandler = require('./mcp_handler')
+const confluenceHandler = require('./confluence_handler')
 const repoHandlers = require('./repo_handlers')
 const taskHandler = require('./task_handler')
 const worktreeHandlers = require('./worktree_handlers')
@@ -227,11 +228,8 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
-    // POST /task — delega sub-agente ao OpenRouter (ver task_handler.js)
     if (await taskHandler.tryHandle(req, res, { json, readBody })) return
 
-    // GET /skills/search?q=... — proxy para a API CappyCloud
-    // O LLM (openclaude) usa este endpoint via curl/Bash para fazer RAG por demanda.
     if (req.method === 'GET' && pathname === '/skills/search') {
       const q = url.searchParams.get('q') || ''
       const limit = url.searchParams.get('limit') || '5'
@@ -256,6 +254,8 @@ const server = http.createServer(async (req, res) => {
         return json(res, 502, { error: 'API unreachable', detail: err.message })
       }
     }
+
+    if (await confluenceHandler.tryHandle(req, res, { json })) return
 
     if (await worktreeHandlers.tryHandle(req, res, { json, readBody })) return
 

@@ -1,5 +1,5 @@
-import { Fragment, type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Fragment, type Dispatch, type SetStateAction, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Burger,
   ScrollArea,
@@ -56,6 +56,20 @@ const ALLOWED_ATTACHMENT_MIME = new Set([
 const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
 
 const STICKY_SCROLL_THRESHOLD_PX = 96
+const CHAT_PREFS_KEY = 'cappycloud.chat.preferences.v1'
+const CHAT_CONVERSATIONS_COLLAPSED_KEY = 'cappycloud.chat.conversationsCollapsed'
+const CONVERSATION_PAGE_SIZE = 6
+
+type RepoChatPreference = {
+  branch?: string
+  modelId?: string
+}
+
+type ChatPreferenceState = {
+  lastRepoSlug?: string
+  lastModelId?: string
+  byRepo?: Record<string, RepoChatPreference>
+}
 
 /**
  * Formata custo USD como "$0.0034" / "$1.20" / "free" / "—".
@@ -84,6 +98,35 @@ function sortModelsForSelect(models: AiModel[]): AiModel[] {
     if (sa !== sb) return sa - sb
     return a.display_name.localeCompare(b.display_name)
   })
+}
+
+function readChatPrefs(): ChatPreferenceState {
+  try {
+    const raw = window.localStorage.getItem(CHAT_PREFS_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function updateChatPrefs(update: (prefs: ChatPreferenceState) => ChatPreferenceState): void {
+  try {
+    const next = update(readChatPrefs())
+    window.localStorage.setItem(CHAT_PREFS_KEY, JSON.stringify(next))
+  } catch {
+    // Preferência local não deve bloquear o chat.
+  }
+}
+
+function defaultTextModelId(models: AiModel[]): string {
+  return models.find((m) => m.is_default?.text)?.model_id || models[0]?.model_id || ''
+}
+
+function validModelId(models: AiModel[], modelId?: string): string {
+  if (!modelId) return ''
+  return models.some((model) => model.model_id === modelId) ? modelId : ''
 }
 
 /**
@@ -136,6 +179,13 @@ type SessionStageState = {
 type SessionProgressAnchor = {
   id: string
   content: string
+}
+
+type ActivityTrace = {
+  content: string
+  steps: ThoughtStep[]
+  elapsedMs: number
+  interrupted?: boolean
 }
 
 const SESSION_STAGES: Array<{ key: SessionStageKey; label: string }> = [
@@ -252,6 +302,23 @@ function applyToolResultToThoughts(
   )
 }
 
+function updateActivityTrace(
+  prev: Record<string, ActivityTrace>,
+  anchor: SessionProgressAnchor | null,
+  updater: (steps: ThoughtStep[]) => ThoughtStep[],
+): Record<string, ActivityTrace> {
+  if (!anchor) return prev
+  const current = prev[anchor.id] ?? { content: anchor.content, steps: [], elapsedMs: 0 }
+  return {
+    ...prev,
+    [anchor.id]: {
+      ...current,
+      content: anchor.content,
+      steps: updater(current.steps),
+    },
+  }
+}
+
 /**
  * UI principal: layout IDE estilo "The Silent Architect".
  * Estado vazio → command bar premium centralizada.
@@ -263,6 +330,8 @@ export function ChatPage() {
 
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [conversationSearch, setConversationSearch] = useState('')
+  const [visibleConversationCount, setVisibleConversationCount] = useState(CONVERSATION_PAGE_SIZE)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [messagesError, setMessagesError] = useState<string | null>(null)
@@ -286,10 +355,22 @@ export function ChatPage() {
 
   const [thoughtSteps, setThoughtSteps] = useState<ThoughtStep[]>([])
   const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null)
+  const [streamActivityAt, setStreamActivityAt] = useState<number | null>(null)
   const [streamElapsedMs, setStreamElapsedMs] = useState(0)
   const [pendingAction, setPendingAction] = useState<ActionRequiredEvent | null>(null)
   const [sessionProgress, setSessionProgress] = useState<SessionStageState[]>([])
   const [sessionProgressAnchor, setSessionProgressAnchor] = useState<SessionProgressAnchor | null>(null)
+  const [activityTraces, setActivityTraces] = useState<Record<string, ActivityTrace>>({})
+  const [conversationsCollapsed, setConversationsCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem(CHAT_CONVERSATIONS_COLLAPSED_KEY) === 'true'
+    } catch {
+      return false
+    }
+  })
+  const conversationsToggleIcon = conversationsCollapsed
+    ? 'keyboard_double_arrow_right'
+    : 'keyboard_double_arrow_left'
 
   // Anexos pendentes de envio (uploads em curso, concluídos ou falhados).
   // Apenas itens `kind === 'uploaded'` viajam no payload do streamAssistantReply.
@@ -435,10 +516,9 @@ export function ChatPage() {
   const [prError, setPrError] = useState<string | null>(null)
   const [headBranch, setHeadBranch] = useState<string | null>(null)
 
-  const { pathname } = useLocation()
-
   const abortControllerRef = useRef<AbortController | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const chatPrefsRef = useRef<ChatPreferenceState>(readChatPrefs())
   /** Comprimento do `accumulated` text já aplicado à timeline thoughtSteps. */
   const lastTextOffsetRef = useRef(0)
 
@@ -450,6 +530,21 @@ export function ChatPage() {
     }, 200)
     return () => window.clearInterval(id)
   }, [streamStartedAt])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        CHAT_CONVERSATIONS_COLLAPSED_KEY,
+        String(conversationsCollapsed),
+      )
+    } catch {
+      // Preferência visual local não deve bloquear o chat.
+    }
+  }, [conversationsCollapsed])
+
+  useEffect(() => {
+    setVisibleConversationCount(CONVERSATION_PAGE_SIZE)
+  }, [conversationSearch])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -471,21 +566,34 @@ export function ChatPage() {
           fetchWorkspaces(token),
           fetchAiModels(token),
         ])
-        if (modelsList.status === 'fulfilled') {
-          const ms = modelsList.value
-          setModels(ms)
-          // Auto-seleciona o modelo default de texto, se existir
-          const defaultModel = ms.find((m) => m.is_default?.text)
-          if (defaultModel) setSelectedModelId(defaultModel.model_id)
-        }
         if (cancelled) return
+
+        const prefs = chatPrefsRef.current
+        let preferredSlug = prefs.lastRepoSlug || ''
 
         if (wsList.status === 'fulfilled') {
           setWorkspaces(wsList.value)
+          if (preferredSlug && !wsList.value.some((workspace) => workspace.slug === preferredSlug)) {
+            preferredSlug = ''
+          }
+          if (preferredSlug) {
+            setSelectedSlug(preferredSlug)
+            setSelectedBranch(prefs.byRepo?.[preferredSlug]?.branch || '')
+          }
         } else if (wsList.reason instanceof AuthError) {
           setToken(null)
           window.location.href = '/login'
           return
+        }
+
+        if (modelsList.status === 'fulfilled') {
+          const ms = modelsList.value
+          setModels(ms)
+          const preferredModel =
+            validModelId(ms, preferredSlug ? prefs.byRepo?.[preferredSlug]?.modelId : undefined) ||
+            validModelId(ms, prefs.lastModelId) ||
+            defaultTextModelId(ms)
+          if (preferredModel) setSelectedModelId(preferredModel)
         }
 
         if (convsResult.status === 'fulfilled') {
@@ -502,6 +610,37 @@ export function ChatPage() {
     })()
     return () => { cancelled = true }
   }, [token])
+
+  useEffect(() => {
+    if (!selectedSlug) return
+    const prefs = readChatPrefs()
+    const branch = prefs.byRepo?.[selectedSlug]?.branch || ''
+    setSelectedBranch((prev) => (prev === branch ? prev : branch))
+    if (models.length > 0) {
+      const modelId = validModelId(models, prefs.byRepo?.[selectedSlug]?.modelId)
+      if (modelId) setSelectedModelId((prev) => (prev === modelId ? prev : modelId))
+    }
+  }, [selectedSlug, models])
+
+  useEffect(() => {
+    if (!selectedSlug) return
+    updateChatPrefs((prefs) => {
+      const byRepo = { ...(prefs.byRepo || {}) }
+      byRepo[selectedSlug] = { ...(byRepo[selectedSlug] || {}), branch: selectedBranch || undefined }
+      return { ...prefs, lastRepoSlug: selectedSlug, byRepo }
+    })
+  }, [selectedSlug, selectedBranch])
+
+  useEffect(() => {
+    if (!selectedModelId) return
+    updateChatPrefs((prefs) => {
+      const byRepo = { ...(prefs.byRepo || {}) }
+      if (selectedSlug) {
+        byRepo[selectedSlug] = { ...(byRepo[selectedSlug] || {}), modelId: selectedModelId }
+      }
+      return { ...prefs, lastModelId: selectedModelId, byRepo }
+    })
+  }, [selectedModelId, selectedSlug])
 
   useEffect(() => {
     if (!activeId) {
@@ -546,10 +685,42 @@ export function ChatPage() {
   }, [activeId, token])
 
   async function handleStop() {
+    const elapsedMs = streamStartedAt ? Date.now() - streamStartedAt : streamElapsedMs
+    const anchor = sessionProgressAnchor
     abortControllerRef.current?.abort()
     if (activeId) await cancelConversation(token, activeId)
+    setStreamStartedAt(null)
+    if (anchor) {
+      setActivityTraces((prev) => ({
+        ...prev,
+        [anchor.id]: {
+          ...(prev[anchor.id] ?? { content: anchor.content, steps: [], elapsedMs: 0 }),
+          content: anchor.content,
+          elapsedMs,
+          interrupted: true,
+        },
+      }))
+      setMessages((m) => {
+        const alreadyNotified = m.some(
+          (msg) =>
+            msg.role === 'assistant' &&
+            msg.content === '_Execução interrompida antes da resposta final._',
+        )
+        if (alreadyNotified) return m
+        return [
+          ...m,
+          {
+            id: randomId(),
+            role: 'assistant',
+            content: '_Execução interrompida antes da resposta final._',
+            created_at: new Date().toISOString(),
+          },
+        ]
+      })
+    }
     setStreaming(false)
     setPendingAction(null)
+    setStreamActivityAt(null)
   }
 
   async function handleCreatePr() {
@@ -592,6 +763,7 @@ export function ChatPage() {
     setMessagesError(null)
     setMessagesLoading(false)
     setSessionProgressAnchor(null)
+    setStreamActivityAt(null)
     setTimeout(() => inputRef.current?.focus(), 50)
   }
 
@@ -602,9 +774,11 @@ export function ChatPage() {
     abortControllerRef.current = null
     setStreaming(false)
     setThoughtSteps([])
+    setStreamActivityAt(null)
     setPendingAction(null)
     setSessionProgress([])
     setSessionProgressAnchor(null)
+    setActivityTraces({})
     setInput('')
     setSidePanel('none')
     setActiveId(conversationId)
@@ -631,10 +805,12 @@ export function ChatPage() {
     setStreaming(true)
     setThoughtSteps([])
     lastTextOffsetRef.current = 0
-    setStreamStartedAt(Date.now())
+    const startedAt = Date.now()
+    setStreamStartedAt(startedAt)
+    setStreamActivityAt(startedAt)
     setStreamElapsedMs(0)
     setPendingAction(null)
-    setSessionProgress([])
+    setSessionProgress(createSessionProgress('initializing'))
 
     const ctrl = new AbortController()
     abortControllerRef.current = ctrl
@@ -646,25 +822,42 @@ export function ChatPage() {
       created_at: new Date().toISOString(),
     }
     setSessionProgressAnchor({ id: userMsg.id, content: userMsg.content })
+    setActivityTraces((prev) => ({
+      ...prev,
+      [userMsg.id]: { content: userMsg.content, steps: [], elapsedMs: 0 },
+    }))
     setMessages([userMsg])
 
     try {
       await streamAssistantReply(token, c.id, text, {
         onText(accumulated) {
+          setStreamActivityAt(Date.now())
           const delta = accumulated.slice(lastTextOffsetRef.current)
           lastTextOffsetRef.current = accumulated.length
           if (delta) {
             setThoughtSteps((prev) => appendTextToThoughts(prev, delta))
+            setActivityTraces((prev) =>
+              updateActivityTrace(prev, userMsg, (steps) => appendTextToThoughts(steps, delta)),
+            )
           }
         },
         onToolStart(tool) {
+          setStreamActivityAt(Date.now())
           setThoughtSteps((prev) => appendToolStartToThoughts(prev, tool))
+          setActivityTraces((prev) =>
+            updateActivityTrace(prev, userMsg, (steps) => appendToolStartToThoughts(steps, tool)),
+          )
         },
         onToolResult(result) {
+          setStreamActivityAt(Date.now())
           setThoughtSteps((prev) => applyToolResultToThoughts(prev, result))
+          setActivityTraces((prev) =>
+            updateActivityTrace(prev, userMsg, (steps) => applyToolResultToThoughts(steps, result)),
+          )
         },
-        onActionRequired(action) { setPendingAction(action) },
+        onActionRequired(action) { setStreamActivityAt(Date.now()); setPendingAction(action) },
         onStatus(status) {
+          setStreamActivityAt(Date.now())
           const statusWithMode = { ...status, mode: status.mode ?? 'initializing' }
           setSessionProgress((prev) =>
             reduceSessionProgress(
@@ -674,6 +867,7 @@ export function ChatPage() {
           )
         },
         onError(message) {
+          setStreamActivityAt(Date.now())
           setMessages((m) => [
             ...m,
             {
@@ -684,11 +878,19 @@ export function ChatPage() {
             },
           ])
         },
-        onDone(usage) { setLiveUsage(usage) },
+        onDone(usage) { setStreamActivityAt(Date.now()); setLiveUsage(usage) },
         signal: ctrl.signal,
       }, selectedModelId || null)
-      setThoughtSteps([])
       setStreamStartedAt(null)
+      setStreamActivityAt(null)
+      setActivityTraces((prev) => ({
+        ...prev,
+        [userMsg.id]: {
+          ...(prev[userMsg.id] ?? { content: userMsg.content, steps: [], elapsedMs: 0 }),
+          content: userMsg.content,
+          elapsedMs: Date.now() - startedAt,
+        },
+      }))
       clearTrayLocal()
       const [msgs, totals] = await Promise.all([
         fetchMessages(token, c.id),
@@ -697,6 +899,7 @@ export function ChatPage() {
       setMessages(msgs)
       setConvUsage(totals)
       setLiveUsage(null)
+      setSessionProgress([])
     } catch (e) {
       if (e instanceof AuthError) {
         setToken(null); window.location.href = '/login'; return
@@ -716,6 +919,7 @@ export function ChatPage() {
     } finally {
       setStreaming(false)
       setStreamStartedAt(null)
+      setStreamActivityAt(null)
       abortControllerRef.current = null
       fetchConversationDiff(token, c.id).then((d) => setDiffStats(d.stats)).catch(() => {})
     }
@@ -733,13 +937,13 @@ export function ChatPage() {
       .filter((it): it is Extract<TrayItem, { kind: 'uploaded' }> => it.kind === 'uploaded')
       .map((it) => it.attachment.id)
 
-    const sessionMode: SessionMode = 'resuming'
-
     if (!textOverride) setInput('')
     setStreaming(true)
     setThoughtSteps([])
     lastTextOffsetRef.current = 0
-    setStreamStartedAt(Date.now())
+    const startedAt = Date.now()
+    setStreamStartedAt(startedAt)
+    setStreamActivityAt(startedAt)
     setStreamElapsedMs(0)
     setPendingAction(null)
     setSessionProgress([])
@@ -754,6 +958,10 @@ export function ChatPage() {
       created_at: new Date().toISOString(),
     }
     setSessionProgressAnchor({ id: userMsg.id, content: userMsg.content })
+    setActivityTraces((prev) => ({
+      ...prev,
+      [userMsg.id]: { content: userMsg.content, steps: [], elapsedMs: 0 },
+    }))
     setMessages((m) => [...m, userMsg])
 
     // Renomeia título se ainda for o default — bate com o backend.
@@ -769,29 +977,34 @@ export function ChatPage() {
     try {
       await streamAssistantReply(token, activeId, text, {
         onText(accumulated) {
+          setStreamActivityAt(Date.now())
           const delta = accumulated.slice(lastTextOffsetRef.current)
           lastTextOffsetRef.current = accumulated.length
           if (delta) {
             setThoughtSteps((prev) => appendTextToThoughts(prev, delta))
+            setActivityTraces((prev) =>
+              updateActivityTrace(prev, userMsg, (steps) => appendTextToThoughts(steps, delta)),
+            )
           }
         },
         onToolStart(tool) {
+          setStreamActivityAt(Date.now())
           setThoughtSteps((prev) => appendToolStartToThoughts(prev, tool))
-        },
-        onToolResult(result) {
-          setThoughtSteps((prev) => applyToolResultToThoughts(prev, result))
-        },
-        onActionRequired(action) { setPendingAction(action) },
-        onStatus(status) {
-          const statusWithMode = { ...status, mode: sessionMode }
-          setSessionProgress((prev) =>
-            reduceSessionProgress(
-              prev.length ? prev : createSessionProgress(statusWithMode.mode),
-              statusWithMode,
-            )
+          setActivityTraces((prev) =>
+            updateActivityTrace(prev, userMsg, (steps) => appendToolStartToThoughts(steps, tool)),
           )
         },
+        onToolResult(result) {
+          setStreamActivityAt(Date.now())
+          setThoughtSteps((prev) => applyToolResultToThoughts(prev, result))
+          setActivityTraces((prev) =>
+            updateActivityTrace(prev, userMsg, (steps) => applyToolResultToThoughts(steps, result)),
+          )
+        },
+        onActionRequired(action) { setStreamActivityAt(Date.now()); setPendingAction(action) },
+        onStatus() { setStreamActivityAt(Date.now()) },
         onError(message) {
+          setStreamActivityAt(Date.now())
           setMessages((m) => [
             ...m,
             {
@@ -802,11 +1015,19 @@ export function ChatPage() {
             },
           ])
         },
-        onDone(usage) { setLiveUsage(usage) },
+        onDone(usage) { setStreamActivityAt(Date.now()); setLiveUsage(usage) },
         signal: ctrl.signal,
       }, selectedModelId || null, uploadedAttachmentIds.length ? uploadedAttachmentIds : null)
-      setThoughtSteps([])
       setStreamStartedAt(null)
+      setStreamActivityAt(null)
+      setActivityTraces((prev) => ({
+        ...prev,
+        [userMsg.id]: {
+          ...(prev[userMsg.id] ?? { content: userMsg.content, steps: [], elapsedMs: 0 }),
+          content: userMsg.content,
+          elapsedMs: Date.now() - startedAt,
+        },
+      }))
       clearTrayLocal()
       const [msgs, totals] = await Promise.all([
         fetchMessages(token, activeId),
@@ -834,17 +1055,13 @@ export function ChatPage() {
     } finally {
       setStreaming(false)
       setStreamStartedAt(null)
+      setStreamActivityAt(null)
       abortControllerRef.current = null
       if (activeId) fetchConversationDiff(token, activeId).then((d) => setDiffStats(d.stats)).catch(() => {})
     }
   }
 
   function handleActionReply(reply: string) { handleSend(reply) }
-
-  function logout() {
-    setToken(null)
-    window.location.reload()
-  }
 
   const activeConv = conversations.find((c) => c.id === activeId)
   const activeEnvSlug = activeConv?.repos?.[0]?.slug ?? null
@@ -854,7 +1071,47 @@ export function ChatPage() {
     thoughtSteps.length === 0 &&
     !pendingAction
 
-  const groups = groupConversations(conversations)
+  const normalizedConversationSearch = conversationSearch.trim().toLocaleLowerCase('pt-BR')
+  const filteredConversations = useMemo(() => {
+    if (!normalizedConversationSearch) return conversations
+
+    return conversations.filter((conversation) => {
+      const repoText = conversation.repos
+        ?.map((repo) => [repo.slug, repo.alias, repo.base_branch].filter(Boolean).join(' '))
+        .join(' ') ?? ''
+      const searchableText = `${conversation.title} ${repoText}`.toLocaleLowerCase('pt-BR')
+
+      return searchableText.includes(normalizedConversationSearch)
+    })
+  }, [conversations, normalizedConversationSearch])
+  const visibleConversations = useMemo(
+    () => filteredConversations.slice(0, visibleConversationCount),
+    [filteredConversations, visibleConversationCount],
+  )
+  const hiddenConversationCount = Math.max(
+    filteredConversations.length - visibleConversations.length,
+    0,
+  )
+  const streamIdleMs = streaming && streamActivityAt
+    ? Math.max(0, Date.now() - streamActivityAt)
+    : 0
+  const sidebarConversationCountLabel = normalizedConversationSearch
+    ? `${filteredConversations.length} de ${conversations.length} sessões`
+    : hiddenConversationCount > 0
+      ? `${visibleConversations.length} de ${conversations.length} sessões`
+      : `${conversations.length} sessões`
+  const groups = groupConversations(visibleConversations)
+  const handleConversationListScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    if (hiddenConversationCount <= 0) return
+
+    const list = event.currentTarget
+    const distanceToBottom = list.scrollHeight - list.scrollTop - list.clientHeight
+    if (distanceToBottom > 80) return
+
+    setVisibleConversationCount((count) =>
+      Math.min(count + CONVERSATION_PAGE_SIZE, filteredConversations.length),
+    )
+  }, [filteredConversations.length, hiddenConversationCount])
 
   if (loading) {
     return (
@@ -867,24 +1124,27 @@ export function ChatPage() {
   return (
     <div className={styles.shell}>
       <div className={styles.body}>
-        {/* ── Sidebar ──────────────────────────────────────────── */}
-        <aside className={`${styles.sidebar} ${mobileOpened ? styles.sidebarOpen : ''}`}>
-          {/* Sidebar header */}
+        {/* ── Conversation panel ───────────────────────────────── */}
+        <aside
+          className={`${styles.sidebar} ${conversationsCollapsed ? styles.sidebarCollapsed : ''} ${mobileOpened ? styles.sidebarOpen : ''}`}
+        >
           <div className={styles.sidebarHead}>
             <div className={styles.sidebarHeadLeft}>
-              <img src="/capybara.png" alt="" className={styles.sidebarLogo} />
               <div>
-                <div className={styles.sidebarTitle}>CappyCloud</div>
-                <div className={styles.sidebarSubtitle}>Research Preview</div>
+                <div className={styles.sidebarTitle}>Conversas</div>
+                <div className={styles.sidebarSubtitle}>{sidebarConversationCountLabel}</div>
               </div>
             </div>
-            <Burger
-              opened={mobileOpened}
-              onClick={toggleMobile}
-              size="sm"
-              color="var(--cc-on-surface-variant)"
-              hiddenFrom="sm"
-            />
+            <button
+              type="button"
+              className={styles.panelCollapseBtn}
+              onClick={() => setConversationsCollapsed((prev) => !prev)}
+              title={conversationsCollapsed ? 'Expandir conversas' : 'Recolher conversas'}
+              aria-label={conversationsCollapsed ? 'Expandir conversas' : 'Recolher conversas'}
+            >
+              <span className={styles.icon}>{conversationsToggleIcon}</span>
+            </button>
+            <Burger opened={mobileOpened} onClick={toggleMobile} size="sm" color="var(--cc-on-surface-variant)" hiddenFrom="sm" />
           </div>
 
           {/* New session button */}
@@ -894,38 +1154,44 @@ export function ChatPage() {
               <span>Nova Sessão</span>
               <span className={styles.kbdHint}>⌘N</span>
             </button>
+            <div className={styles.sessionSearch} role="search">
+              <span className={styles.icon}>search</span>
+              <input
+                value={conversationSearch}
+                onChange={(event) => setConversationSearch(event.currentTarget.value)}
+                placeholder="Buscar conversas"
+                aria-label="Buscar conversas"
+              />
+              {conversationSearch && (
+                <button
+                  type="button"
+                  className={styles.sessionSearchClear}
+                  onClick={() => setConversationSearch('')}
+                  title="Limpar busca"
+                  aria-label="Limpar busca"
+                >
+                  <span className={styles.icon}>close</span>
+                </button>
+              )}
+            </div>
           </div>
 
-          <nav className={styles.sidebarNav} aria-label="Áreas do produto">
-            {[
-              { to: '/', icon: 'dashboard', label: 'Dashboard' },
-              { to: '/chat', icon: 'chat_bubble', label: 'Chat' },
-              { to: '/runs', icon: 'history', label: 'Runs' },
-              { to: '/analytics', icon: 'analytics', label: 'Analytics' },
-              { to: '/skills', icon: 'menu_book', label: 'Skills' },
-              { to: '/mcp', icon: 'extension', label: 'MCP' },
-              { to: '/settings', icon: 'settings', label: 'Configurações' },
-            ].map(({ to, icon, label }) => {
-              const isActive = pathname === to
-              return (
-                <Link
-                  key={to}
-                  to={to}
-                  className={`${styles.sidebarNavItem} ${isActive ? styles.sidebarNavItemActive : ''}`}
-                  aria-current={isActive ? 'page' : undefined}
-                  title={label}
-                >
-                  <span className={styles.icon}>{icon}</span>
-                  <span>{label}</span>
-                </Link>
-              )
-            })}
-          </nav>
+          <button
+            type="button"
+            className={styles.collapsedConversationsBtn}
+            onClick={() => setConversationsCollapsed(false)}
+            title="Expandir conversas"
+            aria-label="Expandir conversas"
+          >
+            <span className={styles.icon}>forum</span>
+            <span className={styles.collapsedCount}>{conversations.length}</span>
+          </button>
 
-          {/* Session list */}
-          <div className={styles.sessionList}>
+          <div className={styles.sessionList} onScroll={handleConversationListScroll}>
             {groups.length === 0 && (
-              <p className={styles.emptyHint}>Nenhuma conversa ainda.</p>
+              <p className={styles.emptyHint}>
+                {conversations.length === 0 ? 'Nenhuma conversa ainda.' : 'Nenhuma conversa encontrada.'}
+              </p>
             )}
             {groups.map((g) => (
               <section key={g.label}>
@@ -949,13 +1215,18 @@ export function ChatPage() {
                 </div>
               </section>
             ))}
-          </div>
-
-          <div className={styles.sidebarFooter}>
-            <button type="button" className={styles.sidebarLogoutBtn} onClick={logout} title="Sair">
-              <span className={styles.icon}>logout</span>
-              <span>Sair</span>
-            </button>
+            {hiddenConversationCount > 0 && (
+              <div className={styles.sessionListFooter}>
+                <button
+                  type="button"
+                  className={styles.loadMoreSessionsBtn}
+                  onClick={() => setVisibleConversationCount((count) => count + CONVERSATION_PAGE_SIZE)}
+                >
+                  <span>Carregar mais</span>
+                  <span className={styles.loadMoreCount}>{hiddenConversationCount}</span>
+                </button>
+              </div>
+            )}
           </div>
         </aside>
 
@@ -985,7 +1256,9 @@ export function ChatPage() {
               messagesError={messagesError}
               sessionProgressAnchor={sessionProgressAnchor}
               thoughtSteps={thoughtSteps}
+              activityTraces={activityTraces}
               streamElapsedMs={streamElapsedMs}
+              streamIdleMs={streamIdleMs}
               sessionProgress={sessionProgress}
               pendingAction={pendingAction}
               showThinking={showThinking}
@@ -1297,7 +1570,9 @@ interface ActiveChatProps {
   messagesError: string | null
   sessionProgressAnchor: SessionProgressAnchor | null
   thoughtSteps: ThoughtStep[]
+  activityTraces: Record<string, ActivityTrace>
   streamElapsedMs: number
+  streamIdleMs: number
   sessionProgress: SessionStageState[]
   pendingAction: ActionRequiredEvent | null
   showThinking: boolean
@@ -1342,7 +1617,7 @@ interface ActiveChatProps {
 }
 
 function ActiveChat({
-  messages, messagesLoading, messagesError, sessionProgressAnchor, thoughtSteps, streamElapsedMs, sessionProgress, pendingAction,
+  messages, messagesLoading, messagesError, sessionProgressAnchor, thoughtSteps, activityTraces, streamElapsedMs, streamIdleMs, sessionProgress, pendingAction,
   showThinking, streaming, input, setInput, inputRef,
   onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch,
   workspaces,
@@ -1400,7 +1675,7 @@ function ActiveChat({
     }
   }, [messages, thoughtSteps, sessionProgress, pendingAction, streaming, scrollToLatest])
 
-  let sessionProgressAfterIndex = -1
+  let sessionProgressBeforeIndex = -1
   if (sessionProgressAnchor) {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const message = messages[index]
@@ -1408,18 +1683,26 @@ function ActiveChat({
         message.id === sessionProgressAnchor.id ||
         (message.role === 'user' && message.content === sessionProgressAnchor.content)
       ) {
-        sessionProgressAfterIndex = index
+        sessionProgressBeforeIndex = index
         break
       }
     }
-    if (sessionProgressAfterIndex < 0) {
+    if (sessionProgressBeforeIndex < 0) {
       for (let index = messages.length - 1; index >= 0; index -= 1) {
         if (messages[index].role === 'user') {
-          sessionProgressAfterIndex = index
+          sessionProgressBeforeIndex = index
           break
         }
       }
     }
+  }
+
+  const tracesByContent = Object.values(activityTraces)
+  const activityTraceFor = (message: ChatMessage): ActivityTrace | null => {
+    if (message.role !== 'user') return null
+    return activityTraces[message.id]
+      ?? tracesByContent.find((trace) => trace.content === message.content)
+      ?? null
   }
 
   return (
@@ -1536,11 +1819,14 @@ function ActiveChat({
                   <Text size="sm" c="dimmed">Esta conversa ainda não tem mensagens.</Text>
                 </div>
               )}
-              {sessionProgress.length > 0 && sessionProgressAfterIndex < 0 && (
+              {sessionProgress.length > 0 && sessionProgressBeforeIndex < 0 && (
                 <SessionProgressCard stages={sessionProgress} />
               )}
               {messages.map((m, index) => (
                 <Fragment key={m.id}>
+                  {sessionProgress.length > 0 && index === sessionProgressBeforeIndex && (
+                    <SessionProgressCard stages={sessionProgress} />
+                  )}
                   <PaperMessage
                     key={m.id}
                     role={m.role}
@@ -1550,18 +1836,33 @@ function ActiveChat({
                     completionTokens={m.completion_tokens ?? 0}
                     costUsd={m.cost_usd ?? 0}
                   />
-                  {sessionProgress.length > 0 && index === sessionProgressAfterIndex && (
-                    <SessionProgressCard stages={sessionProgress} />
-                  )}
+                  {activityTraceFor(m)?.steps.length ? (
+                    <ThinkingStream
+                      steps={activityTraceFor(m)!.steps}
+                      streaming={streaming && sessionProgressAnchor?.content === m.content}
+                      elapsedMs={
+                        streaming && sessionProgressAnchor?.content === m.content
+                          ? streamElapsedMs
+                          : activityTraceFor(m)!.elapsedMs
+                      }
+                      idleMs={
+                        streaming && sessionProgressAnchor?.content === m.content
+                          ? streamIdleMs
+                          : 0
+                      }
+                      interrupted={!!activityTraceFor(m)!.interrupted}
+                    />
+                  ) : null}
                 </Fragment>
               ))}
-              {(thoughtSteps.length > 0 || streaming) && (
+              {((thoughtSteps.length > 0 && !sessionProgressAnchor) || (streaming && showThinking)) && (
                 <Stack gap="xs">
-                  {thoughtSteps.length > 0 && (
+                  {thoughtSteps.length > 0 && !sessionProgressAnchor && (
                     <ThinkingStream
                       steps={thoughtSteps}
                       streaming={streaming}
                       elapsedMs={streamElapsedMs}
+                      idleMs={streamIdleMs}
                     />
                   )}
                   {streaming &&
@@ -1627,20 +1928,6 @@ function ActiveChat({
         }}
       >
         <div className={styles.chatInputBarShell}>
-          <div
-            className={`${styles.chatInputStatusRow} ${streaming && !pendingAction ? styles.visible : ''}`}
-            aria-hidden={!streaming || !!pendingAction}
-          >
-            {streaming && !pendingAction && (
-              <ThinkingIndicator
-                label={
-                  thoughtSteps.some((t) => t.kind === 'tool' && !t.done)
-                    ? 'A executar…'
-                    : undefined
-                }
-              />
-            )}
-          </div>
           <AttachmentTray
             items={trayItems}
             token={token}
@@ -1782,15 +2069,10 @@ function ActiveChat({
 
 /** Card expansível com progresso operacional da criação da sessão. */
 function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
-  const [expanded, setExpanded] = useState(true)
   const completed = stages.every((stage) => stage.status === 'done')
-  const resuming = stages[0]?.label.includes('reativado')
-  const title = completed
-    ? resuming ? 'Sessão reiniciada' : 'Sessão inicializada'
-    : resuming ? 'Reiniciando sessão' : 'Inicializando sessão'
-
   const doneCount = stages.filter((s) => s.status === 'done').length
   const progressPct = stages.length > 0 ? (doneCount / stages.length) * 100 : 0
+  const title = completed ? 'Sistema ligado' : 'Ligando sistema'
 
   return (
     <div
@@ -1799,61 +2081,21 @@ function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
       }`}
       style={{ ['--cc-progress' as string]: `${progressPct}%` }}
     >
-      <button
-        type="button"
+      <div
         className={styles.sessionProgressHeader}
-        onClick={() => setExpanded((value) => !value)}
+        aria-live={completed ? 'off' : 'polite'}
       >
+        <span
+          className={`${styles.sessionProgressBootIcon} ${
+            completed ? styles.sessionProgressBootIconDone : ''
+          }`}
+          aria-hidden="true"
+        >
+          {completed ? '✓' : ''}
+        </span>
         <span>{title}</span>
-        <span className={styles.icon}>{expanded ? 'expand_less' : 'expand_more'}</span>
-      </button>
-
-      {expanded && (
-        <div className={styles.sessionProgressList}>
-          {stages.map((stage, index) => (
-            <div
-              key={stage.key}
-              className={styles.sessionProgressItem}
-              style={{ ['--cc-step-delay' as string]: `${index * 90}ms` }}
-            >
-              <span
-                className={`${styles.sessionProgressIcon} ${
-                  stage.status === 'done' ? styles.sessionProgressIconDone : ''
-                } ${
-                  stage.status === 'active' ? styles.sessionProgressIconActive : ''
-                }`}
-                aria-label={
-                  stage.status === 'done'
-                    ? 'Verificado'
-                    : stage.status === 'active'
-                      ? 'Verificando'
-                      : 'Pendente'
-                }
-              >
-                {stage.status === 'done' ? '✓' : ''}
-              </span>
-              <div>
-                <Text
-                  size="sm"
-                  c={stage.status === 'pending' ? 'dimmed' : undefined}
-                  className={
-                    stage.status === 'done'
-                      ? styles.sessionProgressLabelDone
-                      : undefined
-                  }
-                >
-                  {stage.label}
-                </Text>
-                {stage.detail && (
-                  <Text size="xs" c="dimmed">
-                    {stage.detail}
-                  </Text>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      </div>
+      {!completed && <div className={styles.sessionProgressPulse} aria-hidden="true" />}
     </div>
   )
 }
@@ -1879,8 +2121,12 @@ function PaperMessage({
   costUsd?: number
 }) {
   const isUser = role === 'user'
+  const totalTokens = (promptTokens ?? 0) + (completionTokens ?? 0)
   const hasUsage =
-    !isUser && ((promptTokens ?? 0) > 0 || (completionTokens ?? 0) > 0 || !!modelUsed)
+    !isUser && (totalTokens > 0 || !!modelUsed)
+  const costLabel = totalTokens === 0 && (costUsd ?? 0) === 0
+    ? 'uso não informado'
+    : formatCostUsd(costUsd ?? 0)
   const showCopy = !isUser && !streaming && content.trim().length > 0
   return (
     <div className={`${styles.message} ${isUser ? styles.messageUser : styles.messageAgent}`}>
@@ -1920,12 +2166,12 @@ function PaperMessage({
       {hasUsage && (
         <div className={styles.messageUsageFooter}>
           {modelUsed && <span className={styles.messageUsageModel}>{modelUsed}</span>}
-          {((promptTokens ?? 0) > 0 || (completionTokens ?? 0) > 0) && (
+          {totalTokens > 0 && (
             <span className={styles.messageUsageTokens}>
               {(promptTokens ?? 0).toLocaleString('pt-BR')} in · {(completionTokens ?? 0).toLocaleString('pt-BR')} out
             </span>
           )}
-          <span className={styles.messageUsageCost}>{formatCostUsd(costUsd ?? 0)}</span>
+          <span className={styles.messageUsageCost}>{costLabel}</span>
         </div>
       )}
     </div>
