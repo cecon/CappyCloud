@@ -11,6 +11,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.adapters.primary.http import admin_sandbox_globals as admin_sandbox_globals_router
+from app.adapters.primary.http import admin_sandbox_mcps as admin_sandbox_mcps_router
+from app.adapters.primary.http import admin_sandboxes as admin_sandboxes_router
+from app.adapters.primary.http import admin_users as admin_users_router
 from app.adapters.primary.http import ai_models as ai_models_router
 from app.adapters.primary.http import attachments as attachments_router
 from app.adapters.primary.http import auth as auth_router
@@ -21,7 +25,6 @@ from app.adapters.primary.http import conversations as conv_router
 from app.adapters.primary.http import documents as documents_router
 from app.adapters.primary.http import environments as env_router
 from app.adapters.primary.http import git_providers as git_providers_router
-from app.adapters.primary.http import mcp_servers as mcp_servers_router
 from app.adapters.primary.http import repositories_admin as repos_admin_router
 from app.adapters.primary.http import routines as routines_router
 from app.adapters.primary.http import sandboxes as sandboxes_router
@@ -48,11 +51,15 @@ async def lifespan(app: FastAPI):
 
     await init_db()
 
+    from app.infrastructure.database import async_session_factory
+    from app.infrastructure.first_admin_bootstrap import ensure_first_admin
+
+    await ensure_first_admin(get_settings(), async_session_factory)
+
     agent = PipelineAdapter()
     await agent.on_startup()
     app.state.agent = agent
 
-    from app.infrastructure.database import async_session_factory
     from app.infrastructure.sandbox_watchdog import SandboxWatchdog
 
     scheduler = AsyncIOScheduler()
@@ -124,6 +131,8 @@ app.add_middleware(
 )
 
 app.include_router(auth_router.router, prefix="/api")
+app.include_router(admin_users_router.router, prefix="/api")
+app.include_router(admin_sandboxes_router.router, prefix="/api")
 app.include_router(attachments_router.router)
 app.include_router(conv_router.router, prefix="/api")
 app.include_router(conv_diff_router.router, prefix="/api")
@@ -141,7 +150,9 @@ app.include_router(repos_admin_router.router, prefix="/api")
 app.include_router(documents_router.router, prefix="/api")
 app.include_router(skills_router.router, prefix="/api")
 app.include_router(skills_search_router.router, prefix="/api")
-app.include_router(mcp_servers_router.router, prefix="/api")
+app.include_router(admin_sandbox_mcps_router.router, prefix="/api")
+app.include_router(admin_sandbox_globals_router.skills_router, prefix="/api")
+app.include_router(admin_sandbox_globals_router.agents_router, prefix="/api")
 
 
 @app.get("/health")

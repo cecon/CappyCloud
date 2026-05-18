@@ -4,6 +4,7 @@ import uuid
 
 import pytest
 from app.application.use_cases.auth import GetCurrentUser, LoginUser, RegisterUser
+from app.domain.entities import UserRole
 
 from tests.conftest import (
     FakePasswordService,
@@ -42,6 +43,15 @@ class TestRegisterUser:
     async def test_short_password_raises(self, uc: RegisterUser) -> None:
         with pytest.raises(ValueError, match="8 caracteres"):
             await uc.execute("a@b.com", "short")
+
+    async def test_default_role_is_user(self, uc: RegisterUser) -> None:
+        user = await uc.execute("default@test.com", "password123")
+        assert user.role is UserRole.USER
+
+    async def test_explicit_admin_role_is_persisted(self, uc: RegisterUser) -> None:
+        user = await uc.execute("boss@test.com", "password123", UserRole.ADMIN)
+        assert user.role is UserRole.ADMIN
+        assert user.is_admin is True
 
 
 class TestLoginUser:

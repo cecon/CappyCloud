@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from app.domain.entities import User
+from app.domain.entities import User, UserRole
 from app.domain.value_objects import validate_email, validate_password
 from app.ports.repositories import UserRepository
 from app.ports.services import PasswordService, TokenService
@@ -25,11 +25,24 @@ class RegisterUser:
         self._users = users
         self._passwords = passwords
 
-    async def execute(self, email: str, password: str) -> User:
+    async def execute(
+        self,
+        email: str,
+        password: str,
+        role: UserRole = UserRole.USER,
+    ) -> User:
         """Create and persist a new user.
 
+        Args:
+            email: endereço de email; será normalizado (lower-case, trim).
+            password: senha em texto plano; validada e armazenada como hash.
+            role: papel inicial do utilizador. Default :attr:`UserRole.USER`.
+                Apenas chamadas confiáveis (HTTP autenticado como ADMIN, seed
+                interno) devem passar :attr:`UserRole.ADMIN` (ADR-005).
+
         Raises:
-            ValueError: if email/password invalid or email already registered.
+            ValueError: se email/password forem inválidos ou o email já estiver
+                registado.
         """
         email = validate_email(email)
         validate_password(password)
@@ -41,6 +54,7 @@ class RegisterUser:
             id=uuid.uuid4(),
             email=email,
             hashed_password=self._passwords.hash(password),
+            role=role,
         )
         return await self._users.save(user)
 

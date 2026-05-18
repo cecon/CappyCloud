@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities import User as UserEntity
+from app.domain.entities import UserRole
 from app.infrastructure.orm_models import User as UserORM
 from app.ports.repositories import UserRepository
 
@@ -32,11 +33,25 @@ class SQLAlchemyUserRepository(UserRepository):
             id=user.id,
             email=user.email,
             hashed_password=user.hashed_password,
+            role=user.role.value,
         )
         self._session.add(orm)
         await self._session.commit()
         await self._session.refresh(orm)
         return self._to_entity(orm)
+
+    async def list_all(self) -> list[UserEntity]:
+        result = await self._session.execute(select(UserORM).order_by(UserORM.created_at.asc()))
+        return [self._to_entity(row) for row in result.scalars().all()]
+
+    async def update_role(self, user_id: uuid.UUID, role: UserRole) -> UserEntity | None:
+        row = await self._session.get(UserORM, user_id)
+        if row is None:
+            return None
+        row.role = role.value
+        await self._session.commit()
+        await self._session.refresh(row)
+        return self._to_entity(row)
 
     @staticmethod
     def _to_entity(row: UserORM) -> UserEntity:
@@ -44,5 +59,20 @@ class SQLAlchemyUserRepository(UserRepository):
             id=row.id,
             email=row.email,
             hashed_password=row.hashed_password,
+            role=_role_from_str(row.role),
             created_at=row.created_at,
         )
+
+
+def _role_from_str(value: str | None) -> UserRole:
+    """Mapeia o texto persistido para o enum, com fallback defensivo para USER.
+
+    Linhas pré-migração ou casos exóticos (texto fora do enum) caem em USER —
+    nunca elevam silenciosamente para ADMIN.
+    """
+    if value is None:
+        return UserRole.USER
+    try:
+        return UserRole(value)
+    except ValueError:
+        return UserRole.USER

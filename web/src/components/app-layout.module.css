@@ -93,18 +93,72 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0.75rem;
+  padding: 0.5rem 0.75rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.navGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.navGroupHeader,
+.navGroupHeaderStatic {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.45rem 0.75rem 0.3rem;
+  background: transparent;
+  border: 0;
+  color: var(--cc-on-surface-variant);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.navGroupHeaderStatic {
+  cursor: default;
+}
+
+.navGroupHeader:hover {
+  color: var(--cc-on-surface);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.navGroupLabel {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  opacity: 0.78;
+}
+
+.navGroupChevron {
+  font-size: 1rem;
+  opacity: 0.6;
+  transition: transform 0.18s ease;
+}
+
+.navGroupChevronCollapsed {
+  transform: rotate(-90deg);
+}
+
+.navGroupItems {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
 }
 
 .navItem {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  grid-template-areas:
-    "icon label"
-    "icon section";
+  grid-template-columns: 22px minmax(0, 1fr) auto;
   column-gap: 0.7rem;
   align-items: center;
-  padding: 0.72rem 0.75rem;
+  padding: 0.55rem 0.75rem;
   color: var(--cc-on-surface-variant);
   text-decoration: none;
   border-radius: 8px;
@@ -124,13 +178,11 @@
 }
 
 .navItem .icon {
-  grid-area: icon;
   color: inherit;
   opacity: 0.78;
 }
 
 .navLabel {
-  grid-area: label;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -139,12 +191,17 @@
   font-weight: 650;
 }
 
-.navSection {
-  grid-area: section;
-  margin-top: 0.1rem;
-  font-size: 0.66rem;
-  color: var(--cc-on-surface-variant);
-  opacity: 0.68;
+.navBadge {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  border-radius: 999px;
+  padding: 0.12rem 0.45rem;
+  white-space: nowrap;
 }
 
 .profile {
@@ -291,7 +348,9 @@
 
 .shellCollapsed .brand > div,
 .shellCollapsed .navLabel,
-.shellCollapsed .navSection,
+.shellCollapsed .navBadge,
+.shellCollapsed .navGroupHeader,
+.shellCollapsed .navGroupHeaderStatic,
 .shellCollapsed .profileText,
 .shellCollapsed .headerLink {
   display: none;
@@ -335,7 +394,9 @@
 
   .brand > div,
   .navLabel,
-  .navSection,
+  .navBadge,
+  .navGroupHeader,
+  .navGroupHeaderStatic,
   .profileText,
   .headerLink {
     display: none;

@@ -1,4 +1,8 @@
-"""Port — McpServerRepository ABC."""
+"""Port — McpServerRepository ABC (ADR-004 §6).
+
+MCP é configuração por sandbox: gerido por ADMIN, materializado no
+``~/.claude/settings.json`` de cada container ao boot.
+"""
 
 from __future__ import annotations
 
@@ -10,16 +14,16 @@ from app.domain.entities import McpServer
 
 class McpServerRepository(ABC):
     @abstractmethod
-    async def list_for_user(self, user_id: uuid.UUID) -> list[McpServer]:
-        """Devolve todos os MCPs do utilizador (ativos e inativos)."""
+    async def list_for_sandbox(self, sandbox_id: uuid.UUID) -> list[McpServer]:
+        """Devolve todos os MCPs da sandbox (ativos e inativos), ordem cronológica."""
 
     @abstractmethod
-    async def get(self, mcp_id: uuid.UUID, user_id: uuid.UUID) -> McpServer | None:
-        """Devolve um MCP por id, verificando que pertence ao utilizador."""
+    async def get(self, mcp_id: uuid.UUID, sandbox_id: uuid.UUID) -> McpServer | None:
+        """Devolve um MCP por id, verificando que pertence à sandbox."""
 
     @abstractmethod
-    async def get_by_name(self, name: str, user_id: uuid.UUID) -> McpServer | None:
-        """Devolve um MCP pelo nome único do utilizador."""
+    async def get_by_name(self, name: str, sandbox_id: uuid.UUID) -> McpServer | None:
+        """Devolve um MCP pelo nome único dentro da sandbox."""
 
     @abstractmethod
     async def create(self, mcp: McpServer) -> McpServer:
@@ -30,5 +34,5 @@ class McpServerRepository(ABC):
         """Actualiza um MCP existente e devolve a entidade actualizada."""
 
     @abstractmethod
-    async def delete(self, mcp_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+    async def delete(self, mcp_id: uuid.UUID, sandbox_id: uuid.UUID) -> bool:
         """Remove o MCP. Devolve True se apagou, False se não existia."""

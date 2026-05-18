@@ -15,21 +15,21 @@ from app.infrastructure.orm_base import Base, JSONBType, UUIDType
 
 
 class McpServer(Base):
-    """Servidor MCP configurado pelo utilizador.
+    """Servidor MCP configurado por sandbox (ADR-004 §6).
 
     Cada linha representa uma entrada em ``mcpServers`` no
     ``~/.claude/settings.json`` do openclaude rodando no sandbox.
-
-    name é único por utilizador (constraint composta user_id + name).
+    Constraint composta ``(sandbox_id, name)`` garante unicidade dentro
+    de uma sandbox.
     """
 
     __tablename__ = "mcp_servers"
-    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_mcp_user_name"),)
+    __table_args__ = (UniqueConstraint("sandbox_id", "name", name="uq_mcp_sandbox_name"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(
+    sandbox_id: Mapped[uuid.UUID] = mapped_column(
         UUIDType,
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("sandboxes.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

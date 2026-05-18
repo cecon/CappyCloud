@@ -22,6 +22,13 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:5173,http://localhost:38081"
 
+    # Seed inicial do primeiro ADMIN (ADR-005). Quando ambos estão definidos,
+    # o boot da aplicação garante a existência desse utilizador ADMIN antes
+    # de aceitar requests. Em produção, prefira ``scripts/seed_first_admin.py``
+    # executado como passo de deploy.
+    first_admin_email: str = ""  # env: FIRST_ADMIN_EMAIL
+    first_admin_password: str = ""  # env: FIRST_ADMIN_PASSWORD
+
     # Chave Fernet para tokens no banco (32-byte hex ou Fernet base64).
     # Gerar: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key())"
     encryption_key: str = "0" * 64  # sobrescrever em produção via ENCRYPTION_KEY

@@ -40,7 +40,7 @@ from app.application.use_cases.repo_environments import (
     DeleteRepoEnvironment,
     ListRepoEnvironments,
 )
-from app.domain.entities import User
+from app.domain.entities import User, UserRole
 from app.ports.agent import AgentPort
 from app.ports.mcp_repository import McpServerRepository
 from app.ports.repositories import (
@@ -173,6 +173,37 @@ async def get_authenticated_user(
             detail=str(exc),
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+
+
+def require_role(required: UserRole):
+    """FastAPI dependency factory que exige um papel específico.
+
+    Retorna uma dependência que devolve o utilizador autenticado se o papel
+    bater (ou se for :attr:`UserRole.ADMIN`, que tem acesso a tudo). Caso
+    contrário levanta 403. ADR-005 documenta a regra: ``ADMIN`` ignora o
+    requisito e sempre passa.
+
+    Uso::
+
+        @router.post("/admin/...", dependencies=[Depends(require_role(UserRole.ADMIN))])
+        async def admin_only(...): ...
+
+    Ou para receber o utilizador resolvido::
+
+        async def admin_only(user: Annotated[User, Depends(require_role(UserRole.ADMIN))]): ...
+    """
+
+    async def _dep(
+        current: Annotated[User, Depends(get_authenticated_user)],
+    ) -> User:
+        if current.role is UserRole.ADMIN or current.role is required:
+            return current
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permissão insuficiente.",
+        )
+
+    return _dep
 
 
 def get_list_convs_uc(

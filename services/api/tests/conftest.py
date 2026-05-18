@@ -12,7 +12,7 @@ from collections.abc import Generator
 from typing import Any
 
 import pytest
-from app.domain.entities import Conversation, Message, Repository, User
+from app.domain.entities import Conversation, Message, Repository, User, UserRole
 from app.ports.agent import AgentPort
 from app.ports.repositories import (
     ConversationRepository,
@@ -29,6 +29,17 @@ from .fakes_attachments import (  # noqa: F401
     InMemoryAiModelCapabilityLookup,
     InMemoryAttachmentRepository,
     InMemoryAttachmentStorage,
+)
+
+# Re-export dos fakes de sandbox/MCP/skills/agents (definidos em
+# ``fakes_sandbox.py``) — mesmo objetivo: limitar tamanho do conftest.
+from .fakes_sandbox import (  # noqa: F401
+    FakeRuntimeGateway,
+    FakeSandboxBootstrap,
+    InMemoryMcpRepository,
+    InMemorySandboxAgentRepository,
+    InMemorySandboxRepository,
+    InMemorySandboxSkillRepository,
 )
 
 # ---------------------------------------------------------------------------
@@ -51,6 +62,19 @@ class InMemoryUserRepository(UserRepository):
     async def save(self, user: User) -> User:
         self._store[user.id] = user
         return user
+
+    async def list_all(self) -> list[User]:
+        return sorted(self._store.values(), key=lambda u: u.created_at)
+
+    async def update_role(self, user_id: uuid.UUID, role: UserRole) -> User | None:
+        current = self._store.get(user_id)
+        if current is None:
+            return None
+        from dataclasses import replace
+
+        updated = replace(current, role=role)
+        self._store[user_id] = updated
+        return updated
 
 
 class InMemoryConversationRepository(ConversationRepository):

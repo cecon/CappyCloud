@@ -34,7 +34,7 @@ class McpServerUpdate(McpServerCreate):
 
 class McpServerOut(BaseModel):
     id: uuid.UUID
-    user_id: uuid.UUID
+    sandbox_id: uuid.UUID
     name: str
     command: str
     args: list[str]
