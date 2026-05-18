@@ -34,7 +34,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def _access_table(name: str, resource_table: str, resource_col: str) -> None:
-    """Cria tabela associativa user × <recurso> com FKs CASCADE e UNIQUE."""
+    """Cria tabela associativa user x <recurso> com FKs CASCADE e UNIQUE."""
     op.create_table(
         name,
         sa.Column(
