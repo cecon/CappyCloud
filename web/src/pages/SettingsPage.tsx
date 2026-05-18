@@ -37,6 +37,7 @@ const EMPTY_REPO_FORM: RepositoryCreate = {
   sandbox_id: null,
   pat_token: '',
   provider_type: null,
+  signoz_service_name: null,
 }
 
 /**
@@ -133,6 +134,7 @@ export function SettingsPage() {
       sandbox_id: r.sandbox_id ?? sandboxes[0]?.id ?? null,
       pat_token: '',
       provider_type: null,
+      signoz_service_name: r.signoz_service_name ?? null,
     })
     setAvailableBranches([])
     setRepoFormError(null)
@@ -467,6 +469,16 @@ export function SettingsPage() {
               </span>
             </button>
           </div>
+
+          <label className={styles.label}>
+            SigNoz service.name
+            <input
+              className={styles.input}
+              value={repoForm.signoz_service_name ?? ''}
+              onChange={(e) => set('signoz_service_name', e.target.value || null)}
+              placeholder="ex: smartpos-app (deixe vazio se não usa SigNoz)"
+            />
+          </label>
 
           <label className={styles.label}>
             Sandbox

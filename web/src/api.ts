@@ -877,6 +877,7 @@ export interface Repository {
   sandbox_status: string
   active: boolean
   created_at: string
+  signoz_service_name?: string | null
 }
 
 export interface RepositoryCreate {
@@ -892,6 +893,8 @@ export interface RepositoryCreate {
   pat_token?: string | null
   /** Tipo do provider (azure_devops, github…). Inferido da URL se omitido. */
   provider_type?: string | null
+  /** SigNoz service.name para correlacionar logs/traces (deixe vazio se não usar). */
+  signoz_service_name?: string | null
 }
 
 export async function fetchRepositories(token: string): Promise<Repository[]> {

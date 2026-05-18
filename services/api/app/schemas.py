@@ -283,6 +283,8 @@ class RepositoryCreate(BaseModel):
     # Inline PAT: se preenchido, cria/atualiza um provider implícito e associa.
     pat_token: str | None = Field(default=None, max_length=4096)
     provider_type: str | None = Field(default=None, max_length=32)
+    # SigNoz: nome do service.name para correlacionar logs/traces/métricas.
+    signoz_service_name: str | None = Field(default=None, max_length=256)
 
 
 class RepositoryOut(BaseModel):
@@ -299,6 +301,7 @@ class RepositoryOut(BaseModel):
     sandbox_path: str
     last_sync_at: datetime | None = None
     error_message: str | None = None
+    signoz_service_name: str | None = None
     active: bool
     created_at: datetime
 

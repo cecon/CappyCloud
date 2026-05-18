@@ -162,6 +162,7 @@ async def create_repository(
         confluence_space=body.confluence_space.strip(),
         provider_id=provider_id,
         sandbox_id=sandbox_id,
+        signoz_service_name=body.signoz_service_name or None,
     )
     session.add(repo)
     await session.flush()
@@ -199,6 +200,7 @@ async def update_repository(
     repo.confluence_url = body.confluence_url.strip()
     repo.confluence_space = body.confluence_space.strip()
     repo.provider_id = new_provider_id
+    repo.signoz_service_name = body.signoz_service_name or None
     if body.sandbox_id:
         repo.sandbox_id = body.sandbox_id
     await session.flush()

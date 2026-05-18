@@ -49,8 +49,8 @@ async function tryHandle(req, res, { json, readBody }) {
   const pathname = new URL(req.url, 'http://localhost').pathname
 
   if (pathname === '/worktree/ls-files') {
-    const body = await readBody(req)
     try {
+      const body = await readBody(req)
       const wt = resolveSafeWorktree(body.worktree_path)
       const { stdout } = await execFileAsync('git', ['-C', wt, 'ls-files'], {
         timeout: 120_000,
@@ -68,8 +68,8 @@ async function tryHandle(req, res, { json, readBody }) {
   }
 
   if (pathname === '/worktree/read-file') {
-    const body = await readBody(req)
     try {
+      const body = await readBody(req)
       const full = resolveSafeFileInWorktree(body.worktree_path, body.path || '')
       const content = fs.readFileSync(full, 'utf8')
       await json(res, 200, { path: body.path, content })
@@ -125,9 +125,9 @@ async function tryHandle(req, res, { json, readBody }) {
   }
 
   if (pathname === '/worktree/diff') {
-    const body = await readBody(req)
-    const baseBranch = (body.base_branch || 'main').trim()
     try {
+      const body = await readBody(req)
+      const baseBranch = (body.base_branch || 'main').trim()
       const wt = resolveSafeWorktree(body.worktree_path)
       const { stdout } = await execFileAsync(
         'git',
@@ -145,8 +145,8 @@ async function tryHandle(req, res, { json, readBody }) {
   }
 
   if (pathname === '/worktree/push-origin-head') {
-    const body = await readBody(req)
     try {
+      const body = await readBody(req)
       const wt = resolveSafeWorktree(body.worktree_path)
       await execFileAsync(
         'git',
@@ -163,8 +163,8 @@ async function tryHandle(req, res, { json, readBody }) {
   }
 
   if (pathname === '/worktree/current-branch') {
-    const body = await readBody(req)
     try {
+      const body = await readBody(req)
       const wt = resolveSafeWorktree(body.worktree_path)
       const { stdout } = await execFileAsync(
         'git',

@@ -61,6 +61,7 @@ function injectToken(url, explicitToken = '', providerType = '') {
 }
 
 function json(res, status, body) {
+  if (res.headersSent) return
   const payload = JSON.stringify(body)
   res.writeHead(status, {
     'Content-Type': 'application/json',
@@ -289,7 +290,9 @@ const server = http.createServer(async (req, res) => {
     return json(res, 404, { error: 'Not found' })
   } catch (err) {
     console.error('[session_server] Unhandled error:', err)
-    return json(res, 500, { error: 'Internal server error' })
+    if (!res.headersSent) {
+      try { json(res, 500, { error: 'Internal server error' }) } catch {}
+    }
   }
 })
 

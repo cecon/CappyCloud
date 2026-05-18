@@ -233,6 +233,28 @@ na seção "Documentação externa por repositório"), use **sempre** o parâmet
 retorna páginas de outros produtos do mesmo Confluence e o agente acaba
 abrindo pageId fora do contexto certo.
 
+### MCP Servers disponíveis
+
+O openclaude carrega MCPs configurados pelo utilizador em
+`~/.claude/settings.json` no início de cada sessão gRPC.
+
+**Restrições do ambiente sandbox:**
+
+- ✅ Binários instalados no PATH (ex.: `/usr/local/bin/signoz-mcp-server`)
+- ✅ Comandos Node.js via `npx` ou binários em `node_modules/.bin`
+- ✅ Scripts Python via `python3`
+- ❌ **`docker` não está disponível** — MCPs que usam `docker run` falharão
+  silenciosamente. Não configure MCP com `command: docker`.
+
+**MCP pré-instalado:**
+
+| Nome | Binário | Notas |
+|------|---------|-------|
+| `signoz-mcp-server` | `/usr/local/bin/signoz-mcp-server` | Observabilidade (métricas, traces, logs, alertas). Requer `SIGNOZ_URL` e `SIGNOZ_API_KEY` no env. |
+
+Se um MCP estiver configurado mas as ferramentas não aparecerem, verifique se
+o `command` aponta para um executável existente no container.
+
 ---
 
 ## Regras absolutas

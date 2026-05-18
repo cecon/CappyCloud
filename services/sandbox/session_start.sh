@@ -267,6 +267,7 @@ elif [ -f /app/CLAUDE.md ]; then
     cp /app/CLAUDE.md "$WORKTREE_PATH/CLAUDE.md"
 fi
 
+# ── .sendbox/ overlay (commands/agents/skills do próprio repo) ──
 _inject_sendbox_overlay "$MAIN_REPO" "$WORKTREE_PATH" || true
 
 echo "[session_start] OK — worktree=${WORKTREE_PATH}  branch=${BRANCH_NAME}"
