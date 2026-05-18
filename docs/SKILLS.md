@@ -59,9 +59,9 @@ Todas as skills são registradas em [skills-registry.json](../skills-registry.js
    name: my-skill
    description: Descrição clara da skill em uma linha
    ---
-   
+
    # Descrição detalhada da skill
-   
+
    Explicar quando usar, exemplos de uso, etc.
    ```
 

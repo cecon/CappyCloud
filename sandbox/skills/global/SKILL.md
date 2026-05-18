@@ -95,7 +95,7 @@ from app.adapters.secondary.postgres import PostgresUserRepository
 # Padrão: <Entity><Error>
 class UserNotFound(Exception):
     """Levantada quando user_id não existe em DB"""
-    
+
 class PermissionDenied(Exception):
     """Levantada quando usuário não tem acesso ao recurso"""
 
@@ -184,16 +184,16 @@ def test_<function>_<scenario>_<expected_outcome>():
 ```python
 def fetch_user_by_id(user_id: str) -> User:
     """Busca um usuário por ID na base de dados.
-    
+
     Args:
         user_id: UUID do usuário
-        
+
     Returns:
         User object
-        
+
     Raises:
         UserNotFound: Se user_id não existir
-        
+
     Note:
         Esta chamada é N+1 com outras queries de perfil.
         Usar fetch_user_with_profile() em contextos de lista.
@@ -254,6 +254,6 @@ Arquivos maiores devem ser refatorados em módulos menores.
 
 ---
 
-**Disponível em**: `sandbox/skills/global/`  
-**Escopo**: Global — todos os repositórios e agentes  
+**Disponível em**: `sandbox/skills/global/`
+**Escopo**: Global — todos os repositórios e agentes
 **Última atualização**: maio 2026

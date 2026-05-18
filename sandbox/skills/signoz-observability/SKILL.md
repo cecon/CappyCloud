@@ -202,10 +202,10 @@ def process_order(order_id: str):
     with tracer.start_as_current_span("process_order") as span:
         span.set_attribute("order.id", order_id)
         span.set_attribute("order.status", "processing")
-        
+
         # Código aqui será rastreado
         result = calculate_total(order_id)
-        
+
         span.set_attribute("order.total", result)
         return result
 ```
@@ -217,13 +217,13 @@ def process_order(order_id: str):
 @app.middleware("http")
 async def add_trace_context(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-    
+
     # Adicionar ao trace
     span = trace.get_current_span()
     span.set_attribute("request.id", request_id)
     span.set_attribute("request.method", request.method)
     span.set_attribute("request.path", request.url.path)
-    
+
     response = await call_next(request)
     span.set_attribute("response.status", response.status_code)
     return response
@@ -277,7 +277,7 @@ status.code = "ERROR" AND duration > 500ms
 
 ```sql
 -- Latência percentil P95 por endpoint
-SELECT 
+SELECT
     quantile(0.95)(duration_ms) as p95_latency,
     http_method,
     http_url
@@ -286,7 +286,7 @@ WHERE service_name = 'my-service'
 GROUP BY http_method, http_url
 
 -- Taxa de erro por serviço
-SELECT 
+SELECT
     COUNT(*) as total_spans,
     countIf(status_code = 'ERROR') as error_count,
     (error_count / total_spans * 100) as error_rate_pct
@@ -383,5 +383,5 @@ if os.getenv("ENV") not in ["production", "staging"]:
 
 ---
 
-**Scope**: Global — aplicável a todos os serviços  
+**Scope**: Global — aplicável a todos os serviços
 **Última atualização**: maio 2026
