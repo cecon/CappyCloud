@@ -59,9 +59,7 @@ def upgrade() -> None:
         ),
         sa.UniqueConstraint("sandbox_id", "name", name="uq_sandbox_skills_name"),
     )
-    op.create_index(
-        "ix_sandbox_skills_sandbox_id", "sandbox_skills", ["sandbox_id"]
-    )
+    op.create_index("ix_sandbox_skills_sandbox_id", "sandbox_skills", ["sandbox_id"])
 
     op.create_table(
         "sandbox_agents",
@@ -95,9 +93,7 @@ def upgrade() -> None:
         ),
         sa.UniqueConstraint("sandbox_id", "name", name="uq_sandbox_agents_name"),
     )
-    op.create_index(
-        "ix_sandbox_agents_sandbox_id", "sandbox_agents", ["sandbox_id"]
-    )
+    op.create_index("ix_sandbox_agents_sandbox_id", "sandbox_agents", ["sandbox_id"])
 
 
 def downgrade() -> None:

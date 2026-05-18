@@ -45,9 +45,9 @@ def upgrade() -> None:
 
     if fallback_sandbox is not None:
         bind.execute(
-            sa.text(
-                "UPDATE mcp_servers SET sandbox_id = :sb WHERE sandbox_id IS NULL"
-            ).bindparams(sb=fallback_sandbox)
+            sa.text("UPDATE mcp_servers SET sandbox_id = :sb WHERE sandbox_id IS NULL").bindparams(
+                sb=fallback_sandbox
+            )
         )
     else:
         # Nenhuma sandbox existe → linhas existentes são órfãs.
@@ -96,9 +96,7 @@ def upgrade() -> None:
         "mcp_servers",
         ["sandbox_id"],
     )
-    op.create_unique_constraint(
-        "uq_mcp_sandbox_name", "mcp_servers", ["sandbox_id", "name"]
-    )
+    op.create_unique_constraint("uq_mcp_sandbox_name", "mcp_servers", ["sandbox_id", "name"])
 
 
 def downgrade() -> None:
