@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import delete, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities import (
@@ -89,7 +90,9 @@ class SQLAlchemySandboxRepository(SandboxRepository):
         return self._to_entity(row)
 
     async def delete(self, sandbox_id: uuid.UUID) -> bool:
-        result = await self._session.execute(delete(SandboxORM).where(SandboxORM.id == sandbox_id))
+        result: CursorResult = await self._session.execute(  # type: ignore[assignment]
+            delete(SandboxORM).where(SandboxORM.id == sandbox_id)
+        )
         await self._session.commit()
         return result.rowcount > 0
 

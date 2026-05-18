@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 
 import docker
 from docker.errors import APIError, NotFound
+from docker.models.containers import Container
 
 from app.adapters.secondary.sandbox_runtime.docker_compose import CONTAINER_PREFIX
 from app.domain.entities import Sandbox, SandboxAgent, SandboxSkill
@@ -171,7 +172,7 @@ class DockerSandboxBootstrap(SandboxBootstrapGateway):
 
     # ── helpers internos ────────────────────────────────────────────────
 
-    def _require_container(self, sandbox: Sandbox):  # type: ignore[no-untyped-def]
+    def _require_container(self, sandbox: Sandbox) -> Container:
         name = self._container_name(sandbox)
         try:
             return self._docker().containers.get(name)
@@ -183,7 +184,7 @@ class DockerSandboxBootstrap(SandboxBootstrapGateway):
             raise BootstrapFailureError(f"Falha ao consultar Docker: {exc}") from exc
 
     @staticmethod
-    def _reset_dir(container, path: str) -> None:  # type: ignore[no-untyped-def]
+    def _reset_dir(container: Container, path: str) -> None:
         """Apaga ``path`` e recria vazio. Single source of truth = DB."""
         try:
             exit_code, _ = container.exec_run(

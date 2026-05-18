@@ -25,7 +25,7 @@ from app.application.use_cases.mcp_servers import (
     McpServerNotFoundError,
     UpdateSandboxMcp,
 )
-from app.domain.entities import UserRole
+from app.domain.entities import McpServer, UserRole
 from app.ports.mcp_repository import McpServerRepository
 from app.schemas_mcp import McpServerCreate, McpServerOut, McpServerUpdate
 
@@ -36,7 +36,7 @@ router = APIRouter(
 )
 
 
-def _serialize(mcp) -> McpServerOut:  # type: ignore[no-untyped-def]
+def _serialize(mcp: McpServer) -> McpServerOut:
     return McpServerOut.model_validate(mcp.__dict__)
 
 
