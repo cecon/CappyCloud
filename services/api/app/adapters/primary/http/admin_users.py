@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.adapters.primary.http.deps import get_user_repo, require_role
 from app.application.use_cases.admin_users import (
+    CannotChangeSuperAdminRoleError,
     CannotDemoteSelfError,
     ListUsers,
     UpdateUserRole,
@@ -46,7 +47,9 @@ async def list_users(
 ) -> list[UserOut]:
     """Lista todos os utilizadores (ADMIN only)."""
     rows = await uc.execute()
-    return [UserOut(id=u.id, email=u.email, role=u.role) for u in rows]
+    return [
+        UserOut(id=u.id, email=u.email, role=u.role, is_super_admin=u.is_super_admin) for u in rows
+    ]
 
 
 @router.patch(
@@ -69,4 +72,11 @@ async def update_user_role(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except CannotDemoteSelfError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    return UserOut(id=updated.id, email=updated.email, role=updated.role)
+    except CannotChangeSuperAdminRoleError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    return UserOut(
+        id=updated.id,
+        email=updated.email,
+        role=updated.role,
+        is_super_admin=updated.is_super_admin,
+    )

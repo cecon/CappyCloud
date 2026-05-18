@@ -9,20 +9,20 @@ from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import and_, or_, select, text, update
+from sqlalchemy import and_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.primary.http.deps import (
     get_authenticated_user,
     get_db_session,
-    require_role,
+    require_super_admin,
 )
 from app.adapters.secondary.persistence.sqlalchemy_user_access_repo import (
     SQLAlchemyUserAiModelAccessRepository,
 )
 from app.domain.entities import ModelTier, User, UserRole
 from app.infrastructure.encryption import get_encryptor
-from app.infrastructure.openrouter_models import fetch_openrouter_models, is_free_text_entry
+from app.infrastructure.openrouter_models import fetch_openrouter_models, filter_text_entries
 from app.infrastructure.orm_models import AiModel, AiProvider
 from app.schemas import (
     AiModelCreate,
@@ -39,11 +39,10 @@ _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 _DEFAULT_FREE_TEXT_MODEL_ID = "openai/gpt-oss-120b:free"
 
 
-def _free_text_model_filter():
+def _active_text_model_filter():
     return and_(
         AiModel.active == True,  # noqa: E712
         text("ai_models.capabilities ? 'text'"),
-        or_(AiModel.model_id.like("%:free"), AiModel.model_id == "openrouter/free"),
     )
 
 
@@ -86,7 +85,7 @@ async def list_ai_providers(
     "/ai-providers",
     response_model=AiProviderOut,
     status_code=201,
-    dependencies=[Depends(require_role(UserRole.ADMIN))],
+    dependencies=[Depends(require_super_admin)],
 )
 async def create_ai_provider(
     body: AiProviderCreate,
@@ -108,7 +107,7 @@ async def create_ai_provider(
 @router.patch(
     "/ai-providers/{provider_id}/key",
     response_model=AiProviderOut,
-    dependencies=[Depends(require_role(UserRole.ADMIN))],
+    dependencies=[Depends(require_super_admin)],
 )
 async def update_ai_provider_key(
     provider_id: uuid.UUID,
@@ -137,7 +136,7 @@ async def list_ai_models(
     - ADMIN vê todos os modelos ativos (filtra apenas por capability ``text``).
     - USER vê apenas modelos para os quais tem ``UserAiModelAccess``.
     """
-    stmt = select(AiModel).where(_free_text_model_filter()).order_by(AiModel.display_name)
+    stmt = select(AiModel).where(_active_text_model_filter()).order_by(AiModel.display_name)
     if current.role is not UserRole.ADMIN:
         allowed = await SQLAlchemyUserAiModelAccessRepository(session).list_resources_for_user(
             current.id
@@ -153,7 +152,7 @@ async def list_ai_models(
     "/ai-models",
     response_model=AiModelOut,
     status_code=201,
-    dependencies=[Depends(require_role(UserRole.ADMIN))],
+    dependencies=[Depends(require_super_admin)],
 )
 async def create_ai_model(
     body: AiModelCreate,
@@ -179,7 +178,7 @@ async def create_ai_model(
 @router.delete(
     "/ai-models/{model_id}",
     status_code=204,
-    dependencies=[Depends(require_role(UserRole.ADMIN))],
+    dependencies=[Depends(require_super_admin)],
 )
 async def delete_ai_model(
     model_id: uuid.UUID,
@@ -195,7 +194,7 @@ async def delete_ai_model(
 @router.post(
     "/ai-models/sync-from-openrouter",
     response_model=AiModelSyncResult,
-    dependencies=[Depends(require_role(UserRole.ADMIN))],
+    dependencies=[Depends(require_super_admin)],
 )
 async def sync_ai_models_from_openrouter(
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -225,7 +224,7 @@ async def sync_ai_models_from_openrouter(
         await session.flush()
 
     try:
-        catalog = [entry for entry in await fetch_openrouter_models() if is_free_text_entry(entry)]
+        catalog = filter_text_entries(await fetch_openrouter_models())
     except Exception as exc:
         log.exception("Falha ao buscar catálogo OpenRouter")
         raise HTTPException(status_code=502, detail=f"OpenRouter indisponível: {exc}") from exc
@@ -263,7 +262,7 @@ async def sync_ai_models_from_openrouter(
                     input_cost_per_1m_usd=input_cost,
                     output_cost_per_1m_usd=output_cost,
                     tier=tier,
-                    active=True,
+                    active=tier == ModelTier.FREE.value,
                 )
             )
             created += 1
@@ -275,7 +274,6 @@ async def sync_ai_models_from_openrouter(
             current.output_cost_per_1m_usd = output_cost
             current.is_default = _text_default_flags(entry["model_id"], current.is_default)
             current.tier = tier
-            current.active = True
             updated += 1
 
     stale_ids = [m.id for m in existing if m.model_id not in fetched_ids and m.active]

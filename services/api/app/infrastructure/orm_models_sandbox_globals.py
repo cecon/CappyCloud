@@ -1,4 +1,4 @@
-"""ORM models — skills e agents *globais por sandbox* (ADR-004 §6).
+"""ORM models — skills globais, associações por sandbox e agents (ADR-004 §6).
 
 Distintos de ``Skill`` (em ``orm_models_agent.py``, por repositório, RAG).
 Estes vivem em ``~/.claude/skills/`` e ``~/.claude/agents/`` dentro do
@@ -16,10 +16,53 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.infrastructure.orm_base import Base, JSONBType, UUIDType
 
 
-class SandboxSkill(Base):
-    """Skill global da sandbox — vira pasta ``~/.claude/skills/<name>/``.
+class GlobalSkill(Base):
+    """Catálogo global de skills.
 
-    ``content`` é o markdown que vai dentro de ``SKILL.md``.
+    As associações em ``global_skill_sandboxes`` definem quais sandboxes recebem
+    cada skill no boot.
+    """
+
+    __tablename__ = "global_skills"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, server_default="", default="")
+    content: Mapped[str] = mapped_column(Text, nullable=False, server_default="", default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class GlobalSkillSandbox(Base):
+    """Associação entre skill global e sandbox que deve recebê-la."""
+
+    __tablename__ = "global_skill_sandboxes"
+    __table_args__ = (
+        UniqueConstraint("skill_id", "sandbox_id", name="uq_global_skill_sandbox"),
+    )
+
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        UUIDType,
+        ForeignKey("global_skills.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    sandbox_id: Mapped[uuid.UUID] = mapped_column(
+        UUIDType,
+        ForeignKey("sandboxes.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SandboxSkill(Base):
+    """Tabela legada de skills por sandbox.
+
+    Mantida para compatibilidade/migração. O catálogo novo vive em
+    ``global_skills`` e as associações em ``global_skill_sandboxes``.
     """
 
     __tablename__ = "sandbox_skills"

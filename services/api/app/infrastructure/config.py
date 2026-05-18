@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     # Cada conversa ganha o seu subdiretório; nomes aleatórios (uuid+ext).
     attachments_dir: str = "/var/cappycloud/attachments"
     attachments_max_bytes: int = 8 * 1024 * 1024  # 8 MB por anexo
+    conversation_artifacts_max_bytes: int = 50 * 1024 * 1024  # 50 MB por arquivo textual
 
     # Vision describer (Caminho C - V1): pré-processa imagens via modelo
     # multimodal e injeta descrição textual no prompt. Permite que modelos

@@ -16,8 +16,15 @@ import {
   Text,
   TextInput,
   Title,
-  Tooltip,
 } from '@mantine/core'
+import {
+  IconCopy,
+  IconDotsVertical,
+  IconPlayerPlay,
+  IconPlayerStop,
+  IconSettings,
+  IconTrash,
+} from '@tabler/icons-react'
 import {
   bootAdminSandbox,
   cloneAdminSandbox,
@@ -32,6 +39,7 @@ import {
   stopAdminSandbox,
 } from '../api'
 import { SandboxGlobalsDrawer } from '../components/SandboxGlobalsDrawer'
+import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
 
 type CreateState = {
   name: string
@@ -276,7 +284,7 @@ export function AdminSandboxesPage() {
                   <Table.Th style={{ width: 120 }}>Runtime</Table.Th>
                   <Table.Th>Imagem</Table.Th>
                   <Table.Th style={{ width: 180 }}>Container</Table.Th>
-                  <Table.Th style={{ width: 240 }}>Ações</Table.Th>
+                  <ActionsHeader width={132} />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -314,58 +322,69 @@ export function AdminSandboxesPage() {
                           {STATUS_LABELS[sb.container_status]}
                         </Badge>
                       </Table.Td>
-                      <Table.Td>
-                        <Group gap="xs">
-                          <Tooltip label="Iniciar/recriar container">
-                            <Button
-                              size="xs"
-                              onClick={() => void handleBoot(sb)}
-                              loading={isPending}
+                      <ActionsCell>
+                        <RowActionIcon
+                          label="Iniciar/recriar container"
+                          color="blue"
+                          onClick={() => void handleBoot(sb)}
+                          loading={isPending}
+                          disabled={isPending}
+                        >
+                          <IconPlayerPlay size={16} />
+                        </RowActionIcon>
+                        <RowActionIcon
+                          label="Parar container"
+                          color="gray"
+                          variant="default"
+                          onClick={() => void handleStop(sb)}
+                          loading={isPending}
+                          disabled={isPending || !stoppable}
+                        >
+                          <IconPlayerStop size={16} />
+                        </RowActionIcon>
+                        <Menu shadow="md" position="bottom-end">
+                          <Menu.Target>
+                            <ActionIcon
+                              aria-label="Mais ações"
+                              title="Mais ações"
+                              variant="default"
+                              size="lg"
                               disabled={isPending}
                             >
-                              Boot
-                            </Button>
-                          </Tooltip>
-                          <Tooltip label="Parar container">
-                            <Button
-                              size="xs"
-                              variant="default"
-                              onClick={() => void handleStop(sb)}
-                              loading={isPending}
-                              disabled={isPending || !stoppable}
+                              <IconDotsVertical size={16} />
+                            </ActionIcon>
+                          </Menu.Target>
+                          <Menu.Dropdown>
+                            <Menu.Item
+                              leftSection={<IconSettings size={14} />}
+                              onClick={() => setGlobalsFor(sb)}
                             >
-                              Stop
-                            </Button>
-                          </Tooltip>
-                          <Menu shadow="md" position="bottom-end">
-                            <Menu.Target>
-                              <ActionIcon variant="default" size="lg" disabled={isPending}>
-                                ⋯
-                              </ActionIcon>
-                            </Menu.Target>
-                            <Menu.Dropdown>
-                              <Menu.Item onClick={() => setGlobalsFor(sb)}>
-                                MCPs / Skills / Agents...
-                              </Menu.Item>
-                              <Menu.Item
-                                onClick={() => {
-                                  setCloneFor(sb)
-                                  setCloneName(`${sb.name}-copy`)
-                                }}
-                              >
-                                Clonar
-                              </Menu.Item>
-                              <Menu.Item
-                                color="red"
-                                disabled={containerExists && sb.container_status !== 'stopped' && sb.container_status !== 'error'}
-                                onClick={() => void handleDelete(sb)}
-                              >
-                                Apagar
-                              </Menu.Item>
-                            </Menu.Dropdown>
-                          </Menu>
-                        </Group>
-                      </Table.Td>
+                              MCPs / Skills / Agents...
+                            </Menu.Item>
+                            <Menu.Item
+                              leftSection={<IconCopy size={14} />}
+                              onClick={() => {
+                                setCloneFor(sb)
+                                setCloneName(`${sb.name}-copy`)
+                              }}
+                            >
+                              Clonar
+                            </Menu.Item>
+                            <Menu.Item
+                              color="red"
+                              leftSection={<IconTrash size={14} />}
+                              disabled={
+                                containerExists &&
+                                sb.container_status !== 'stopped' &&
+                                sb.container_status !== 'error'
+                              }
+                              onClick={() => void handleDelete(sb)}
+                            >
+                              Apagar
+                            </Menu.Item>
+                          </Menu.Dropdown>
+                        </Menu>
+                      </ActionsCell>
                     </Table.Tr>
                   )
                 })}

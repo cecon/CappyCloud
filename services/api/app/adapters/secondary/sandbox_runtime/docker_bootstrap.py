@@ -14,13 +14,18 @@ import io
 import json
 import logging
 import tarfile
+import urllib.error
+import urllib.request
 from datetime import UTC, datetime
 
 import docker
-from docker.errors import APIError, NotFound
+from docker.errors import APIError, DockerException, NotFound
 from docker.models.containers import Container
 
-from app.adapters.secondary.sandbox_runtime.docker_compose import CONTAINER_PREFIX
+from app.adapters.secondary.sandbox_runtime.docker_compose import (
+    CONTAINER_PREFIX,
+    DockerComposeSandboxRuntime,
+)
 from app.domain.entities import Sandbox, SandboxAgent, SandboxSkill
 from app.ports.sandbox_bootstrap import BootstrapFailureError, SandboxBootstrapGateway
 
@@ -50,15 +55,16 @@ class DockerSandboxBootstrap(SandboxBootstrapGateway):
         await asyncio.to_thread(self._write_settings_sync, sandbox, settings)
 
     def _write_settings_sync(self, sandbox: Sandbox, settings: dict) -> None:
-        name = self._container_name(sandbox)
         try:
-            container = self._docker().containers.get(name)
-        except NotFound as exc:
-            raise BootstrapFailureError(
-                f"Container '{name}' não existe — boot antes de bootstrap."
-            ) from exc
-        except APIError as exc:
-            raise BootstrapFailureError(f"Falha ao consultar Docker: {exc}") from exc
+            container = self._require_container(sandbox)
+        except BootstrapFailureError as exc:
+            try:
+                self._write_settings_http_sync(sandbox, settings)
+            except BootstrapFailureError as http_exc:
+                raise BootstrapFailureError(
+                    f"{exc}; fallback HTTP também falhou: {http_exc}"
+                ) from http_exc
+            return
 
         # Monta um tar em memória com o arquivo settings.json. Docker
         # put_archive desempacota em ``path`` dentro do container.
@@ -96,7 +102,7 @@ class DockerSandboxBootstrap(SandboxBootstrapGateway):
 
         log.info(
             "Bootstrap escreveu settings.json em %s:%s (%d bytes)",
-            name,
+            self._container_name(sandbox),
             CLAUDE_DIR_IN_CONTAINER,
             len(payload),
         )
@@ -105,12 +111,20 @@ class DockerSandboxBootstrap(SandboxBootstrapGateway):
         await asyncio.to_thread(self._write_skills_sync, sandbox, skills)
 
     def _write_skills_sync(self, sandbox: Sandbox, skills: list[SandboxSkill]) -> None:
-        container = self._require_container(sandbox)
+        enabled = [s for s in skills if s.enabled]
+        try:
+            container = self._require_container(sandbox)
+        except BootstrapFailureError as exc:
+            if not enabled:
+                log.info("Bootstrap sem Docker: nenhuma skill habilitada para materializar.")
+                return
+            raise BootstrapFailureError(
+                "Docker indisponível para materializar skills globais no container."
+            ) from exc
         skills_dir = f"{CLAUDE_DIR_IN_CONTAINER}/{SKILLS_SUBDIR}"
         # Limpa antes — DB é single source of truth.
         self._reset_dir(container, skills_dir)
 
-        enabled = [s for s in skills if s.enabled]
         if not enabled:
             return  # Diretório vazio (limpo) é o estado correto.
 
@@ -140,11 +154,19 @@ class DockerSandboxBootstrap(SandboxBootstrapGateway):
         await asyncio.to_thread(self._write_agents_sync, sandbox, agents)
 
     def _write_agents_sync(self, sandbox: Sandbox, agents: list[SandboxAgent]) -> None:
-        container = self._require_container(sandbox)
+        enabled = [a for a in agents if a.enabled]
+        try:
+            container = self._require_container(sandbox)
+        except BootstrapFailureError as exc:
+            if not enabled:
+                log.info("Bootstrap sem Docker: nenhum agent habilitado para materializar.")
+                return
+            raise BootstrapFailureError(
+                "Docker indisponível para materializar agents globais no container."
+            ) from exc
         agents_dir = f"{CLAUDE_DIR_IN_CONTAINER}/{AGENTS_SUBDIR}"
         self._reset_dir(container, agents_dir)
 
-        enabled = [a for a in agents if a.enabled]
         if not enabled:
             return
 
@@ -172,16 +194,40 @@ class DockerSandboxBootstrap(SandboxBootstrapGateway):
 
     # ── helpers internos ────────────────────────────────────────────────
 
-    def _require_container(self, sandbox: Sandbox) -> Container:
-        name = self._container_name(sandbox)
+    @staticmethod
+    def _write_settings_http_sync(sandbox: Sandbox, settings: dict) -> None:
+        url = f"http://{sandbox.host}:{sandbox.session_port}/mcp/configure"
+        body = json.dumps(settings).encode("utf-8")
+        request = urllib.request.Request(
+            url,
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         try:
-            return self._docker().containers.get(name)
-        except NotFound as exc:
-            raise BootstrapFailureError(
-                f"Container '{name}' não existe — boot antes de bootstrap."
-            ) from exc
-        except APIError as exc:
-            raise BootstrapFailureError(f"Falha ao consultar Docker: {exc}") from exc
+            with urllib.request.urlopen(request, timeout=10) as response:
+                if not 200 <= response.status < 300:
+                    raise BootstrapFailureError(f"HTTP {response.status} ao chamar {url}")
+        except (OSError, urllib.error.URLError, TimeoutError) as exc:
+            raise BootstrapFailureError(f"não foi possível chamar {url}: {exc}") from exc
+
+        log.info("Bootstrap escreveu settings.json via HTTP em %s", url)
+
+    def _require_container(self, sandbox: Sandbox) -> Container:
+        names = DockerComposeSandboxRuntime._container_name_candidates(sandbox)
+        for name in names:
+            try:
+                return self._docker().containers.get(name)
+            except NotFound:
+                continue
+            except APIError as exc:
+                raise BootstrapFailureError(f"Falha ao consultar Docker: {exc}") from exc
+            except DockerException as exc:
+                raise BootstrapFailureError(
+                    f"Docker indisponível para consultar containers: {exc}"
+                ) from exc
+        display = "', '".join(names)
+        raise BootstrapFailureError(f"Container '{display}' não existe — boot antes de bootstrap.")
 
     @staticmethod
     def _reset_dir(container: Container, path: str) -> None:

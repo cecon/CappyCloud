@@ -132,6 +132,7 @@ export interface CurrentUser {
   id: string
   email: string
   role: UserRole
+  is_super_admin: boolean
 }
 
 /**
@@ -187,6 +188,7 @@ export interface AdminUser {
   id: string
   email: string
   role: UserRole
+  is_super_admin: boolean
 }
 
 /** Lista todos os utilizadores (admin only). */
@@ -285,6 +287,7 @@ export interface StatusEvent {
   message: string
   stage?: 'session' | 'repository' | 'ready' | 'agent'
   mode?: 'initializing' | 'resuming'
+  state?: 'active' | 'done'
 }
 
 export interface StreamHandlers {
@@ -418,6 +421,7 @@ export async function streamAssistantReply(
                   ? stage
                   : undefined,
               mode: mode === 'initializing' || mode === 'resuming' ? mode : undefined,
+              state: evt.state === 'active' || evt.state === 'done' ? evt.state : undefined,
             })
             break
           }
@@ -461,17 +465,19 @@ export interface Attachment {
   mime_type: string
   original_filename: string
   size_bytes: number
-  kind: 'image'
+  kind: 'image' | 'text' | 'markdown' | 'log' | 'pdf' | 'docx' | string
   has_description: boolean
+  processing_status: 'uploaded' | 'described' | 'indexed' | 'error' | string
+  chunks_count: number
+  processing_error: string | null
   vision_model_used: string | null
   uploaded_at: string
   preview_url: string
 }
 
 /**
- * Faz upload de uma imagem para uma conversa. O backend gera descrição
- * textual via modelo de visão (síncrono, ~3-8s); a Promise resolve só após
- * isso para o front conseguir mostrar o status `vision_model_used`.
+ * Faz upload de imagem ou artefato de conversa. Imagens são descritas por
+ * visão; textos/documentos são extraídos e indexados em chunks da conversa.
  */
 export async function uploadAttachment(
   token: string,
@@ -653,6 +659,7 @@ export async function cancelConversation(token: string, conversationId: string):
     const res = await apiFetch(`/api/conversations/${conversationId}/cancel`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
+      keepalive: true,
     })
     if (!res.ok) return false
     const data = (await res.json()) as { cancelled: boolean }
@@ -1538,7 +1545,83 @@ export async function deleteSandboxMcp(
   }
 }
 
-// ── Admin · Sandbox Skills (globais por sandbox) ─────────────────────────────
+// ── Admin · Global Skills catalog ───────────────────────────────────────────
+
+export interface GlobalSkill {
+  id: string
+  name: string
+  description: string
+  content: string
+  enabled: boolean
+  sandbox_ids: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface GlobalSkillPayload {
+  name: string
+  description?: string
+  content?: string
+  enabled?: boolean
+  sandbox_ids: string[]
+}
+
+export async function fetchGlobalSkills(token: string): Promise<GlobalSkill[]> {
+  const res = await apiFetch('/api/admin/global-skills', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao listar skills globais')
+  }
+  return res.json()
+}
+
+export async function createGlobalSkill(
+  token: string,
+  data: GlobalSkillPayload,
+): Promise<GlobalSkill> {
+  const res = await apiFetch('/api/admin/global-skills', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar skill global')
+  }
+  return res.json()
+}
+
+export async function updateGlobalSkill(
+  token: string,
+  skillId: string,
+  data: GlobalSkillPayload,
+): Promise<GlobalSkill> {
+  const res = await apiFetch(`/api/admin/global-skills/${skillId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar skill global')
+  }
+  return res.json()
+}
+
+export async function deleteGlobalSkill(token: string, skillId: string): Promise<void> {
+  const res = await apiFetch(`/api/admin/global-skills/${skillId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao eliminar skill global')
+  }
+}
+
+// ── Admin · Sandbox Skills (projecao das globais por sandbox) ────────────────
 
 export interface SandboxSkill {
   id: string

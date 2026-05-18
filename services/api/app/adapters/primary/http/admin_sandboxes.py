@@ -38,7 +38,7 @@ from app.application.use_cases.admin_sandboxes import (
 from app.domain.entities import Sandbox, SandboxRuntime, UserRole
 from app.ports.mcp_repository import McpServerRepository
 from app.ports.repositories import SandboxRepository
-from app.ports.sandbox_bootstrap import SandboxBootstrapGateway
+from app.ports.sandbox_bootstrap import BootstrapFailureError, SandboxBootstrapGateway
 from app.ports.sandbox_globals import SandboxAgentRepository, SandboxSkillRepository
 from app.ports.sandbox_runtime import (
     RuntimeFailureError,
@@ -236,6 +236,8 @@ async def boot_sandbox(
     except SandboxNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except RuntimeFailureError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except BootstrapFailureError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     except NotImplementedError as exc:
         raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc

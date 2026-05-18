@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 from app.domain.entities import (
     ContainerStatus,
     Conversation,
+    ConversationArtifactChunk,
     Message,
     MessageAttachment,
     RepoEnvironment,
@@ -237,6 +238,32 @@ class AttachmentRepository(ABC):
         model_used: str,
     ) -> None:
         """Persiste a descrição textual gerada pelo vision describer."""
+
+    @abstractmethod
+    async def update_processing(
+        self,
+        attachment_id: uuid.UUID,
+        *,
+        status: str,
+        chunks_count: int = 0,
+        error: str | None = None,
+    ) -> None:
+        """Atualiza status de extração/indexação do artefato."""
+
+    @abstractmethod
+    async def save_chunks(self, chunks: list[ConversationArtifactChunk]) -> None:
+        """Persiste chunks pesquisáveis de um artefato de conversa."""
+
+    @abstractmethod
+    async def search_chunks(
+        self,
+        *,
+        conversation_id: uuid.UUID,
+        attachment_ids: list[uuid.UUID],
+        query: str,
+        limit: int,
+    ) -> list[ConversationArtifactChunk]:
+        """Busca chunks de artefatos anexados no escopo da conversa."""
 
 
 class AiModelCapabilityLookup(ABC):

@@ -155,6 +155,7 @@ app.include_router(documents_router.router, prefix="/api")
 app.include_router(skills_router.router, prefix="/api")
 app.include_router(skills_search_router.router, prefix="/api")
 app.include_router(admin_sandbox_mcps_router.router, prefix="/api")
+app.include_router(admin_sandbox_globals_router.global_skills_router, prefix="/api")
 app.include_router(admin_sandbox_globals_router.skills_router, prefix="/api")
 app.include_router(admin_sandbox_globals_router.agents_router, prefix="/api")
 

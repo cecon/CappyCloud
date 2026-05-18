@@ -1,13 +1,12 @@
-"""HTTP endpoints para anexos de conversas.
+"""HTTP endpoints para anexos/artefatos de conversas.
 
 Rotas:
 - ``POST   /api/conversations/{conv_id}/attachments``   (multipart/form-data: file)
 - ``GET    /api/conversations/{conv_id}/attachments/{att_id}``  (preview)
 - ``DELETE /api/conversations/{conv_id}/attachments/{att_id}``
 
-A descrição textual gerada pelo vision describer é persistida durante o
-upload — fica pronta para o ``StreamMessage`` injetar no prompt assim que o
-utilizador clicar em "enviar".
+Imagens recebem descrição via vision. Arquivos textuais/documentos são extraídos
+e indexados em chunks no escopo da conversa para busca no turno do agente.
 """
 
 from __future__ import annotations
@@ -43,8 +42,6 @@ from app.schemas import AttachmentOut
 
 router = APIRouter(prefix="/api/conversations", tags=["attachments"])
 
-_ALLOWED_MIME = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"}
-
 
 def _attachment_to_dto(att, conv_id: uuid.UUID) -> AttachmentOut:
     return AttachmentOut(
@@ -55,10 +52,22 @@ def _attachment_to_dto(att, conv_id: uuid.UUID) -> AttachmentOut:
         size_bytes=att.size_bytes,
         kind=att.kind,
         has_description=bool(att.vision_description),
+        processing_status=att.processing_status,
+        chunks_count=att.chunks_count,
+        processing_error=att.processing_error,
         vision_model_used=att.vision_model_used,
         uploaded_at=att.uploaded_at,
         preview_url=f"/api/conversations/{conv_id}/attachments/{att.id}",
     )
+
+
+def _status_for_upload_error(message: str) -> int:
+    lowered = message.lower()
+    if "acima do limite" in lowered:
+        return status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
+    if "tipo de arquivo" in lowered or "não são suportados" in lowered:
+        return status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
+    return status.HTTP_400_BAD_REQUEST
 
 
 @router.post(
@@ -72,13 +81,8 @@ async def upload_attachment(
     uc: Annotated[UploadAttachment, Depends(get_upload_attachment_uc)],
     file: Annotated[UploadFile, File(...)],
 ) -> AttachmentOut:
-    """Faz upload de uma imagem e gera descrição via modelo de visão."""
-    mime = (file.content_type or "").lower()
-    if mime not in _ALLOWED_MIME:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=(f"Tipo {mime!r} não suportado. Aceitos: " + ", ".join(_ALLOWED_MIME)),
-        )
+    """Faz upload de uma imagem ou artefato pesquisável da conversa."""
+    mime = (file.content_type or "application/octet-stream").lower()
     settings = get_settings()
     content = await file.read()
     try:
@@ -88,12 +92,16 @@ async def upload_attachment(
             original_filename=file.filename or "image",
             mime_type=mime,
             content=content,
-            max_bytes=settings.attachments_max_bytes,
+            max_bytes=settings.conversation_artifacts_max_bytes,
+            image_max_bytes=settings.attachments_max_bytes,
         )
     except AttachmentNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=_status_for_upload_error(str(exc)),
+            detail=str(exc),
+        ) from exc
     return _attachment_to_dto(att, conversation_id)
 
 

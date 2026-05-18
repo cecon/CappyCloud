@@ -23,6 +23,7 @@ import {
   type ModelTier,
   patchAdminModel,
 } from '../api'
+import { useCurrentUser } from '../hooks/useCurrentUser'
 
 type TierFilter = 'all' | ModelTier
 
@@ -45,6 +46,9 @@ function formatPrice(value: number | null): string {
 }
 
 export function AdminModelsPage() {
+  const currentUser = useCurrentUser()
+  const canManageCatalog =
+    currentUser.status === 'ready' && currentUser.user.is_super_admin
   const [providers, setProviders] = useState<AdminAiProvider[]>([])
   const [models, setModels] = useState<AiModel[] | null>(null)
   const [tier, setTier] = useState<TierFilter>('all')
@@ -141,6 +145,12 @@ export function AdminModelsPage() {
           </Alert>
         )}
 
+        {!canManageCatalog && (
+          <Alert color="yellow" title="Somente super admin altera o catálogo">
+            Você pode consultar os modelos, mas ativação global e tier são bloqueados.
+          </Alert>
+        )}
+
         <Paper withBorder p="md" radius="md">
           <Group gap="md" mb="md">
             <Select
@@ -220,7 +230,7 @@ export function AdminModelsPage() {
                           ]}
                           value={m.tier}
                           onChange={(v) => v && void changeTier(m, v as ModelTier)}
-                          disabled={busyId === m.id}
+                          disabled={!canManageCatalog || busyId === m.id}
                           allowDeselect={false}
                           leftSection={
                             <Badge size="xs" variant="dot" color={tierColor(m.tier)}>
@@ -238,7 +248,7 @@ export function AdminModelsPage() {
                       <Table.Td>
                         <Switch
                           checked={m.active}
-                          disabled={busyId === m.id}
+                          disabled={!canManageCatalog || busyId === m.id}
                           onChange={() => void toggleActive(m)}
                         />
                       </Table.Td>

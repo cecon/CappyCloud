@@ -41,6 +41,7 @@ class UserOut(BaseModel):
     id: uuid.UUID
     email: str
     role: UserRole
+    is_super_admin: bool = False
 
     model_config = {"from_attributes": True}
 

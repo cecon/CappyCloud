@@ -1,7 +1,7 @@
 """add_repository_confluence_url
 
 Revision ID: 7ae83e67c053
-Revises: 20260513_130000
+Revises: 20260513_130001
 Create Date: 2026-05-16 00:27:51.180620
 
 """
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "7ae83e67c053"
-down_revision: str | Sequence[str] | None = "20260513_130000"
+down_revision: str | Sequence[str] | None = "20260513_130001"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

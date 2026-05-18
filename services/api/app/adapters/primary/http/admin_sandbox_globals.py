@@ -8,27 +8,34 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.primary.http.deps import require_role
+from app.adapters.primary.http.deps import require_role, require_super_admin
 from app.adapters.primary.http.deps_base import get_db_session
 from app.adapters.secondary.persistence.sqlalchemy_sandbox_globals_repo import (
     SQLAlchemySandboxAgentRepository,
     SQLAlchemySandboxSkillRepository,
 )
 from app.application.use_cases.sandbox_globals import (
+    CreateGlobalSkill,
     CreateSandboxAgent,
     CreateSandboxSkill,
+    DeleteGlobalSkill,
     DeleteSandboxAgent,
     DeleteSandboxSkill,
+    ListGlobalSkills,
     ListSandboxAgents,
     ListSandboxSkills,
     SandboxGlobalNameTakenError,
     SandboxGlobalNotFoundError,
+    UpdateGlobalSkill,
     UpdateSandboxAgent,
     UpdateSandboxSkill,
 )
 from app.domain.entities import UserRole
 from app.ports.sandbox_globals import SandboxAgentRepository, SandboxSkillRepository
 from app.schemas_sandbox_globals import (
+    GlobalSkillCreate,
+    GlobalSkillOut,
+    GlobalSkillUpdate,
     SandboxAgentCreate,
     SandboxAgentOut,
     SandboxAgentUpdate,
@@ -60,9 +67,80 @@ agents_router = APIRouter(
     tags=["admin"],
     dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
+global_skills_router = APIRouter(
+    prefix="/admin/global-skills",
+    tags=["admin"],
+    dependencies=[Depends(require_super_admin)],
+)
 
 
 # ── Skills ───────────────────────────────────────────────────────────────────
+
+
+@global_skills_router.get("", response_model=list[GlobalSkillOut])
+async def list_global_skills(
+    repo: Annotated[SandboxSkillRepository, Depends(get_skill_repo)],
+) -> list[GlobalSkillOut]:
+    rows = await ListGlobalSkills(repo).execute()
+    return [GlobalSkillOut.model_validate(s.__dict__) for s in rows]
+
+
+@global_skills_router.post(
+    "",
+    response_model=GlobalSkillOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_global_skill(
+    body: GlobalSkillCreate,
+    repo: Annotated[SandboxSkillRepository, Depends(get_skill_repo)],
+) -> GlobalSkillOut:
+    try:
+        skill = await CreateGlobalSkill(repo).execute(
+            name=body.name,
+            description=body.description,
+            content=body.content,
+            enabled=body.enabled,
+            sandbox_ids=body.sandbox_ids,
+        )
+    except SandboxGlobalNameTakenError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return GlobalSkillOut.model_validate(skill.__dict__)
+
+
+@global_skills_router.put("/{skill_id}", response_model=GlobalSkillOut)
+async def update_global_skill(
+    skill_id: uuid.UUID,
+    body: GlobalSkillUpdate,
+    repo: Annotated[SandboxSkillRepository, Depends(get_skill_repo)],
+) -> GlobalSkillOut:
+    try:
+        skill = await UpdateGlobalSkill(repo).execute(
+            skill_id=skill_id,
+            name=body.name,
+            description=body.description,
+            content=body.content,
+            enabled=body.enabled,
+            sandbox_ids=body.sandbox_ids,
+        )
+    except SandboxGlobalNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except SandboxGlobalNameTakenError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return GlobalSkillOut.model_validate(skill.__dict__)
+
+
+@global_skills_router.delete("/{skill_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_global_skill(
+    skill_id: uuid.UUID,
+    repo: Annotated[SandboxSkillRepository, Depends(get_skill_repo)],
+) -> None:
+    deleted = await DeleteGlobalSkill(repo).execute(skill_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill não encontrada.")
 
 
 @skills_router.get("", response_model=list[SandboxSkillOut])
@@ -78,6 +156,7 @@ async def list_skills(
     "",
     response_model=SandboxSkillOut,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_super_admin)],
 )
 async def create_skill(
     sandbox_id: uuid.UUID,
@@ -99,7 +178,11 @@ async def create_skill(
     return SandboxSkillOut.model_validate(skill.__dict__)
 
 
-@skills_router.put("/{skill_id}", response_model=SandboxSkillOut)
+@skills_router.put(
+    "/{skill_id}",
+    response_model=SandboxSkillOut,
+    dependencies=[Depends(require_super_admin)],
+)
 async def update_skill(
     sandbox_id: uuid.UUID,
     skill_id: uuid.UUID,
@@ -124,7 +207,11 @@ async def update_skill(
     return SandboxSkillOut.model_validate(skill.__dict__)
 
 
-@skills_router.delete("/{skill_id}", status_code=status.HTTP_204_NO_CONTENT)
+@skills_router.delete(
+    "/{skill_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_super_admin)],
+)
 async def delete_skill(
     sandbox_id: uuid.UUID,
     skill_id: uuid.UUID,

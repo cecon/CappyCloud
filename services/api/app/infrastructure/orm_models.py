@@ -99,6 +99,9 @@ class User(Base):
     role: Mapped[str] = mapped_column(
         String(16), nullable=False, server_default="user", default="user", index=True
     )
+    is_super_admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversations: Mapped[list[Conversation]] = relationship(
@@ -227,10 +230,45 @@ class MessageAttachment(Base):
     storage_path: Mapped[str] = mapped_column(Text, nullable=False)
     original_filename: Mapped[str] = mapped_column(String(512), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    processing_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default="uploaded", default="uploaded", index=True
+    )
+    chunks_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    processing_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     vision_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     vision_model_used: Mapped[str | None] = mapped_column(String(256), nullable=True)
     uploaded_by: Mapped[uuid.UUID | None] = mapped_column(UUIDType, nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ConversationArtifactChunk(Base):
+    """Chunk pesquisável de um arquivo anexado a uma conversa."""
+
+    __tablename__ = "conversation_artifact_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
+    attachment_id: Mapped[uuid.UUID] = mapped_column(
+        UUIDType,
+        ForeignKey("message_attachments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUIDType,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    line_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    line_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    page_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    page_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    meta: Mapped[dict] = mapped_column(JSONBType, nullable=False, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
@@ -263,5 +301,5 @@ from app.infrastructure.orm_models_platform import (  # noqa: F401, E402
     SandboxSyncQueue,
 )
 from app.infrastructure.orm_models_sandbox_globals import (  # noqa: F401, E402
-    SandboxAgent as SandboxAgentORM,
+    GlobalSkill as GlobalSkillORM,
 )

@@ -52,8 +52,33 @@ const ALLOWED_ATTACHMENT_MIME = new Set([
   'image/jpg',
   'image/webp',
   'image/gif',
+  'text/plain',
+  'text/markdown',
+  'application/pdf',
+  'application/json',
+  'application/xml',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ])
-const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
+const ALLOWED_ATTACHMENT_EXT = new Set([
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.webp',
+  '.gif',
+  '.txt',
+  '.md',
+  '.markdown',
+  '.log',
+  '.json',
+  '.yaml',
+  '.yml',
+  '.csv',
+  '.xml',
+  '.pdf',
+  '.docx',
+])
+const MAX_IMAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024
+const MAX_ARTIFACT_ATTACHMENT_BYTES = 50 * 1024 * 1024
 
 const STICKY_SCROLL_THRESHOLD_PX = 96
 const CHAT_PREFS_KEY = 'cappycloud.chat.preferences.v1'
@@ -71,6 +96,25 @@ type ChatPreferenceState = {
   byRepo?: Record<string, RepoChatPreference>
 }
 
+function fileExtension(name: string): string {
+  const idx = name.lastIndexOf('.')
+  return idx >= 0 ? name.slice(idx).toLowerCase() : ''
+}
+
+function isSupportedAttachment(file: File): boolean {
+  return (
+    ALLOWED_ATTACHMENT_MIME.has(file.type) ||
+    file.type.startsWith('text/') ||
+    ALLOWED_ATTACHMENT_EXT.has(fileExtension(file.name))
+  )
+}
+
+function attachmentLimitBytes(file: File): number {
+  const ext = fileExtension(file.name)
+  const isImage = file.type.startsWith('image/') || ['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)
+  return isImage ? MAX_IMAGE_ATTACHMENT_BYTES : MAX_ARTIFACT_ATTACHMENT_BYTES
+}
+
 /**
  * Formata custo USD como "$0.0034" / "$1.20" / "free" / "—".
  * Sub-cêntimo recebe 4 casas para não colapsar a zero.
@@ -80,6 +124,15 @@ function formatCostUsd(value: number | null | undefined): string {
   if (value === 0) return 'free'
   if (value < 0.01) return `$${value.toFixed(4)}`
   return `$${value.toFixed(2)}`
+}
+
+function formatShortDuration(ms: number): string {
+  if (ms < 1000) return 'menos de 1s'
+  const seconds = Math.floor(ms / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  const rest = seconds - minutes * 60
+  return rest > 0 ? `${minutes}m ${rest}s` : `${minutes}m`
 }
 
 /**
@@ -239,14 +292,20 @@ function reduceSessionProgress(
   const stages = sessionStagesForMode(mode)
   const currentIndex = stages.findIndex((stage) => stage.key === event.stage)
   if (currentIndex < 0) return previous
+  const stageDone = event.state === 'done'
 
   return previous.map((stage, index) => {
     const nextStage = stages[index] ?? stage
-    if (index < currentIndex || event.stage === 'agent') {
+    if (index < currentIndex) {
       return { ...stage, label: nextStage.label, status: 'done' }
     }
     if (index === currentIndex) {
-      return { ...stage, label: nextStage.label, status: 'active', detail: event.message }
+      return {
+        ...stage,
+        label: nextStage.label,
+        status: stageDone ? 'done' : 'active',
+        detail: event.message,
+      }
     }
     return { ...stage, label: nextStage.label }
   })
@@ -379,34 +438,34 @@ export function ChatPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   /**
-   * Faz upload de uma lista de imagens, registando placeholders na tray
-   * enquanto a Promise resolve. Anexos exigem `activeId` — antes de criar
-   * a conversa o input file fica desativado.
+   * Faz upload de anexos/artefatos, registando placeholders na tray enquanto
+   * a Promise resolve. Anexos exigem `activeId`.
    */
   const uploadFiles = useCallback(
     (files: File[]) => {
       if (!activeId || files.length === 0) return
       for (const file of files) {
-        if (!ALLOWED_ATTACHMENT_MIME.has(file.type)) {
+        if (!isSupportedAttachment(file)) {
           setTrayItems((prev) => [
             ...prev,
             {
               kind: 'failed',
               localId: crypto.randomUUID(),
               filename: file.name,
-              error: 'Tipo não suportado (use PNG, JPG, WebP ou GIF)',
+              error: 'Tipo não suportado',
             },
           ])
           continue
         }
-        if (file.size > MAX_ATTACHMENT_BYTES) {
+        const limit = attachmentLimitBytes(file)
+        if (file.size > limit) {
           setTrayItems((prev) => [
             ...prev,
             {
               kind: 'failed',
               localId: crypto.randomUUID(),
               filename: file.name,
-              error: `Acima de ${(MAX_ATTACHMENT_BYTES / 1024 / 1024).toFixed(0)} MB`,
+              error: `Acima de ${(limit / 1024 / 1024).toFixed(0)} MB`,
             },
           ])
           continue
@@ -517,6 +576,8 @@ export function ChatPage() {
   const [headBranch, setHeadBranch] = useState<string | null>(null)
 
   const abortControllerRef = useRef<AbortController | null>(null)
+  const stopRequestedRef = useRef(false)
+  const optimisticConversationIdRef = useRef<string | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const chatPrefsRef = useRef<ChatPreferenceState>(readChatPrefs())
   /** Comprimento do `accumulated` text já aplicado à timeline thoughtSteps. */
@@ -652,12 +713,17 @@ export function ChatPage() {
       return
     }
     let cancelled = false
+    const preserveOptimistic = optimisticConversationIdRef.current === activeId
     setDiffStats(null)
     setDiff(null)
     setPrUrl(null)
     setHeadBranch(null)
-    setMessages([])
-    setMessagesLoading(true)
+    if (!preserveOptimistic) {
+      setMessages([])
+      setMessagesLoading(true)
+    } else {
+      setMessagesLoading(false)
+    }
     setMessagesError(null)
     setLiveUsage(null)
     ;(async () => {
@@ -667,7 +733,9 @@ export function ChatPage() {
           fetchConversationUsage(token, activeId),
         ])
         if (!cancelled) {
-          setMessages(msgs)
+          setMessages((prev) =>
+            preserveOptimistic && msgs.length === 0 && prev.length > 0 ? prev : msgs,
+          )
           setConvUsage(usage)
         }
       } catch (e) {
@@ -685,10 +753,15 @@ export function ChatPage() {
   }, [activeId, token])
 
   async function handleStop() {
+    if (stopRequestedRef.current) return
+    stopRequestedRef.current = true
     const elapsedMs = streamStartedAt ? Date.now() - streamStartedAt : streamElapsedMs
     const anchor = sessionProgressAnchor
+    const conversationId = activeId
+    const cancelPromise = conversationId
+      ? cancelConversation(token, conversationId)
+      : Promise.resolve(false)
     abortControllerRef.current?.abort()
-    if (activeId) await cancelConversation(token, activeId)
     setStreamStartedAt(null)
     if (anchor) {
       setActivityTraces((prev) => ({
@@ -721,6 +794,11 @@ export function ChatPage() {
     setStreaming(false)
     setPendingAction(null)
     setStreamActivityAt(null)
+    try {
+      await cancelPromise
+    } finally {
+      stopRequestedRef.current = false
+    }
   }
 
   async function handleCreatePr() {
@@ -797,6 +875,7 @@ export function ChatPage() {
     const previewTitle =
       text.length > 80 ? text.slice(0, 80) + '…' : text
     const cWithTitle = { ...c, title: previewTitle }
+    optimisticConversationIdRef.current = c.id
     setConversations((prev) => [cWithTitle, ...prev])
     setActiveId(c.id)
     setMessages([])
@@ -897,6 +976,7 @@ export function ChatPage() {
         fetchConversationUsage(token, c.id),
       ])
       setMessages(msgs)
+      optimisticConversationIdRef.current = null
       setConvUsage(totals)
       setLiveUsage(null)
       setSessionProgress([])
@@ -1002,7 +1082,16 @@ export function ChatPage() {
           )
         },
         onActionRequired(action) { setStreamActivityAt(Date.now()); setPendingAction(action) },
-        onStatus() { setStreamActivityAt(Date.now()) },
+        onStatus(status) {
+          setStreamActivityAt(Date.now())
+          const statusWithMode = { ...status, mode: status.mode ?? 'initializing' }
+          setSessionProgress((prev) =>
+            reduceSessionProgress(
+              prev.length ? prev : createSessionProgress(statusWithMode.mode),
+              statusWithMode,
+            )
+          )
+        },
         onError(message) {
           setStreamActivityAt(Date.now())
           setMessages((m) => [
@@ -1525,7 +1614,6 @@ function EmptyState({
           iconColor="var(--cc-secondary)"
           title={selectedWorkspaceName}
           desc="Sessões isoladas por worktree, prontas para diff e PR."
-          href="/settings"
         />
         <QuickActionCard
           icon="smart_toy"
@@ -1814,18 +1902,26 @@ function ActiveChat({
                   <Text size="xs" c="dimmed">{messagesError}</Text>
                 </div>
               )}
-              {!messagesLoading && !messagesError && messages.length === 0 && (
+              {!messagesLoading && !messagesError && messages.length === 0 && !streaming && (
                 <div className={styles.chatStateCard}>
                   <Text size="sm" c="dimmed">Esta conversa ainda não tem mensagens.</Text>
                 </div>
               )}
               {sessionProgress.length > 0 && sessionProgressBeforeIndex < 0 && (
-                <SessionProgressCard stages={sessionProgress} />
+                <SessionProgressCard
+                  stages={sessionProgress}
+                  elapsedMs={streamElapsedMs}
+                  idleMs={streamIdleMs}
+                />
               )}
               {messages.map((m, index) => (
                 <Fragment key={m.id}>
                   {sessionProgress.length > 0 && index === sessionProgressBeforeIndex && (
-                    <SessionProgressCard stages={sessionProgress} />
+                    <SessionProgressCard
+                      stages={sessionProgress}
+                      elapsedMs={streamElapsedMs}
+                      idleMs={streamIdleMs}
+                    />
                   )}
                   <PaperMessage
                     key={m.id}
@@ -1938,7 +2034,7 @@ function ActiveChat({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+            accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,.txt,.md,.markdown,.log,.json,.yaml,.yml,.csv,.xml,.pdf,.docx"
             multiple
             style={{ display: 'none' }}
             onChange={(e) => {
@@ -1951,8 +2047,8 @@ function ActiveChat({
             className={styles.attachBtn}
             onClick={() => fileInputRef.current?.click()}
             disabled={streaming}
-            title="Anexar imagem (PNG, JPG, WebP, GIF — até 8MB)"
-            aria-label="Anexar imagem"
+            title="Anexar imagem ou arquivo da conversa"
+            aria-label="Anexar imagem ou arquivo"
           >
             <span className={styles.icon}>attachment</span>
           </button>
@@ -1961,7 +2057,7 @@ function ActiveChat({
             className={styles.chatTextarea}
             placeholder={
               isDragOver
-                ? 'Solte para anexar a imagem…'
+                ? 'Solte para anexar à conversa…'
                 : 'Mensagem ao agente… (Enter para enviar, cole imagens com Ctrl+V)'
             }
             rows={2}
@@ -2067,12 +2163,31 @@ function ActiveChat({
   )
 }
 
-/** Card expansível com progresso operacional da criação da sessão. */
-function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
+/** Card com progresso operacional da criação da sessão e execução do agente. */
+function SessionProgressCard({
+  stages,
+  elapsedMs,
+  idleMs,
+}: {
+  stages: SessionStageState[]
+  elapsedMs: number
+  idleMs: number
+}) {
   const completed = stages.every((stage) => stage.status === 'done')
   const doneCount = stages.filter((s) => s.status === 'done').length
   const progressPct = stages.length > 0 ? (doneCount / stages.length) * 100 : 0
-  const title = completed ? 'Sistema ligado' : 'Ligando sistema'
+  const activeStage = stages.find((stage) => stage.status === 'active')
+  const title = completed
+    ? 'Sistema ligado'
+    : activeStage?.key === 'agent'
+      ? 'Agente trabalhando'
+      : 'Ligando sistema'
+  const meta = completed
+    ? `Concluído em ${formatShortDuration(elapsedMs)}`
+    : `Em andamento há ${formatShortDuration(elapsedMs)}`
+  const idleLabel = !completed && activeStage?.key === 'agent' && idleMs >= 5000
+    ? `sem novos eventos há ${formatShortDuration(idleMs)}`
+    : null
 
   return (
     <div
@@ -2093,7 +2208,48 @@ function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
         >
           {completed ? '✓' : ''}
         </span>
-        <span>{title}</span>
+        <span className={styles.sessionProgressHeaderText}>
+          <span>{title}</span>
+          <span className={styles.sessionProgressMeta}>
+            {meta}{idleLabel ? ` · ${idleLabel}` : ''}
+          </span>
+        </span>
+      </div>
+      <div className={styles.sessionProgressList}>
+        {stages.map((stage, index) => (
+          <div
+            key={stage.key}
+            className={styles.sessionProgressItem}
+            style={{ ['--cc-step-delay' as string]: `${Math.min(index, 6) * 45}ms` }}
+          >
+            <span
+              className={`${styles.sessionProgressIcon} ${
+                stage.status === 'active'
+                  ? styles.sessionProgressIconActive
+                  : stage.status === 'done'
+                    ? styles.sessionProgressIconDone
+                    : ''
+              }`}
+              aria-hidden="true"
+            >
+              {stage.status === 'done' ? '✓' : ''}
+            </span>
+            <span className={styles.sessionProgressStepBody}>
+              <span
+                className={`${styles.sessionProgressLabel} ${
+                  stage.status === 'done' ? styles.sessionProgressLabelDone : ''
+                }`}
+              >
+                {stage.label}
+              </span>
+              {stage.detail && (
+                <span className={styles.sessionProgressDetail}>
+                  {stage.detail}
+                </span>
+              )}
+            </span>
+          </div>
+        ))}
       </div>
       {!completed && <div className={styles.sessionProgressPulse} aria-hidden="true" />}
     </div>

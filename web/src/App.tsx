@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { getToken } from './api'
 import { AppLayout } from './components/AppLayout'
 import { RequireAdmin } from './components/RequireAdmin'
+import { RequireSuperAdmin } from './components/RequireSuperAdmin'
 import { ThinkingIndicator } from './components/ThinkingIndicator'
 
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })))
@@ -27,6 +28,9 @@ const AdminModelsPage = lazy(() =>
 const AdminRepositoriesPage = lazy(() =>
   import('./pages/AdminRepositoriesPage').then((m) => ({ default: m.AdminRepositoriesPage })),
 )
+const AdminGlobalSkillsPage = lazy(() =>
+  import('./pages/AdminGlobalSkillsPage').then((m) => ({ default: m.AdminGlobalSkillsPage })),
+)
 
 function PageLoader() {
   return (
@@ -45,6 +49,14 @@ function AdminPage({ children }: { children: ReactNode }) {
   return (
     <ProtectedPage>
       <RequireAdmin>{children}</RequireAdmin>
+    </ProtectedPage>
+  )
+}
+
+function SuperAdminPage({ children }: { children: ReactNode }) {
+  return (
+    <ProtectedPage>
+      <RequireSuperAdmin>{children}</RequireSuperAdmin>
     </ProtectedPage>
   )
 }
@@ -70,7 +82,9 @@ export default function App() {
         <Route
           path="/settings"
           element={
-            <ProtectedPage><SettingsPage /></ProtectedPage>
+            <SuperAdminPage>
+              <SettingsPage />
+            </SuperAdminPage>
           }
         />
         <Route
@@ -130,7 +144,11 @@ export default function App() {
         />
         <Route
           path="/admin/skills-global"
-          element={<Navigate to="/admin/sandboxes" replace />}
+          element={
+            <SuperAdminPage>
+              <AdminGlobalSkillsPage />
+            </SuperAdminPage>
+          }
         />
         <Route
           path="/admin/agents-global"

@@ -18,16 +18,16 @@ class TestAdminSandboxSkillsEndpoints:
     async def test_full_crud_lifecycle(
         self,
         client: AsyncClient,
-        admin_headers: dict[str, str],
+        super_admin_headers: dict[str, str],
     ) -> None:
         r = await client.post(
             "/api/admin/sandboxes",
             json={"name": "sk-test", "runtime": "compose", "image": "cappy/sandbox:latest"},
-            headers=admin_headers,
+            headers=super_admin_headers,
         )
         sb_id = r.json()["id"]
 
-        r = await client.get(f"/api/admin/sandboxes/{sb_id}/skills", headers=admin_headers)
+        r = await client.get(f"/api/admin/sandboxes/{sb_id}/skills", headers=super_admin_headers)
         assert r.status_code == 200 and r.json() == []
 
         r = await client.post(
@@ -38,7 +38,7 @@ class TestAdminSandboxSkillsEndpoints:
                 "content": "# Naming\n- Python: snake_case\n- TS: camelCase",
                 "enabled": True,
             },
-            headers=admin_headers,
+            headers=super_admin_headers,
         )
         assert r.status_code == 201
         skill_id = r.json()["id"]
@@ -48,7 +48,7 @@ class TestAdminSandboxSkillsEndpoints:
         r = await client.post(
             f"/api/admin/sandboxes/{sb_id}/skills",
             json={"name": "naming-conventions", "content": "x"},
-            headers=admin_headers,
+            headers=super_admin_headers,
         )
         assert r.status_code == 409
 
@@ -61,7 +61,7 @@ class TestAdminSandboxSkillsEndpoints:
                 "content": "# Naming v2",
                 "enabled": False,
             },
-            headers=admin_headers,
+            headers=super_admin_headers,
         )
         assert r.status_code == 200
         assert r.json()["enabled"] is False
@@ -69,25 +69,155 @@ class TestAdminSandboxSkillsEndpoints:
 
         # Delete
         r = await client.delete(
-            f"/api/admin/sandboxes/{sb_id}/skills/{skill_id}", headers=admin_headers
+            f"/api/admin/sandboxes/{sb_id}/skills/{skill_id}", headers=super_admin_headers
         )
         assert r.status_code == 204
 
+    async def test_plain_admin_can_list_but_cannot_mutate_skills(
+        self,
+        client: AsyncClient,
+        admin_headers: dict[str, str],
+        super_admin_headers: dict[str, str],
+    ) -> None:
+        r = await client.post(
+            "/api/admin/sandboxes",
+            json={"name": "sk-perm", "runtime": "compose", "image": "cappy/sandbox:latest"},
+            headers=super_admin_headers,
+        )
+        sb_id = r.json()["id"]
+
+        r = await client.get(f"/api/admin/sandboxes/{sb_id}/skills", headers=admin_headers)
+        assert r.status_code == 200
+
+        r = await client.post(
+            f"/api/admin/sandboxes/{sb_id}/skills",
+            json={"name": "blocked", "content": "x"},
+            headers=admin_headers,
+        )
+        assert r.status_code == 403
+
+        r = await client.post(
+            f"/api/admin/sandboxes/{sb_id}/skills",
+            json={"name": "allowed", "content": "x"},
+            headers=super_admin_headers,
+        )
+        skill_id = r.json()["id"]
+
+        r = await client.put(
+            f"/api/admin/sandboxes/{sb_id}/skills/{skill_id}",
+            json={"name": "allowed", "content": "y"},
+            headers=admin_headers,
+        )
+        assert r.status_code == 403
+
+        r = await client.delete(
+            f"/api/admin/sandboxes/{sb_id}/skills/{skill_id}",
+            headers=admin_headers,
+        )
+        assert r.status_code == 403
+
     async def test_rejects_invalid_name(
-        self, client: AsyncClient, admin_headers: dict[str, str]
+        self, client: AsyncClient, super_admin_headers: dict[str, str]
     ) -> None:
         r = await client.post(
             "/api/admin/sandboxes",
             json={"name": "sk-name", "runtime": "compose", "image": "x"},
-            headers=admin_headers,
+            headers=super_admin_headers,
         )
         sb_id = r.json()["id"]
         r = await client.post(
             f"/api/admin/sandboxes/{sb_id}/skills",
             json={"name": "tem espaço", "content": "x"},
-            headers=admin_headers,
+            headers=super_admin_headers,
         )
         assert r.status_code == 422
+
+
+class TestAdminGlobalSkillsEndpoints:
+    async def test_requires_super_admin(
+        self,
+        client: AsyncClient,
+        admin_headers: dict[str, str],
+    ) -> None:
+        r = await client.get("/api/admin/global-skills", headers=admin_headers)
+        assert r.status_code == 403
+
+    async def test_global_skill_assignments_drive_sandbox_projection(
+        self,
+        client: AsyncClient,
+        super_admin_headers: dict[str, str],
+    ) -> None:
+        sandbox_ids: list[str] = []
+        for name in ("global-skills-a", "global-skills-b"):
+            r = await client.post(
+                "/api/admin/sandboxes",
+                json={"name": name, "runtime": "compose", "image": "cappy/sandbox:latest"},
+                headers=super_admin_headers,
+            )
+            assert r.status_code == 201
+            sandbox_ids.append(r.json()["id"])
+
+        r = await client.post(
+            "/api/admin/global-skills",
+            json={
+                "name": "python-style",
+                "description": "Padrao Python",
+                "content": "# Python\n- use snake_case",
+                "enabled": True,
+                "sandbox_ids": sandbox_ids,
+            },
+            headers=super_admin_headers,
+        )
+        assert r.status_code == 201
+        skill = r.json()
+        assert skill["name"] == "python-style"
+        assert set(skill["sandbox_ids"]) == set(sandbox_ids)
+
+        r = await client.get("/api/admin/global-skills", headers=super_admin_headers)
+        assert r.status_code == 200
+        assert [item["name"] for item in r.json()] == ["python-style"]
+
+        r = await client.get(
+            f"/api/admin/sandboxes/{sandbox_ids[0]}/skills",
+            headers=super_admin_headers,
+        )
+        assert r.status_code == 200
+        assert [item["name"] for item in r.json()] == ["python-style"]
+
+        r = await client.put(
+            f"/api/admin/global-skills/{skill['id']}",
+            json={
+                "name": "python-style",
+                "description": "Atualizado",
+                "content": "# Python v2",
+                "enabled": False,
+                "sandbox_ids": [sandbox_ids[1]],
+            },
+            headers=super_admin_headers,
+        )
+        assert r.status_code == 200
+        assert r.json()["enabled"] is False
+        assert r.json()["sandbox_ids"] == [sandbox_ids[1]]
+
+        r = await client.get(
+            f"/api/admin/sandboxes/{sandbox_ids[0]}/skills",
+            headers=super_admin_headers,
+        )
+        assert r.status_code == 200
+        assert r.json() == []
+
+        r = await client.get(
+            f"/api/admin/sandboxes/{sandbox_ids[1]}/skills",
+            headers=super_admin_headers,
+        )
+        assert r.status_code == 200
+        assert [item["enabled"] for item in r.json()] == [False]
+
+        r = await client.delete(
+            f"/api/admin/global-skills/{skill['id']}",
+            headers=super_admin_headers,
+        )
+        assert r.status_code == 204
 
 
 class TestAdminSandboxAgentsEndpoints:
@@ -154,6 +284,7 @@ class TestAdminSandboxAgentsEndpoints:
         self,
         client: AsyncClient,
         admin_headers: dict[str, str],
+        super_admin_headers: dict[str, str],
         sandbox_bootstrap: FakeSandboxBootstrap,
     ) -> None:
         r = await client.post(
@@ -166,7 +297,7 @@ class TestAdminSandboxAgentsEndpoints:
         await client.post(
             f"/api/admin/sandboxes/{sb_id}/skills",
             json={"name": "intro", "content": "# Intro"},
-            headers=admin_headers,
+            headers=super_admin_headers,
         )
         await client.post(
             f"/api/admin/sandboxes/{sb_id}/agents",

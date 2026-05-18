@@ -65,17 +65,30 @@ class TestWriteSettingsJson:
         settings = {"mcpServers": {"github": {"command": "npx"}}}
         await adapter.write_settings_json(sb, settings)
 
-        # Container procurado pelo nome canônico:
         docker_client.containers.get.assert_called_once_with(f"{CONTAINER_PREFIX}alpha")
-        # mkdir -p garante a pasta antes do tar:
         mkdir_call = container.exec_run.call_args
         assert mkdir_call.kwargs["cmd"] == ["mkdir", "-p", CLAUDE_DIR_IN_CONTAINER]
-        # put_archive recebeu o tar no path correto:
         put_call = container.put_archive.call_args
         assert put_call.kwargs["path"] == CLAUDE_DIR_IN_CONTAINER
-        # Conteúdo do tar bate com o JSON enviado:
         unpacked = _extract_settings_from_tar(put_call.kwargs["data"])
         assert unpacked == settings
+
+    async def test_writes_to_existing_compose_service_name(
+        self, adapter: DockerSandboxBootstrap, docker_client: MagicMock
+    ) -> None:
+        sb = _sandbox(name="cappycloud-sandbox")
+        container = MagicMock()
+        container.exec_run.return_value = (0, b"")
+        container.put_archive.return_value = True
+        docker_client.containers.get.side_effect = [NotFound("no prefixed"), container]
+
+        await adapter.write_settings_json(sb, {"mcpServers": {}})
+
+        assert docker_client.containers.get.call_args_list[0].args[0] == (
+            "cappycloud-sandbox-cappycloud-sandbox"
+        )
+        assert docker_client.containers.get.call_args_list[1].args[0] == "cappycloud-sandbox"
+        container.put_archive.assert_called_once()
 
     async def test_raises_when_container_missing(
         self, adapter: DockerSandboxBootstrap, docker_client: MagicMock
@@ -167,7 +180,6 @@ class TestWriteSkills:
         skill = _skill(name="naming-conventions")
         await adapter.write_skills(sb, [skill])
 
-        # reset (rm -rf + mkdir) foi chamado antes do put_archive:
         reset_call = container.exec_run.call_args_list[0]
         cmd = reset_call.kwargs["cmd"]
         assert cmd[0] == "sh" and "rm -rf" in cmd[2] and SKILLS_SUBDIR in cmd[2]
@@ -175,7 +187,6 @@ class TestWriteSkills:
         put_call = container.put_archive.call_args
         assert put_call.kwargs["path"] == f"{CLAUDE_DIR_IN_CONTAINER}/{SKILLS_SUBDIR}"
         rendered = _extract_file_from_tar(put_call.kwargs["data"], "naming-conventions/SKILL.md")
-        # Header com nome + descrição + content:
         assert rendered.startswith("# naming-conventions")
         assert "convenções" in rendered
         assert "snake_case" in rendered
@@ -192,7 +203,6 @@ class TestWriteSkills:
         disabled.enabled = False
         await adapter.write_skills(sb, [disabled])
 
-        # Diretório foi resetado mas put_archive NÃO foi chamado:
         container.put_archive.assert_not_called()
 
     async def test_empty_list_just_resets_dir(

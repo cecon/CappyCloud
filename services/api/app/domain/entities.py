@@ -71,6 +71,7 @@ class User:
     email: str
     hashed_password: str
     role: UserRole = UserRole.USER
+    is_super_admin: bool = False
     created_at: datetime = field(default_factory=_utcnow)
 
     @property
@@ -311,6 +312,9 @@ class MessageAttachment:
     original_filename: str
     size_bytes: int = 0
     kind: str = "image"
+    processing_status: str = "uploaded"
+    chunks_count: int = 0
+    processing_error: str | None = None
     message_id: uuid.UUID | None = None
     vision_description: str | None = None
     vision_model_used: str | None = None
@@ -318,18 +322,55 @@ class MessageAttachment:
     uploaded_at: datetime = field(default_factory=_utcnow)
 
 
+@dataclass
+class ConversationArtifactChunk:
+    """Trecho indexado de um artefato anexado a uma conversa.
+
+    Escopo: sempre ``conversation_id``. Usado para buscar trechos relevantes
+    de logs/documentos anexados sem carregar o arquivo inteiro no prompt.
+    """
+
+    id: uuid.UUID
+    attachment_id: uuid.UUID
+    conversation_id: uuid.UUID
+    chunk_index: int
+    content: str
+    line_start: int | None = None
+    line_end: int | None = None
+    page_start: int | None = None
+    page_end: int | None = None
+    meta: dict = field(default_factory=dict)
+    created_at: datetime = field(default_factory=_utcnow)
+
+
 # ── MCP (Model Context Protocol) ─────────────────────────────
 
 
 @dataclass
+class GlobalSkill:
+    """Skill global do catálogo da plataforma.
+
+    Pode ser associada a uma ou mais sandboxes. No boot, cada sandbox recebe
+    as skills globais atribuídas a ela em ``~/.claude/skills/<name>/SKILL.md``.
+    """
+
+    id: uuid.UUID
+    name: str
+    description: str = ""
+    content: str = ""
+    enabled: bool = True
+    sandbox_ids: list[uuid.UUID] = field(default_factory=list)
+    created_at: datetime = field(default_factory=_utcnow)
+    updated_at: datetime = field(default_factory=_utcnow)
+
+
+@dataclass
 class SandboxSkill:
-    """Skill *global* por sandbox (ADR-004 §6).
+    """Projeção de uma skill global materializada em uma sandbox.
 
     Materializada em ``~/.claude/skills/<name>/SKILL.md`` no container ao boot.
     Não confundir com ``Skill`` (por repositório, RAG) em
     ``orm_models_agent.py`` — essa é injetada por worktree, não por sandbox.
-
-    ``name`` é único por (sandbox, name) e vira o slug da pasta.
     """
 
     id: uuid.UUID

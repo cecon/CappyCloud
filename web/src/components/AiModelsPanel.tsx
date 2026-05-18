@@ -28,9 +28,10 @@ function fmtCost(value: number | null): string {
 
 export interface AiModelsPanelProps {
   token: string
+  canManageCatalog?: boolean
 }
 
-export function AiModelsPanel({ token }: AiModelsPanelProps) {
+export function AiModelsPanel({ token, canManageCatalog = false }: AiModelsPanelProps) {
   const [models, setModels] = useState<AiModel[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -99,22 +100,25 @@ export function AiModelsPanel({ token }: AiModelsPanelProps) {
           <h2 className={styles.sectionTitle}>Modelos IA</h2>
           <p className={styles.sectionDesc} style={{ marginTop: '0.25rem' }}>
             Catálogo de modelos disponíveis para escolha no chat. Faça sync com
-            o OpenRouter para popular preços e novos modelos.
+            o OpenRouter para popular preços e novos modelos. Apenas super admin
+            pode sincronizar e liberar modelos pagos.
           </p>
         </div>
-        <button
-          type="button"
-          className={styles.primaryBtn}
-          onClick={handleSync}
-          disabled={syncing}
-          aria-label="Sincronizar catálogo de modelos do OpenRouter"
-          title="Buscar /api/v1/models do OpenRouter e atualizar pricing"
-        >
-          <span className={styles.icon} aria-hidden="true">
-            {syncing ? 'hourglass_empty' : 'cloud_download'}
-          </span>
-          <span>{syncing ? 'Sincronizando…' : 'Sync OpenRouter'}</span>
-        </button>
+        {canManageCatalog && (
+          <button
+            type="button"
+            className={styles.primaryBtn}
+            onClick={handleSync}
+            disabled={syncing}
+            aria-label="Sincronizar catálogo de modelos do OpenRouter"
+            title="Buscar /api/v1/models do OpenRouter e atualizar pricing"
+          >
+            <span className={styles.icon} aria-hidden="true">
+              {syncing ? 'hourglass_empty' : 'cloud_download'}
+            </span>
+            <span>{syncing ? 'Sincronizando…' : 'Sync OpenRouter'}</span>
+          </button>
+        )}
       </div>
 
       {error && <p className={styles.errorMsg}>{error}</p>}

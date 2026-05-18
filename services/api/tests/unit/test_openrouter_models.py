@@ -73,6 +73,43 @@ class TestFreeTextModel:
         assert not adapter.is_free_text_model("openai/text-embedding-3-small:free", ["embedding"])
 
 
+class TestFilterTextEntries:
+    def test_keeps_paid_and_free_text_models(self) -> None:
+        entries = [
+            {
+                "model_id": "openai/gpt-4o-mini",
+                "display_name": "GPT-4o Mini",
+                "context_window": 128000,
+                "input_cost_per_1m_usd": 0.15,
+                "output_cost_per_1m_usd": 0.6,
+                "capabilities": ["text"],
+            },
+            {
+                "model_id": "openai/gpt-oss-120b:free",
+                "display_name": "GPT OSS 120B Free",
+                "context_window": 128000,
+                "input_cost_per_1m_usd": 0.0,
+                "output_cost_per_1m_usd": 0.0,
+                "capabilities": ["text"],
+            },
+            {
+                "model_id": "openai/text-embedding-3-small",
+                "display_name": "Embedding",
+                "context_window": 8192,
+                "input_cost_per_1m_usd": 0.02,
+                "output_cost_per_1m_usd": None,
+                "capabilities": ["embedding"],
+            },
+        ]
+
+        result = adapter.filter_text_entries(entries)
+
+        assert [entry["model_id"] for entry in result] == [
+            "openai/gpt-4o-mini",
+            "openai/gpt-oss-120b:free",
+        ]
+
+
 class TestNormalize:
     def test_minimal_payload(self) -> None:
         result = adapter._normalize(

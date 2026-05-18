@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import uuid
 
+from app.application.use_cases.artifact_processing import (
+    ArtifactProcessingError,
+    detect_artifact_kind,
+    process_artifact,
+)
 from app.domain.entities import MessageAttachment
 from app.ports.repositories import (
     AttachmentRepository,
@@ -47,20 +52,36 @@ class UploadAttachment:
         mime_type: str,
         content: bytes,
         max_bytes: int,
+        image_max_bytes: int,
     ) -> MessageAttachment:
-        if not mime_type.lower().startswith("image/"):
-            raise ValueError(f"MIME type não suportado: {mime_type}")
+        kind = detect_artifact_kind(original_filename, mime_type)
         if len(content) == 0:
             raise ValueError("Ficheiro vazio.")
-        if len(content) > max_bytes:
+        effective_max = image_max_bytes if kind == "image" else max_bytes
+        if len(content) > effective_max:
             raise ValueError(
-                f"Ficheiro acima do limite ({max_bytes} bytes). "
+                f"Ficheiro acima do limite ({effective_max} bytes). "
                 f"Tamanho recebido: {len(content)} bytes."
             )
 
         conv = await self._conversations.get(conversation_id, user_id)
         if not conv:
             raise AttachmentNotFoundError("Conversa não encontrada.")
+
+        attachment_id = uuid.uuid4()
+        chunks = []
+        if kind != "image":
+            try:
+                processed = process_artifact(
+                    attachment_id=attachment_id,
+                    conversation_id=conversation_id,
+                    filename=original_filename,
+                    mime_type=mime_type,
+                    content=content,
+                )
+            except ArtifactProcessingError as exc:
+                raise ValueError(str(exc)) from exc
+            chunks = processed.chunks
 
         storage_path = await self._storage.save(
             conversation_id=str(conversation_id),
@@ -70,15 +91,22 @@ class UploadAttachment:
 
         attach = await self._attachments.save(
             MessageAttachment(
-                id=uuid.uuid4(),
+                id=attachment_id,
                 conversation_id=conversation_id,
                 mime_type=mime_type,
                 storage_path=storage_path,
                 original_filename=original_filename,
                 size_bytes=len(content),
+                kind=kind,
+                processing_status="uploaded" if kind == "image" else "indexed",
+                chunks_count=len(chunks),
                 uploaded_by=user_id,
             )
         )
+
+        if kind != "image":
+            await self._attachments.save_chunks(chunks)
+            return attach
 
         # Descrição via visão (síncrona). Se falhar, o método já devolve um
         # texto-fallback; persistimos na mesma para manter o histórico
@@ -89,8 +117,12 @@ class UploadAttachment:
             hint=f"Imagem anexada na conversa '{conv.title}'.",
         )
         await self._attachments.update_description(attach.id, description, model_used)
+        await self._attachments.update_processing(
+            attach.id, status="described", chunks_count=0, error=None
+        )
         attach.vision_description = description
         attach.vision_model_used = model_used
+        attach.processing_status = "described"
         return attach
 
 

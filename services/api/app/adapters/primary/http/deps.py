@@ -12,6 +12,9 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.secondary.persistence.sqlalchemy_ai_model_access_policy import (
+    SQLAlchemyAiModelAccessPolicy,
+)
 from app.adapters.secondary.persistence.sqlalchemy_mcp_repo import (
     SQLAlchemyMcpRepository,
 )
@@ -53,6 +56,7 @@ from app.ports.repositories import (
     UserRepository,
 )
 from app.ports.services import AttachmentStorage, ModelCatalogService, PasswordService, TokenService
+from app.ports.user_access import AiModelAccessPolicy
 
 from . import deps_attachments as _attach_deps
 from .deps_base import get_conv_repo, get_db_session  # re-export
@@ -91,6 +95,12 @@ def get_repository_repo(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RepositoryRepository:
     return SQLAlchemyRepositoryRepository(session)
+
+
+def get_ai_model_access_policy(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AiModelAccessPolicy:
+    return SQLAlchemyAiModelAccessPolicy(session)
 
 
 def get_mcp_repo(
@@ -206,6 +216,18 @@ def require_role(required: UserRole):
     return _dep
 
 
+async def require_super_admin(
+    current: Annotated[User, Depends(get_authenticated_user)],
+) -> User:
+    """Exige ADMIN com marcação ``is_super_admin`` para configuração sistêmica."""
+    if current.role is UserRole.ADMIN and current.is_super_admin:
+        return current
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Permissão de super admin necessária.",
+    )
+
+
 def get_list_convs_uc(
     convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
 ) -> ListConversations:
@@ -234,6 +256,7 @@ def get_stream_msg_uc(
     attachments: Annotated[AttachmentRepository, Depends(_attach_deps.get_attachment_repo)],
     storage: Annotated[AttachmentStorage, Depends(_attach_deps.get_attachment_storage)],
     model_caps: Annotated[AiModelCapabilityLookup, Depends(_attach_deps.get_ai_model_caps)],
+    model_access: Annotated[AiModelAccessPolicy, Depends(get_ai_model_access_policy)],
 ) -> StreamMessage:
     return StreamMessage(
         convs,
@@ -243,6 +266,7 @@ def get_stream_msg_uc(
         attachments=attachments,
         attachment_storage=storage,
         model_caps=model_caps,
+        model_access=model_access,
     )
 
 

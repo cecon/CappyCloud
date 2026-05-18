@@ -85,6 +85,35 @@ function Thumbnail({
   return <img src={src} alt={attachment.original_filename} className={styles.thumbnailImg} />
 }
 
+function AttachmentIcon({ attachment }: { attachment: Attachment }) {
+  const icon =
+    attachment.kind === 'pdf'
+      ? 'picture_as_pdf'
+      : attachment.kind === 'log'
+        ? 'receipt_long'
+        : attachment.kind === 'docx'
+          ? 'description'
+          : 'article'
+  return (
+    <div className={styles.fileThumb} aria-label={attachment.kind}>
+      <span className={styles.fileIcon}>{icon}</span>
+    </div>
+  )
+}
+
+function statusLabel(attachment: Attachment): string {
+  if (attachment.kind === 'image') {
+    return attachment.has_description ? 'descrita' : 'anexada'
+  }
+  if (attachment.processing_status === 'indexed') {
+    return `indexado · ${attachment.chunks_count}`
+  }
+  if (attachment.processing_status === 'error') {
+    return attachment.processing_error || 'erro'
+  }
+  return attachment.processing_status || 'anexado'
+}
+
 export function AttachmentTray({ items, token, conversationId, onRemove }: Props): React.JSX.Element | null {
   if (items.length === 0) return null
 
@@ -97,11 +126,15 @@ export function AttachmentTray({ items, token, conversationId, onRemove }: Props
           <div key={item.localId} className={styles.item} role="listitem" title={filename}>
             <div className={styles.thumbWrap}>
               {item.kind === 'uploaded' && conversationId ? (
-                <Thumbnail
-                  token={token}
-                  conversationId={conversationId}
-                  attachment={item.attachment}
-                />
+                item.attachment.kind === 'image' ? (
+                  <Thumbnail
+                    token={token}
+                    conversationId={conversationId}
+                    attachment={item.attachment}
+                  />
+                ) : (
+                  <AttachmentIcon attachment={item.attachment} />
+                )
               ) : item.kind === 'failed' ? (
                 <div className={`${styles.thumbnailSkeleton} ${styles.error}`} aria-label="Falha">
                   <span className={styles.icon}>error</span>
@@ -125,7 +158,7 @@ export function AttachmentTray({ items, token, conversationId, onRemove }: Props
               <span className={styles.filename}>{filename}</span>
               {item.kind === 'uploaded' && (
                 <span className={styles.statusOk}>
-                  {item.attachment.has_description ? 'descrita' : 'anexada'}
+                  {statusLabel(item.attachment)}
                 </span>
               )}
               {item.kind === 'uploading' && <span className={styles.statusUp}>enviando…</span>}

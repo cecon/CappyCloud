@@ -10,17 +10,45 @@ from __future__ import annotations
 import uuid
 from abc import ABC, abstractmethod
 
-from app.domain.entities import SandboxAgent, SandboxSkill
+from app.domain.entities import GlobalSkill, SandboxAgent, SandboxSkill
 
 
 class SandboxSkillRepository(ABC):
     @abstractmethod
     async def list_for_sandbox(self, sandbox_id: uuid.UUID) -> list[SandboxSkill]:
-        """Devolve skills da sandbox em ordem cronológica (ativas e inativas)."""
+        """Devolve skills globais atribuídas à sandbox em ordem cronológica."""
+
+    @abstractmethod
+    async def list_global(self) -> list[GlobalSkill]:
+        """Devolve o catálogo global de skills."""
+
+    @abstractmethod
+    async def get_global(self, skill_id: uuid.UUID) -> GlobalSkill | None:
+        """Devolve skill global por id."""
+
+    @abstractmethod
+    async def get_global_by_name(self, name: str) -> GlobalSkill | None:
+        """Devolve skill global por nome único."""
+
+    @abstractmethod
+    async def create_global(
+        self, skill: GlobalSkill, sandbox_ids: list[uuid.UUID]
+    ) -> GlobalSkill:
+        """Persiste nova skill global e suas associações com sandboxes."""
+
+    @abstractmethod
+    async def update_global(
+        self, skill: GlobalSkill, sandbox_ids: list[uuid.UUID]
+    ) -> GlobalSkill:
+        """Atualiza skill global e substitui associações com sandboxes."""
+
+    @abstractmethod
+    async def delete_global(self, skill_id: uuid.UUID) -> bool:
+        """Remove skill global e suas associações."""
 
     @abstractmethod
     async def get(self, skill_id: uuid.UUID, sandbox_id: uuid.UUID) -> SandboxSkill | None:
-        """Devolve skill por id, verificando que pertence à sandbox."""
+        """Devolve projeção da skill global, verificando associação com a sandbox."""
 
     @abstractmethod
     async def get_by_name(self, name: str, sandbox_id: uuid.UUID) -> SandboxSkill | None:

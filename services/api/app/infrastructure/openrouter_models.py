@@ -40,6 +40,11 @@ def is_free_text_entry(entry: NormalizedModel) -> bool:
     return is_free_text_model(entry["model_id"], entry["capabilities"])
 
 
+def filter_text_entries(entries: list[NormalizedModel]) -> list[NormalizedModel]:
+    """Mantém o catálogo admin completo de modelos de texto, grátis e pagos."""
+    return [entry for entry in entries if "text" in entry["capabilities"]]
+
+
 def _to_per_1m(price_str: Any) -> float | None:
     """Converte preço do OpenRouter (USD/token, string) para USD por 1M tokens.
 

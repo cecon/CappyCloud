@@ -147,6 +147,7 @@ class TaskRunner:
                             "message": "Agente respondeu",
                             "stage": "agent",
                             "mode": "initializing",
+                            "state": "done",
                         },
                     )
 

@@ -10,6 +10,8 @@ from __future__ import annotations
 import uuid
 from abc import ABC, abstractmethod
 
+from app.domain.entities import UserRole
+
 
 class _UserAccessRepository(ABC):
     """Contrato base de permissão binária user → recurso."""
@@ -41,3 +43,16 @@ class UserRepositoryAccessRepository(_UserAccessRepository):
 
 class UserAiModelAccessRepository(_UserAccessRepository):
     """Permissões user → ai_model."""
+
+
+class AiModelAccessPolicy(ABC):
+    """Resolve o modelo LLM efetivo respeitando ativação global e acesso por user."""
+
+    @abstractmethod
+    async def resolve_model_for_user(
+        self,
+        user_id: uuid.UUID,
+        role: UserRole,
+        requested_model_id: str | None,
+    ) -> str:
+        """Retorna ``model_id`` utilizável ou levanta ``PermissionError``."""

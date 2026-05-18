@@ -24,7 +24,10 @@ import {
   updateSandboxSkill,
 } from '../../api'
 
-type Props = { sandbox: Sandbox }
+type Props = {
+  sandbox: Sandbox
+  canManage?: boolean
+}
 
 type FormState = {
   id: string | null
@@ -42,7 +45,7 @@ const EMPTY_FORM: FormState = {
   enabled: true,
 }
 
-export function SandboxSkillsPanel({ sandbox }: Props) {
+export function SandboxSkillsPanel({ sandbox, canManage = true }: Props) {
   const [items, setItems] = useState<SandboxSkill[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -152,10 +155,18 @@ export function SandboxSkillsPanel({ sandbox }: Props) {
             ? 'Carregando...'
             : `${items.length} skill${items.length === 1 ? '' : 's'} · ~/.claude/skills/<name>/SKILL.md`}
         </Text>
-        <Button size="xs" onClick={openCreate}>
-          + Nova skill
-        </Button>
+        {canManage && (
+          <Button size="xs" onClick={openCreate}>
+            + Nova skill
+          </Button>
+        )}
       </Group>
+      {!canManage && (
+        <Alert color="yellow" title="Catálogo global">
+          Esta aba mostra as skills atribuídas a esta sandbox. Criação, edição, ativação e
+          remoção são feitas em Skills globais.
+        </Alert>
+      )}
       {loadError && <Alert color="red">{loadError}</Alert>}
       {actionError && (
         <Alert color="red" withCloseButton onClose={() => setActionError(null)}>
@@ -177,7 +188,7 @@ export function SandboxSkillsPanel({ sandbox }: Props) {
               <Table.Th>Nome</Table.Th>
               <Table.Th>Descrição</Table.Th>
               <Table.Th style={{ width: 90 }}>Ativo</Table.Th>
-              <Table.Th style={{ width: 100 }}>Ações</Table.Th>
+              {canManage && <Table.Th style={{ width: 100 }}>Ações</Table.Th>}
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -192,23 +203,30 @@ export function SandboxSkillsPanel({ sandbox }: Props) {
                   </Text>
                 </Table.Td>
                 <Table.Td>
-                  <Switch checked={skill.enabled} onChange={() => void handleToggle(skill)} size="xs" />
+                  <Switch
+                    checked={skill.enabled}
+                    onChange={() => void handleToggle(skill)}
+                    size="xs"
+                    disabled={!canManage}
+                  />
                 </Table.Td>
-                <Table.Td>
-                  <Group gap={4}>
-                    <ActionIcon variant="subtle" onClick={() => openEdit(skill)} title="Editar">
-                      ✎
-                    </ActionIcon>
-                    <ActionIcon
-                      variant="subtle"
-                      color="red"
-                      onClick={() => void handleDelete(skill)}
-                      title="Apagar"
-                    >
-                      ×
-                    </ActionIcon>
-                  </Group>
-                </Table.Td>
+                {canManage && (
+                  <Table.Td>
+                    <Group gap={4}>
+                      <ActionIcon variant="subtle" onClick={() => openEdit(skill)} title="Editar">
+                        ✎
+                      </ActionIcon>
+                      <ActionIcon
+                        variant="subtle"
+                        color="red"
+                        onClick={() => void handleDelete(skill)}
+                        title="Apagar"
+                      >
+                        ×
+                      </ActionIcon>
+                    </Group>
+                  </Table.Td>
+                )}
               </Table.Tr>
             ))}
           </Table.Tbody>

@@ -15,7 +15,7 @@ from app.application.use_cases._stream_helpers import (
     ensure_repo_ids,
     inject_diff_comments,
 )
-from app.domain.entities import Conversation, Message
+from app.domain.entities import Conversation, Message, UserRole
 from app.ports.agent import AgentPort
 from app.ports.repositories import (
     AiModelCapabilityLookup,
@@ -25,9 +25,21 @@ from app.ports.repositories import (
     RepositoryRepository,
 )
 from app.ports.services import AttachmentStorage
+from app.ports.user_access import AiModelAccessPolicy
 
 _TITLE_MAX_LEN = 80
 _DEFAULT_TITLE = "Nova conversa"
+_SSE_HEARTBEAT_INTERVAL_S = 10.0
+_SSE_INITIAL_FLUSH_BYTES = 2048
+
+
+def _sse_comment(message: str, *, padding: int = 0) -> bytes:
+    suffix = " " * max(0, padding)
+    return f": {message}{suffix}\n\n".encode("utf-8")
+
+
+def _sse_payload(payload: dict) -> bytes:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8")
 
 
 def _next_chunk(gen):
@@ -124,6 +136,7 @@ class StreamMessage:
         attachments: AttachmentRepository | None = None,
         attachment_storage: AttachmentStorage | None = None,
         model_caps: AiModelCapabilityLookup | None = None,
+        model_access: AiModelAccessPolicy | None = None,
     ) -> None:
         self._conversations = conversations
         self._messages = messages
@@ -132,6 +145,7 @@ class StreamMessage:
         self._attachments = attachments
         self._storage = attachment_storage
         self._model_caps = model_caps
+        self._model_access = model_access
 
     async def execute(
         self,
@@ -139,6 +153,7 @@ class StreamMessage:
         user_id: uuid.UUID,
         content: str,
         model_id: str = "cappycloud",
+        user_role: UserRole = UserRole.USER,
         cursor: int | None = None,
         override_model: str | None = None,
         attachment_ids: list[uuid.UUID] | None = None,
@@ -149,9 +164,10 @@ class StreamMessage:
 
         attachments_payload: list[dict] | None = None
         injected_prompt = await inject_diff_comments(conversation_id, content)
+        effective_model = await self._resolve_model(user_id, user_role, override_model)
 
         if attachment_ids:
-            use_native = await self._can_send_native_vision(override_model)
+            use_native = await self._can_send_native_vision(effective_model)
             if use_native:
                 attachments_payload = await self._load_attachment_bytes(
                     conversation_id, attachment_ids
@@ -160,6 +176,9 @@ class StreamMessage:
                 injected_prompt = await self._inject_attachments(
                     conversation_id, attachment_ids, injected_prompt
                 )
+            injected_prompt = await self._inject_artifact_chunks(
+                conversation_id, attachment_ids, content, injected_prompt
+            )
 
         await self._messages.save(
             Message(
@@ -179,7 +198,7 @@ class StreamMessage:
 
         await self._ensure_repo_ids(conv)
         pipeline_body = await self._build_pipeline_body(
-            conv, user_id, cursor, override_model, attachments_payload
+            conv, user_id, cursor, effective_model, attachments_payload
         )
 
         return self._stream_chunks(
@@ -188,6 +207,16 @@ class StreamMessage:
 
     async def _can_send_native_vision(self, override_model: str | None) -> bool:
         return await _att.can_send_native_vision(self._model_caps, override_model)
+
+    async def _resolve_model(
+        self,
+        user_id: uuid.UUID,
+        user_role: UserRole,
+        override_model: str | None,
+    ) -> str | None:
+        if self._model_access is None:
+            return override_model
+        return await self._model_access.resolve_model_for_user(user_id, user_role, override_model)
 
     async def _load_attachment_bytes(
         self, conversation_id: uuid.UUID, attachment_ids: list[uuid.UUID]
@@ -204,6 +233,17 @@ class StreamMessage:
     ) -> str:
         return await _att.inject_attachments(
             self._attachments, conversation_id, attachment_ids, prompt
+        )
+
+    async def _inject_artifact_chunks(
+        self,
+        conversation_id: uuid.UUID,
+        attachment_ids: list[uuid.UUID] | None,
+        query: str,
+        prompt: str,
+    ) -> str:
+        return await _att.inject_artifact_chunks(
+            self._attachments, conversation_id, attachment_ids, query, prompt
         )
 
     async def _ensure_repo_ids(self, conv: Conversation) -> None:
@@ -266,8 +306,27 @@ class StreamMessage:
                     )
                 )
 
+        yield _sse_comment("stream-open", padding=_SSE_INITIAL_FLUSH_BYTES)
+        yield _sse_payload(
+            {
+                "type": "status",
+                "message": "Conexão com o agente aberta.",
+                "stage": "session",
+                "mode": "initializing",
+            }
+        )
+
         while True:
-            chunk = await asyncio.to_thread(_next_chunk, gen)
+            next_chunk_task = asyncio.create_task(asyncio.to_thread(_next_chunk, gen))
+            while True:
+                try:
+                    chunk = await asyncio.wait_for(
+                        asyncio.shield(next_chunk_task),
+                        timeout=_SSE_HEARTBEAT_INTERVAL_S,
+                    )
+                    break
+                except asyncio.TimeoutError:
+                    yield _sse_comment("heartbeat")
             if chunk is None:
                 break
             line = chunk.strip()
