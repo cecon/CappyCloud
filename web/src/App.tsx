@@ -12,7 +12,6 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ de
 const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })))
 const RunsPage = lazy(() => import('./pages/RunsPage').then(m => ({ default: m.RunsPage })))
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })))
-const McpPage = lazy(() => import('./pages/McpPage').then(m => ({ default: m.McpPage })))
 const ComingSoonPage = lazy(() =>
   import('./pages/ComingSoonPage').then((m) => ({ default: m.ComingSoonPage })),
 )
@@ -80,12 +79,7 @@ export default function App() {
             <ProtectedPage><RunsPage /></ProtectedPage>
           }
         />
-        <Route
-          path="/mcp"
-          element={
-            <ProtectedPage><McpPage /></ProtectedPage>
-          }
-        />
+        <Route path="/mcp" element={<Navigate to="/admin/sandboxes" replace />} />
         <Route
           path="/analytics"
           element={
@@ -135,29 +129,11 @@ export default function App() {
         />
         <Route
           path="/admin/skills-global"
-          element={
-            <AdminPage>
-              <ComingSoonPage
-                title="Skills globais por sandbox"
-                description="Skills materializadas em ~/.claude/skills do sandbox, visíveis em todos os worktrees."
-                plannedIn="PR5"
-                adr="ADR-004"
-              />
-            </AdminPage>
-          }
+          element={<Navigate to="/admin/sandboxes" replace />}
         />
         <Route
           path="/admin/agents-global"
-          element={
-            <AdminPage>
-              <ComingSoonPage
-                title="Subagents globais por sandbox"
-                description="Subagents materializados em ~/.claude/agents do sandbox."
-                plannedIn="PR5"
-                adr="ADR-004"
-              />
-            </AdminPage>
-          }
+          element={<Navigate to="/admin/sandboxes" replace />}
         />
         <Route
           path="/admin/models"

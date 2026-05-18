@@ -1444,11 +1444,11 @@ export async function deleteRepoDocument(token: string, docId: string): Promise<
   if (!res.ok) throw new Error('Falha ao remover documento')
 }
 
-// ── MCP Servers ───────────────────────────────────────────────────────────────
+// ── Admin · MCP Servers (por sandbox) ────────────────────────────────────────
 
 export type McpServer = {
   id: string
-  user_id: string
+  sandbox_id: string
   name: string
   command: string
   args: string[]
@@ -1466,72 +1466,240 @@ export type McpServerCreate = {
   enabled?: boolean
 }
 
-export type McpServerUpdate = {
-  name?: string
-  command?: string
-  args?: string[]
-  env?: Record<string, string>
-  enabled?: boolean
-}
+export type McpServerUpdate = McpServerCreate
 
-export async function fetchMcpServers(token: string): Promise<McpServer[]> {
-  const res = await apiFetch('/api/mcp-servers', {
+export async function fetchSandboxMcps(
+  token: string,
+  sandboxId: string,
+): Promise<McpServer[]> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/mcps`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  if (!res.ok) return []
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao listar MCPs')
+  }
   return res.json()
 }
 
-export async function createMcpServer(
+export async function createSandboxMcp(
   token: string,
+  sandboxId: string,
   data: McpServerCreate,
 ): Promise<McpServer> {
-  const res = await apiFetch('/api/mcp-servers', {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/mcps`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar servidor MCP')
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar MCP')
   }
   return res.json()
 }
 
-export async function updateMcpServer(
+export async function updateSandboxMcp(
   token: string,
-  id: string,
+  sandboxId: string,
+  mcpId: string,
   data: McpServerUpdate,
 ): Promise<McpServer> {
-  const res = await apiFetch(`/api/mcp-servers/${id}`, {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/mcps/${mcpId}`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar servidor MCP')
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar MCP')
   }
   return res.json()
 }
 
-export async function deleteMcpServer(token: string, id: string): Promise<void> {
-  const res = await apiFetch(`/api/mcp-servers/${id}`, {
+export async function deleteSandboxMcp(
+  token: string,
+  sandboxId: string,
+  mcpId: string,
+): Promise<void> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/mcps/${mcpId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok && res.status !== 204) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(formatApiErrorPayload(err) || 'Falha ao eliminar servidor MCP')
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao eliminar MCP')
   }
 }
 
-export async function exportMcpConfig(
+// ── Admin · Sandbox Skills (globais por sandbox) ─────────────────────────────
+
+export interface SandboxSkill {
+  id: string
+  sandbox_id: string
+  name: string
+  description: string
+  content: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface SandboxSkillPayload {
+  name: string
+  description?: string
+  content?: string
+  enabled?: boolean
+}
+
+export async function fetchSandboxSkills(
   token: string,
-): Promise<Record<string, unknown>> {
-  const res = await apiFetch('/api/mcp-servers/export', {
+  sandboxId: string,
+): Promise<SandboxSkill[]> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/skills`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  if (!res.ok) throw new Error('Falha ao exportar configuração MCP')
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao listar skills')
+  }
   return res.json()
+}
+
+export async function createSandboxSkill(
+  token: string,
+  sandboxId: string,
+  data: SandboxSkillPayload,
+): Promise<SandboxSkill> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/skills`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar skill')
+  }
+  return res.json()
+}
+
+export async function updateSandboxSkill(
+  token: string,
+  sandboxId: string,
+  skillId: string,
+  data: SandboxSkillPayload,
+): Promise<SandboxSkill> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/skills/${skillId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar skill')
+  }
+  return res.json()
+}
+
+export async function deleteSandboxSkill(
+  token: string,
+  sandboxId: string,
+  skillId: string,
+): Promise<void> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/skills/${skillId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao eliminar skill')
+  }
+}
+
+// ── Admin · Sandbox Agents (subagents globais por sandbox) ───────────────────
+
+export interface SandboxAgent {
+  id: string
+  sandbox_id: string
+  name: string
+  description: string
+  system_prompt: string
+  model: string
+  tools: string[]
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface SandboxAgentPayload {
+  name: string
+  description?: string
+  system_prompt?: string
+  model?: string
+  tools?: string[]
+  enabled?: boolean
+}
+
+export async function fetchSandboxAgents(
+  token: string,
+  sandboxId: string,
+): Promise<SandboxAgent[]> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/agents`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao listar agents')
+  }
+  return res.json()
+}
+
+export async function createSandboxAgent(
+  token: string,
+  sandboxId: string,
+  data: SandboxAgentPayload,
+): Promise<SandboxAgent> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/agents`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar agent')
+  }
+  return res.json()
+}
+
+export async function updateSandboxAgent(
+  token: string,
+  sandboxId: string,
+  agentId: string,
+  data: SandboxAgentPayload,
+): Promise<SandboxAgent> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/agents/${agentId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar agent')
+  }
+  return res.json()
+}
+
+export async function deleteSandboxAgent(
+  token: string,
+  sandboxId: string,
+  agentId: string,
+): Promise<void> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/agents/${agentId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao eliminar agent')
+  }
 }

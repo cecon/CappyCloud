@@ -31,6 +31,7 @@ import {
   type SandboxRuntime,
   stopAdminSandbox,
 } from '../api'
+import { SandboxGlobalsDrawer } from '../components/SandboxGlobalsDrawer'
 
 type CreateState = {
   name: string
@@ -88,6 +89,8 @@ export function AdminSandboxesPage() {
   const [cloneFor, setCloneFor] = useState<Sandbox | null>(null)
   const [cloneName, setCloneName] = useState('')
   const [cloning, setCloning] = useState(false)
+
+  const [globalsFor, setGlobalsFor] = useState<Sandbox | null>(null)
 
   const [pendingAction, setPendingAction] = useState<string | null>(null)
 
@@ -341,6 +344,9 @@ export function AdminSandboxesPage() {
                               </ActionIcon>
                             </Menu.Target>
                             <Menu.Dropdown>
+                              <Menu.Item onClick={() => setGlobalsFor(sb)}>
+                                MCPs / Skills / Agents...
+                              </Menu.Item>
                               <Menu.Item
                                 onClick={() => {
                                   setCloneFor(sb)
@@ -456,6 +462,9 @@ export function AdminSandboxesPage() {
           </Group>
         </Stack>
       </Modal>
+
+      {/* MCPs do sandbox */}
+      <SandboxGlobalsDrawer sandbox={globalsFor} onClose={() => setGlobalsFor(null)} />
 
       {/* Clonar */}
       <Modal

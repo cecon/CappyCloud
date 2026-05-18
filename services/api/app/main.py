@@ -11,6 +11,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.adapters.primary.http import admin_sandbox_globals as admin_sandbox_globals_router
+from app.adapters.primary.http import admin_sandbox_mcps as admin_sandbox_mcps_router
 from app.adapters.primary.http import admin_sandboxes as admin_sandboxes_router
 from app.adapters.primary.http import admin_users as admin_users_router
 from app.adapters.primary.http import ai_models as ai_models_router
@@ -23,7 +25,6 @@ from app.adapters.primary.http import conversations as conv_router
 from app.adapters.primary.http import documents as documents_router
 from app.adapters.primary.http import environments as env_router
 from app.adapters.primary.http import git_providers as git_providers_router
-from app.adapters.primary.http import mcp_servers as mcp_servers_router
 from app.adapters.primary.http import repositories_admin as repos_admin_router
 from app.adapters.primary.http import routines as routines_router
 from app.adapters.primary.http import sandboxes as sandboxes_router
@@ -149,7 +150,9 @@ app.include_router(repos_admin_router.router, prefix="/api")
 app.include_router(documents_router.router, prefix="/api")
 app.include_router(skills_router.router, prefix="/api")
 app.include_router(skills_search_router.router, prefix="/api")
-app.include_router(mcp_servers_router.router, prefix="/api")
+app.include_router(admin_sandbox_mcps_router.router, prefix="/api")
+app.include_router(admin_sandbox_globals_router.skills_router, prefix="/api")
+app.include_router(admin_sandbox_globals_router.agents_router, prefix="/api")
 
 
 @app.get("/health")

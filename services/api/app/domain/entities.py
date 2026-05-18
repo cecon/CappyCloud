@@ -273,17 +273,64 @@ class MessageAttachment:
 
 
 @dataclass
-class McpServer:
-    """Servidor MCP configurado pelo utilizador.
+class SandboxSkill:
+    """Skill *global* por sandbox (ADR-004 §6).
 
-    Mapeia para uma entrada em mcpServers no ~/.claude/settings.json do openclaude.
-    command + args definem como lançar o servidor MCP.
-    env são variáveis de ambiente injetadas no processo.
+    Materializada em ``~/.claude/skills/<name>/SKILL.md`` no container ao boot.
+    Não confundir com ``Skill`` (por repositório, RAG) em
+    ``orm_models_agent.py`` — essa é injetada por worktree, não por sandbox.
+
+    ``name`` é único por (sandbox, name) e vira o slug da pasta.
     """
 
     id: uuid.UUID
-    user_id: uuid.UUID
-    name: str  # chave única por utilizador (ex: "github", "filesystem")
+    sandbox_id: uuid.UUID
+    name: str  # slug; vira o nome da pasta em ~/.claude/skills/
+    description: str = ""
+    content: str = ""  # markdown que vira o corpo do SKILL.md
+    enabled: bool = True
+    created_at: datetime = field(default_factory=_utcnow)
+    updated_at: datetime = field(default_factory=_utcnow)
+
+
+@dataclass
+class SandboxAgent:
+    """Subagente *global* por sandbox (ADR-004 §6).
+
+    Materializado em ``~/.claude/agents/<name>.md`` com frontmatter YAML
+    contendo ``name``, ``description``, ``tools``, ``model``; o corpo é o
+    ``system_prompt``.
+
+    ``name`` é único por (sandbox, name).
+    """
+
+    id: uuid.UUID
+    sandbox_id: uuid.UUID
+    name: str  # slug; vira o nome do arquivo <name>.md
+    description: str = ""
+    system_prompt: str = ""
+    model: str = ""  # ex: "claude-opus-4-7" — opcional, vai como frontmatter
+    tools: list[str] = field(default_factory=list)
+    enabled: bool = True
+    created_at: datetime = field(default_factory=_utcnow)
+    updated_at: datetime = field(default_factory=_utcnow)
+
+
+@dataclass
+class McpServer:
+    """Servidor MCP configurado por sandbox (ADR-004 §6).
+
+    Mapeia para uma entrada em ``mcpServers`` no ``~/.claude/settings.json``
+    do openclaude rodando dentro do container da sandbox. Como o container é
+    compartilhado por todos os utilizadores autorizados, a configuração de
+    MCP é por sandbox, não por utilizador. Apenas ADMINs gerenciam.
+
+    ``name`` é único por (sandbox, name) e vira a chave em ``mcpServers``.
+    """
+
+    id: uuid.UUID
+    sandbox_id: uuid.UUID
+    name: str  # chave única por sandbox (ex: "github", "filesystem")
     command: str  # ex: "npx", "uvx", "python"
     args: list[str] = field(default_factory=list)  # ex: ["-y", "@mcp/server-github"]
     env: dict = field(default_factory=dict)  # ex: {"GITHUB_TOKEN": "..."}

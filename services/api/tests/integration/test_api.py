@@ -9,13 +9,21 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from app.adapters.primary.http.admin_sandbox_globals import (
+    get_agent_repo as get_sandbox_agent_repo,
+)
+from app.adapters.primary.http.admin_sandbox_globals import (
+    get_skill_repo as get_sandbox_skill_repo,
+)
 from app.adapters.primary.http.admin_sandboxes import (
+    get_bootstrap_gateways,
     get_runtime_gateways,
     get_sandbox_repo,
 )
 from app.adapters.primary.http.deps import (
     get_agent,
     get_conv_repo,
+    get_mcp_repo,
     get_msg_repo,
     get_password_service,
     get_token_service,
@@ -23,16 +31,21 @@ from app.adapters.primary.http.deps import (
 )
 from app.domain.entities import ContainerStatus, SandboxRuntime, User, UserRole
 from app.main import app
+from app.ports.sandbox_bootstrap import SandboxBootstrapGateway
 from app.ports.sandbox_runtime import RuntimeProbe, SandboxRuntimeGateway
 from httpx import ASGITransport, AsyncClient
 
 from tests.conftest import (
     FakeAgent,
     FakePasswordService,
+    FakeSandboxBootstrap,
     FakeTokenService,
     InMemoryConversationRepository,
+    InMemoryMcpRepository,
     InMemoryMessageRepository,
+    InMemorySandboxAgentRepository,
     InMemorySandboxRepository,
+    InMemorySandboxSkillRepository,
     InMemoryUserRepository,
 )
 
@@ -77,14 +90,42 @@ def sandbox_repo() -> InMemorySandboxRepository:
 
 
 @pytest.fixture
+def mcp_repo() -> InMemoryMcpRepository:
+    return InMemoryMcpRepository()
+
+
+@pytest.fixture
+def skill_repo() -> InMemorySandboxSkillRepository:
+    return InMemorySandboxSkillRepository()
+
+
+@pytest.fixture
+def agent_repo() -> InMemorySandboxAgentRepository:
+    return InMemorySandboxAgentRepository()
+
+
+@pytest.fixture
+def sandbox_bootstrap() -> FakeSandboxBootstrap:
+    return FakeSandboxBootstrap()
+
+
+@pytest.fixture
 async def client(
-    user_repo: InMemoryUserRepository, sandbox_repo: InMemorySandboxRepository
+    user_repo: InMemoryUserRepository,
+    sandbox_repo: InMemorySandboxRepository,
+    mcp_repo: InMemoryMcpRepository,
+    skill_repo: InMemorySandboxSkillRepository,
+    agent_repo: InMemorySandboxAgentRepository,
+    sandbox_bootstrap: FakeSandboxBootstrap,
 ) -> AsyncClient:
     """HTTP client with all external dependencies replaced by in-memory fakes."""
     conv_repo = InMemoryConversationRepository()
     msg_repo = InMemoryMessageRepository()
     runtimes: dict[SandboxRuntime, SandboxRuntimeGateway] = {
         SandboxRuntime.COMPOSE: _StubRuntimeGateway(),
+    }
+    bootstraps: dict[SandboxRuntime, SandboxBootstrapGateway] = {
+        SandboxRuntime.COMPOSE: sandbox_bootstrap,
     }
 
     app.dependency_overrides[get_user_repo] = lambda: user_repo
@@ -95,6 +136,10 @@ async def client(
     app.dependency_overrides[get_agent] = lambda: FakeAgent()
     app.dependency_overrides[get_sandbox_repo] = lambda: sandbox_repo
     app.dependency_overrides[get_runtime_gateways] = lambda: runtimes
+    app.dependency_overrides[get_bootstrap_gateways] = lambda: bootstraps
+    app.dependency_overrides[get_mcp_repo] = lambda: mcp_repo
+    app.dependency_overrides[get_sandbox_skill_repo] = lambda: skill_repo
+    app.dependency_overrides[get_sandbox_agent_repo] = lambda: agent_repo
 
     transport = ASGITransport(app=app)  # type: ignore[arg-type]
     async with AsyncClient(transport=transport, base_url="http://test") as c:
@@ -484,6 +529,326 @@ class TestAdminSandboxesEndpoints:
         # (501 ocorre quando o adapter Swarm real é injetado e levanta
         #  NotImplementedError — testado via override em outro cenário.)
         assert r.status_code == 502
+
+
+class TestAdminSandboxMcpsEndpoints:
+    async def test_requires_admin(self, client: AsyncClient, user_headers: dict[str, str]) -> None:
+        sb_id = uuid.uuid4()
+        r = await client.get(f"/api/admin/sandboxes/{sb_id}/mcps", headers=user_headers)
+        assert r.status_code == 403
+
+    async def test_full_crud_lifecycle(
+        self,
+        client: AsyncClient,
+        admin_headers: dict[str, str],
+    ) -> None:
+        # 1. Cria sandbox base
+        r = await client.post(
+            "/api/admin/sandboxes",
+            json={
+                "name": "mcp-test",
+                "runtime": "compose",
+                "image": "cappy/sandbox:latest",
+            },
+            headers=admin_headers,
+        )
+        assert r.status_code == 201
+        sb_id = r.json()["id"]
+
+        # 2. Lista vazia
+        r = await client.get(f"/api/admin/sandboxes/{sb_id}/mcps", headers=admin_headers)
+        assert r.status_code == 200 and r.json() == []
+
+        # 3. Cria MCP
+        r = await client.post(
+            f"/api/admin/sandboxes/{sb_id}/mcps",
+            json={
+                "name": "github",
+                "command": "npx",
+                "args": ["-y", "@mcp/github"],
+                "env": {"GITHUB_TOKEN": "x"},
+                "enabled": True,
+            },
+            headers=admin_headers,
+        )
+        assert r.status_code == 201
+        mcp_id = r.json()["id"]
+        assert r.json()["sandbox_id"] == sb_id
+
+        # 4. Duplicata rejeitada (mesmo nome dentro da sandbox)
+        r = await client.post(
+            f"/api/admin/sandboxes/{sb_id}/mcps",
+            json={
+                "name": "github",
+                "command": "npx",
+                "args": [],
+                "env": {},
+                "enabled": True,
+            },
+            headers=admin_headers,
+        )
+        assert r.status_code == 409
+
+        # 5. Atualiza
+        r = await client.put(
+            f"/api/admin/sandboxes/{sb_id}/mcps/{mcp_id}",
+            json={
+                "name": "github",
+                "command": "npx",
+                "args": ["-y", "@mcp/github@latest"],
+                "env": {"GITHUB_TOKEN": "y"},
+                "enabled": False,
+            },
+            headers=admin_headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["enabled"] is False
+        assert body["env"]["GITHUB_TOKEN"] == "y"
+
+        # 6. Export — disabled é omitido
+        r = await client.get(f"/api/admin/sandboxes/{sb_id}/mcps/export", headers=admin_headers)
+        assert r.status_code == 200
+        assert r.json() == {"mcpServers": {}}
+
+        # 7. Delete
+        r = await client.delete(
+            f"/api/admin/sandboxes/{sb_id}/mcps/{mcp_id}", headers=admin_headers
+        )
+        assert r.status_code == 204
+
+        # 8. Lista volta a vazio
+        r = await client.get(f"/api/admin/sandboxes/{sb_id}/mcps", headers=admin_headers)
+        assert r.status_code == 200 and r.json() == []
+
+    async def test_boot_triggers_bootstrap_with_mcp_settings(
+        self,
+        client: AsyncClient,
+        admin_headers: dict[str, str],
+        sandbox_bootstrap: FakeSandboxBootstrap,
+    ) -> None:
+        # Cria sandbox + MCP, depois bota → bootstrap escreve settings.json:
+        r = await client.post(
+            "/api/admin/sandboxes",
+            json={
+                "name": "boot-mcp",
+                "runtime": "compose",
+                "image": "cappy/sandbox:latest",
+            },
+            headers=admin_headers,
+        )
+        sb_id = r.json()["id"]
+
+        r = await client.post(
+            f"/api/admin/sandboxes/{sb_id}/mcps",
+            json={
+                "name": "fs",
+                "command": "uvx",
+                "args": ["mcp-server-filesystem", "/repos"],
+                "env": {},
+                "enabled": True,
+            },
+            headers=admin_headers,
+        )
+        assert r.status_code == 201
+
+        r = await client.post(f"/api/admin/sandboxes/{sb_id}/boot", headers=admin_headers)
+        assert r.status_code == 200
+        assert r.json()["container_status"] == "configured"
+
+        # Bootstrap foi chamado com o settings.json correto:
+        assert len(sandbox_bootstrap.calls) == 1
+        _, settings = sandbox_bootstrap.calls[0]
+        assert settings["mcpServers"]["fs"]["command"] == "uvx"
+        assert settings["mcpServers"]["fs"]["args"] == [
+            "mcp-server-filesystem",
+            "/repos",
+        ]
+
+
+class TestAdminSandboxSkillsEndpoints:
+    async def test_requires_admin(self, client: AsyncClient, user_headers: dict[str, str]) -> None:
+        sb_id = uuid.uuid4()
+        r = await client.get(f"/api/admin/sandboxes/{sb_id}/skills", headers=user_headers)
+        assert r.status_code == 403
+
+    async def test_full_crud_lifecycle(
+        self,
+        client: AsyncClient,
+        admin_headers: dict[str, str],
+    ) -> None:
+        r = await client.post(
+            "/api/admin/sandboxes",
+            json={"name": "sk-test", "runtime": "compose", "image": "cappy/sandbox:latest"},
+            headers=admin_headers,
+        )
+        sb_id = r.json()["id"]
+
+        r = await client.get(f"/api/admin/sandboxes/{sb_id}/skills", headers=admin_headers)
+        assert r.status_code == 200 and r.json() == []
+
+        r = await client.post(
+            f"/api/admin/sandboxes/{sb_id}/skills",
+            json={
+                "name": "naming-conventions",
+                "description": "snake_case em Python",
+                "content": "# Naming\n- Python: snake_case\n- TS: camelCase",
+                "enabled": True,
+            },
+            headers=admin_headers,
+        )
+        assert r.status_code == 201
+        skill_id = r.json()["id"]
+        assert r.json()["name"] == "naming-conventions"
+
+        # Duplicata rejeitada (mesmo nome dentro da sandbox)
+        r = await client.post(
+            f"/api/admin/sandboxes/{sb_id}/skills",
+            json={"name": "naming-conventions", "content": "x"},
+            headers=admin_headers,
+        )
+        assert r.status_code == 409
+
+        # Update
+        r = await client.put(
+            f"/api/admin/sandboxes/{sb_id}/skills/{skill_id}",
+            json={
+                "name": "naming-conventions",
+                "description": "atualizado",
+                "content": "# Naming v2",
+                "enabled": False,
+            },
+            headers=admin_headers,
+        )
+        assert r.status_code == 200
+        assert r.json()["enabled"] is False
+        assert r.json()["content"] == "# Naming v2"
+
+        # Delete
+        r = await client.delete(
+            f"/api/admin/sandboxes/{sb_id}/skills/{skill_id}", headers=admin_headers
+        )
+        assert r.status_code == 204
+
+    async def test_rejects_invalid_name(
+        self, client: AsyncClient, admin_headers: dict[str, str]
+    ) -> None:
+        r = await client.post(
+            "/api/admin/sandboxes",
+            json={"name": "sk-name", "runtime": "compose", "image": "x"},
+            headers=admin_headers,
+        )
+        sb_id = r.json()["id"]
+        r = await client.post(
+            f"/api/admin/sandboxes/{sb_id}/skills",
+            json={"name": "tem espaço", "content": "x"},
+            headers=admin_headers,
+        )
+        assert r.status_code == 422
+
+
+class TestAdminSandboxAgentsEndpoints:
+    async def test_requires_admin(self, client: AsyncClient, user_headers: dict[str, str]) -> None:
+        sb_id = uuid.uuid4()
+        r = await client.get(f"/api/admin/sandboxes/{sb_id}/agents", headers=user_headers)
+        assert r.status_code == 403
+
+    async def test_full_crud_lifecycle(
+        self,
+        client: AsyncClient,
+        admin_headers: dict[str, str],
+    ) -> None:
+        r = await client.post(
+            "/api/admin/sandboxes",
+            json={"name": "ag-test", "runtime": "compose", "image": "cappy/sandbox:latest"},
+            headers=admin_headers,
+        )
+        sb_id = r.json()["id"]
+
+        r = await client.post(
+            f"/api/admin/sandboxes/{sb_id}/agents",
+            json={
+                "name": "reviewer",
+                "description": "Revisor crítico de PRs.",
+                "system_prompt": "Você é um revisor.",
+                "model": "claude-sonnet-4-6",
+                "tools": ["Read", "Grep"],
+                "enabled": True,
+            },
+            headers=admin_headers,
+        )
+        assert r.status_code == 201
+        body = r.json()
+        assert body["sandbox_id"] == sb_id
+        assert body["tools"] == ["Read", "Grep"]
+        assert body["model"] == "claude-sonnet-4-6"
+        agent_id = body["id"]
+
+        # Update
+        r = await client.put(
+            f"/api/admin/sandboxes/{sb_id}/agents/{agent_id}",
+            json={
+                "name": "reviewer",
+                "description": "atualizado",
+                "system_prompt": "v2",
+                "model": "claude-opus-4-7",
+                "tools": ["Read"],
+                "enabled": False,
+            },
+            headers=admin_headers,
+        )
+        assert r.status_code == 200
+        assert r.json()["model"] == "claude-opus-4-7"
+        assert r.json()["enabled"] is False
+
+        # Delete
+        r = await client.delete(
+            f"/api/admin/sandboxes/{sb_id}/agents/{agent_id}", headers=admin_headers
+        )
+        assert r.status_code == 204
+
+    async def test_boot_writes_skills_and_agents_to_bootstrap(
+        self,
+        client: AsyncClient,
+        admin_headers: dict[str, str],
+        sandbox_bootstrap: FakeSandboxBootstrap,
+    ) -> None:
+        r = await client.post(
+            "/api/admin/sandboxes",
+            json={"name": "boot-skag", "runtime": "compose", "image": "cappy/sandbox:latest"},
+            headers=admin_headers,
+        )
+        sb_id = r.json()["id"]
+
+        await client.post(
+            f"/api/admin/sandboxes/{sb_id}/skills",
+            json={"name": "intro", "content": "# Intro"},
+            headers=admin_headers,
+        )
+        await client.post(
+            f"/api/admin/sandboxes/{sb_id}/agents",
+            json={
+                "name": "helper",
+                "system_prompt": "Você ajuda.",
+                "model": "claude-haiku-4-5",
+                "tools": ["Read"],
+            },
+            headers=admin_headers,
+        )
+
+        r = await client.post(f"/api/admin/sandboxes/{sb_id}/boot", headers=admin_headers)
+        assert r.status_code == 200
+        assert r.json()["container_status"] == "configured"
+
+        # Bootstrap recebeu skill + agent:
+        assert len(sandbox_bootstrap.skill_calls) == 1
+        _, skills = sandbox_bootstrap.skill_calls[0]
+        assert [s.name for s in skills] == ["intro"]
+
+        assert len(sandbox_bootstrap.agent_calls) == 1
+        _, agents = sandbox_bootstrap.agent_calls[0]
+        assert [a.name for a in agents] == ["helper"]
+        assert agents[0].tools == ["Read"]
 
 
 class TestConversationEndpoints:

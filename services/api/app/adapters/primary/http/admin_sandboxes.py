@@ -8,13 +8,18 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.primary.http.deps import require_role
+from app.adapters.primary.http.admin_sandbox_globals import (
+    get_agent_repo,
+    get_skill_repo,
+)
+from app.adapters.primary.http.deps import get_mcp_repo, require_role
 from app.adapters.primary.http.deps_base import get_db_session
 from app.adapters.secondary.persistence.sqlalchemy_sandbox_repo import (
     SQLAlchemySandboxRepository,
 )
 from app.adapters.secondary.sandbox_runtime import (
     DockerComposeSandboxRuntime,
+    DockerSandboxBootstrap,
     DockerSwarmSandboxRuntime,
 )
 from app.application.use_cases.admin_sandboxes import (
@@ -31,7 +36,10 @@ from app.application.use_cases.admin_sandboxes import (
     UpdateSandbox,
 )
 from app.domain.entities import Sandbox, SandboxRuntime, UserRole
+from app.ports.mcp_repository import McpServerRepository
 from app.ports.repositories import SandboxRepository
+from app.ports.sandbox_bootstrap import SandboxBootstrapGateway
+from app.ports.sandbox_globals import SandboxAgentRepository, SandboxSkillRepository
 from app.ports.sandbox_runtime import (
     RuntimeFailureError,
     SandboxRuntimeGateway,
@@ -58,6 +66,17 @@ def get_runtime_gateways() -> dict[SandboxRuntime, SandboxRuntimeGateway]:
     return {
         SandboxRuntime.COMPOSE: DockerComposeSandboxRuntime(),
         SandboxRuntime.SWARM: DockerSwarmSandboxRuntime(),
+    }
+
+
+def get_bootstrap_gateways() -> dict[SandboxRuntime, SandboxBootstrapGateway]:
+    """Mapa de adapters de bootstrap (ADR-004 §5).
+
+    Compose usa ``DockerSandboxBootstrap`` (put_archive). Swarm não suporta
+    put_archive em services — quando ficar maduro, criar adapter próprio.
+    """
+    return {
+        SandboxRuntime.COMPOSE: DockerSandboxBootstrap(),
     }
 
 
@@ -205,9 +224,15 @@ async def boot_sandbox(
     sandbox_id: uuid.UUID,
     repo: Annotated[SandboxRepository, Depends(get_sandbox_repo)],
     runtimes: Annotated[dict[SandboxRuntime, SandboxRuntimeGateway], Depends(get_runtime_gateways)],
+    bootstraps: Annotated[
+        dict[SandboxRuntime, SandboxBootstrapGateway], Depends(get_bootstrap_gateways)
+    ],
+    mcps: Annotated[McpServerRepository, Depends(get_mcp_repo)],
+    skills: Annotated[SandboxSkillRepository, Depends(get_skill_repo)],
+    agents: Annotated[SandboxAgentRepository, Depends(get_agent_repo)],
 ) -> SandboxOut:
     try:
-        sb = await BootSandbox(repo, runtimes).execute(sandbox_id)
+        sb = await BootSandbox(repo, runtimes, bootstraps, mcps, skills, agents).execute(sandbox_id)
     except SandboxNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except RuntimeFailureError as exc:

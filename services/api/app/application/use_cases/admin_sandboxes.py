@@ -14,12 +14,23 @@ from __future__ import annotations
 
 import uuid
 
+from app.application.use_cases.mcp_servers import ExportSandboxMcpConfig
+from app.application.use_cases.sandbox_globals import (
+    ListSandboxAgents,
+    ListSandboxSkills,
+)
 from app.domain.entities import (
     ContainerStatus,
     Sandbox,
     SandboxRuntime,
 )
+from app.ports.mcp_repository import McpServerRepository
 from app.ports.repositories import SandboxRepository
+from app.ports.sandbox_bootstrap import (
+    BootstrapFailureError,
+    SandboxBootstrapGateway,
+)
+from app.ports.sandbox_globals import SandboxAgentRepository, SandboxSkillRepository
 from app.ports.sandbox_runtime import (
     RuntimeFailureError,
     SandboxRuntimeGateway,
@@ -170,26 +181,32 @@ class DeleteSandbox:
 
 
 class BootSandbox:
-    """Cria/inicia o container da sandbox no orquestrador.
+    """Cria/inicia o container da sandbox no orquestrador + bootstrap (ADR-004).
 
-    Transições típicas:
+    Transições:
 
-    - ``not_created``/``stopped``/``error`` → ``starting`` → (probe) → ``running``
-      → (bootstrap noop) → ``configured``.
+    - ``not_created``/``stopped``/``error`` → ``starting`` → ``running``
+      → ``configuring`` (escreve settings.json) → ``configured``.
 
-    Idempotente: chamar em sandbox já configurada apenas revalida o probe.
-
-    O bootstrap de periféricos (MCPs/skills/agents) é placeholder até PR4-5
-    (ADR-004 §5). Por agora, ``running`` → ``configured`` é transição direta.
+    Idempotente: chamar em sandbox já configurada apenas reescreve o
+    settings.json (single source of truth = DB; bootstrap sobrepõe sempre).
     """
 
     def __init__(
         self,
         sandboxes: SandboxRepository,
         runtimes: dict[SandboxRuntime, SandboxRuntimeGateway],
+        bootstraps: dict[SandboxRuntime, SandboxBootstrapGateway],
+        mcps: McpServerRepository,
+        skills: SandboxSkillRepository,
+        agents: SandboxAgentRepository,
     ) -> None:
         self._sandboxes = sandboxes
         self._runtimes = runtimes
+        self._bootstraps = bootstraps
+        self._mcps = mcps
+        self._skills = skills
+        self._agents = agents
 
     async def execute(self, sandbox_id: uuid.UUID) -> Sandbox:
         sandbox = await self._sandboxes.get(sandbox_id)
@@ -210,17 +227,39 @@ class BootSandbox:
             await self._sandboxes.update_container_status(sandbox.id, ContainerStatus.ERROR)
             raise
 
-        if probe.status is ContainerStatus.RUNNING:
-            # Bootstrap placeholder (PR4-5 vai materializar MCPs/skills/agents).
-            await self._sandboxes.update_container_status(sandbox.id, ContainerStatus.CONFIGURING)
-            final = await self._sandboxes.update_container_status(
-                sandbox.id, ContainerStatus.CONFIGURED
-            )
+        if probe.status is not ContainerStatus.RUNNING:
+            final = await self._sandboxes.update_container_status(sandbox.id, probe.status)
             if final is None:
                 raise SandboxNotFoundError(f"Sandbox {sandbox.id} sumiu durante boot.")
             return final
 
-        final = await self._sandboxes.update_container_status(sandbox.id, probe.status)
+        # Bootstrap: materializa ~/.claude/settings.json a partir do cadastro
+        # de MCPs (single source of truth = DB; ADR-004 §5).
+        await self._sandboxes.update_container_status(sandbox.id, ContainerStatus.CONFIGURING)
+        bootstrap = self._bootstraps.get(sandbox.runtime)
+        if bootstrap is None:
+            # Sem bootstrap configurado para esse runtime — tratamos como erro
+            # explícito para não fingir que configurou.
+            await self._sandboxes.update_container_status(sandbox.id, ContainerStatus.ERROR)
+            raise RuntimeFailureError(
+                f"Bootstrap '{sandbox.runtime.value}' não está configurado.",
+                sandbox_id=sandbox.id,
+            )
+
+        settings = await ExportSandboxMcpConfig(self._mcps).execute(sandbox.id)
+        skills = await ListSandboxSkills(self._skills).execute(sandbox.id)
+        agents = await ListSandboxAgents(self._agents).execute(sandbox.id)
+        try:
+            await bootstrap.write_settings_json(sandbox, settings)
+            await bootstrap.write_skills(sandbox, skills)
+            await bootstrap.write_agents(sandbox, agents)
+        except BootstrapFailureError:
+            await self._sandboxes.update_container_status(sandbox.id, ContainerStatus.ERROR)
+            raise
+
+        final = await self._sandboxes.update_container_status(
+            sandbox.id, ContainerStatus.CONFIGURED
+        )
         if final is None:
             raise SandboxNotFoundError(f"Sandbox {sandbox.id} sumiu durante boot.")
         return final

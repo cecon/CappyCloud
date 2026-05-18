@@ -257,3 +257,6 @@ from app.infrastructure.orm_models_platform import (  # noqa: F401, E402
     Repository,
     SandboxSyncQueue,
 )
+from app.infrastructure.orm_models_sandbox_globals import (  # noqa: F401, E402
+    SandboxAgent as SandboxAgentORM,
+)
