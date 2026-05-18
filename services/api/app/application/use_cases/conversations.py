@@ -80,6 +80,8 @@ class CreateConversation:
                     "branch_name": branch_name,
                     "worktree_path": worktree_path,
                     "repo_id": str(repo_entity.id) if repo_entity else None,
+                    "confluence_url": repo_entity.confluence_url if repo_entity else "",
+                    "confluence_space": repo_entity.confluence_space if repo_entity else "",
                 }
             )
 

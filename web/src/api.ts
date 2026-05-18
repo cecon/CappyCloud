@@ -362,11 +362,9 @@ export async function streamAssistantReply(
     }
   }
   if (sawDone) {
-    try {
-      await reader.cancel()
-    } catch {
+    reader.cancel().catch(() => {
       // Stream already closed.
-    }
+    })
   }
 }
 
@@ -618,6 +616,8 @@ export interface Workspace {
   slug: string
   name: string
   url: string
+  confluence_url: string
+  confluence_space: string
   sandbox_status: string
 }
 
@@ -793,6 +793,8 @@ export interface Repository {
   name: string
   clone_url: string
   default_branch: string
+  confluence_url: string
+  confluence_space: string
   provider_id: string | null
   sandbox_id: string | null
   sandbox_status: string
@@ -805,6 +807,8 @@ export interface RepositoryCreate {
   name: string
   clone_url: string
   default_branch: string
+  confluence_url?: string
+  confluence_space?: string
   provider_id?: string | null
   sandbox_id?: string | null
   /** PAT inline: se preenchido, o backend cria/atualiza um GitProvider implícito. */

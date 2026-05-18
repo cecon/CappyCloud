@@ -84,6 +84,15 @@ class RepositoryRepository(ABC):
         session_start.sh consiga autenticar o clone/fetch sem env vars globais.
         """
 
+    @abstractmethod
+    async def get_confluence_settings(self, repo_id: uuid.UUID) -> tuple[str, str]:
+        """Retorna ``(confluence_url, confluence_space)`` configurados para o repositório.
+
+        Strings vazias quando o campo não está preenchido. ``space`` só faz
+        sentido quando ``url`` está preenchida — o caller decide se ignora ou
+        propaga o space órfão.
+        """
+
 
 class ConversationRepository(ABC):
     """Port for conversation persistence operations."""

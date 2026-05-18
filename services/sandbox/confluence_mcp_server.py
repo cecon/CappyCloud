@@ -27,17 +27,33 @@ from confluence_mcp_lib import (
 )
 
 
+_stdio_mode = "jsonl"
+
 
 def _read_message() -> dict[str, Any] | None:
+    global _stdio_mode
     headers: dict[str, str] = {}
+    line = sys.stdin.buffer.readline()
+    if line == b"":
+        return None
+    decoded = line.decode("utf-8", errors="replace").strip()
+    if decoded and not decoded.lower().startswith("content-length:"):
+        _stdio_mode = "jsonl"
+        return json.loads(decoded)
+
+    if decoded:
+        key, _, value = decoded.partition(":")
+        headers[key.lower()] = value.strip()
+    _stdio_mode = "framed"
+
     while True:
         line = sys.stdin.buffer.readline()
         if line == b"":
             return None
-        line = line.decode("utf-8", errors="replace").strip()
-        if not line:
+        decoded = line.decode("utf-8", errors="replace").strip()
+        if not decoded:
             break
-        key, _, value = line.partition(":")
+        key, _, value = decoded.partition(":")
         headers[key.lower()] = value.strip()
 
     length = int(headers.get("content-length", "0") or "0")
@@ -49,6 +65,10 @@ def _read_message() -> dict[str, Any] | None:
 
 def _write_message(payload: dict[str, Any]) -> None:
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if _stdio_mode == "jsonl":
+        sys.stdout.buffer.write(raw + b"\n")
+        sys.stdout.buffer.flush()
+        return
     sys.stdout.buffer.write(f"Content-Length: {len(raw)}\r\n\r\n".encode("ascii"))
     sys.stdout.buffer.write(raw)
     sys.stdout.buffer.flush()

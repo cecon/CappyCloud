@@ -152,7 +152,8 @@ não estão disponíveis no sandbox.
 
 ## Contexto técnico do ambiente
 
-- O agente roda dentro de um container Docker isolado por sessão.
+- O agente roda dentro de um container Docker sandbox isolado do host; cada
+  conversa recebe uma sessão própria dentro desse sandbox.
 - O CWD inicial é o **worktree** do repositório cadastrado.
 - Existem **outros repos** clonados em `/repos/<slug>/` — você pode
   inspecioná-los read-only.
@@ -160,7 +161,35 @@ não estão disponíveis no sandbox.
 - A branch onde está a trabalhar é uma **branch de sessão** criada
   automaticamente (`cappy/<slug>/<session_id>`); todas as suas alterações
   ficam isoladas até abrir um Pull Request.
-- Python 3, Node 20, Bun, ripgrep, jq, gh, az e graphviz estão instalados.
+- Python 3, Node 20, Bun, ripgrep, jq, gh, az, graphviz e ferramentas
+  semânticas de código estão instalados.
+
+### Ferramentas semânticas de código
+
+Use estas ferramentas sob demanda quando uma tarefa exigir navegação
+semântica, diagnóstico de tipos ou refactor estrutural. Não inicie language
+servers de forma persistente sem necessidade.
+
+**Language servers e typecheckers:**
+
+| Stack | Comando | Uso recomendado |
+|------|---------|-----------------|
+| TypeScript/JavaScript | `typescript-language-server`, `tsserver`, `tsc` | definições, referências, diagnostics e typecheck |
+| Python | `basedpyright`, `basedpyright-langserver`, `pyright`, `pyright-langserver` | diagnostics e análise de tipos |
+
+**AST e transformação estrutural:**
+
+| Ferramenta | Uso recomendado |
+|------------|-----------------|
+| `ast-grep` | busca e refactor estrutural multi-linguagem |
+| `tree-sitter` | parsing e inspeção sintática multi-linguagem |
+| `libcst` | refactors Python preservando formatação |
+| `ts-morph` | scripts TypeScript/TSX baseados no TypeScript compiler |
+| `ruff` | lint/format Python rápido antes ou depois de alterações |
+
+Prefira `rg` para localização inicial. Use LSP/AST quando a alteração envolver
+símbolos, imports, tipos, referências, renames ou edições repetitivas onde
+regex possa alterar código errado.
 
 ### MCP Servers disponíveis
 
@@ -181,19 +210,28 @@ O openclaude carrega MCPs configurados pelo utilizador em
 | Nome | Binário | Notas |
 |------|---------|-------|
 | `signoz-mcp-server` | `/usr/local/bin/signoz-mcp-server` | Observabilidade (métricas, traces, logs, alertas). Requer `SIGNOZ_URL` e `SIGNOZ_API_KEY` no env. |
-| `confluence-mcp-server` | `/usr/local/bin/confluence-mcp-server` | Consulta read-only ao Confluence via REST. Requer `CONFLUENCE_BASE_URL` e credencial (`CONFLUENCE_EMAIL` + `CONFLUENCE_API_TOKEN` ou `CONFLUENCE_PAT`). Opcional: `CONFLUENCE_MAIN_MENU_URL`. |
+| `confluence-mcp-server` | `/usr/local/bin/confluence-mcp-server` | Consulta read-only ao Confluence via REST. Use apenas quando a sessão/repositório tiver URL de Confluence configurada. Credenciais opcionais: `CONFLUENCE_EMAIL` + `CONFLUENCE_API_TOKEN` ou `CONFLUENCE_PAT`. |
 
 Se um MCP estiver configurado mas as ferramentas não aparecerem, verifique se
 o `command` aponta para um executável existente no container.
 
-### Documentação pública Linx Share
+### Documentação externa
 
-Para dúvidas do AutoSystem, consulte a documentação pública como fonte normal de
-pesquisa. Se a MCP tool não estiver disponível, use HTTP via `curl`:
+Quando uma fonte de documentação externa estiver configurada para o repositório
+da sessão, consulte-a como fonte complementar de pesquisa. Se a MCP tool não
+estiver disponível, use HTTP via `curl` com o parâmetro `base_url` informado no
+prompt da sessão. Se nenhum repositório tiver URL configurada, não consulte
+`/confluence/*`.
 
-- Menu principal: `curl -s "$SANDBOX_SESSION_URL/confluence/main"`
-- Busca: `curl -s "$SANDBOX_SESSION_URL/confluence/search?q=<termo>&limit=5"`
-- Página: `curl -s "$SANDBOX_SESSION_URL/confluence/page?id=<pageId>"`
+- Busca: `curl -s "$SANDBOX_SESSION_URL/confluence/search?base_url=<url>&q=<termo>&limit=5"`
+- Busca com filtro de space: `curl -s "$SANDBOX_SESSION_URL/confluence/search?base_url=<url>&space=<SPACE_KEY>&q=<termo>&limit=5"`
+- Página: `curl -s "$SANDBOX_SESSION_URL/confluence/page?base_url=<url>&id=<pageId>"`
+
+Quando o prompt da sessão lista um repositório com `space` (entre parênteses
+na seção "Documentação externa por repositório"), use **sempre** o parâmetro
+`&space=<SPACE_KEY>` nas buscas desse repositório. Sem o filtro, a busca
+retorna páginas de outros produtos do mesmo Confluence e o agente acaba
+abrindo pageId fora do contexto certo.
 
 ---
 

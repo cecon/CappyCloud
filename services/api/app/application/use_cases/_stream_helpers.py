@@ -36,6 +36,7 @@ async def ensure_repo_ids(
     """Resolve ``repo_id`` em conv.repos a partir do slug, persiste se mudou."""
     if not repositories or not conv.repos:
         return
+    # mutmut: trocar False por None é equivalente — ambos falsy, lido só com `if changed:`.
     changed = False
     for r in conv.repos:
         if r.get("repo_id"):
@@ -46,6 +47,10 @@ async def ensure_repo_ids(
         repo_entity = await repositories.get_by_slug(slug)
         if repo_entity:
             r["repo_id"] = str(repo_entity.id)
+            if repo_entity.confluence_url:
+                r["confluence_url"] = repo_entity.confluence_url
+                if repo_entity.confluence_space:
+                    r["confluence_space"] = repo_entity.confluence_space
             changed = True
     if changed:
         await conversations.update(conv)  # type: ignore[attr-defined]
@@ -54,21 +59,29 @@ async def ensure_repo_ids(
 async def enrich_repos_for_pipeline(
     repositories: RepositoryRepository | None, repos: list[dict]
 ) -> list[dict]:
-    """Adiciona ``clone_url`` autenticado a cada repo do pipeline."""
+    """Adiciona ``clone_url`` autenticado e metadados opcionais a cada repo do pipeline."""
     if not repositories:
         return repos
     enriched: list[dict] = []
     for r in repos:
+        next_repo = dict(r)
         repo_id_str = r.get("repo_id")
         if repo_id_str:
             try:
-                auth_url = await repositories.get_authenticated_clone_url(uuid.UUID(repo_id_str))
+                repo_id = uuid.UUID(repo_id_str)
+                auth_url = await repositories.get_authenticated_clone_url(repo_id)
                 if auth_url:
-                    enriched.append({**r, "clone_url": auth_url})
-                    continue
+                    next_repo["clone_url"] = auth_url
+                confluence_url, confluence_space = await repositories.get_confluence_settings(
+                    repo_id
+                )
+                if confluence_url:
+                    next_repo["confluence_url"] = confluence_url
+                    if confluence_space:
+                        next_repo["confluence_space"] = confluence_space
             except Exception:
                 pass
-        enriched.append(r)
+        enriched.append(next_repo)
     return enriched
 
 

@@ -3,8 +3,16 @@
 ## Visão Geral
 
 CappyCloud é uma plataforma de agentes IA: backend FastAPI + frontend React +
-agentes openclaude rodando em containers Docker isolados (um por usuário) com
-git worktrees por conversa.
+agentes openclaude rodando em sandboxes Docker com git worktrees por conversa.
+
+Decisões de base:
+
+- [ADR-001](decisions/adr-001-hexagonal-architecture.md) — Arquitetura
+  Hexagonal da API
+- [ADR-002](decisions/adr-002-sandbox-runtime-and-worktree-sessions.md) —
+  Runtime sandbox e sessões por worktree
+- [ADR-003](decisions/adr-003-on-demand-semantic-code-tooling.md) —
+  Ferramentas semânticas LSP/AST sob demanda
 
 ## Arquitetura Hexagonal (Ports & Adapters)
 
@@ -53,10 +61,15 @@ tests/
 
 services/cappycloud_agent/
   cappycloud_pipeline.py   Pipeline principal (orquestra tudo)
-  _environment_manager.py  Gerencia containers Docker por usuário
+  _environment_manager.py  Gerencia sessões por conversa no sandbox
   _grpc_session.py         Sessão gRPC persistente por (user_id, chat_id)
   _session_store.py        Persistência de sessões (Redis + PostgreSQL)
   _grpc_bridge.py          Bridge HTTP → gRPC para uso externo
+
+services/sandbox/
+  Dockerfile               Runtime do agente, ferramentas e openclaude
+  session_server.js        Sidecar HTTP para sessões, worktrees e Git
+  session_start.sh         Criação idempotente de worktrees por sessão
 
 proto/
   openclaude.proto         Contrato gRPC do servidor openclaude
@@ -66,18 +79,24 @@ web/                       Frontend React (Vite + TypeScript)
 
 ## Arquitetura do Agente
 
-O agente openclaude roda **dentro** de um container Docker e se comunica via gRPC.
+O agente openclaude roda **dentro** de um sandbox Docker e se comunica via gRPC.
+O sandbox também expõe um `session_server` HTTP interno usado para criar
+sessões e worktrees.
 
 ```
 Usuário envia mensagem
        ↓
   Pipeline (cappycloud_pipeline.py)
-       ↓  garante container ativo e worktree git criado
+       ↓  garante sandbox acessível e sessão criada
   EnvironmentManager (_environment_manager.py)
+       ↓  HTTP interno para session_server
+  /repos/sessions/<session_id>/<repo-alias>
+       ↓
+  GrpcSession (_grpc_session.py)
        ↓  stream gRPC bidirecional persistente
-  GrpcSession (_grpc_session.py) ──→  openclaude (gRPC :50051 no container)
-                                              ↓
-                                     LLM via OpenRouter
+  openclaude (gRPC :50051 no sandbox)
+       ↓
+  LLM via OpenRouter
 ```
 
 ### Componentes do agente
@@ -85,9 +104,23 @@ Usuário envia mensagem
 | Classe | Arquivo | Responsabilidade |
 |---|---|---|
 | `Pipeline` | `cappycloud_pipeline.py` | Ponto de entrada; roteia mensagens para a sessão correta |
-| `EnvironmentManager` | `_environment_manager.py` | Um container Docker por `user_id`; cria worktrees git por `chat_id` |
+| `EnvironmentManager` | `_environment_manager.py` | Cria/reusa sessões no sandbox e garante worktrees por conversa |
 | `GrpcSession` | `_grpc_session.py` | Stream gRPC persistente; pausa em `ActionRequired`, retoma com `send_input()` |
 | `SessionStore` | `_session_store.py` | Estado das sessões em Redis (TTL) + PostgreSQL (histórico) |
+
+### Ferramentas do sandbox
+
+O sandbox inclui ferramentas de investigação e edição para o agente. Busca
+textual continua sendo feita com `rg`; análise semântica e refactors maiores
+podem usar LSP/AST sob demanda conforme a
+[ADR-003](decisions/adr-003-on-demand-semantic-code-tooling.md).
+
+| Categoria | Ferramentas |
+|---|---|
+| Busca e shell | `ripgrep`, `jq`, `git`, `gh`, `az` |
+| TypeScript/JavaScript | `typescript-language-server`, `tsserver`, `tsc`, `ts-morph` |
+| Python | `pyright`, `basedpyright`, `ruff`, `libcst` |
+| AST multi-linguagem | `ast-grep`, `tree-sitter` |
 
 ### Evento ActionRequired
 
@@ -101,7 +134,7 @@ quando o usuário responde via `send_input()`.
 |---|---|
 | PostgreSQL | Usuários, conversas, sessões de agente |
 | Redis | Cache de sessões com TTL |
-| Docker | Containers de sandbox por usuário |
+| Docker | Sandboxes que hospedam openclaude, session_server e worktrees |
 | OpenRouter | Gateway LLM (modelo configurável via `OPENROUTER_MODEL`) |
 | openclaude gRPC | Servidor de agente dentro do container (porta 50051) |
 

@@ -158,6 +158,8 @@ async def create_repository(
         name=body.name,
         clone_url=body.clone_url,
         default_branch=body.default_branch,
+        confluence_url=body.confluence_url.strip(),
+        confluence_space=body.confluence_space.strip(),
         provider_id=provider_id,
         sandbox_id=sandbox_id,
     )
@@ -194,6 +196,8 @@ async def update_repository(
     repo.name = body.name
     repo.clone_url = body.clone_url
     repo.default_branch = body.default_branch
+    repo.confluence_url = body.confluence_url.strip()
+    repo.confluence_space = body.confluence_space.strip()
     repo.provider_id = new_provider_id
     if body.sandbox_id:
         repo.sandbox_id = body.sandbox_id

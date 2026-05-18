@@ -36,6 +36,9 @@ interface Props {
   streaming: boolean
   /** Tempo decorrido em ms desde o início do stream (mostra no header). */
   elapsedMs?: number
+  /** Tempo desde o último evento recebido do agente. */
+  idleMs?: number
+  interrupted?: boolean
 }
 
 function summarizeToolInput(name: string, raw: string): string {
@@ -115,7 +118,41 @@ function countByTool(steps: ThoughtStep[]): Array<[string, number]> {
   return Object.entries(counts).sort((a, b) => b[1] - a[1])
 }
 
-export function ThinkingStream({ steps, streaming, elapsedMs = 0 }: Props) {
+function activeCoordinatorLabel(steps: ThoughtStep[], idleMs: number): string {
+  const runningTools = steps.filter(
+    (s): s is Extract<ThoughtStep, { kind: 'tool' }> => s.kind === 'tool' && !s.done,
+  )
+  if (runningTools.length > 1) {
+    return `Aguardando ${runningTools.length} ferramentas em paralelo`
+  }
+  if (runningTools.length === 1) {
+    return `Aguardando ${runningTools[0].name}`
+  }
+  if (idleMs < 8_000) return 'Pensando'
+  if (idleMs < 35_000) return 'Consolidando evidências'
+  if (idleMs < 90_000) return 'Aguardando coordenador'
+  return 'Preparando resposta final'
+}
+
+function activeHeaderLabel(steps: ThoughtStep[], idleMs: number): string {
+  const runningTools = steps.filter(
+    (s): s is Extract<ThoughtStep, { kind: 'tool' }> => s.kind === 'tool' && !s.done,
+  )
+  if (runningTools.length > 1) return `${runningTools.length} ferramentas trabalhando em paralelo`
+  if (runningTools.length === 1) return describeActiveStep(runningTools[0])
+  if (idleMs < 8_000) return 'Pensando…'
+  if (idleMs < 35_000) return 'Cruzando resultados das ferramentas…'
+  if (idleMs < 90_000) return 'Aguardando o coordenador continuar…'
+  return 'Aguardando a resposta final…'
+}
+
+export function ThinkingStream({
+  steps,
+  streaming,
+  elapsedMs = 0,
+  idleMs = 0,
+  interrupted = false,
+}: Props) {
   const [manualExpanded, setManualExpanded] = useState<boolean | null>(null)
   const [expandedToolId, setExpandedToolId] = useState<string | null>(null)
 
@@ -128,20 +165,21 @@ export function ThinkingStream({ steps, streaming, elapsedMs = 0 }: Props) {
 
   if (steps.length === 0) return null
 
-  const lastStep = steps[steps.length - 1]
-  const lastActive =
-    lastStep.kind === 'tool' && !lastStep.done ? lastStep : null
-  const headerStep = lastActive ?? lastStep
-  const headerLabel = streaming
-    ? describeActiveStep(headerStep)
+  const headerLabel = interrupted
+    ? `Interrompido após ${formatElapsed(elapsedMs)}`
+    : streaming
+    ? activeHeaderLabel(steps, idleMs)
     : `Pensei por ${formatElapsed(elapsedMs)}`
 
   const toolCounts = countByTool(steps)
   const hasError = steps.some((s) => s.kind === 'tool' && s.isError)
+  const coordinatorLabel = activeCoordinatorLabel(steps, idleMs)
 
   return (
     <div
       className={`${styles.thinkingStream} ${
+        streaming ? styles.thinkingStreamActive : ''
+      } ${
         hasError ? styles.thinkingStreamError : ''
       }`}
     >
@@ -155,7 +193,7 @@ export function ThinkingStream({ steps, streaming, elapsedMs = 0 }: Props) {
         <span className={styles.thinkingStreamIcon} aria-hidden="true">
           {streaming ? (
             <span className={styles.thinkingStreamSpinner} />
-          ) : hasError ? (
+          ) : interrupted || hasError ? (
             <span className={styles.thinkingStreamFailIcon}>!</span>
           ) : (
             <span className={styles.thinkingStreamDoneIcon}>✓</span>
@@ -215,6 +253,17 @@ export function ThinkingStream({ steps, streaming, elapsedMs = 0 }: Props) {
               )}
             </div>
           ))}
+          {streaming && (
+            <div className={styles.thinkingStreamCoordinator} aria-live="polite">
+              <span className={styles.thinkingStreamCoordinatorLine} />
+              <span className={styles.thinkingStreamCoordinatorText}>
+                {coordinatorLabel}
+              </span>
+              <span className={styles.thinkingStreamCoordinatorIdle}>
+                {formatElapsed(idleMs)}
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -258,7 +307,11 @@ function ThinkingToolStep({
   }
 
   return (
-    <div className={styles.thinkingStreamToolStep}>
+    <div
+      className={`${styles.thinkingStreamToolStep} ${
+        !step.done ? styles.thinkingStreamToolStepRunning : ''
+      } ${step.isError ? styles.thinkingStreamToolStepError : ''}`}
+    >
       <button
         type="button"
         className={`${styles.thinkingStreamToolHeader} ${stateClass}`}

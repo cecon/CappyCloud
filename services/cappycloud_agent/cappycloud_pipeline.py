@@ -27,11 +27,11 @@ from ._pipeline_event_stream import stream_task_events
 from ._pipeline_helpers import (
     build_signoz_context_section,
     db_url,
-    fetch_default_text_model_id,
     fetch_signoz_service_names,
     has_enabled_signoz_mcp,
     inject_repo_context,
     push_mcp_config,
+    resolve_free_text_model_id,
     sse,
 )
 from ._session_store import SessionStore
@@ -207,15 +207,14 @@ class Pipeline:
         # tem o upper-bound do upload (8MB cada) validado no endpoint HTTP.
         attachments_payload = body.get("attachments_payload") or None
 
-        override_model = body.get("override_model")
-        if not override_model:
-            try:
-                override_model = self._run(
-                    fetch_default_text_model_id(db_url()),
-                    timeout=5,
-                )
-            except Exception as exc:  # noqa: BLE001
-                log.warning("[Models] fallback default falhou: %s", exc)
+        try:
+            override_model = self._run(
+                resolve_free_text_model_id(db_url(), body.get("override_model")),
+                timeout=5,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("[Models] resolução do modelo free falhou: %s", exc)
+            override_model = None
 
         dispatch_kwargs = {
             "repos": repos,

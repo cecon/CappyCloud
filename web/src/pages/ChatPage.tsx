@@ -185,6 +185,7 @@ type ActivityTrace = {
   content: string
   steps: ThoughtStep[]
   elapsedMs: number
+  interrupted?: boolean
 }
 
 const SESSION_STAGES: Array<{ key: SessionStageKey; label: string }> = [
@@ -354,6 +355,7 @@ export function ChatPage() {
 
   const [thoughtSteps, setThoughtSteps] = useState<ThoughtStep[]>([])
   const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null)
+  const [streamActivityAt, setStreamActivityAt] = useState<number | null>(null)
   const [streamElapsedMs, setStreamElapsedMs] = useState(0)
   const [pendingAction, setPendingAction] = useState<ActionRequiredEvent | null>(null)
   const [sessionProgress, setSessionProgress] = useState<SessionStageState[]>([])
@@ -683,10 +685,42 @@ export function ChatPage() {
   }, [activeId, token])
 
   async function handleStop() {
+    const elapsedMs = streamStartedAt ? Date.now() - streamStartedAt : streamElapsedMs
+    const anchor = sessionProgressAnchor
     abortControllerRef.current?.abort()
     if (activeId) await cancelConversation(token, activeId)
+    setStreamStartedAt(null)
+    if (anchor) {
+      setActivityTraces((prev) => ({
+        ...prev,
+        [anchor.id]: {
+          ...(prev[anchor.id] ?? { content: anchor.content, steps: [], elapsedMs: 0 }),
+          content: anchor.content,
+          elapsedMs,
+          interrupted: true,
+        },
+      }))
+      setMessages((m) => {
+        const alreadyNotified = m.some(
+          (msg) =>
+            msg.role === 'assistant' &&
+            msg.content === '_Execução interrompida antes da resposta final._',
+        )
+        if (alreadyNotified) return m
+        return [
+          ...m,
+          {
+            id: randomId(),
+            role: 'assistant',
+            content: '_Execução interrompida antes da resposta final._',
+            created_at: new Date().toISOString(),
+          },
+        ]
+      })
+    }
     setStreaming(false)
     setPendingAction(null)
+    setStreamActivityAt(null)
   }
 
   async function handleCreatePr() {
@@ -729,6 +763,7 @@ export function ChatPage() {
     setMessagesError(null)
     setMessagesLoading(false)
     setSessionProgressAnchor(null)
+    setStreamActivityAt(null)
     setTimeout(() => inputRef.current?.focus(), 50)
   }
 
@@ -739,6 +774,7 @@ export function ChatPage() {
     abortControllerRef.current = null
     setStreaming(false)
     setThoughtSteps([])
+    setStreamActivityAt(null)
     setPendingAction(null)
     setSessionProgress([])
     setSessionProgressAnchor(null)
@@ -771,9 +807,10 @@ export function ChatPage() {
     lastTextOffsetRef.current = 0
     const startedAt = Date.now()
     setStreamStartedAt(startedAt)
+    setStreamActivityAt(startedAt)
     setStreamElapsedMs(0)
     setPendingAction(null)
-    setSessionProgress([])
+    setSessionProgress(createSessionProgress('initializing'))
 
     const ctrl = new AbortController()
     abortControllerRef.current = ctrl
@@ -794,6 +831,7 @@ export function ChatPage() {
     try {
       await streamAssistantReply(token, c.id, text, {
         onText(accumulated) {
+          setStreamActivityAt(Date.now())
           const delta = accumulated.slice(lastTextOffsetRef.current)
           lastTextOffsetRef.current = accumulated.length
           if (delta) {
@@ -804,19 +842,22 @@ export function ChatPage() {
           }
         },
         onToolStart(tool) {
+          setStreamActivityAt(Date.now())
           setThoughtSteps((prev) => appendToolStartToThoughts(prev, tool))
           setActivityTraces((prev) =>
             updateActivityTrace(prev, userMsg, (steps) => appendToolStartToThoughts(steps, tool)),
           )
         },
         onToolResult(result) {
+          setStreamActivityAt(Date.now())
           setThoughtSteps((prev) => applyToolResultToThoughts(prev, result))
           setActivityTraces((prev) =>
             updateActivityTrace(prev, userMsg, (steps) => applyToolResultToThoughts(steps, result)),
           )
         },
-        onActionRequired(action) { setPendingAction(action) },
+        onActionRequired(action) { setStreamActivityAt(Date.now()); setPendingAction(action) },
         onStatus(status) {
+          setStreamActivityAt(Date.now())
           const statusWithMode = { ...status, mode: status.mode ?? 'initializing' }
           setSessionProgress((prev) =>
             reduceSessionProgress(
@@ -826,6 +867,7 @@ export function ChatPage() {
           )
         },
         onError(message) {
+          setStreamActivityAt(Date.now())
           setMessages((m) => [
             ...m,
             {
@@ -836,10 +878,11 @@ export function ChatPage() {
             },
           ])
         },
-        onDone(usage) { setLiveUsage(usage) },
+        onDone(usage) { setStreamActivityAt(Date.now()); setLiveUsage(usage) },
         signal: ctrl.signal,
       }, selectedModelId || null)
       setStreamStartedAt(null)
+      setStreamActivityAt(null)
       setActivityTraces((prev) => ({
         ...prev,
         [userMsg.id]: {
@@ -856,6 +899,7 @@ export function ChatPage() {
       setMessages(msgs)
       setConvUsage(totals)
       setLiveUsage(null)
+      setSessionProgress([])
     } catch (e) {
       if (e instanceof AuthError) {
         setToken(null); window.location.href = '/login'; return
@@ -875,6 +919,7 @@ export function ChatPage() {
     } finally {
       setStreaming(false)
       setStreamStartedAt(null)
+      setStreamActivityAt(null)
       abortControllerRef.current = null
       fetchConversationDiff(token, c.id).then((d) => setDiffStats(d.stats)).catch(() => {})
     }
@@ -892,14 +937,13 @@ export function ChatPage() {
       .filter((it): it is Extract<TrayItem, { kind: 'uploaded' }> => it.kind === 'uploaded')
       .map((it) => it.attachment.id)
 
-    const sessionMode: SessionMode = 'resuming'
-
     if (!textOverride) setInput('')
     setStreaming(true)
     setThoughtSteps([])
     lastTextOffsetRef.current = 0
     const startedAt = Date.now()
     setStreamStartedAt(startedAt)
+    setStreamActivityAt(startedAt)
     setStreamElapsedMs(0)
     setPendingAction(null)
     setSessionProgress([])
@@ -933,6 +977,7 @@ export function ChatPage() {
     try {
       await streamAssistantReply(token, activeId, text, {
         onText(accumulated) {
+          setStreamActivityAt(Date.now())
           const delta = accumulated.slice(lastTextOffsetRef.current)
           lastTextOffsetRef.current = accumulated.length
           if (delta) {
@@ -943,28 +988,23 @@ export function ChatPage() {
           }
         },
         onToolStart(tool) {
+          setStreamActivityAt(Date.now())
           setThoughtSteps((prev) => appendToolStartToThoughts(prev, tool))
           setActivityTraces((prev) =>
             updateActivityTrace(prev, userMsg, (steps) => appendToolStartToThoughts(steps, tool)),
           )
         },
         onToolResult(result) {
+          setStreamActivityAt(Date.now())
           setThoughtSteps((prev) => applyToolResultToThoughts(prev, result))
           setActivityTraces((prev) =>
             updateActivityTrace(prev, userMsg, (steps) => applyToolResultToThoughts(steps, result)),
           )
         },
-        onActionRequired(action) { setPendingAction(action) },
-        onStatus(status) {
-          const statusWithMode = { ...status, mode: sessionMode }
-          setSessionProgress((prev) =>
-            reduceSessionProgress(
-              prev.length ? prev : createSessionProgress(statusWithMode.mode),
-              statusWithMode,
-            )
-          )
-        },
+        onActionRequired(action) { setStreamActivityAt(Date.now()); setPendingAction(action) },
+        onStatus() { setStreamActivityAt(Date.now()) },
         onError(message) {
+          setStreamActivityAt(Date.now())
           setMessages((m) => [
             ...m,
             {
@@ -975,10 +1015,11 @@ export function ChatPage() {
             },
           ])
         },
-        onDone(usage) { setLiveUsage(usage) },
+        onDone(usage) { setStreamActivityAt(Date.now()); setLiveUsage(usage) },
         signal: ctrl.signal,
       }, selectedModelId || null, uploadedAttachmentIds.length ? uploadedAttachmentIds : null)
       setStreamStartedAt(null)
+      setStreamActivityAt(null)
       setActivityTraces((prev) => ({
         ...prev,
         [userMsg.id]: {
@@ -1014,6 +1055,7 @@ export function ChatPage() {
     } finally {
       setStreaming(false)
       setStreamStartedAt(null)
+      setStreamActivityAt(null)
       abortControllerRef.current = null
       if (activeId) fetchConversationDiff(token, activeId).then((d) => setDiffStats(d.stats)).catch(() => {})
     }
@@ -1050,6 +1092,9 @@ export function ChatPage() {
     filteredConversations.length - visibleConversations.length,
     0,
   )
+  const streamIdleMs = streaming && streamActivityAt
+    ? Math.max(0, Date.now() - streamActivityAt)
+    : 0
   const sidebarConversationCountLabel = normalizedConversationSearch
     ? `${filteredConversations.length} de ${conversations.length} sessões`
     : hiddenConversationCount > 0
@@ -1213,6 +1258,7 @@ export function ChatPage() {
               thoughtSteps={thoughtSteps}
               activityTraces={activityTraces}
               streamElapsedMs={streamElapsedMs}
+              streamIdleMs={streamIdleMs}
               sessionProgress={sessionProgress}
               pendingAction={pendingAction}
               showThinking={showThinking}
@@ -1526,6 +1572,7 @@ interface ActiveChatProps {
   thoughtSteps: ThoughtStep[]
   activityTraces: Record<string, ActivityTrace>
   streamElapsedMs: number
+  streamIdleMs: number
   sessionProgress: SessionStageState[]
   pendingAction: ActionRequiredEvent | null
   showThinking: boolean
@@ -1570,7 +1617,7 @@ interface ActiveChatProps {
 }
 
 function ActiveChat({
-  messages, messagesLoading, messagesError, sessionProgressAnchor, thoughtSteps, activityTraces, streamElapsedMs, sessionProgress, pendingAction,
+  messages, messagesLoading, messagesError, sessionProgressAnchor, thoughtSteps, activityTraces, streamElapsedMs, streamIdleMs, sessionProgress, pendingAction,
   showThinking, streaming, input, setInput, inputRef,
   onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch,
   workspaces,
@@ -1628,7 +1675,7 @@ function ActiveChat({
     }
   }, [messages, thoughtSteps, sessionProgress, pendingAction, streaming, scrollToLatest])
 
-  let sessionProgressAfterIndex = -1
+  let sessionProgressBeforeIndex = -1
   if (sessionProgressAnchor) {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const message = messages[index]
@@ -1636,14 +1683,14 @@ function ActiveChat({
         message.id === sessionProgressAnchor.id ||
         (message.role === 'user' && message.content === sessionProgressAnchor.content)
       ) {
-        sessionProgressAfterIndex = index
+        sessionProgressBeforeIndex = index
         break
       }
     }
-    if (sessionProgressAfterIndex < 0) {
+    if (sessionProgressBeforeIndex < 0) {
       for (let index = messages.length - 1; index >= 0; index -= 1) {
         if (messages[index].role === 'user') {
-          sessionProgressAfterIndex = index
+          sessionProgressBeforeIndex = index
           break
         }
       }
@@ -1772,11 +1819,14 @@ function ActiveChat({
                   <Text size="sm" c="dimmed">Esta conversa ainda não tem mensagens.</Text>
                 </div>
               )}
-              {sessionProgress.length > 0 && sessionProgressAfterIndex < 0 && (
+              {sessionProgress.length > 0 && sessionProgressBeforeIndex < 0 && (
                 <SessionProgressCard stages={sessionProgress} />
               )}
               {messages.map((m, index) => (
                 <Fragment key={m.id}>
+                  {sessionProgress.length > 0 && index === sessionProgressBeforeIndex && (
+                    <SessionProgressCard stages={sessionProgress} />
+                  )}
                   <PaperMessage
                     key={m.id}
                     role={m.role}
@@ -1795,11 +1845,14 @@ function ActiveChat({
                           ? streamElapsedMs
                           : activityTraceFor(m)!.elapsedMs
                       }
+                      idleMs={
+                        streaming && sessionProgressAnchor?.content === m.content
+                          ? streamIdleMs
+                          : 0
+                      }
+                      interrupted={!!activityTraceFor(m)!.interrupted}
                     />
                   ) : null}
-                  {sessionProgress.length > 0 && index === sessionProgressAfterIndex && (
-                    <SessionProgressCard stages={sessionProgress} />
-                  )}
                 </Fragment>
               ))}
               {((thoughtSteps.length > 0 && !sessionProgressAnchor) || (streaming && showThinking)) && (
@@ -1809,6 +1862,7 @@ function ActiveChat({
                       steps={thoughtSteps}
                       streaming={streaming}
                       elapsedMs={streamElapsedMs}
+                      idleMs={streamIdleMs}
                     />
                   )}
                   {streaming &&
@@ -2015,16 +2069,10 @@ function ActiveChat({
 
 /** Card expansível com progresso operacional da criação da sessão. */
 function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
-  const [manualExpanded, setManualExpanded] = useState<boolean | null>(null)
   const completed = stages.every((stage) => stage.status === 'done')
-  const expanded = manualExpanded ?? !completed
-  const resuming = stages[0]?.label.includes('reativado')
-  const title = completed
-    ? resuming ? 'Sessão reiniciada' : 'Sessão inicializada'
-    : resuming ? 'Reiniciando sessão' : 'Inicializando sessão'
-
   const doneCount = stages.filter((s) => s.status === 'done').length
   const progressPct = stages.length > 0 ? (doneCount / stages.length) * 100 : 0
+  const title = completed ? 'Sistema ligado' : 'Ligando sistema'
 
   return (
     <div
@@ -2033,62 +2081,21 @@ function SessionProgressCard({ stages }: { stages: SessionStageState[] }) {
       }`}
       style={{ ['--cc-progress' as string]: `${progressPct}%` }}
     >
-      <button
-        type="button"
+      <div
         className={styles.sessionProgressHeader}
-        onClick={() => setManualExpanded((value) => !(value ?? expanded))}
-        aria-expanded={expanded}
+        aria-live={completed ? 'off' : 'polite'}
       >
+        <span
+          className={`${styles.sessionProgressBootIcon} ${
+            completed ? styles.sessionProgressBootIconDone : ''
+          }`}
+          aria-hidden="true"
+        >
+          {completed ? '✓' : ''}
+        </span>
         <span>{title}</span>
-        <span className={styles.icon}>{expanded ? 'expand_less' : 'expand_more'}</span>
-      </button>
-
-      {expanded && (
-        <div className={styles.sessionProgressList}>
-          {stages.map((stage, index) => (
-            <div
-              key={stage.key}
-              className={styles.sessionProgressItem}
-              style={{ ['--cc-step-delay' as string]: `${index * 90}ms` }}
-            >
-              <span
-                className={`${styles.sessionProgressIcon} ${
-                  stage.status === 'done' ? styles.sessionProgressIconDone : ''
-                } ${
-                  stage.status === 'active' ? styles.sessionProgressIconActive : ''
-                }`}
-                aria-label={
-                  stage.status === 'done'
-                    ? 'Verificado'
-                    : stage.status === 'active'
-                      ? 'Verificando'
-                      : 'Pendente'
-                }
-              >
-                {stage.status === 'done' ? '✓' : ''}
-              </span>
-              <div>
-                <Text
-                  size="sm"
-                  c={stage.status === 'pending' ? 'dimmed' : undefined}
-                  className={
-                    stage.status === 'done'
-                      ? styles.sessionProgressLabelDone
-                      : undefined
-                  }
-                >
-                  {stage.label}
-                </Text>
-                {stage.detail && (
-                  <Text size="xs" c="dimmed">
-                    {stage.detail}
-                  </Text>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      </div>
+      {!completed && <div className={styles.sessionProgressPulse} aria-hidden="true" />}
     </div>
   )
 }

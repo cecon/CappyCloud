@@ -229,6 +229,8 @@ class RepositoryCreate(BaseModel):
     name: str = Field(min_length=1, max_length=256)
     clone_url: str = Field(min_length=1, max_length=2048)
     default_branch: str = Field(default="main", max_length=256)
+    confluence_url: str = Field(default="", max_length=2048)
+    confluence_space: str = Field(default="", max_length=128)
     provider_id: uuid.UUID | None = None
     sandbox_id: uuid.UUID | None = None
     # Inline PAT: se preenchido, cria/atualiza um provider implícito e associa.
@@ -242,6 +244,8 @@ class RepositoryOut(BaseModel):
     name: str
     clone_url: str
     default_branch: str
+    confluence_url: str = ""
+    confluence_space: str = ""
     provider_id: uuid.UUID | None = None
     sandbox_id: uuid.UUID | None = None
     sandbox_status: str

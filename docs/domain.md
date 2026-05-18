@@ -24,9 +24,10 @@ Utilizador registado na plataforma.
 
 ---
 
-### RepoEnvironment
-Ambiente global (repositório git) partilhado por todos os utilizadores.
-Cada ambiente corresponde a **um container Docker** em execução.
+### Repository
+Repositório git cadastrado no catálogo do ambiente. Ele é compartilhado como
+fonte de contexto, mas cada conversa recebe worktrees transitórios próprios no
+sandbox.
 
 | Campo        | Tipo     | Descrição                                    |
 |--------------|----------|----------------------------------------------|
@@ -35,19 +36,22 @@ Cada ambiente corresponde a **um container Docker** em execução.
 | `name`       | str      | Nome legível exibido na UI                   |
 | `repo_url`   | str      | URL do repositório git (https)               |
 | `branch`     | str      | Branch principal — padrão `"main"`           |
+| `confluence_url` | str | URL base opcional do Confluence associado ao repo |
 | `created_at` | datetime | UTC, gerado automaticamente                  |
 
 **Regras:**
 - `slug` é único e imutável após criação
 - Slug válido: `^[a-z0-9][a-z0-9\-]{1,62}[a-z0-9]$`
-- O container do ambiente tem nome `cappy_env_<slug>`
-- O repositório é clonado para `/repos/<slug>/` dentro do container
+- O clone persistente fica em `/repos/<slug>/` dentro do sandbox
+- Worktrees de conversa ficam em `/repos/sessions/<session_id>/<repo-alias>/`
+- Se `confluence_url` estiver vazio, o agente não consulta Confluence para esse
+  repositório
 
 ---
 
 ### Conversation
-Thread de chat pertencente a um utilizador, opcionalmente ligada a um
-`RepoEnvironment`.
+Thread de chat pertencente a um utilizador, opcionalmente ligada a um ou mais
+repositórios do catálogo.
 
 | Campo             | Tipo         | Descrição                                           |
 |-------------------|--------------|-----------------------------------------------------|
@@ -56,14 +60,16 @@ Thread de chat pertencente a um utilizador, opcionalmente ligada a um
 | `title`           | str          | Título exibido na UI (padrão: "Nova conversa")      |
 | `created_at`      | datetime     | UTC                                                 |
 | `updated_at`      | datetime     | UTC — atualizado a cada nova mensagem               |
-| `environment_id`  | UUID ou None | FK → RepoEnvironment                                |
-| `env_slug`        | str ou None  | Slug do ambiente (denormalizado para o pipeline)    |
+| `sandbox_id`      | UUID ou None | Sandbox alocado para execução                       |
+| `repository_ids`  | list[UUID]   | Repositórios selecionados para a conversa           |
 
 **Regras:**
 - Uma Conversation pertence a exatamente um User
-- Se ligada a um RepoEnvironment, o agente recebe um git worktree exclusivo
-  dentro do container do ambiente: `/repos/<slug>/sessions/<chat_id>/`
-- Sem ambiente associado, o agente opera no diretório raiz do repositório
+- Se houver repositórios selecionados, o agente recebe um `session_root`
+  exclusivo em `/repos/sessions/<session_id>/`
+- Cada repositório selecionado ganha um worktree próprio dentro desse
+  `session_root`
+- Sem repositório associado, o agente opera no workspace mínimo do sandbox
 
 ---
 
@@ -97,7 +103,7 @@ Utilizador envia texto
   Persiste Message(role="user")
         ↓
   AgentPort.pipe() → Pipeline
-        ↓  garante container ativo e worktree criado
+        ↓  garante sandbox acessível e worktrees criados
   EnvironmentManager
         ↓  stream gRPC bidirecional persistente
   GrpcSession → openclaude (gRPC :50051)
@@ -120,12 +126,17 @@ Quando o agente precisa de confirmação humana:
 > **Nota atual:** o pipeline auto-aprova com `"yes"`. Para desativar,
 > remover o bloco `elif event_type == "action"` em `cappycloud_pipeline.py`.
 
-### Sessões e containers
+### Sessões e sandboxes
 
-- Um container por `env_slug` (global, partilhado por todos os utilizadores)
-- Um git worktree por `(user_id, chat_id)` dentro do container
-- Container inativo por `ENV_IDLE_TIMEOUT` segundos (padrão: 3600) é destruído pelo GC
-- Sessão gRPC inativa por `SANDBOX_IDLE_TIMEOUT` segundos (padrão: 1800) é removida do cache
+- Um ou mais sandboxes podem existir; cada sandbox roda openclaude gRPC e
+  `session_server`
+- Uma conversa é associada a um sandbox e a um `session_root`
+- Cada repositório selecionado pela conversa ganha um worktree dentro do
+  `session_root`
+- Sessão gRPC inativa por `SANDBOX_IDLE_TIMEOUT` segundos (padrão: 1800) é
+  removida do cache
+
+Ver [ADR-002](decisions/adr-002-sandbox-runtime-and-worktree-sessions.md).
 
 ---
 

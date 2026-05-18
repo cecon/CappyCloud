@@ -40,7 +40,7 @@
 
 .shell {
   display: flex;
-  height: 100%;
+  height: calc(100vh - 64px);
   min-height: 0;
   overflow: hidden;
   background: transparent;
@@ -51,6 +51,8 @@
 .body {
   display: flex;
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -545,6 +547,8 @@
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
   background:
     linear-gradient(180deg, rgba(19, 19, 21, 0.20), rgba(14, 14, 15, 0.72)),
@@ -997,6 +1001,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1032,13 +1037,17 @@
 }
 
 .messageArea {
-  flex: 1;
+  flex: 1 1 auto;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
 
 .messageArea :global(.mantine-ScrollArea-viewport) {
+  height: 100%;
+  max-height: 100%;
   overscroll-behavior: contain;
+  overflow-y: auto !important;
   width: 100%;
 }
 
@@ -1686,11 +1695,11 @@
 
 .sessionProgressCard {
   align-self: flex-start;
-  max-width: 92%;
+  width: min(320px, 92%);
   border: 1px solid var(--cc-outline-variant);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--cc-surface-container);
-  padding: 0.55rem 0.7rem;
+  padding: 0.7rem 0.8rem;
   animation: fadeInUp 0.24s ease both;
   position: relative;
   overflow: hidden;
@@ -1722,14 +1731,44 @@
   width: 100%;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.65rem;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--cc-on-surface);
-  cursor: pointer;
   font: 600 0.85rem 'Inter', sans-serif;
+}
+
+.sessionProgressBootIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 1.5px solid rgba(59, 130, 246, 0.35);
+  border-top-color: var(--cc-primary);
+  border-radius: 999px;
+  color: #07130a;
+  font: 800 0.68rem/1 'Inter', sans-serif;
+  flex-shrink: 0;
+  animation: spin 0.8s linear infinite;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.10);
+}
+
+.sessionProgressBootIconDone {
+  border-color: var(--mantine-color-green-5);
+  background: var(--mantine-color-green-5);
+  animation: sessionIconPop 0.42s cubic-bezier(0.22, 1.4, 0.36, 1) both;
+  box-shadow: none;
+}
+
+.sessionProgressPulse {
+  height: 1px;
+  margin-top: 0.65rem;
+  background: linear-gradient(90deg, transparent, rgba(96, 165, 250, 0.9), transparent);
+  background-size: 220% 100%;
+  animation: sessionProgressShimmer 1.4s linear infinite;
+  opacity: 0.75;
 }
 
 .sessionProgressList {
@@ -1870,6 +1909,12 @@
   }
   100% {
     background-position: -200% 0;
+  }
+}
+
+@keyframes perimeterHighline {
+  to {
+    transform: rotate(360deg);
   }
 }
 
@@ -2270,29 +2315,60 @@
 .thinkingStream::before {
   content: '';
   position: absolute;
-  inset: 0 0 auto 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(96, 165, 250, 0.55),
-    transparent
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(96, 165, 250, 0.38), rgba(62, 207, 142, 0.24));
+  opacity: 0.5;
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.thinkingStreamActive::before {
+  inset: -42%;
+  padding: 0;
+  border-radius: 0;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 250deg,
+    rgba(96, 165, 250, 0.12) 278deg,
+    rgba(96, 165, 250, 0.92) 304deg,
+    rgba(62, 207, 142, 0.76) 326deg,
+    transparent 350deg,
+    transparent 360deg
   );
-  background-size: 200% 100%;
-  animation: sessionProgressShimmer 2.4s ease-in-out infinite;
-  opacity: 0.7;
+  animation: perimeterHighline 2.1s linear infinite;
+  opacity: 0.9;
+  -webkit-mask: none;
+  mask: none;
+}
+
+.thinkingStreamActive::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 9px;
+  background: linear-gradient(
+    180deg,
+    var(--cc-surface-container) 0%,
+    var(--cc-surface) 100%
+  );
+  pointer-events: none;
+  z-index: 0;
 }
 
 .thinkingStreamError::before {
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(239, 68, 68, 0.5),
-    transparent
-  );
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.42), rgba(245, 166, 35, 0.2));
 }
 
 .thinkingStreamHeader {
+  position: relative;
+  z-index: 1;
   width: 100%;
   display: flex;
   align-items: center;
@@ -2409,9 +2485,11 @@
 }
 
 .thinkingStreamBody {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.55rem;
   padding: 0.5rem 0.85rem 0.85rem;
   border-top: 1px solid rgba(255, 255, 255, 0.04);
   max-height: 460px;
@@ -2453,19 +2531,65 @@
 /* Tool call compacta. */
 
 .thinkingStreamToolStep {
+  position: relative;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.022);
+}
+
+.thinkingStreamToolStep::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.018);
+}
+
+.thinkingStreamToolStepRunning::before {
+  inset: -48%;
+  border-radius: 0;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 248deg,
+    rgba(96, 165, 250, 0.1) 276deg,
+    rgba(96, 165, 250, 0.88) 304deg,
+    rgba(62, 207, 142, 0.68) 326deg,
+    transparent 350deg,
+    transparent 360deg
+  );
+  animation: perimeterHighline 1.8s linear infinite;
+  box-shadow: none;
+}
+
+.thinkingStreamToolStepRunning::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 7px;
+  background: rgba(20, 20, 23, 0.96);
+  pointer-events: none;
+}
+
+.thinkingStreamToolStepError {
+  border-color: rgba(239, 68, 68, 0.34);
 }
 
 .thinkingStreamToolHeader {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 0.45rem;
   width: 100%;
   padding: 0.35rem 0.55rem;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 6px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   color: var(--cc-on-surface);
   font: inherit;
   font-size: 0.75rem;
@@ -2479,12 +2603,10 @@
 }
 
 .thinkingStreamToolRunning {
-  border-color: rgba(96, 165, 250, 0.4);
   background: rgba(96, 165, 250, 0.06);
 }
 
 .thinkingStreamToolError {
-  border-color: rgba(239, 68, 68, 0.45);
   background: rgba(239, 68, 68, 0.06);
 }
 
@@ -2537,6 +2659,8 @@
 }
 
 .thinkingStreamToolDetail {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
@@ -2571,12 +2695,72 @@
   color: var(--mantine-color-red-3, #fca5a5);
 }
 
+.thinkingStreamCoordinator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.2rem 0.1rem 0;
+  color: var(--cc-on-surface-variant);
+  font: 600 0.72rem/1.4 'Inter', sans-serif;
+}
+
+.thinkingStreamCoordinatorLine {
+  width: 1.35rem;
+  height: 1px;
+  flex-shrink: 0;
+  background: linear-gradient(90deg, transparent, rgba(96, 165, 250, 0.95), transparent);
+  background-size: 220% 100%;
+  animation: sessionProgressShimmer 1.25s linear infinite;
+}
+
+.thinkingStreamCoordinatorText {
+  position: relative;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.thinkingStreamCoordinatorText::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(96, 165, 250, 0.26), transparent);
+  transform: translateX(-115%);
+  animation: coordinatorTextSweep 1.45s ease-in-out infinite;
+}
+
+.thinkingStreamCoordinatorIdle {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid rgba(96, 165, 250, 0.14);
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.055);
+  color: rgba(232, 232, 237, 0.56);
+  font: 600 0.66rem/1.35 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes coordinatorTextSweep {
+  to {
+    transform: translateX(115%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .thinkingStream,
   .thinkingStream::before,
+  .thinkingStreamActive::before,
   .thinkingStreamSpinner,
   .thinkingStreamStep,
-  .thinkingStreamToolRunning .thinkingStreamToolMark {
+  .thinkingStreamToolStepRunning::before,
+  .thinkingStreamToolRunning .thinkingStreamToolMark,
+  .thinkingStreamCoordinatorLine,
+  .thinkingStreamCoordinatorText::after,
+  .thinkingStreamCoordinatorIdle,
+  .sessionProgressBootIcon,
+  .sessionProgressPulse {
     animation: none !important;
   }
 

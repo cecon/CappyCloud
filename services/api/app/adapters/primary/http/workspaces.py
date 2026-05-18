@@ -53,6 +53,8 @@ class WorkspaceOut(BaseModel):
     slug: str
     name: str
     url: str
+    confluence_url: str = ""
+    confluence_space: str = ""
     sandbox_status: str
 
 
@@ -141,6 +143,8 @@ async def list_workspaces(
             slug=r.slug,
             name=r.name,
             url=r.clone_url,
+            confluence_url=r.confluence_url,
+            confluence_space=r.confluence_space,
             sandbox_status=r.sandbox_status,
         )
         for r in rows.scalars()

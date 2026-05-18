@@ -10,6 +10,7 @@ import asyncpg
 
 from ._pipeline_helpers import build_prompt_with_worktree_context
 from ._environment_manager import EnvironmentManager
+from ._evidence_prefetch import inject_evidence_prefetch
 from ._grpc_session import GrpcSession
 from ._orphan_recovery import reconnect_orphaned_tasks
 from ._session_store import SessionStore
@@ -236,6 +237,7 @@ class TaskDispatcher:
             working_directory = repos[0]["worktree_path"]
         log.debug("[Dispatcher] working_directory=%r for task %s", working_directory, task_id[:8])
 
+        user_prompt = prompt
         sandbox_session_url = f"http://{sandbox.grpc_host}:8080"
         prompt = await build_prompt_with_worktree_context(
             prompt, sandbox_session_url, repos, session_root or sandbox.session_root
@@ -256,6 +258,14 @@ class TaskDispatcher:
             if new_prompt is None:
                 return
             prompt = new_prompt
+
+        prompt = await inject_evidence_prefetch(
+            prompt,
+            user_message=user_prompt,
+            sandbox_session_url=sandbox_session_url,
+            repos=repos or [],
+            session_root=session_root or sandbox.session_root,
+        )
 
         session = GrpcSession(
             container_ip=sandbox.grpc_host,
