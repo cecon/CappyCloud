@@ -20,7 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.infrastructure.orm_models import Base, UUIDType
+from app.infrastructure.orm_base import Base, UUIDType
 
 # tags: PG_ARRAY(String) em PostgreSQL, JSON em SQLite (testes).
 _TagsType = PG_ARRAY(String).with_variant(JSON(), "sqlite")

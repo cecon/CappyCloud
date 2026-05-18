@@ -11,7 +11,10 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
-from app.domain.entities import User
+from app.adapters.secondary.persistence.sqlalchemy_user_access_repo import (
+    SQLAlchemyUserSandboxAccessRepository,
+)
+from app.domain.entities import User, UserRole
 from app.infrastructure.orm_models import Sandbox
 from app.schemas import SandboxOut, SandboxRegister
 
@@ -20,11 +23,23 @@ router = APIRouter(prefix="/sandboxes", tags=["sandboxes"])
 
 @router.get("", response_model=list[SandboxOut])
 async def list_sandboxes(
-    _current: Annotated[User, Depends(get_authenticated_user)],
+    current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> list[SandboxOut]:
-    """Lista todas as instâncias sandbox registadas."""
-    rows = await session.execute(select(Sandbox).order_by(Sandbox.created_at))
+    """Lista sandboxes visíveis ao utilizador (ADR-005 §5).
+
+    - ADMIN vê todas.
+    - USER vê apenas sandboxes com ``UserSandboxAccess``.
+    """
+    stmt = select(Sandbox).order_by(Sandbox.created_at)
+    if current.role is not UserRole.ADMIN:
+        allowed = await SQLAlchemyUserSandboxAccessRepository(session).list_resources_for_user(
+            current.id
+        )
+        if not allowed:
+            return []
+        stmt = stmt.where(Sandbox.id.in_(allowed))
+    rows = await session.execute(stmt)
     return [SandboxOut.model_validate(r) for r in rows.scalars()]
 
 

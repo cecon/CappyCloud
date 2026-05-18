@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated
 
@@ -11,8 +12,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
-from app.domain.entities import User
+from app.adapters.primary.http.deps import (
+    get_authenticated_user,
+    get_db_session,
+    require_role,
+)
+from app.adapters.secondary.persistence.sqlalchemy_user_access_repo import (
+    SQLAlchemyUserAiModelAccessRepository,
+)
+from app.domain.entities import ModelTier, User, UserRole
 from app.infrastructure.encryption import get_encryptor
 from app.infrastructure.openrouter_models import fetch_openrouter_models, is_free_text_entry
 from app.infrastructure.orm_models import AiModel, AiProvider
@@ -39,6 +47,20 @@ def _free_text_model_filter():
     )
 
 
+def _derive_tier(input_cost: float | None, output_cost: float | None) -> str:
+    """Deriva ``tier`` do par de preços (ADR-006 §6).
+
+    - Ambos zero → ``free``.
+    - Qualquer > 0 → ``paid``.
+    - Sem dados → ``unknown`` (fallback defensivo).
+    """
+    if input_cost is None and output_cost is None:
+        return ModelTier.UNKNOWN.value
+    if (input_cost or 0.0) == 0.0 and (output_cost or 0.0) == 0.0:
+        return ModelTier.FREE.value
+    return ModelTier.PAID.value
+
+
 def _text_default_flags(model_id: str, current: dict | None = None) -> dict:
     flags = dict(current or {})
     if model_id == _DEFAULT_FREE_TEXT_MODEL_ID:
@@ -60,10 +82,14 @@ async def list_ai_providers(
     return [AiProviderOut.model_validate(r) for r in rows.scalars()]
 
 
-@router.post("/ai-providers", response_model=AiProviderOut, status_code=201)
+@router.post(
+    "/ai-providers",
+    response_model=AiProviderOut,
+    status_code=201,
+    dependencies=[Depends(require_role(UserRole.ADMIN))],
+)
 async def create_ai_provider(
     body: AiProviderCreate,
-    _current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AiProviderOut:
     enc = get_encryptor()
@@ -79,11 +105,14 @@ async def create_ai_provider(
     return AiProviderOut.model_validate(provider)
 
 
-@router.patch("/ai-providers/{provider_id}/key", response_model=AiProviderOut)
+@router.patch(
+    "/ai-providers/{provider_id}/key",
+    response_model=AiProviderOut,
+    dependencies=[Depends(require_role(UserRole.ADMIN))],
+)
 async def update_ai_provider_key(
     provider_id: uuid.UUID,
     api_key: str,
-    _current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AiProviderOut:
     provider = await session.get(AiProvider, provider_id)
@@ -100,19 +129,34 @@ async def update_ai_provider_key(
 
 @router.get("/ai-models", response_model=list[AiModelOut])
 async def list_ai_models(
-    _current: Annotated[User, Depends(get_authenticated_user)],
+    current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> list[AiModelOut]:
-    rows = await session.execute(
-        select(AiModel).where(_free_text_model_filter()).order_by(AiModel.display_name)
-    )
+    """Lista modelos ativos disponíveis ao utilizador (ADR-005 §5).
+
+    - ADMIN vê todos os modelos ativos (filtra apenas por capability ``text``).
+    - USER vê apenas modelos para os quais tem ``UserAiModelAccess``.
+    """
+    stmt = select(AiModel).where(_free_text_model_filter()).order_by(AiModel.display_name)
+    if current.role is not UserRole.ADMIN:
+        allowed = await SQLAlchemyUserAiModelAccessRepository(session).list_resources_for_user(
+            current.id
+        )
+        if not allowed:
+            return []
+        stmt = stmt.where(AiModel.id.in_(allowed))
+    rows = await session.execute(stmt)
     return [AiModelOut.model_validate(r) for r in rows.scalars()]
 
 
-@router.post("/ai-models", response_model=AiModelOut, status_code=201)
+@router.post(
+    "/ai-models",
+    response_model=AiModelOut,
+    status_code=201,
+    dependencies=[Depends(require_role(UserRole.ADMIN))],
+)
 async def create_ai_model(
     body: AiModelCreate,
-    _current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AiModelOut:
     model = AiModel(
@@ -132,10 +176,13 @@ async def create_ai_model(
     return AiModelOut.model_validate(model)
 
 
-@router.delete("/ai-models/{model_id}", status_code=204)
+@router.delete(
+    "/ai-models/{model_id}",
+    status_code=204,
+    dependencies=[Depends(require_role(UserRole.ADMIN))],
+)
 async def delete_ai_model(
     model_id: uuid.UUID,
-    _current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> None:
     model = await session.get(AiModel, model_id)
@@ -145,9 +192,12 @@ async def delete_ai_model(
     await session.commit()
 
 
-@router.post("/ai-models/sync-from-openrouter", response_model=AiModelSyncResult)
+@router.post(
+    "/ai-models/sync-from-openrouter",
+    response_model=AiModelSyncResult,
+    dependencies=[Depends(require_role(UserRole.ADMIN))],
+)
 async def sync_ai_models_from_openrouter(
-    _current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AiModelSyncResult:
     """Sincroniza catálogo do OpenRouter com a tabela ``ai_models``.
@@ -199,6 +249,7 @@ async def sync_ai_models_from_openrouter(
         # Numeric() column. Esta cast é puramente para o type-checker.
         input_cost = float(Decimal(str(input_raw))) if input_raw is not None else None
         output_cost = float(Decimal(str(output_raw))) if output_raw is not None else None
+        tier = _derive_tier(input_cost, output_cost)
         if current is None:
             session.add(
                 AiModel(
@@ -211,6 +262,7 @@ async def sync_ai_models_from_openrouter(
                     context_window=entry["context_window"],
                     input_cost_per_1m_usd=input_cost,
                     output_cost_per_1m_usd=output_cost,
+                    tier=tier,
                     active=True,
                 )
             )
@@ -222,6 +274,7 @@ async def sync_ai_models_from_openrouter(
             current.input_cost_per_1m_usd = input_cost
             current.output_cost_per_1m_usd = output_cost
             current.is_default = _text_default_flags(entry["model_id"], current.is_default)
+            current.tier = tier
             current.active = True
             updated += 1
 
@@ -229,6 +282,8 @@ async def sync_ai_models_from_openrouter(
     if stale_ids:
         await session.execute(update(AiModel).where(AiModel.id.in_(stale_ids)).values(active=False))
 
+    # Bump last_synced_at no provider (ADR-006 §5).
+    provider.last_synced_at = datetime.now(UTC)
     await session.commit()
     return AiModelSyncResult(
         provider_id=provider.id,

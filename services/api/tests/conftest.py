@@ -22,6 +22,12 @@ from app.ports.repositories import (
 )
 from app.ports.services import PasswordService, TokenService
 
+from .fakes_access import (  # noqa: F401
+    InMemoryUserAiModelAccessRepository,
+    InMemoryUserRepositoryAccessRepository,
+    InMemoryUserSandboxAccessRepository,
+)
+
 # Re-export dos fakes de anexos (definidos em ``fakes_attachments.py``) para
 # que testes existentes continuem a importar daqui.
 from .fakes_attachments import (  # noqa: F401

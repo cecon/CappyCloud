@@ -16,6 +16,12 @@ from app.adapters.primary.http.admin_sandboxes import (
     get_runtime_gateways,
     get_sandbox_repo,
 )
+from app.adapters.primary.http.admin_user_access import (
+    get_ai_model_access_repo,
+    get_models_by_tier_lookup,
+    get_repository_access_repo,
+    get_sandbox_access_repo,
+)
 from app.adapters.primary.http.deps import (
     get_agent,
     get_conv_repo,
@@ -25,7 +31,8 @@ from app.adapters.primary.http.deps import (
     get_token_service,
     get_user_repo,
 )
-from app.domain.entities import ContainerStatus, SandboxRuntime, User, UserRole
+from app.application.use_cases.admin_user_access import ModelsByTierLookup
+from app.domain.entities import ContainerStatus, ModelTier, SandboxRuntime, User, UserRole
 from app.main import app
 from app.ports.sandbox_bootstrap import SandboxBootstrapGateway
 from app.ports.sandbox_runtime import RuntimeProbe, SandboxRuntimeGateway
@@ -42,8 +49,21 @@ from tests.conftest import (
     InMemorySandboxAgentRepository,
     InMemorySandboxRepository,
     InMemorySandboxSkillRepository,
+    InMemoryUserAiModelAccessRepository,
     InMemoryUserRepository,
+    InMemoryUserRepositoryAccessRepository,
+    InMemoryUserSandboxAccessRepository,
 )
+
+
+class _StubModelsByTierLookup(ModelsByTierLookup):
+    """Lookup sintético para testes — mantém um mapping tier → ids em memória."""
+
+    def __init__(self, mapping: dict[ModelTier, list[uuid.UUID]] | None = None) -> None:
+        self._mapping: dict[ModelTier, list[uuid.UUID]] = mapping or {}
+
+    async def list_active_model_ids_by_tier(self, tier: ModelTier) -> list[uuid.UUID]:
+        return list(self._mapping.get(tier, []))
 
 
 class _StubRuntimeGateway(SandboxRuntimeGateway):
@@ -106,6 +126,26 @@ def sandbox_bootstrap() -> FakeSandboxBootstrap:
 
 
 @pytest.fixture
+def sandbox_access_repo() -> InMemoryUserSandboxAccessRepository:
+    return InMemoryUserSandboxAccessRepository()
+
+
+@pytest.fixture
+def repository_access_repo() -> InMemoryUserRepositoryAccessRepository:
+    return InMemoryUserRepositoryAccessRepository()
+
+
+@pytest.fixture
+def ai_model_access_repo() -> InMemoryUserAiModelAccessRepository:
+    return InMemoryUserAiModelAccessRepository()
+
+
+@pytest.fixture
+def models_by_tier_lookup() -> _StubModelsByTierLookup:
+    return _StubModelsByTierLookup()
+
+
+@pytest.fixture
 async def client(
     user_repo: InMemoryUserRepository,
     sandbox_repo: InMemorySandboxRepository,
@@ -113,6 +153,10 @@ async def client(
     skill_repo: InMemorySandboxSkillRepository,
     agent_repo: InMemorySandboxAgentRepository,
     sandbox_bootstrap: FakeSandboxBootstrap,
+    sandbox_access_repo: InMemoryUserSandboxAccessRepository,
+    repository_access_repo: InMemoryUserRepositoryAccessRepository,
+    ai_model_access_repo: InMemoryUserAiModelAccessRepository,
+    models_by_tier_lookup: _StubModelsByTierLookup,
 ) -> AsyncClient:
     """HTTP client with all external dependencies replaced by in-memory fakes."""
     conv_repo = InMemoryConversationRepository()
@@ -136,6 +180,10 @@ async def client(
     app.dependency_overrides[get_mcp_repo] = lambda: mcp_repo
     app.dependency_overrides[get_sandbox_skill_repo] = lambda: skill_repo
     app.dependency_overrides[get_sandbox_agent_repo] = lambda: agent_repo
+    app.dependency_overrides[get_sandbox_access_repo] = lambda: sandbox_access_repo
+    app.dependency_overrides[get_repository_access_repo] = lambda: repository_access_repo
+    app.dependency_overrides[get_ai_model_access_repo] = lambda: ai_model_access_repo
+    app.dependency_overrides[get_models_by_tier_lookup] = lambda: models_by_tier_lookup
 
     transport = ASGITransport(app=app)  # type: ignore[arg-type]
     async with AsyncClient(transport=transport, base_url="http://test") as c:

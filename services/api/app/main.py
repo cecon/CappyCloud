@@ -11,9 +11,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.adapters.primary.http import admin_ai_catalog as admin_ai_catalog_router
 from app.adapters.primary.http import admin_sandbox_globals as admin_sandbox_globals_router
 from app.adapters.primary.http import admin_sandbox_mcps as admin_sandbox_mcps_router
 from app.adapters.primary.http import admin_sandboxes as admin_sandboxes_router
+from app.adapters.primary.http import admin_user_access as admin_user_access_router
 from app.adapters.primary.http import admin_users as admin_users_router
 from app.adapters.primary.http import ai_models as ai_models_router
 from app.adapters.primary.http import attachments as attachments_router
@@ -133,6 +135,8 @@ app.add_middleware(
 app.include_router(auth_router.router, prefix="/api")
 app.include_router(admin_users_router.router, prefix="/api")
 app.include_router(admin_sandboxes_router.router, prefix="/api")
+app.include_router(admin_user_access_router.router, prefix="/api")
+app.include_router(admin_ai_catalog_router.router, prefix="/api")
 app.include_router(attachments_router.router)
 app.include_router(conv_router.router, prefix="/api")
 app.include_router(conv_diff_router.router, prefix="/api")

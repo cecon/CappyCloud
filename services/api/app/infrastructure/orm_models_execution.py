@@ -20,7 +20,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.infrastructure.orm_models import Base, JSONBType, UUIDType
+from app.infrastructure.orm_base import Base, JSONBType, UUIDType
 
 if TYPE_CHECKING:
     from app.infrastructure.orm_models import Conversation, RepoEnvironment, User

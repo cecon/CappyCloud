@@ -35,6 +35,20 @@ class SandboxRuntime(StrEnum):
     SWARM = "swarm"
 
 
+class ModelTier(StrEnum):
+    """Categoria de preço do modelo LLM (ADR-006 §6).
+
+    Derivada pelo sync a partir do preço do provider:
+    - ``FREE``: input_cost == 0 e output_cost == 0.
+    - ``PAID``: qualquer custo > 0.
+    - ``UNKNOWN``: sem dados de preço (fallback defensivo).
+    """
+
+    FREE = "free"
+    PAID = "paid"
+    UNKNOWN = "unknown"
+
+
 class ContainerStatus(StrEnum):
     """Estado do container no orquestrador (ADR-004 §3).
 
@@ -116,6 +130,7 @@ class AiProvider:
     base_url: str = "https://openrouter.ai/api/v1"
     api_key_encrypted: str = ""
     active: bool = True
+    last_synced_at: datetime | None = None
     created_at: datetime = field(default_factory=_utcnow)
     updated_at: datetime = field(default_factory=_utcnow)
 
@@ -127,6 +142,8 @@ class AiModel:
     capabilities: ['text', 'vision', 'embedding', 'video']
     is_default:   {'text': True, 'vision': False, ...}
     Preços em USD por **1 milhão** de tokens (formato OpenRouter normalizado).
+    ``tier`` é derivado pelo sync: input+output == 0 → free; > 0 → paid
+    (ADR-006 §6).
     """
 
     id: uuid.UUID
@@ -138,7 +155,38 @@ class AiModel:
     context_window: int = 200000
     input_cost_per_1m_usd: float | None = None
     output_cost_per_1m_usd: float | None = None
+    tier: ModelTier = field(default_factory=lambda: ModelTier.UNKNOWN)
     active: bool = True
+    created_at: datetime = field(default_factory=_utcnow)
+
+
+@dataclass
+class UserSandboxAccess:
+    """Permissão binária user → sandbox (ADR-005 §2)."""
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    sandbox_id: uuid.UUID
+    created_at: datetime = field(default_factory=_utcnow)
+
+
+@dataclass
+class UserRepositoryAccess:
+    """Permissão binária user → repository (ADR-005 §2)."""
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    repository_id: uuid.UUID
+    created_at: datetime = field(default_factory=_utcnow)
+
+
+@dataclass
+class UserAiModelAccess:
+    """Permissão binária user → ai_model (ADR-005 §2, ADR-006 §3)."""
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    ai_model_id: uuid.UUID
     created_at: datetime = field(default_factory=_utcnow)
 
 

@@ -8,7 +8,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.domain.entities import ContainerStatus, SandboxRuntime, UserRole
+from app.domain.entities import ContainerStatus, ModelTier, SandboxRuntime, UserRole
 from app.domain.value_objects import validate_email, validate_password
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{1,62}[a-z0-9]$")
@@ -229,6 +229,7 @@ class AiProviderOut(BaseModel):
     name: str
     base_url: str
     active: bool
+    last_synced_at: datetime | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -255,6 +256,7 @@ class AiModelOut(BaseModel):
     context_window: int
     input_cost_per_1m_usd: float | None = None
     output_cost_per_1m_usd: float | None = None
+    tier: ModelTier = ModelTier.UNKNOWN
     active: bool
     created_at: datetime
 
