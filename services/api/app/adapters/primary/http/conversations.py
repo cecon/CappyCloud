@@ -7,13 +7,20 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.primary.http.deps import (
     get_authenticated_user,
     get_create_conv_uc,
+    get_db_session,
     get_list_convs_uc,
     get_list_msgs_uc,
     get_stream_msg_uc,
+)
+from app.adapters.secondary.persistence.sqlalchemy_user_access_repo import (
+    SQLAlchemyUserRepositoryAccessRepository,
+    SQLAlchemyUserSandboxAccessRepository,
 )
 from app.application.use_cases.conversations import (
     CreateConversation,
@@ -21,7 +28,8 @@ from app.application.use_cases.conversations import (
     ListMessages,
     StreamMessage,
 )
-from app.domain.entities import User
+from app.domain.entities import User, UserRole
+from app.infrastructure.orm_models import Repository
 from app.schemas import (
     ConversationCreate,
     ConversationOut,
@@ -58,10 +66,49 @@ async def list_conversations(
 async def create_conversation(
     current: Annotated[User, Depends(get_authenticated_user)],
     uc: Annotated[CreateConversation, Depends(get_create_conv_uc)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
     body: ConversationCreate | None = None,
 ) -> ConversationOut:
-    """Cria conversa nova, opcionalmente ligada a um ambiente."""
+    """Cria conversa nova, opcionalmente ligada a um ambiente.
+
+    USERs precisam ter ``UserSandboxAccess`` para o ``sandbox_id`` e
+    ``UserRepositoryAccess`` para cada repositório listado em ``repos``
+    (ADR-005 §5). ADMIN bypassa as duas validações.
+    """
     b = body or ConversationCreate()
+
+    if current.role is not UserRole.ADMIN:
+        if b.sandbox_id is not None:
+            ok = await SQLAlchemyUserSandboxAccessRepository(session).has_access(
+                current.id, b.sandbox_id
+            )
+            if not ok:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Sem acesso à sandbox solicitada.",
+                )
+        if b.repos:
+            slugs = [r.slug for r in b.repos]
+            repo_rows = (
+                (await session.execute(select(Repository).where(Repository.slug.in_(slugs))))
+                .scalars()
+                .all()
+            )
+            repo_ids = [r.id for r in repo_rows]
+            if repo_ids:
+                allowed = set(
+                    await SQLAlchemyUserRepositoryAccessRepository(session).list_resources_for_user(
+                        current.id
+                    )
+                )
+                missing = [r for r in repo_rows if r.id not in allowed]
+                if missing:
+                    names = ", ".join(r.slug for r in missing)
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Sem acesso aos repositórios: {names}.",
+                    )
+
     repos_dicts = [r.model_dump() for r in b.repos] if b.repos else []
     conv = await uc.execute(
         current.id,

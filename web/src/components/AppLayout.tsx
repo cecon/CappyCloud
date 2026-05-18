@@ -12,8 +12,6 @@ type NavItem = {
   to: string
   icon: string
   label: string
-  /** Indicado quando o cadastro ainda não foi implementado — leva a stub. */
-  comingSoon?: boolean
 }
 
 type NavGroup = {
@@ -44,10 +42,10 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/admin/users', icon: 'group', label: 'Usuários' },
       { to: '/admin/sandboxes', icon: 'dns', label: 'Sandboxes' },
-      { to: '/admin/repositories', icon: 'folder_managed', label: 'Repositórios', comingSoon: true },
+      { to: '/admin/repositories', icon: 'folder_managed', label: 'Repositórios' },
       { to: '/skills', icon: 'menu_book', label: 'Skills (por repo)' },
-      { to: '/admin/models', icon: 'token', label: 'Modelos LLM', comingSoon: true },
-      { to: '/admin/providers', icon: 'cloud', label: 'Providers LLM', comingSoon: true },
+      { to: '/admin/models', icon: 'token', label: 'Modelos LLM' },
+      { to: '/admin/providers', icon: 'cloud', label: 'Providers LLM' },
     ],
   },
   {
@@ -215,11 +213,6 @@ export function AppLayout({ children }: AppLayoutProps) {
                         >
                           <span className={styles.icon}>{item.icon}</span>
                           <span className={styles.navLabel}>{item.label}</span>
-                          {item.comingSoon && (
-                            <span className={styles.navBadge} aria-label="Em breve">
-                              em breve
-                            </span>
-                          )}
                         </Link>
                       )
                     })}

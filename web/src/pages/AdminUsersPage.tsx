@@ -27,6 +27,7 @@ import {
   updateAdminUserRole,
   type UserRole,
 } from '../api'
+import { UserAccessDrawer } from '../components/UserAccessDrawer'
 import { isPlausibleEmail } from '../validation'
 
 type CreateFormState = {
@@ -49,6 +50,7 @@ export function AdminUsersPage() {
 
   const [pendingRoleChange, setPendingRoleChange] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [accessTarget, setAccessTarget] = useState<AdminUser | null>(null)
 
   const reload = useCallback(async () => {
     const token = getToken()
@@ -157,7 +159,7 @@ export function AdminUsersPage() {
                 <Table.Tr>
                   <Table.Th>Email</Table.Th>
                   <Table.Th style={{ width: 110 }}>Papel</Table.Th>
-                  <Table.Th style={{ width: 160 }}>Ações</Table.Th>
+                  <Table.Th style={{ width: 280 }}>Ações</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -185,37 +187,52 @@ export function AdminUsersPage() {
                         </Badge>
                       </Table.Td>
                       <Table.Td>
-                        <Menu shadow="md" position="bottom-end">
-                          <Menu.Target>
-                            <Button
-                              size="xs"
-                              variant="default"
-                              loading={isPending}
-                              disabled={isPending}
-                            >
-                              Alterar papel
-                            </Button>
-                          </Menu.Target>
-                          <Menu.Dropdown>
-                            <Menu.Item
-                              disabled={u.role === 'admin'}
-                              onClick={() => void changeRole(u, 'admin')}
-                            >
-                              Promover a ADMIN
-                            </Menu.Item>
-                            <Menu.Item
-                              disabled={u.role === 'user' || isSelf}
-                              onClick={() => void changeRole(u, 'user')}
-                            >
-                              Rebaixar para USER
-                              {isSelf && (
-                                <Text size="xs" c="dimmed">
-                                  bloqueado: você mesmo
-                                </Text>
-                              )}
-                            </Menu.Item>
-                          </Menu.Dropdown>
-                        </Menu>
+                        <Group gap="xs">
+                          <Button
+                            size="xs"
+                            variant="light"
+                            onClick={() => setAccessTarget(u)}
+                            disabled={u.role === 'admin'}
+                            title={
+                              u.role === 'admin'
+                                ? 'ADMIN tem acesso total — não é necessário gerir.'
+                                : 'Gerir sandboxes, repositórios e modelos liberados'
+                            }
+                          >
+                            Acessos
+                          </Button>
+                          <Menu shadow="md" position="bottom-end">
+                            <Menu.Target>
+                              <Button
+                                size="xs"
+                                variant="default"
+                                loading={isPending}
+                                disabled={isPending}
+                              >
+                                Alterar papel
+                              </Button>
+                            </Menu.Target>
+                            <Menu.Dropdown>
+                              <Menu.Item
+                                disabled={u.role === 'admin'}
+                                onClick={() => void changeRole(u, 'admin')}
+                              >
+                                Promover a ADMIN
+                              </Menu.Item>
+                              <Menu.Item
+                                disabled={u.role === 'user' || isSelf}
+                                onClick={() => void changeRole(u, 'user')}
+                              >
+                                Rebaixar para USER
+                                {isSelf && (
+                                  <Text size="xs" c="dimmed">
+                                    bloqueado: você mesmo
+                                  </Text>
+                                )}
+                              </Menu.Item>
+                            </Menu.Dropdown>
+                          </Menu>
+                        </Group>
                       </Table.Td>
                     </Table.Tr>
                   )
@@ -279,6 +296,8 @@ export function AdminUsersPage() {
           </Group>
         </Stack>
       </Modal>
+
+      <UserAccessDrawer user={accessTarget} onClose={() => setAccessTarget(null)} />
     </Container>
   )
 }

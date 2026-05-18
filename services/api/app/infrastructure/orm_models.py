@@ -236,6 +236,11 @@ class MessageAttachment(Base):
 
 
 # Import sub-modules last — registers tables with Base.metadata for Alembic.
+from app.infrastructure.orm_models_access import (  # noqa: F401, E402
+    UserAiModelAccess,
+    UserRepositoryAccess,
+    UserSandboxAccess,
+)
 from app.infrastructure.orm_models_agent import (  # noqa: F401, E402
     Skill,
 )

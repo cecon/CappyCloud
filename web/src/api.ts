@@ -1131,6 +1131,8 @@ export async function stopAdminSandbox(token: string, sandboxId: string): Promis
 
 // ── AI Models ────────────────────────────────────────────────────────────────
 
+export type ModelTier = 'free' | 'paid' | 'unknown'
+
 export interface AiModel {
   id: string
   provider_id: string
@@ -1143,6 +1145,7 @@ export interface AiModel {
   input_cost_per_1m_usd: number | null
   /** Preço do completion em USD por 1 milhão de tokens (null = desconhecido). */
   output_cost_per_1m_usd: number | null
+  tier: ModelTier
   active: boolean
   created_at: string
 }
@@ -1705,4 +1708,179 @@ export async function deleteSandboxAgent(
     const err = await res.json().catch(() => ({}))
     throw new Error(formatApiErrorPayload(err) || 'Falha ao eliminar agent')
   }
+}
+
+// ── User Access (ADR-005 §2) ────────────────────────────────────────────────
+
+export type AccessResource = 'sandboxes' | 'repositories' | 'ai-models'
+
+async function fetchUserAccess(
+  token: string,
+  userId: string,
+  resource: AccessResource,
+): Promise<string[]> {
+  const res = await apiFetch(`/api/admin/users/${userId}/access/${resource}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return []
+  return res.json()
+}
+
+async function grantUserAccess(
+  token: string,
+  userId: string,
+  resource: AccessResource,
+  resourceId: string,
+): Promise<void> {
+  const res = await apiFetch(`/api/admin/users/${userId}/access/${resource}/${resourceId}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao conceder acesso')
+  }
+}
+
+async function revokeUserAccess(
+  token: string,
+  userId: string,
+  resource: AccessResource,
+  resourceId: string,
+): Promise<void> {
+  const res = await apiFetch(`/api/admin/users/${userId}/access/${resource}/${resourceId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao revogar acesso')
+  }
+}
+
+export const fetchUserSandboxAccess = (token: string, userId: string) =>
+  fetchUserAccess(token, userId, 'sandboxes')
+export const fetchUserRepositoryAccess = (token: string, userId: string) =>
+  fetchUserAccess(token, userId, 'repositories')
+export const fetchUserAiModelAccess = (token: string, userId: string) =>
+  fetchUserAccess(token, userId, 'ai-models')
+
+export const grantUserSandboxAccess = (token: string, userId: string, sandboxId: string) =>
+  grantUserAccess(token, userId, 'sandboxes', sandboxId)
+export const grantUserRepositoryAccess = (token: string, userId: string, repoId: string) =>
+  grantUserAccess(token, userId, 'repositories', repoId)
+export const grantUserAiModelAccess = (token: string, userId: string, modelId: string) =>
+  grantUserAccess(token, userId, 'ai-models', modelId)
+
+export const revokeUserSandboxAccess = (token: string, userId: string, sandboxId: string) =>
+  revokeUserAccess(token, userId, 'sandboxes', sandboxId)
+export const revokeUserRepositoryAccess = (token: string, userId: string, repoId: string) =>
+  revokeUserAccess(token, userId, 'repositories', repoId)
+export const revokeUserAiModelAccess = (token: string, userId: string, modelId: string) =>
+  revokeUserAccess(token, userId, 'ai-models', modelId)
+
+export interface BulkTierResult {
+  granted: number
+}
+
+export async function bulkGrantAiModelsByTier(
+  token: string,
+  userId: string,
+  tier: ModelTier,
+): Promise<BulkTierResult> {
+  const res = await apiFetch(`/api/admin/users/${userId}/access/ai-models/bulk-tier`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ tier }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao liberar modelos em lote')
+  }
+  return res.json()
+}
+
+// ── Admin LLM catalog (ADR-006) ─────────────────────────────────────────────
+
+export interface AdminAiProvider {
+  id: string
+  name: string
+  base_url: string
+  active: boolean
+  last_synced_at: string | null
+  models_count: number
+}
+
+export async function fetchAdminProviders(token: string): Promise<AdminAiProvider[]> {
+  const res = await apiFetch('/api/admin/providers', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function syncAdminProvider(
+  token: string,
+  providerId: string,
+): Promise<AiModelSyncResult> {
+  const res = await apiFetch(`/api/admin/providers/${providerId}/sync`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao sincronizar provider')
+  }
+  return res.json()
+}
+
+export interface AdminModelsFilter {
+  provider_id?: string
+  tier?: ModelTier
+  only_active?: boolean
+}
+
+export async function fetchAdminModels(
+  token: string,
+  filter: AdminModelsFilter = {},
+): Promise<AiModel[]> {
+  const params = new URLSearchParams()
+  if (filter.provider_id) params.set('provider_id', filter.provider_id)
+  if (filter.tier) params.set('tier', filter.tier)
+  if (filter.only_active) params.set('only_active', 'true')
+  const qs = params.toString()
+  const url = qs ? `/api/admin/models?${qs}` : '/api/admin/models'
+  const res = await apiFetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export interface AdminModelPatch {
+  active?: boolean
+  tier?: ModelTier
+}
+
+export async function patchAdminModel(
+  token: string,
+  modelId: string,
+  patch: AdminModelPatch,
+): Promise<AiModel> {
+  const res = await apiFetch(`/api/admin/models/${modelId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(patch),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar modelo')
+  }
+  return res.json()
 }

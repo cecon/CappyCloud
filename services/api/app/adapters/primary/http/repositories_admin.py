@@ -121,10 +121,28 @@ async def _enqueue_clone(
 
 @router.get("", response_model=list[RepositoryOut])
 async def list_repositories(
-    _current: Annotated[User, Depends(get_authenticated_user)],
+    current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> list[RepositoryOut]:
-    rows = await session.execute(select(Repository).order_by(Repository.name))
+    """Lista repositórios visíveis ao utilizador (ADR-005 §5).
+
+    - ADMIN vê todos.
+    - USER vê apenas repositórios com ``UserRepositoryAccess``.
+    """
+    from app.adapters.secondary.persistence.sqlalchemy_user_access_repo import (
+        SQLAlchemyUserRepositoryAccessRepository,
+    )
+    from app.domain.entities import UserRole
+
+    stmt = select(Repository).order_by(Repository.name)
+    if current.role is not UserRole.ADMIN:
+        allowed = await SQLAlchemyUserRepositoryAccessRepository(session).list_resources_for_user(
+            current.id
+        )
+        if not allowed:
+            return []
+        stmt = stmt.where(Repository.id.in_(allowed))
+    rows = await session.execute(stmt)
     return [RepositoryOut.model_validate(r) for r in rows.scalars()]
 
 

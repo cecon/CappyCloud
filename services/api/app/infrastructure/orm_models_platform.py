@@ -12,7 +12,7 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.infrastructure.orm_models import Base, JSONBType, UUIDType
+from app.infrastructure.orm_base import Base, JSONBType, UUIDType
 
 
 class GitProvider(Base):
@@ -52,6 +52,7 @@ class AiProvider(Base):
     )
     api_key_encrypted: Mapped[str] = mapped_column(Text, nullable=False, default="")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -84,6 +85,9 @@ class AiModel(Base):
     context_window: Mapped[int] = mapped_column(Integer, nullable=False, default=200000)
     input_cost_per_1m_usd: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True)
     output_cost_per_1m_usd: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True)
+    tier: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="unknown", default="unknown", index=True
+    )
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

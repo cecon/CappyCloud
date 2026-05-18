@@ -40,3 +40,6 @@ Thumbs.db
 # Build / caches
 *.log
 .cache/
+
+# uv-managed local lock (dev venv) — runtime usa requirements.txt
+services/api/uv.lock

@@ -12,14 +12,20 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ de
 const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })))
 const RunsPage = lazy(() => import('./pages/RunsPage').then(m => ({ default: m.RunsPage })))
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })))
-const ComingSoonPage = lazy(() =>
-  import('./pages/ComingSoonPage').then((m) => ({ default: m.ComingSoonPage })),
-)
 const AdminUsersPage = lazy(() =>
   import('./pages/AdminUsersPage').then((m) => ({ default: m.AdminUsersPage })),
 )
 const AdminSandboxesPage = lazy(() =>
   import('./pages/AdminSandboxesPage').then((m) => ({ default: m.AdminSandboxesPage })),
+)
+const AdminProvidersPage = lazy(() =>
+  import('./pages/AdminProvidersPage').then((m) => ({ default: m.AdminProvidersPage })),
+)
+const AdminModelsPage = lazy(() =>
+  import('./pages/AdminModelsPage').then((m) => ({ default: m.AdminModelsPage })),
+)
+const AdminRepositoriesPage = lazy(() =>
+  import('./pages/AdminRepositoriesPage').then((m) => ({ default: m.AdminRepositoriesPage })),
 )
 
 function PageLoader() {
@@ -118,12 +124,7 @@ export default function App() {
           path="/admin/repositories"
           element={
             <AdminPage>
-              <ComingSoonPage
-                title="Cadastro de repositórios"
-                description="Catálogo Git por sandbox: clone URL, credenciais, branch default, Confluence."
-                plannedIn="PR3"
-                adr="ADR-004"
-              />
+              <AdminRepositoriesPage />
             </AdminPage>
           }
         />
@@ -139,12 +140,7 @@ export default function App() {
           path="/admin/models"
           element={
             <AdminPage>
-              <ComingSoonPage
-                title="Modelos LLM"
-                description="Catálogo sincronizado a partir do provider; permissão por usuário em PR6."
-                plannedIn="PR7"
-                adr="ADR-006"
-              />
+              <AdminModelsPage />
             </AdminPage>
           }
         />
@@ -152,12 +148,7 @@ export default function App() {
           path="/admin/providers"
           element={
             <AdminPage>
-              <ComingSoonPage
-                title="Providers LLM"
-                description="OpenRouter, Azure AI Foundry e outros. Cada sandbox aponta para um provider."
-                plannedIn="PR7"
-                adr="ADR-006"
-              />
+              <AdminProvidersPage />
             </AdminPage>
           }
         />
