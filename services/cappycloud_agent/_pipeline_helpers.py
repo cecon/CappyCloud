@@ -18,9 +18,7 @@ log = logging.getLogger(__name__)
 def db_url() -> str:
     explicit = os.getenv("PIPELINE_DATABASE_URL", "").strip()
     raw = explicit or os.getenv("DATABASE_URL", "")
-    return raw.replace(
-        "postgresql+asyncpg://", "postgresql://", 1
-    )
+    return raw.replace("postgresql+asyncpg://", "postgresql://", 1)
 
 
 def sse(payload: dict) -> str:
@@ -63,7 +61,9 @@ async def build_prompt_with_worktree_context(
     if not repos:
         return prompt
     try:
-        top_level = await fetch_worktree_top_levels(sandbox_session_url, repos, session_root)
+        top_level = await fetch_worktree_top_levels(
+            sandbox_session_url, repos, session_root or ""
+        )
         section = render_worktree_top_level_section(top_level)
         if section:
             return inject_section_before_user_message(prompt, section)
@@ -74,17 +74,17 @@ async def build_prompt_with_worktree_context(
 
 async def push_mcp_config(
     database_url: str,
-    user_id: str,
+    sandbox_id: str,
     sandbox_session_url: str,
 ) -> None:
-    """Busca MCPs ativos do utilizador no DB e envia ao sandbox via POST /mcp/configure.
+    """Busca MCPs ativos da sandbox no DB e envia ao sandbox via POST /mcp/configure.
 
     Degrada graciosamente: qualquer erro é logado como warning sem interromper o dispatch.
     """
-    if not user_id or not sandbox_session_url or not database_url:
+    if not sandbox_id or not sandbox_session_url or not database_url:
         return
     try:
-        uid = uuid.UUID(user_id)
+        sid = uuid.UUID(sandbox_id)
     except ValueError:
         return
     try:
@@ -92,8 +92,8 @@ async def push_mcp_config(
         try:
             rows = await conn.fetch(
                 "SELECT name, command, args, env FROM mcp_servers "
-                "WHERE user_id = $1 AND enabled = true",
-                uid,
+                "WHERE sandbox_id = $1 AND enabled = true",
+                sid,
             )
         finally:
             await conn.close()
@@ -163,13 +163,13 @@ async def fetch_signoz_service_names(
 
 async def has_enabled_signoz_mcp(
     database_url: str,
-    user_id: str | None,
+    sandbox_id: str | None,
 ) -> bool:
-    """Retorna True quando o MCP SignOz está ativo para o utilizador."""
-    if not user_id:
+    """Retorna True quando o MCP SignOz está ativo para a sandbox."""
+    if not sandbox_id:
         return False
     try:
-        uid = uuid.UUID(user_id)
+        sid = uuid.UUID(sandbox_id)
     except ValueError:
         return False
     try:
@@ -177,9 +177,9 @@ async def has_enabled_signoz_mcp(
         try:
             row = await conn.fetchrow(
                 "SELECT 1 FROM mcp_servers "
-                "WHERE user_id = $1 AND name = 'signoz' AND enabled = true "
+                "WHERE sandbox_id = $1 AND name = 'signoz' AND enabled = true "
                 "LIMIT 1",
-                uid,
+                sid,
             )
         finally:
             await conn.close()
@@ -229,7 +229,9 @@ async def fetch_default_text_model_id(database_url: str) -> str | None:
         return None
 
 
-async def resolve_free_text_model_id(database_url: str, requested_model: str | None) -> str | None:
+async def resolve_free_text_model_id(
+    database_url: str, requested_model: str | None
+) -> str | None:
     """Mantém o modelo pedido só se ele estiver liberado como free/text."""
     if database_url and requested_model:
         try:

@@ -95,7 +95,7 @@ message ActionRequired {
 }
 
 message FinalResponse {
-  reserved 1;  // was full_text; client accumulates TextChunks instead
+  string full_text = 1; // fallback when provider returns only final result
   uint32 prompt_tokens     = 2;
   uint32 completion_tokens = 3;
 }

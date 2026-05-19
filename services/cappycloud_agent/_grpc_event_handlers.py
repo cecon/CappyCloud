@@ -88,6 +88,16 @@ def done_event(
     )
 
 
+def final_text_fallback_event(
+    msg: Any, *, streamed_text: bool
+) -> tuple[str, dict] | None:
+    """Converte ``done.full_text`` em texto quando não houve chunks no stream."""
+    full_text = str(getattr(msg.done, "full_text", "") or "")
+    if not full_text or streamed_text:
+        return None
+    return ("text", {"content": full_text})
+
+
 def error_event(msg: Any, session_id: str) -> tuple[str, str]:
     log.error("[%s] Error [%s]: %s", session_id, msg.error.code, msg.error.message)
     return ("error", msg.error.message)

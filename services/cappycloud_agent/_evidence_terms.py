@@ -67,6 +67,8 @@ def _parameter_numbers(message: str) -> list[str]:
     if marker in message:
         message = message.split(marker, 1)[1]
     lower = message.lower()
-    if not re.search(r"\b(?:par[aâ]metro|parametro|param|parametros|par[aâ]metros)\b", lower):
+    if not re.search(
+        r"\b(?:par[aâ]metro|parametro|param|parametros|par[aâ]metros)\b", lower
+    ):
         return []
     return _dedupe(re.findall(r"\b\d{1,12}\b", message))

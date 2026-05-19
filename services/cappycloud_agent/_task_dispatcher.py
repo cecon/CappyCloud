@@ -227,7 +227,9 @@ class TaskDispatcher:
                 mode,
             )
         except Exception as exc:
-            log.exception("[Dispatcher] Falha ao criar sessão para task %s", task_id[:8])
+            log.exception(
+                "[Dispatcher] Falha ao criar sessão para task %s", task_id[:8]
+            )
             await update_task_status(self._pool, task_id, "error")
             await insert_error_event(self._pool, task_id, str(exc))
             return
@@ -235,12 +237,19 @@ class TaskDispatcher:
         working_directory = sandbox.working_directory
         if repos and len(repos) == 1 and repos[0].get("worktree_path"):
             working_directory = repos[0]["worktree_path"]
-        log.debug("[Dispatcher] working_directory=%r for task %s", working_directory, task_id[:8])
+        log.debug(
+            "[Dispatcher] working_directory=%r for task %s",
+            working_directory,
+            task_id[:8],
+        )
 
         user_prompt = prompt
         sandbox_session_url = f"http://{sandbox.grpc_host}:8080"
         prompt = await build_prompt_with_worktree_context(
-            prompt, sandbox_session_url, repos, session_root or sandbox.session_root
+            prompt,
+            sandbox_session_url,
+            repos or [],
+            session_root or sandbox.session_root,
         )
 
         # Validamos worktree ANTES do gRPC: openclaude com wd inexistente
@@ -286,7 +295,9 @@ class TaskDispatcher:
         try:
             await session.start(prompt, attachments=attachments)
         except Exception as exc:
-            log.exception("[Dispatcher] Falha ao iniciar gRPC para task %s", task_id[:8])
+            log.exception(
+                "[Dispatcher] Falha ao iniciar gRPC para task %s", task_id[:8]
+            )
             await update_task_status(self._pool, task_id, "error")
             await insert_error_event(self._pool, task_id, str(exc))
             await session.close()

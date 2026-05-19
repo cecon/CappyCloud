@@ -3,6 +3,10 @@
 Este arquivo é pensado para ser **injetado em qualquer repositório**.
 As referências abaixo apontam apenas para a sandbox compartilhada.
 
+O agente deve trabalhar somente dentro do worktree da conversa ou dos caminhos
+absolutos listados no prompt da sessão. Caminhos globais como `/repos/<slug>/`
+não fazem parte do escopo da conversa.
+
 ## Skills Globais Disponíveis
 
 ### Referência Compartilhada

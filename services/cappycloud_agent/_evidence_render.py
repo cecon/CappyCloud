@@ -148,6 +148,7 @@ def _render_section(
     if code:
         parts.append("### Código encontrado")
         parts.extend(
-            f"- `{hit.query}` → {hit.repo}:{hit.path}:{hit.line}: {hit.text}" for hit in code
+            f"- `{hit.query}` → {hit.repo}:{hit.path}:{hit.line}: {hit.text}"
+            for hit in code
         )
     return "\n".join(parts)

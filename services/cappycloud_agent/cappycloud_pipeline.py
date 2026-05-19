@@ -114,8 +114,10 @@ class Pipeline:
     def cancel_conversation(self, conversation_id: str) -> bool:
         if self._dispatcher is None:
             return False
-        return self._run(
-            self._dispatcher.cancel_for_conversation(conversation_id), timeout=15
+        return bool(
+            self._run(
+                self._dispatcher.cancel_for_conversation(conversation_id), timeout=15
+            )
         )
 
     def pipe(
@@ -191,7 +193,7 @@ class Pipeline:
                     timeout=5,
                 )
                 signoz_mcp_available = self._run(
-                    has_enabled_signoz_mcp(db_url(), str(body.get("user_id") or "")),
+                    has_enabled_signoz_mcp(db_url(), sandbox_id),
                     timeout=5,
                 )
                 signoz_section = build_signoz_context_section(
@@ -201,6 +203,7 @@ class Pipeline:
                 )
                 if signoz_section:
                     from ._agent_context import inject_section_before_user_message
+
                     prompt = inject_section_before_user_message(prompt, signoz_section)
             except Exception as exc:  # noqa: BLE001
                 log.warning("[Signoz] falha ao injetar contexto: %s", exc)
@@ -235,7 +238,6 @@ class Pipeline:
         }
 
         # Envia config MCP ao sandbox antes de cada dispatch (idempotente).
-        user_id_str = str(body.get("user_id") or "")
         yield sse(
             {
                 "type": "status",
@@ -245,11 +247,11 @@ class Pipeline:
             }
         )
         self._run(
-            push_mcp_config(db_url(), user_id_str, sandbox_session_url),
+            push_mcp_config(db_url(), sandbox_id, sandbox_session_url),
             timeout=8,
         )
 
-        if runner and runner.is_alive() and runner.pending_action:
+        if task_id and runner and runner.is_alive() and runner.pending_action:
             self._run(self._dispatcher.send_input(task_id, user_message), timeout=10)
         elif runner and runner.is_alive():
             log.info(
@@ -279,6 +281,15 @@ class Pipeline:
                 ),
                 timeout=10,
             )
+
+        if task_id is None:
+            yield sse(
+                {
+                    "type": "error",
+                    "message": "Não foi possível iniciar a tarefa do agente.",
+                }
+            )
+            return
 
         yield from self._stream_events(task_id, cursor)
 

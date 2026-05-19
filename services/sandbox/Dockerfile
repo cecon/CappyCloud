@@ -86,6 +86,7 @@ RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 
 # ── Clone and build openclaude from source ────────────────────
+ARG OPENCLAUDE_REF=f71e7692373a61d28c82fc3fadff3feaa4071ede
 COPY patches/grep-tool-n-alias.patch /tmp/grep-tool-n-alias.patch
 COPY patches/auto-approve-tools.patch /tmp/auto-approve-tools.patch
 COPY patches/multimodal-proto.patch /tmp/multimodal-proto.patch
@@ -96,7 +97,10 @@ COPY patches/numeric-parameter-grep-guard.patch /tmp/numeric-parameter-grep-guar
 COPY patches/numeric-parameter-grep-wrapper.patch /tmp/numeric-parameter-grep-wrapper.patch
 RUN sed -i 's/\r$//' /tmp/*.patch
 WORKDIR /openclaude
-RUN git clone --depth=1 https://github.com/Gitlawb/openclaude.git . \
+RUN git init . \
+    && git remote add origin https://github.com/Gitlawb/openclaude.git \
+    && git fetch --depth=1 origin "${OPENCLAUDE_REF}" \
+    && git checkout FETCH_HEAD \
     && git apply /tmp/grep-tool-n-alias.patch \
     && git apply /tmp/auto-approve-tools.patch \
     && git apply /tmp/multimodal-proto.patch \

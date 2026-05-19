@@ -2,7 +2,7 @@ diff --git a/src/grpc/server.ts b/src/grpc/server.ts
 index 2cb1a5f..4dca43e 100644
 --- a/src/grpc/server.ts
 +++ b/src/grpc/server.ts
-@@ -183,6 +183,34 @@ function cappycloudValidateNumericParameterGrep(
+@@ -180,6 +180,34 @@ function cappycloudValidateNumericParameterGrep(
    return `Tool blocked: numeric parameter lookup must search inside discovered Parametros directories, not the worktree root. Allowed worktree: ${worktree}. Use find/git ls-files to locate */Parametros, then set Grep path to that directory.`
  }
  
@@ -37,7 +37,7 @@ index 2cb1a5f..4dca43e 100644
  function cappycloudValidateToolScope(toolName: string, input: unknown, worktree: string, numericParameterMode = false): string | null {
    if (CAPPYCLOUD_PATH_GUARDED_TOOLS.has(toolName)) {
      for (const rawPath of cappycloudCollectPathInputs(input)) {
-@@ -193,11 +222,6 @@ function cappycloudValidateToolScope(toolName: string, input: unknown, worktree:
+@@ -190,11 +218,6 @@ function cappycloudValidateToolScope(toolName: string, input: unknown, worktree:
      }
    }
  
@@ -49,7 +49,7 @@ index 2cb1a5f..4dca43e 100644
    if (CAPPYCLOUD_COMMAND_GUARDED_TOOLS.has(toolName) && input && typeof input === 'object') {
      const command = (input as Record<string, unknown>).command
      if (typeof command === 'string') {
-@@ -301,7 +330,10 @@ export class GrpcServer {
+@@ -294,11 +317,14 @@ export class GrpcServer {
              grpcToolsByName.set(tool.name, tool)
            }
            const grpcAllowedWorktree = path.resolve(req.working_directory || process.cwd())
@@ -58,10 +58,6 @@ index 2cb1a5f..4dca43e 100644
 +          if (grpcNumericParameterMode) {
 +            console.log('[grpc] numeric parameter mode enabled')
 +          }
- 
-           engine = new QueryEngine({
-             cwd: grpcAllowedWorktree,
-@@ -309,7 +341,7 @@ export class GrpcServer {
  
            engine = new QueryEngine({
              cwd: grpcAllowedWorktree,

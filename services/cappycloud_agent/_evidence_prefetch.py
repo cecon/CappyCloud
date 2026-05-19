@@ -63,7 +63,9 @@ async def inject_evidence_prefetch(
     parameter_numbers = _parameter_numbers(user_message)
     doc_terms = parameter_numbers or terms
     async with httpx.AsyncClient(timeout=httpx.Timeout(12.0)) as client:
-        docs_task = asyncio.create_task(_fetch_docs(client, sandbox_session_url, repos, doc_terms))
+        docs_task = asyncio.create_task(
+            _fetch_docs(client, sandbox_session_url, repos, doc_terms)
+        )
         if parameter_numbers:
             parameter_dirs = await _fetch_parameter_directories(
                 client,

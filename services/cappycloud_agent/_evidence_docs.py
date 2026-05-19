@@ -22,7 +22,9 @@ async def _fetch_docs(
     if not confluence_sources:
         return ([], [])
     attempts = [
-        _DocSearchAttempt(term, source) for source in confluence_sources for term in terms[:4]
+        _DocSearchAttempt(term, source)
+        for source in confluence_sources
+        for term in terms[:4]
     ]
     tasks = [
         _fetch_docs_for(client, session_url, source, term)
@@ -65,8 +67,12 @@ async def _fetch_docs_for(
         if not isinstance(item, dict):
             continue
         title = str(item.get("title") or item.get("name") or "").strip()
-        url = str(item.get("url") or item.get("web_url") or item.get("link") or "").strip()
-        summary = str(item.get("summary") or item.get("excerpt") or item.get("content") or "")
+        url = str(
+            item.get("url") or item.get("web_url") or item.get("link") or ""
+        ).strip()
+        summary = str(
+            item.get("summary") or item.get("excerpt") or item.get("content") or ""
+        )
         if title:
             hits.append(_DocHit(term, title, url, _trim(summary)))
     return hits

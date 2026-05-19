@@ -11,8 +11,8 @@ from queue import Queue
 from typing import Optional
 
 import grpc.aio
-import openclaude_pb2  # type: ignore[import-not-found]
-import openclaude_pb2_grpc  # type: ignore[import-not-found]
+import openclaude_pb2
+import openclaude_pb2_grpc
 
 from . import _grpc_event_handlers as handlers
 from ._grpc_helpers import (
@@ -232,6 +232,12 @@ class GrpcSession:
 
                 elif event == "done":
                     received_done = True
+                    final_text = handlers.final_text_fallback_event(
+                        msg, streamed_text=streamed_text
+                    )
+                    if final_text:
+                        streamed_text = True
+                        await self._out_queue.put(final_text)
                     await self._out_queue.put(
                         handlers.done_event(
                             msg,

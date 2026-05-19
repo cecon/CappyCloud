@@ -35,7 +35,10 @@ def _price_per_1m(value: Any) -> float | None:
 def _fetch_openrouter_price_catalog() -> dict[str, tuple[float | None, float | None]]:
     req = urllib.request.Request(
         _OPENROUTER_MODELS_URL,
-        headers={"Accept": "application/json", "User-Agent": "CappyCloud/usage-pricing"},
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "CappyCloud/usage-pricing",
+        },
     )
     with urllib.request.urlopen(req, timeout=_OPENROUTER_TIMEOUT_SECONDS) as resp:
         payload = json.loads(resp.read().decode("utf-8"))
