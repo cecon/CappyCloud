@@ -1,0 +1,135 @@
+diff --git a/src/grpc/server.ts b/src/grpc/server.ts
+index 9c5d3a1..2cb1a5f 100644
+--- a/src/grpc/server.ts
++++ b/src/grpc/server.ts
+@@ -1,5 +1,6 @@
+ import * as grpc from '@grpc/grpc-js'
+ import * as protoLoader from '@grpc/proto-loader'
++import fs from 'fs'
+ import path from 'path'
+ import { randomUUID } from 'crypto'
+ import { QueryEngine } from '../QueryEngine.js'
+@@ -51,6 +52,8 @@ const CAPPYCLOUD_PATH_INPUT_KEYS = [
+   'team_file_path',
+ ]
+ 
++const CAPPYCLOUD_PARAMETER_DIR_CACHE = new Map<string, boolean>()
++
+ function cappycloudIsInsideWorktree(worktree: string, candidate: string): boolean {
+   const relative = path.relative(worktree, candidate)
+   return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative))
+@@ -93,7 +96,84 @@ function cappycloudExtractRepoPaths(command: string): string[] {
+   return paths
+ }
+ 
+-function cappycloudValidateToolScope(toolName: string, input: unknown, worktree: string): string | null {
++function cappycloudHasParameterDirectory(worktree: string): boolean {
++  const cached = CAPPYCLOUD_PARAMETER_DIR_CACHE.get(worktree)
++  if (cached !== undefined) {
++    return cached
++  }
++
++  const stack = [worktree]
++  let visited = 0
++  while (stack.length > 0 && visited < 5000) {
++    const current = stack.pop()!
++    visited += 1
++    let entries: fs.Dirent[]
++    try {
++      entries = fs.readdirSync(current, { withFileTypes: true })
++    } catch {
++      continue
++    }
++    for (const entry of entries) {
++      if (!entry.isDirectory()) {
++        continue
++      }
++      const name = entry.name.toLowerCase()
++      if (name === 'parametros') {
++        CAPPYCLOUD_PARAMETER_DIR_CACHE.set(worktree, true)
++        return true
++      }
++      if (
++        name === '.git' ||
++        name === 'node_modules' ||
++        name === 'bin' ||
++        name === 'obj' ||
++        name === '.venv' ||
++        name === 'venv'
++      ) {
++        continue
++      }
++      stack.push(path.join(current, entry.name))
++    }
++  }
++
++  CAPPYCLOUD_PARAMETER_DIR_CACHE.set(worktree, false)
++  return false
++}
++
++function cappycloudIsNumericGrepPattern(pattern: unknown): boolean {
++  if (typeof pattern !== 'string') {
++    return false
++  }
++  const cleaned = pattern.trim().replace(/\\b/g, '')
++  return /^\d{1,12}$/.test(cleaned)
++}
++
++function cappycloudValidateNumericParameterGrep(
++  toolName: string,
++  input: unknown,
++  worktree: string,
++  numericParameterMode: boolean,
++): string | null {
++  if (!numericParameterMode || toolName !== 'Grep' || !input || typeof input !== 'object') {
++    return null
++  }
++  const record = input as Record<string, unknown>
++  if (!cappycloudIsNumericGrepPattern(record.pattern)) {
++    return null
++  }
++  const rawPath = typeof record.path === 'string' ? record.path : '.'
++  const resolvedPath = cappycloudResolveToolPath(worktree, rawPath)
++  if (!resolvedPath || path.relative(worktree, resolvedPath) !== '') {
++    return null
++  }
++  const glob = typeof record.glob === 'string' ? record.glob.toLowerCase() : ''
++  if (glob.includes('parametros') || !cappycloudHasParameterDirectory(worktree)) {
++    return null
++  }
++  return `Tool blocked: numeric parameter lookup must search inside discovered Parametros directories, not the worktree root. Allowed worktree: ${worktree}. Use find/git ls-files to locate */Parametros, then set Grep path to that directory.`
++}
++
++function cappycloudValidateToolScope(toolName: string, input: unknown, worktree: string, numericParameterMode = false): string | null {
+   if (CAPPYCLOUD_PATH_GUARDED_TOOLS.has(toolName)) {
+     for (const rawPath of cappycloudCollectPathInputs(input)) {
+       const resolvedPath = cappycloudResolveToolPath(worktree, rawPath)
+@@ -103,6 +183,11 @@ function cappycloudValidateToolScope(toolName: string, input: unknown, worktree:
+     }
+   }
+ 
++  const numericParameterGuardMessage = cappycloudValidateNumericParameterGrep(toolName, input, worktree, numericParameterMode)
++  if (numericParameterGuardMessage) {
++    return numericParameterGuardMessage
++  }
++
+   if (CAPPYCLOUD_COMMAND_GUARDED_TOOLS.has(toolName) && input && typeof input === 'object') {
+     const command = (input as Record<string, unknown>).command
+     if (typeof command === 'string') {
+@@ -216,6 +301,7 @@ export class GrpcServer {
+             grpcToolsByName.set(tool.name, tool)
+           }
+           const grpcAllowedWorktree = path.resolve(req.working_directory || process.cwd())
++          const grpcNumericParameterMode = /Regra obrigatória para parâmetro numérico/.test(String(req.message || ''))
+ 
+           engine = new QueryEngine({
+             cwd: grpcAllowedWorktree,
+@@ -230,7 +316,7 @@ export class GrpcServer {
+               if (toolUseID) {
+                 toolNameById.set(toolUseID, tool.name)
+               }
+-              const worktreeGuardMessage = cappycloudValidateToolScope(tool.name, input, grpcAllowedWorktree)
++              const worktreeGuardMessage = cappycloudValidateToolScope(tool.name, input, grpcAllowedWorktree, grpcNumericParameterMode)
+               if (worktreeGuardMessage) {
+                 console.warn(`[grpc] ${worktreeGuardMessage}`)
+                 return {

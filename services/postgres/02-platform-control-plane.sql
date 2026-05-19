@@ -88,6 +88,8 @@ CREATE TABLE IF NOT EXISTS repositories (
     clone_url       TEXT         NOT NULL,
     default_branch  VARCHAR(256) NOT NULL DEFAULT 'main',
     confluence_url  TEXT         NOT NULL DEFAULT '',
+    confluence_space TEXT        NOT NULL DEFAULT '',
+    confluence_labels JSONB      NOT NULL DEFAULT '[]',
     sandbox_id      UUID         REFERENCES sandboxes(id) ON DELETE SET NULL,
     sandbox_status  VARCHAR(32)  NOT NULL DEFAULT 'not_cloned',
     sandbox_path    TEXT         NOT NULL DEFAULT '',

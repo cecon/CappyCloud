@@ -1,0 +1,146 @@
+diff --git a/src/grpc/server.ts b/src/grpc/server.ts
+index 7f9d9e4..9c5d3a1 100644
+--- a/src/grpc/server.ts
++++ b/src/grpc/server.ts
+@@ -24,6 +24,110 @@ const protoDescriptor = grpc.loadPackageDefinition(packageDefinition) as any
+ const openclaudeProto = protoDescriptor.openclaude.v1
+ 
+ const MAX_SESSIONS = 1000
++
++const CAPPYCLOUD_PATH_GUARDED_TOOLS = new Set([
++  'Read',
++  'Write',
++  'Edit',
++  'Grep',
++  'Glob',
++  'NotebookEdit',
++  'LSP',
++  'SendUserMessage',
++  'Brief',
++])
++
++const CAPPYCLOUD_COMMAND_GUARDED_TOOLS = new Set([
++  'Bash',
++  'Monitor',
++])
++
++const CAPPYCLOUD_PATH_INPUT_KEYS = [
++  'file_path',
++  'path',
++  'notebook_path',
++  'filePath',
++  'team_file_path',
++]
++
++function cappycloudIsInsideWorktree(worktree: string, candidate: string): boolean {
++  const relative = path.relative(worktree, candidate)
++  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative))
++}
++
++function cappycloudResolveToolPath(worktree: string, rawPath: string): string | null {
++  const cleaned = rawPath.trim()
++  if (!cleaned || cleaned === '.' || cleaned === 'undefined' || cleaned === 'null') {
++    return null
++  }
++  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(cleaned)) {
++    return null
++  }
++  return path.resolve(path.isAbsolute(cleaned) ? cleaned : path.join(worktree, cleaned))
++}
++
++function cappycloudCollectPathInputs(input: unknown): string[] {
++  if (!input || typeof input !== 'object') {
++    return []
++  }
++  const record = input as Record<string, unknown>
++  const paths: string[] = []
++  for (const key of CAPPYCLOUD_PATH_INPUT_KEYS) {
++    const value = record[key]
++    if (typeof value === 'string') {
++      paths.push(value)
++    }
++  }
++  const attachments = record.attachments
++  if (Array.isArray(attachments)) {
++    for (const attachment of attachments) {
++      if (typeof attachment === 'string') {
++        paths.push(attachment)
++      }
++    }
++  }
++  return paths
++}
++
++function cappycloudExtractRepoPaths(command: string): string[] {
++  const paths: string[] = []
++  const repoPathPattern = /(?:^|[\s"'=:(])((?:\/repos\/)[^\s"'`;&|)<>]+)/g
++  for (const match of command.matchAll(repoPathPattern)) {
++    const rawPath = match[1]?.replace(/[.,:]+$/g, '')
++    if (rawPath) {
++      paths.push(rawPath)
++    }
++  }
++  return paths
++}
++
++function cappycloudValidateToolScope(toolName: string, input: unknown, worktree: string): string | null {
++  if (CAPPYCLOUD_PATH_GUARDED_TOOLS.has(toolName)) {
++    for (const rawPath of cappycloudCollectPathInputs(input)) {
++      const resolvedPath = cappycloudResolveToolPath(worktree, rawPath)
++      if (resolvedPath && !cappycloudIsInsideWorktree(worktree, resolvedPath)) {
++        return `Tool blocked: path outside the conversation worktree. Allowed worktree: ${worktree}. Requested path: ${resolvedPath}.`
++      }
++    }
++  }
++
++  if (CAPPYCLOUD_COMMAND_GUARDED_TOOLS.has(toolName) && input && typeof input === 'object') {
++    const command = (input as Record<string, unknown>).command
++    if (typeof command === 'string') {
++      if (/(^|[\s;&|])cd\s+\.\.(?:\/|\s|$)/.test(command) || /(^|[\s"'=])\.\.(?:\/|$)/.test(command)) {
++        return `Tool blocked: command tries to leave the conversation worktree. Allowed worktree: ${worktree}.`
++      }
++      for (const rawPath of cappycloudExtractRepoPaths(command)) {
++        const resolvedPath = cappycloudResolveToolPath(worktree, rawPath)
++        if (resolvedPath && !cappycloudIsInsideWorktree(worktree, resolvedPath)) {
++          return `Tool blocked: command references a repo path outside the conversation worktree. Allowed worktree: ${worktree}. Requested path: ${resolvedPath}.`
++        }
++      }
++    }
++  }
++
++  return null
++}
+ 
+ export class GrpcServer {
+   private server: grpc.Server
+@@ -112,9 +216,10 @@ export class GrpcServer {
+           for (const tool of [...grpcBaseTools, ...grpcMcpTools]) {
+             grpcToolsByName.set(tool.name, tool)
+           }
++          const grpcAllowedWorktree = path.resolve(req.working_directory || process.cwd())
+ 
+           engine = new QueryEngine({
+-            cwd: req.working_directory || process.cwd(),
++            cwd: grpcAllowedWorktree,
+             tools: Array.from(grpcToolsByName.values()),
+             commands: grpcMcpCommands,
+             mcpClients: grpcMcpClients,
+@@ -125,6 +230,18 @@ export class GrpcServer {
+               if (toolUseID) {
+                 toolNameById.set(toolUseID, tool.name)
+               }
++              const worktreeGuardMessage = cappycloudValidateToolScope(tool.name, input, grpcAllowedWorktree)
++              if (worktreeGuardMessage) {
++                console.warn(`[grpc] ${worktreeGuardMessage}`)
++                return {
++                  behavior: 'deny' as const,
++                  message: worktreeGuardMessage,
++                  decisionReason: {
++                    type: 'other' as const,
++                    reason: worktreeGuardMessage,
++                  },
++                }
++              }
+               // Notify client of the tool call first
+               call.write({
+                 tool_start: {

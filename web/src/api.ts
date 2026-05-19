@@ -133,6 +133,7 @@ export interface CurrentUser {
   email: string
   role: UserRole
   is_super_admin: boolean
+  must_change_password: boolean
 }
 
 /**
@@ -144,6 +145,7 @@ export async function registerRequest(
   email: string,
   password: string,
   role: UserRole = 'user',
+  mustChangePassword = true,
 ): Promise<CurrentUser> {
   const payload = {
     email: String(email ?? '')
@@ -151,6 +153,7 @@ export async function registerRequest(
       .toLowerCase(),
     password: String(password ?? ''),
     role,
+    must_change_password: mustChangePassword,
   }
   const res = await apiFetch('/api/auth/register', {
     method: 'POST',
@@ -182,6 +185,30 @@ export async function fetchCurrentUser(token: string): Promise<CurrentUser> {
   return (await res.json()) as CurrentUser
 }
 
+export async function changePasswordRequest(
+  token: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<CurrentUser> {
+  const res = await apiFetch('/api/auth/change-password', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    const text = formatApiErrorPayload(err) || 'Falha ao alterar senha'
+    throw new Error(String(text))
+  }
+  return (await res.json()) as CurrentUser
+}
+
 // ── Admin · Users ────────────────────────────────────────────────────────────
 
 export interface AdminUser {
@@ -189,6 +216,7 @@ export interface AdminUser {
   email: string
   role: UserRole
   is_super_admin: boolean
+  must_change_password: boolean
 }
 
 /** Lista todos os utilizadores (admin only). */
@@ -702,6 +730,7 @@ export interface Workspace {
   url: string
   confluence_url: string
   confluence_space: string
+  confluence_labels: string[]
   sandbox_status: string
 }
 
@@ -879,6 +908,7 @@ export interface Repository {
   default_branch: string
   confluence_url: string
   confluence_space: string
+  confluence_labels: string[]
   provider_id: string | null
   sandbox_id: string | null
   sandbox_status: string
@@ -894,6 +924,7 @@ export interface RepositoryCreate {
   default_branch: string
   confluence_url?: string
   confluence_space?: string
+  confluence_labels?: string[]
   provider_id?: string | null
   sandbox_id?: string | null
   /** PAT inline: se preenchido, o backend cria/atualiza um GitProvider implícito. */

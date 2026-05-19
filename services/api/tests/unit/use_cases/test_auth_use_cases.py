@@ -3,7 +3,7 @@
 import uuid
 
 import pytest
-from app.application.use_cases.auth import GetCurrentUser, LoginUser, RegisterUser
+from app.application.use_cases.auth import ChangePassword, GetCurrentUser, LoginUser, RegisterUser
 from app.domain.entities import UserRole
 
 from tests.conftest import (
@@ -52,6 +52,14 @@ class TestRegisterUser:
         user = await uc.execute("boss@test.com", "password123", UserRole.ADMIN)
         assert user.role is UserRole.ADMIN
         assert user.is_admin is True
+
+    async def test_must_change_password_flag_can_be_set(self, uc: RegisterUser) -> None:
+        user = await uc.execute(
+            "first-login@test.com",
+            "password123",
+            must_change_password=True,
+        )
+        assert user.must_change_password is True
 
 
 class TestLoginUser:
@@ -119,3 +127,40 @@ class TestGetCurrentUser:
         phantom_id = str(uuid.uuid4())
         with pytest.raises(PermissionError, match="não encontrado"):
             await uc.execute(f"token:{phantom_id}")
+
+
+class TestChangePassword:
+    async def test_changes_password_and_clears_first_login_flag(self) -> None:
+        repo = InMemoryUserRepository()
+        passwords = FakePasswordService()
+        user = await RegisterUser(repo, passwords).execute(
+            "change@test.com",
+            "oldpassword",
+            must_change_password=True,
+        )
+        uc = ChangePassword(repo, passwords)
+
+        updated = await uc.execute(user.id, "oldpassword", "newpassword")
+
+        assert updated.must_change_password is False
+        assert updated.hashed_password == "hashed:newpassword"
+        token_uc = LoginUser(repo, passwords, FakeTokenService())
+        assert await token_uc.execute("change@test.com", "newpassword") == f"token:{user.id}"
+
+    async def test_rejects_wrong_current_password(self) -> None:
+        repo = InMemoryUserRepository()
+        passwords = FakePasswordService()
+        user = await RegisterUser(repo, passwords).execute("wrong@test.com", "oldpassword")
+        uc = ChangePassword(repo, passwords)
+
+        with pytest.raises(PermissionError, match="Senha atual inválida"):
+            await uc.execute(user.id, "badpassword", "newpassword")
+
+    async def test_rejects_unchanged_password(self) -> None:
+        repo = InMemoryUserRepository()
+        passwords = FakePasswordService()
+        user = await RegisterUser(repo, passwords).execute("same@test.com", "oldpassword")
+        uc = ChangePassword(repo, passwords)
+
+        with pytest.raises(ValueError, match="diferente"):
+            await uc.execute(user.id, "oldpassword", "oldpassword")

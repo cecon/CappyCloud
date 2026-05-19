@@ -82,6 +82,26 @@ class InMemoryUserRepository(UserRepository):
         self._store[user_id] = updated
         return updated
 
+    async def update_password(
+        self,
+        user_id: uuid.UUID,
+        hashed_password: str,
+        *,
+        must_change_password: bool,
+    ) -> User | None:
+        current = self._store.get(user_id)
+        if current is None:
+            return None
+        from dataclasses import replace
+
+        updated = replace(
+            current,
+            hashed_password=hashed_password,
+            must_change_password=must_change_password,
+        )
+        self._store[user_id] = updated
+        return updated
+
 
 class InMemoryConversationRepository(ConversationRepository):
     """In-memory conversation store for testing."""
@@ -131,11 +151,11 @@ class InMemoryRepositoryRepository(RepositoryRepository):
         # testes consigam afirmar que o caller usou a versão autenticada.
         return f"https://pat:fake-token@{repo.clone_url.removeprefix('https://')}"
 
-    async def get_confluence_settings(self, repo_id: uuid.UUID) -> tuple[str, str]:
+    async def get_confluence_settings(self, repo_id: uuid.UUID) -> tuple[str, str, list[str]]:
         repo = self._store.get(repo_id)
         if not repo:
-            return ("", "")
-        return (repo.confluence_url, repo.confluence_space)
+            return ("", "", [])
+        return (repo.confluence_url, repo.confluence_space, list(repo.confluence_labels))
 
     def add(self, repo: Repository) -> None:
         """T\u00e9cnica de teste: insere reposit\u00f3rio diretamente sem rota HTTP."""

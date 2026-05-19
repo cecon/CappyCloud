@@ -5,6 +5,24 @@ from __future__ import annotations
 from urllib.parse import quote
 
 
+def _clean_confluence_labels(raw_labels: object) -> list[str]:
+    if isinstance(raw_labels, str):
+        values = raw_labels.split(",")
+    elif isinstance(raw_labels, (list, tuple)):
+        values = raw_labels
+    else:
+        return []
+    labels: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        label = str(raw).strip()
+        key = label.lower()
+        if label and key not in seen:
+            seen.add(key)
+            labels.append(label)
+    return labels
+
+
 def render_repo_skills(skills: list[dict]) -> str:
     lines = ["## Skills configuradas para este repositório"]
     lines.append(
@@ -46,15 +64,22 @@ def render_session_tools(sandbox_session_url: str, repos: list[dict] | None = No
             alias = repo.get("alias") or repo.get("slug") or "repo"
             confluence_url = str(repo.get("confluence_url") or "").strip()
             confluence_space = str(repo.get("confluence_space") or "").strip()
+            confluence_labels = _clean_confluence_labels(repo.get("confluence_labels"))
             encoded_url = quote(confluence_url, safe="")
             base_query = f"base_url={encoded_url}"
-            space_label = ""
+            filters: list[str] = []
             if confluence_space:
                 encoded_space = quote(confluence_space, safe="")
                 base_query = f"{base_query}&space={encoded_space}"
-                space_label = f" (space `{confluence_space}`)"
+                filters.append(f"space `{confluence_space}`")
+            if confluence_labels:
+                encoded_labels = quote(",".join(confluence_labels), safe=",")
+                base_query = f"{base_query}&labels={encoded_labels}"
+                labels_text = ", ".join(f"`{label}`" for label in confluence_labels)
+                filters.append(f"labels {labels_text}")
+            filter_label = f" ({'; '.join(filters)})" if filters else ""
             lines.append(
-                f"- **{alias}**{space_label}: `curl -s "
+                f"- **{alias}**{filter_label}: `curl -s "
                 f"'{sandbox_session_url}/confluence/search?{base_query}&q=<termo>&limit=5'`"
             )
         any_space_configured = any(
@@ -66,6 +91,22 @@ def render_session_tools(sandbox_session_url: str, repos: list[dict] | None = No
                 "`&space=` em todas as buscas para esse repo — assim a busca fica "
                 "restrita ao produto correto e não vaza para outros spaces do Confluence."
             )
+        any_labels_configured = any(
+            _clean_confluence_labels(repo.get("confluence_labels")) for repo in confluence_repos
+        )
+        if any_labels_configured:
+            lines.append(
+                "Quando o repositório tem `labels` configurados, mantenha o parâmetro "
+                "`&labels=` em todas as buscas para esse repo. Esses rótulos são parte "
+                "do escopo documental do produto."
+            )
+        lines.append(
+            "Não use WebSearch como substituto do Confluence configurado; WebSearch não "
+            "consulta essas credenciais nem respeita o space do repositório. Para dúvidas "
+            "sobre parâmetros, cadastros, configurações, regras funcionais ou quando a "
+            "pergunta pedir documentação externa, execute primeiro o `curl` de "
+            "`/confluence/search` correspondente ao repositório da sessão."
+        )
         lines.append(
             "Cruze o que vier da documentação externa com Grep/Read no repositório. "
             "Ao usar documentação, cite o título e a URL retornados. Nunca cite título, "

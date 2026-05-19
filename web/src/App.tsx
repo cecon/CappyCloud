@@ -1,14 +1,18 @@
-import { lazy, Suspense, type ReactNode } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
-import { getToken } from './api'
+import { lazy, Suspense, type ReactNode, useEffect } from 'react'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { getToken, setToken } from './api'
 import { AppLayout } from './components/AppLayout'
 import { RequireAdmin } from './components/RequireAdmin'
 import { RequireSuperAdmin } from './components/RequireSuperAdmin'
 import { ThinkingIndicator } from './components/ThinkingIndicator'
+import { useCurrentUser } from './hooks/useCurrentUser'
 
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })))
 const SkillsPage = lazy(() => import('./pages/SkillsPage').then(m => ({ default: m.SkillsPage })))
 const ChatPage = lazy(() => import('./pages/ChatPage').then(m => ({ default: m.ChatPage })))
+const ChangePasswordPage = lazy(() =>
+  import('./pages/ChangePasswordPage').then((m) => ({ default: m.ChangePasswordPage })),
+)
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })))
 const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })))
 const RunsPage = lazy(() => import('./pages/RunsPage').then(m => ({ default: m.RunsPage })))
@@ -41,8 +45,37 @@ function PageLoader() {
 }
 
 function ProtectedPage({ children }: { children: ReactNode }) {
+  const location = useLocation()
+  const state = useCurrentUser()
+
+  useEffect(() => {
+    if (state.status === 'error') {
+      setToken(null)
+    }
+  }, [state.status])
+
+  if (state.status === 'loading') {
+    return <PageLoader />
+  }
+
+  if (state.status === 'anonymous') {
+    return <Navigate to="/login" replace />
+  }
+
+  if (state.status === 'error') {
+    return <Navigate to="/login" replace />
+  }
+
+  if (state.user.must_change_password && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />
+  }
+
+  return <AppLayout>{children}</AppLayout>
+}
+
+function AuthenticatedBarePage({ children }: { children: ReactNode }) {
   const token = getToken()
-  return token ? <AppLayout>{children}</AppLayout> : <Navigate to="/login" replace />
+  return token ? <>{children}</> : <Navigate to="/login" replace />
 }
 
 function AdminPage({ children }: { children: ReactNode }) {
@@ -114,6 +147,14 @@ export default function App() {
             ) : (
               <LoginPage onLoggedIn={() => (window.location.href = '/')} />
             )
+          }
+        />
+        <Route
+          path="/change-password"
+          element={
+            <AuthenticatedBarePage>
+              <ChangePasswordPage />
+            </AuthenticatedBarePage>
           }
         />
         <Route path="/register" element={<Navigate to="/login" replace />} />

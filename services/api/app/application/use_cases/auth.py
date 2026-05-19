@@ -30,6 +30,7 @@ class RegisterUser:
         email: str,
         password: str,
         role: UserRole = UserRole.USER,
+        must_change_password: bool = False,
     ) -> User:
         """Create and persist a new user.
 
@@ -55,6 +56,7 @@ class RegisterUser:
             email=email,
             hashed_password=self._passwords.hash(password),
             role=role,
+            must_change_password=must_change_password,
         )
         return await self._users.save(user)
 
@@ -109,3 +111,39 @@ class GetCurrentUser:
         if not user:
             raise PermissionError("Utilizador não encontrado.")
         return user
+
+
+class ChangePassword:
+    """Change the authenticated user's password and clear first-login lock."""
+
+    def __init__(self, users: UserRepository, passwords: PasswordService) -> None:
+        self._users = users
+        self._passwords = passwords
+
+    async def execute(self, user_id: uuid.UUID, current_password: str, new_password: str) -> User:
+        """Validate current password, store the new hash, and clear the lock.
+
+        Raises:
+            PermissionError: if the current password is wrong or user disappeared.
+            ValueError: if the new password is invalid or unchanged.
+        """
+        validate_password(new_password)
+
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise PermissionError("Utilizador não encontrado.")
+
+        if not self._passwords.verify(current_password, user.hashed_password):
+            raise PermissionError("Senha atual inválida.")
+
+        if self._passwords.verify(new_password, user.hashed_password):
+            raise ValueError("A nova senha deve ser diferente da senha atual.")
+
+        updated = await self._users.update_password(
+            user_id,
+            self._passwords.hash(new_password),
+            must_change_password=False,
+        )
+        if updated is None:
+            raise PermissionError("Utilizador não encontrado.")
+        return updated

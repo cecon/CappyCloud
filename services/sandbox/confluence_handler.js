@@ -125,6 +125,28 @@ function compactPage(page, baseUrl) {
   }
 }
 
+function cqlString(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+function parseLabels(url) {
+  const values = [
+    ...url.searchParams.getAll('label'),
+    ...url.searchParams.getAll('labels').flatMap(value => String(value || '').split(',')),
+  ]
+  const labels = []
+  const seen = new Set()
+  for (const raw of values) {
+    const label = String(raw || '').trim()
+    const key = label.toLowerCase()
+    if (label && !seen.has(key)) {
+      seen.add(key)
+      labels.push(label)
+    }
+  }
+  return labels
+}
+
 function parseSiteSearchResults(baseUrl, html, limit) {
   return parseSiteSearchResultsForSpace(baseUrl, html, limit, '')
 }
@@ -216,9 +238,17 @@ async function tryHandle(req, res, { json }) {
         await json(res, 400, { error: 'q is required' })
         return true
       }
-      const escaped = q.replace(/"/g, '\\"')
-      const spaceFilter = space && space !== 'all' ? `space="${space}" AND ` : ''
-      const cql = `${spaceFilter}type=page AND text ~ "${escaped}"`
+      const labels = parseLabels(url)
+      const cqlFilters = []
+      if (space && space !== 'all') {
+        cqlFilters.push(`space="${cqlString(space)}"`)
+      }
+      if (labels.length > 0) {
+        cqlFilters.push(`label in (${labels.map(label => `"${cqlString(label)}"`).join(',')})`)
+      }
+      cqlFilters.push('type=page')
+      cqlFilters.push(`text ~ "${cqlString(q)}"`)
+      const cql = cqlFilters.join(' AND ')
       const data = await fetchJson(`${baseUrl}/rest/api/content/search`, {
         cql,
         limit,
@@ -234,7 +264,7 @@ async function tryHandle(req, res, { json }) {
       let total = data.size
       let source = 'rest-cql'
 
-      if (results.length === 0) {
+      if (results.length === 0 && labels.length === 0) {
         const fallback = await siteSearch(baseUrl, q, limit, space)
         results = fallback.results
         total = fallback.total

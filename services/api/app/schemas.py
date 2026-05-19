@@ -12,6 +12,34 @@ from app.domain.entities import ContainerStatus, ModelTier, SandboxRuntime, User
 from app.domain.value_objects import validate_email, validate_password
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{1,62}[a-z0-9]$")
+_CONFLUENCE_LABEL_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
+
+
+def _normalise_confluence_labels(value: object) -> list[str]:
+    if value is None or value == "":
+        return []
+    if isinstance(value, str):
+        raw_items = value.split(",")
+    elif isinstance(value, list):
+        raw_items = value
+    else:
+        raise ValueError("Rótulos do Confluence devem ser uma lista ou texto separado por vírgula.")
+
+    labels: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_items:
+        label = str(raw).strip().lower()
+        if not label:
+            continue
+        if not _CONFLUENCE_LABEL_RE.match(label):
+            raise ValueError(
+                "Rótulo Confluence inválido. Use letras minúsculas, números, ponto, "
+                "hífen ou underscore."
+            )
+        if label not in seen:
+            seen.add(label)
+            labels.append(label)
+    return labels
 
 
 class UserCreate(BaseModel):
@@ -25,6 +53,7 @@ class UserCreate(BaseModel):
     email: str = Field(max_length=320)
     password: str = Field(max_length=128)
     role: UserRole = UserRole.USER
+    must_change_password: bool = True
 
     @field_validator("email")
     @classmethod
@@ -42,8 +71,21 @@ class UserOut(BaseModel):
     email: str
     role: UserRole
     is_super_admin: bool = False
+    must_change_password: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class PasswordChangeBody(BaseModel):
+    """Payload para troca de senha do próprio utilizador autenticado."""
+
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def new_password_min_len(cls, v: str) -> str:
+        return validate_password(v)
 
 
 class UserRoleUpdate(BaseModel):
@@ -281,6 +323,7 @@ class RepositoryCreate(BaseModel):
     default_branch: str = Field(default="main", max_length=256)
     confluence_url: str = Field(default="", max_length=2048)
     confluence_space: str = Field(default="", max_length=128)
+    confluence_labels: list[str] = Field(default_factory=list, max_length=32)
     provider_id: uuid.UUID | None = None
     sandbox_id: uuid.UUID | None = None
     # Inline PAT: se preenchido, cria/atualiza um provider implícito e associa.
@@ -288,6 +331,11 @@ class RepositoryCreate(BaseModel):
     provider_type: str | None = Field(default=None, max_length=32)
     # SigNoz: nome do service.name para correlacionar logs/traces/métricas.
     signoz_service_name: str | None = Field(default=None, max_length=256)
+
+    @field_validator("confluence_labels", mode="before")
+    @classmethod
+    def confluence_labels_lista(cls, v: object) -> list[str]:
+        return _normalise_confluence_labels(v)
 
 
 class RepositoryOut(BaseModel):
@@ -298,6 +346,7 @@ class RepositoryOut(BaseModel):
     default_branch: str
     confluence_url: str = ""
     confluence_space: str = ""
+    confluence_labels: list[str] = Field(default_factory=list)
     provider_id: uuid.UUID | None = None
     sandbox_id: uuid.UUID | None = None
     sandbox_status: str

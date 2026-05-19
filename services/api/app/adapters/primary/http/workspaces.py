@@ -9,7 +9,7 @@ from urllib.parse import quote, urlparse, urlunparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -55,6 +55,7 @@ class WorkspaceOut(BaseModel):
     url: str
     confluence_url: str = ""
     confluence_space: str = ""
+    confluence_labels: list[str] = Field(default_factory=list)
     sandbox_status: str
 
 
@@ -145,6 +146,7 @@ async def list_workspaces(
             url=r.clone_url,
             confluence_url=r.confluence_url,
             confluence_space=r.confluence_space,
+            confluence_labels=list(r.confluence_labels or []),
             sandbox_status=r.sandbox_status,
         )
         for r in rows.scalars()

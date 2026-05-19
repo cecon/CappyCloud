@@ -35,6 +35,7 @@ class SQLAlchemyUserRepository(UserRepository):
             hashed_password=user.hashed_password,
             role=user.role.value,
             is_super_admin=user.is_super_admin,
+            must_change_password=user.must_change_password,
         )
         self._session.add(orm)
         await self._session.commit()
@@ -54,6 +55,22 @@ class SQLAlchemyUserRepository(UserRepository):
         await self._session.refresh(row)
         return self._to_entity(row)
 
+    async def update_password(
+        self,
+        user_id: uuid.UUID,
+        hashed_password: str,
+        *,
+        must_change_password: bool,
+    ) -> UserEntity | None:
+        row = await self._session.get(UserORM, user_id)
+        if row is None:
+            return None
+        row.hashed_password = hashed_password
+        row.must_change_password = must_change_password
+        await self._session.commit()
+        await self._session.refresh(row)
+        return self._to_entity(row)
+
     @staticmethod
     def _to_entity(row: UserORM) -> UserEntity:
         return UserEntity(
@@ -62,6 +79,7 @@ class SQLAlchemyUserRepository(UserRepository):
             hashed_password=row.hashed_password,
             role=_role_from_str(row.role),
             is_super_admin=bool(row.is_super_admin),
+            must_change_password=bool(row.must_change_password),
             created_at=row.created_at,
         )
 
