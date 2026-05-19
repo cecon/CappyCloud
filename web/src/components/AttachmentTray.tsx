@@ -11,7 +11,7 @@
  * são enviados no payload de `streamAssistantReply`.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Attachment } from '../api'
 import { fetchAttachmentBlobUrl } from '../api'
 import styles from './attachment-tray.module.css'
@@ -30,6 +30,13 @@ export interface UploadedAttachment {
   attachment: Attachment
 }
 
+export interface PendingAttachment {
+  kind: 'pending'
+  localId: string
+  filename: string
+  file: File
+}
+
 export interface FailedAttachment {
   kind: 'failed'
   localId: string
@@ -37,7 +44,7 @@ export interface FailedAttachment {
   error: string
 }
 
-export type TrayItem = UploadingAttachment | UploadedAttachment | FailedAttachment
+export type TrayItem = PendingAttachment | UploadingAttachment | UploadedAttachment | FailedAttachment
 
 interface Props {
   items: TrayItem[]
@@ -101,6 +108,50 @@ function AttachmentIcon({ attachment }: { attachment: Attachment }) {
   )
 }
 
+function PendingFileIcon({ file }: { file: File }) {
+  const ext = file.name.toLowerCase()
+  const icon =
+    ext.endsWith('.pdf')
+      ? 'picture_as_pdf'
+      : ext.endsWith('.log')
+        ? 'receipt_long'
+        : ext.endsWith('.docx')
+          ? 'description'
+          : 'article'
+  return (
+    <div className={styles.fileThumb} aria-label={file.type || 'arquivo'}>
+      <span className={styles.fileIcon}>{icon}</span>
+    </div>
+  )
+}
+
+function isPendingImage(file: File): boolean {
+  const name = file.name.toLowerCase()
+  return (
+    file.type.startsWith('image/') ||
+    name.endsWith('.png') ||
+    name.endsWith('.jpg') ||
+    name.endsWith('.jpeg') ||
+    name.endsWith('.webp') ||
+    name.endsWith('.gif')
+  )
+}
+
+function PendingImageThumbnail({ file }: { file: File }) {
+  const src = useMemo(() => URL.createObjectURL(file), [file])
+
+  useEffect(() => {
+    return () => URL.revokeObjectURL(src)
+  }, [src])
+
+  return <img src={src} alt={file.name} className={styles.thumbnailImg} />
+}
+
+function PendingThumbnail({ file }: { file: File }) {
+  if (!isPendingImage(file)) return <PendingFileIcon file={file} />
+  return <PendingImageThumbnail file={file} />
+}
+
 function statusLabel(attachment: Attachment): string {
   if (attachment.kind === 'image') {
     return attachment.has_description ? 'descrita' : 'anexada'
@@ -135,6 +186,8 @@ export function AttachmentTray({ items, token, conversationId, onRemove }: Props
                 ) : (
                   <AttachmentIcon attachment={item.attachment} />
                 )
+              ) : item.kind === 'pending' ? (
+                <PendingThumbnail file={item.file} />
               ) : item.kind === 'failed' ? (
                 <div className={`${styles.thumbnailSkeleton} ${styles.error}`} aria-label="Falha">
                   <span className={styles.icon}>error</span>
@@ -161,6 +214,7 @@ export function AttachmentTray({ items, token, conversationId, onRemove }: Props
                   {statusLabel(item.attachment)}
                 </span>
               )}
+              {item.kind === 'pending' && <span className={styles.statusPending}>pronto</span>}
               {item.kind === 'uploading' && <span className={styles.statusUp}>enviando…</span>}
               {item.kind === 'failed' && <span className={styles.statusErr}>{item.error}</span>}
             </div>

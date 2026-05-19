@@ -79,6 +79,8 @@ const ALLOWED_ATTACHMENT_EXT = new Set([
 ])
 const MAX_IMAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024
 const MAX_ARTIFACT_ATTACHMENT_BYTES = 50 * 1024 * 1024
+const IMAGE_ONLY_PROMPT =
+  'Analise a imagem anexada, descreva o erro visível e indique os próximos passos.'
 
 const STICKY_SCROLL_THRESHOLD_PX = 96
 const CHAT_PREFS_KEY = 'cappycloud.chat.preferences.v1'
@@ -109,10 +111,74 @@ function isSupportedAttachment(file: File): boolean {
   )
 }
 
-function attachmentLimitBytes(file: File): number {
+function isImageFile(file: File): boolean {
   const ext = fileExtension(file.name)
-  const isImage = file.type.startsWith('image/') || ['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)
-  return isImage ? MAX_IMAGE_ATTACHMENT_BYTES : MAX_ARTIFACT_ATTACHMENT_BYTES
+  return file.type.startsWith('image/') || ['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)
+}
+
+function attachmentLimitBytes(file: File): number {
+  return isImageFile(file) ? MAX_IMAGE_ATTACHMENT_BYTES : MAX_ARTIFACT_ATTACHMENT_BYTES
+}
+
+function attachmentValidationError(file: File): string | null {
+  if (!isSupportedAttachment(file)) return 'Tipo não suportado'
+  const limit = attachmentLimitBytes(file)
+  if (file.size > limit) return `Acima de ${(limit / 1024 / 1024).toFixed(0)} MB`
+  return null
+}
+
+function clipboardImageName(file: File, index: number): string {
+  if (file.name.trim()) return file.name
+  if (!file.type.startsWith('image/')) return `anexo-${index + 1}`
+  if (file.type === 'image/jpeg') return `print-${index + 1}.jpg`
+  if (file.type === 'image/webp') return `print-${index + 1}.webp`
+  if (file.type === 'image/gif') return `print-${index + 1}.gif`
+  return `print-${index + 1}.png`
+}
+
+function normalizedClipboardFile(file: File, index: number): File {
+  const name = clipboardImageName(file, index)
+  if (name === file.name) return file
+  return new File([file], name, {
+    type: file.type || 'application/octet-stream',
+    lastModified: file.lastModified || Date.now(),
+  })
+}
+
+function isVisionModel(model: AiModel | undefined): boolean {
+  return !!model?.capabilities?.includes('vision')
+}
+
+function preferredVisionModelId(models: AiModel[]): string {
+  const visionModels = models.filter((model) => isVisionModel(model))
+  return (
+    visionModels.find((model) => model.is_default?.vision)?.model_id ||
+    sortModelsForSelect(visionModels)[0]?.model_id ||
+    ''
+  )
+}
+
+function modelIdForAttachments(
+  models: AiModel[],
+  selectedModelId: string,
+  hasImage: boolean,
+): string {
+  if (!hasImage) return selectedModelId
+  const selected = models.find((model) => model.model_id === selectedModelId)
+  if (isVisionModel(selected)) return selectedModelId
+  return preferredVisionModelId(models) || selectedModelId
+}
+
+function isSendableTrayItem(item: TrayItem): boolean {
+  return item.kind === 'pending' || item.kind === 'uploaded'
+}
+
+function trayItemHasImage(item: TrayItem): boolean {
+  if (item.kind === 'pending') return isImageFile(item.file)
+  if (item.kind === 'uploaded') {
+    return item.attachment.kind === 'image' || item.attachment.mime_type.startsWith('image/')
+  }
+  return false
 }
 
 /**
@@ -439,38 +505,48 @@ export function ChatPage() {
 
   /**
    * Faz upload de anexos/artefatos, registando placeholders na tray enquanto
-   * a Promise resolve. Anexos exigem `activeId`.
+   * a Promise resolve. Sem conversa ativa, mantém os arquivos como pendentes
+   * para a primeira mensagem da tela inicial.
    */
   const uploadFiles = useCallback(
     (files: File[]) => {
-      if (!activeId || files.length === 0) return
-      for (const file of files) {
-        if (!isSupportedAttachment(file)) {
+      if (files.length === 0) return
+      const normalized = files.map((file, index) => normalizedClipboardFile(file, index))
+      const hasImage = normalized.some(isImageFile)
+      const modelForImages = modelIdForAttachments(models, selectedModelId, hasImage)
+      if (modelForImages && modelForImages !== selectedModelId) {
+        setSelectedModelId(modelForImages)
+      }
+
+      for (const file of normalized) {
+        const validationError = attachmentValidationError(file)
+        if (validationError) {
           setTrayItems((prev) => [
             ...prev,
             {
               kind: 'failed',
-              localId: crypto.randomUUID(),
+              localId: randomId(),
               filename: file.name,
-              error: 'Tipo não suportado',
+              error: validationError,
             },
           ])
           continue
         }
-        const limit = attachmentLimitBytes(file)
-        if (file.size > limit) {
+
+        if (!activeId) {
           setTrayItems((prev) => [
             ...prev,
             {
-              kind: 'failed',
-              localId: crypto.randomUUID(),
+              kind: 'pending',
+              localId: randomId(),
               filename: file.name,
-              error: `Acima de ${(limit / 1024 / 1024).toFixed(0)} MB`,
+              file,
             },
           ])
           continue
         }
-        const localId = crypto.randomUUID()
+
+        const localId = randomId()
         const ctrl = new AbortController()
         setTrayItems((prev) => [
           ...prev,
@@ -511,7 +587,58 @@ export function ChatPage() {
           })
       }
     },
-    [activeId, token],
+    [activeId, models, selectedModelId, token],
+  )
+
+  const uploadPendingAttachments = useCallback(
+    async (conversationId: string): Promise<string[]> => {
+      const pending = trayItems.filter(
+        (item): item is Extract<TrayItem, { kind: 'pending' }> => item.kind === 'pending',
+      )
+      const attachmentIds: string[] = []
+      for (const item of pending) {
+        const ctrl = new AbortController()
+        setTrayItems((prev) =>
+          prev.map((it) =>
+            it.localId === item.localId
+              ? {
+                  kind: 'uploading',
+                  localId: item.localId,
+                  filename: item.filename,
+                  abort: () => ctrl.abort(),
+                }
+              : it,
+          ),
+        )
+        try {
+          const att = await uploadAttachment(token, conversationId, item.file, ctrl.signal)
+          attachmentIds.push(att.id)
+          setTrayItems((prev) =>
+            prev.map((it) =>
+              it.localId === item.localId
+                ? { kind: 'uploaded', localId: item.localId, attachment: att }
+                : it,
+            ),
+          )
+        } catch (e) {
+          setTrayItems((prev) =>
+            prev.map((it) =>
+              it.localId === item.localId
+                ? {
+                    kind: 'failed',
+                    localId: item.localId,
+                    filename: item.filename,
+                    error: e instanceof Error ? e.message : String(e),
+                  }
+                : it,
+            ),
+          )
+          throw e
+        }
+      }
+      return attachmentIds
+    },
+    [token, trayItems],
   )
 
   /** Remove um item da tray; aborta uploads em curso e apaga uploads concluídos no backend. */
@@ -836,6 +963,8 @@ export function ChatPage() {
   }
 
   function handleNewChat() {
+    setTrayItems([])
+    setIsDragOver(false)
     setActiveId(null)
     setMessages([])
     setMessagesError(null)
@@ -865,7 +994,17 @@ export function ChatPage() {
 
   /** Cria conversa e envia a mensagem inicial de uma vez */
   async function handleNewChatWithMessage(text: string) {
-    if (!text.trim()) return
+    const sendableAttachments = trayItems.filter(isSendableTrayItem)
+    const userText = text.trim() || (sendableAttachments.length ? IMAGE_ONLY_PROMPT : '')
+    if (!userText) return
+    const modelForRequest = modelIdForAttachments(
+      models,
+      selectedModelId,
+      sendableAttachments.some(trayItemHasImage),
+    )
+    if (modelForRequest && modelForRequest !== selectedModelId) {
+      setSelectedModelId(modelForRequest)
+    }
     const repos = selectedSlug
       ? [{ slug: selectedSlug, base_branch: selectedBranch || null }]
       : []
@@ -873,7 +1012,7 @@ export function ChatPage() {
     // Update otimista do título — o backend renomeia "Nova conversa" para o
     // início da primeira mensagem (mesma lógica de _TITLE_MAX_LEN=80).
     const previewTitle =
-      text.length > 80 ? text.slice(0, 80) + '…' : text
+      userText.length > 80 ? userText.slice(0, 80) + '…' : userText
     const cWithTitle = { ...c, title: previewTitle }
     optimisticConversationIdRef.current = c.id
     setConversations((prev) => [cWithTitle, ...prev])
@@ -897,7 +1036,7 @@ export function ChatPage() {
     const userMsg: ChatMessage = {
       id: randomId(),
       role: 'user',
-      content: text,
+      content: userText,
       created_at: new Date().toISOString(),
     }
     setSessionProgressAnchor({ id: userMsg.id, content: userMsg.content })
@@ -908,7 +1047,8 @@ export function ChatPage() {
     setMessages([userMsg])
 
     try {
-      await streamAssistantReply(token, c.id, text, {
+      const uploadedAttachmentIds = await uploadPendingAttachments(c.id)
+      await streamAssistantReply(token, c.id, userText, {
         onText(accumulated) {
           setStreamActivityAt(Date.now())
           const delta = accumulated.slice(lastTextOffsetRef.current)
@@ -959,7 +1099,7 @@ export function ChatPage() {
         },
         onDone(usage) { setStreamActivityAt(Date.now()); setLiveUsage(usage) },
         signal: ctrl.signal,
-      }, selectedModelId || null)
+      }, modelForRequest || null, uploadedAttachmentIds.length ? uploadedAttachmentIds : null)
       setStreamStartedAt(null)
       setStreamActivityAt(null)
       setActivityTraces((prev) => ({
@@ -1006,13 +1146,24 @@ export function ChatPage() {
   }
 
   async function handleSend(textOverride?: string) {
-    const text = (textOverride ?? input).trim()
-    if (!text || !activeId || streaming) return
+    if (!activeId || streaming) return
 
     // Bloqueia envio enquanto houver uploads em curso para não perder o
     // anexo no meio do streaming. Failed items podem ficar — o utilizador
     // já viu o erro e decide se remove ou tenta de novo.
     if (trayItems.some((it) => it.kind === 'uploading')) return
+    const sendableAttachments = trayItems.filter(isSendableTrayItem)
+    const text = (textOverride ?? input).trim() ||
+      (sendableAttachments.length ? IMAGE_ONLY_PROMPT : '')
+    if (!text) return
+    const modelForRequest = modelIdForAttachments(
+      models,
+      selectedModelId,
+      sendableAttachments.some(trayItemHasImage),
+    )
+    if (modelForRequest && modelForRequest !== selectedModelId) {
+      setSelectedModelId(modelForRequest)
+    }
     const uploadedAttachmentIds = trayItems
       .filter((it): it is Extract<TrayItem, { kind: 'uploaded' }> => it.kind === 'uploaded')
       .map((it) => it.attachment.id)
@@ -1055,6 +1206,8 @@ export function ChatPage() {
     )
 
     try {
+      const pendingAttachmentIds = await uploadPendingAttachments(activeId)
+      const attachmentIds = [...uploadedAttachmentIds, ...pendingAttachmentIds]
       await streamAssistantReply(token, activeId, text, {
         onText(accumulated) {
           setStreamActivityAt(Date.now())
@@ -1106,7 +1259,7 @@ export function ChatPage() {
         },
         onDone(usage) { setStreamActivityAt(Date.now()); setLiveUsage(usage) },
         signal: ctrl.signal,
-      }, selectedModelId || null, uploadedAttachmentIds.length ? uploadedAttachmentIds : null)
+      }, modelForRequest || null, attachmentIds.length ? attachmentIds : null)
       setStreamStartedAt(null)
       setStreamActivityAt(null)
       setActivityTraces((prev) => ({
@@ -1337,6 +1490,13 @@ export function ChatPage() {
             selectedModelId={selectedModelId}
             setSelectedModelId={setSelectedModelId}
             token={token}
+            trayItems={trayItems}
+            onPickFiles={handleFileSelection}
+            onPasteFiles={handlePaste}
+            onRemoveTrayItem={removeTrayItem}
+            fileInputRef={fileInputRef}
+            isDragOver={isDragOver}
+            setDragOver={setIsDragOver}
           />
           ) : (
             <ActiveChat
@@ -1414,6 +1574,13 @@ interface EmptyStateProps {
   selectedModelId: string
   setSelectedModelId: (id: string) => void
   token: string
+  trayItems: TrayItem[]
+  onPickFiles: (files: FileList | null | undefined) => void
+  onPasteFiles: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void
+  onRemoveTrayItem: (localId: string) => void
+  fileInputRef: React.RefObject<HTMLInputElement | null>
+  isDragOver: boolean
+  setDragOver: (v: boolean) => void
 }
 
 function EmptyState({
@@ -1421,13 +1588,21 @@ function EmptyState({
   workspaces, selectedSlug, setSelectedSlug,
   selectedBranch, setSelectedBranch,
   models, selectedModelId, setSelectedModelId, token,
+  trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
 }: EmptyStateProps) {
   const [branches, setBranches] = useState<string[]>([])
   const [loadedSlug, setLoadedSlug] = useState('')
   const branchesLoading = !!selectedSlug && loadedSlug !== selectedSlug
 
   // auto-clone trata o caso de repo não clonado
-  const canExecute = !!selectedSlug && !!selectedBranch && !!input.trim() && !streaming
+  const hasSendableAttachment = trayItems.some(isSendableTrayItem)
+  const hasUploadInProgress = trayItems.some((item) => item.kind === 'uploading')
+  const canExecute =
+    !!selectedSlug &&
+    !!selectedBranch &&
+    (!!input.trim() || hasSendableAttachment) &&
+    !hasUploadInProgress &&
+    !streaming
 
   useEffect(() => {
     if (!selectedSlug) return
@@ -1483,10 +1658,42 @@ function EmptyState({
       </section>
 
       {/* Premium Command Bar */}
-      <div className={styles.commandBarWrapper}>
+      <div
+        className={`${styles.commandBarWrapper} ${isDragOver ? styles.commandBarWrapperDragOver : ''}`}
+        onDragOver={(e) => {
+          if (!e.dataTransfer?.types?.includes('Files')) return
+          e.preventDefault()
+          setDragOver(true)
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget === e.target) setDragOver(false)
+        }}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragOver(false)
+          onPickFiles(e.dataTransfer?.files)
+        }}
+      >
         <div className={styles.commandBarGlow} />
         <div className={styles.commandBar}>
           <div className={styles.commandBarInner}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,.txt,.md,.markdown,.log,.json,.yaml,.yml,.csv,.xml,.pdf,.docx"
+              multiple
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                onPickFiles(e.target.files)
+                if (e.target) e.target.value = ''
+              }}
+            />
+            <AttachmentTray
+              items={trayItems}
+              token={token}
+              conversationId={null}
+              onRemove={onRemoveTrayItem}
+            />
             <div className={styles.commandInputRow}>
               <span className={`${styles.icon} ${styles.boltIcon}`}>bolt</span>
               <textarea
@@ -1497,19 +1704,26 @@ function EmptyState({
                     ? 'Selecione um repositório e branch antes de continuar…'
                     : !selectedBranch
                       ? 'Selecione uma branch antes de continuar…'
-                      : 'Descreva o que o agente deve fazer…'
+                      : 'Descreva o que o agente deve fazer ou cole um print…'
                 }
                 rows={2}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
+                onPaste={onPasteFiles}
                 onKeyDown={handleKey}
-                disabled={!selectedSlug || !selectedBranch}
+                disabled={streaming}
               />
             </div>
 
             <div className={styles.commandToolbar}>
               <div className={styles.commandToolbarLeft}>
-                <button className={styles.toolbarBtn} title="Anexar" disabled={!selectedSlug || !selectedBranch}>
+                <button
+                  className={styles.toolbarBtn}
+                  title="Anexar imagem ou arquivo"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={streaming}
+                  type="button"
+                >
                   <span className={styles.icon}>attachment</span>
                 </button>
                 {workspaces.length > 0 ? (
@@ -1595,7 +1809,8 @@ function EmptyState({
                   title={
                     !selectedSlug ? 'Selecione um repositório' :
                     !selectedBranch ? 'Selecione uma branch' :
-                    !input.trim() ? 'Digite uma mensagem' : undefined
+                    hasUploadInProgress ? 'Aguarde os anexos terminarem o envio…' :
+                    !input.trim() && !hasSendableAttachment ? 'Digite uma mensagem ou cole um print' : undefined
                   }
                 >
                   <span>Executar</span>
@@ -1792,6 +2007,8 @@ function ActiveChat({
       ?? tracesByContent.find((trace) => trace.content === message.content)
       ?? null
   }
+  const hasSendableAttachment = trayItems.some(isSendableTrayItem)
+  const hasUploadInProgress = trayItems.some((item) => item.kind === 'uploading')
 
   return (
     <div className={styles.activeChat}>
@@ -2082,13 +2299,15 @@ function ActiveChat({
             className={styles.sendBtn}
             onClick={onSend}
             disabled={
-              (!input.trim() && !pendingAction) ||
+              (!input.trim() && !pendingAction && !hasSendableAttachment) ||
               (streaming && !pendingAction) ||
-              trayItems.some((it) => it.kind === 'uploading')
+              hasUploadInProgress
             }
             title={
-              trayItems.some((it) => it.kind === 'uploading')
+              hasUploadInProgress
                 ? 'Aguarde os anexos terminarem o envio…'
+                : !input.trim() && !pendingAction && hasSendableAttachment
+                  ? 'Enviar imagem anexada'
                 : undefined
             }
           >

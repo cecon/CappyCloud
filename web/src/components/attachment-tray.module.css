@@ -138,6 +138,10 @@
   color: rgba(120, 200, 140, 0.85);
 }
 
+.statusPending {
+  color: rgba(180, 205, 255, 0.85);
+}
+
 .statusUp {
   color: rgba(140, 180, 240, 0.85);
 }
