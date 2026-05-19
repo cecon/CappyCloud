@@ -707,6 +707,11 @@
   opacity: 0.9;
 }
 
+.commandBarWrapperDragOver .commandBar {
+  border-color: rgba(59, 130, 246, 0.42);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12), 0 28px 80px rgba(0, 0, 0, 0.44);
+}
+
 .commandBar {
   position: relative;
   background:
@@ -789,9 +794,14 @@
   transition: background 0.1s, color 0.1s;
 }
 
-.toolbarBtn:hover {
+.toolbarBtn:hover:not(:disabled) {
   background: var(--cc-surface-container);
   color: var(--cc-on-surface);
+}
+
+.toolbarBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .toolbarDivider {
