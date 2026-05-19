@@ -42,7 +42,7 @@ export function SandboxGlobalsDrawer({ sandbox, onClose }: Props) {
             <SandboxMcpsPanel sandbox={sandbox} />
           </Tabs.Panel>
           <Tabs.Panel value="skills" pt="md">
-            <SandboxSkillsPanel sandbox={sandbox} />
+            <SandboxSkillsPanel sandbox={sandbox} canManage={false} />
           </Tabs.Panel>
           <Tabs.Panel value="agents" pt="md">
             <SandboxAgentsPanel sandbox={sandbox} />

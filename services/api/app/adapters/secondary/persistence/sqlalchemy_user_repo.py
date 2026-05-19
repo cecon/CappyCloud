@@ -34,6 +34,7 @@ class SQLAlchemyUserRepository(UserRepository):
             email=user.email,
             hashed_password=user.hashed_password,
             role=user.role.value,
+            is_super_admin=user.is_super_admin,
         )
         self._session.add(orm)
         await self._session.commit()
@@ -60,6 +61,7 @@ class SQLAlchemyUserRepository(UserRepository):
             email=row.email,
             hashed_password=row.hashed_password,
             role=_role_from_str(row.role),
+            is_super_admin=bool(row.is_super_admin),
             created_at=row.created_at,
         )
 

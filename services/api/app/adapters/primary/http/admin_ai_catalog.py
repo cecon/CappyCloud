@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.primary.http.deps import require_role
+from app.adapters.primary.http.deps import require_role, require_super_admin
 from app.adapters.primary.http.deps_base import get_db_session
 from app.domain.entities import ModelTier, UserRole
 from app.infrastructure.orm_models import AiModel, AiProvider
@@ -64,7 +64,11 @@ async def list_providers(
     ]
 
 
-@router.post("/providers/{provider_id}/sync", response_model=AiModelSyncResult)
+@router.post(
+    "/providers/{provider_id}/sync",
+    response_model=AiModelSyncResult,
+    dependencies=[Depends(require_super_admin)],
+)
 async def sync_provider(
     provider_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -118,7 +122,11 @@ class AdminModelPatch(BaseModel):
     tier: ModelTier | None = None
 
 
-@router.patch("/models/{model_id}", response_model=AiModelOut)
+@router.patch(
+    "/models/{model_id}",
+    response_model=AiModelOut,
+    dependencies=[Depends(require_super_admin)],
+)
 async def patch_model_admin(
     model_id: uuid.UUID,
     body: AdminModelPatch,

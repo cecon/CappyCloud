@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import urllib.error
+import urllib.request
 from typing import Any
 
 import docker
-from docker.errors import APIError, ImageNotFound, NotFound
+from docker.errors import APIError, DockerException, ImageNotFound, NotFound
 from docker.models.containers import Container
 
 from app.domain.entities import ContainerStatus, Sandbox
@@ -62,16 +64,30 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
     def _container_name(sandbox: Sandbox) -> str:
         return f"{CONTAINER_PREFIX}{sandbox.name}"
 
+    @staticmethod
+    def _container_name_candidates(sandbox: Sandbox) -> tuple[str, ...]:
+        """Canonical managed name plus legacy/external Compose service name."""
+        canonical = DockerComposeSandboxRuntime._container_name(sandbox)
+        if sandbox.name == canonical:
+            return (canonical,)
+        return (canonical, sandbox.name)
+
     def _find_container(self, sandbox: Sandbox) -> Container | None:
-        name = self._container_name(sandbox)
-        try:
-            return self._docker().containers.get(name)
-        except NotFound:
-            return None
-        except APIError as exc:
-            raise RuntimeFailureError(
-                f"Falha ao consultar Docker: {exc}", sandbox_id=sandbox.id
-            ) from exc
+        for name in self._container_name_candidates(sandbox):
+            try:
+                return self._docker().containers.get(name)
+            except NotFound:
+                continue
+            except APIError as exc:
+                raise RuntimeFailureError(
+                    f"Falha ao consultar Docker: {exc}", sandbox_id=sandbox.id
+                ) from exc
+            except DockerException as exc:
+                raise RuntimeFailureError(
+                    f"Docker indisponível para consultar containers: {exc}",
+                    sandbox_id=sandbox.id,
+                ) from exc
+        return None
 
     @staticmethod
     def _probe_from_container(container: Container) -> RuntimeProbe:
@@ -84,17 +100,27 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
             last_error=last_error,
         )
 
+    @staticmethod
+    def _probe_session_server(sandbox: Sandbox) -> RuntimeProbe | None:
+        url = f"http://{sandbox.host}:{sandbox.session_port}/repos/list"
+        try:
+            with urllib.request.urlopen(url, timeout=5) as response:
+                if 200 <= response.status < 300:
+                    return RuntimeProbe(status=ContainerStatus.RUNNING, runtime_ref=url)
+        except OSError, urllib.error.URLError, TimeoutError:
+            return None
+        return None
+
     async def ensure_service(self, sandbox: Sandbox) -> RuntimeProbe:
         return await asyncio.to_thread(self._ensure_service_sync, sandbox)
 
     def _ensure_service_sync(self, sandbox: Sandbox) -> RuntimeProbe:
-        if not sandbox.image:
-            raise RuntimeFailureError(
-                "Sandbox sem imagem definida — defina ``image`` antes de bootar.",
-                sandbox_id=sandbox.id,
-            )
-
-        existing = self._find_container(sandbox)
+        docker_error: RuntimeFailureError | None = None
+        try:
+            existing = self._find_container(sandbox)
+        except RuntimeFailureError as exc:
+            existing = None
+            docker_error = exc
         if existing is not None:
             # Lê estado inicial diretamente de ``attrs`` (já vem populado por
             # ``containers.get``); só recarregamos depois de uma ação (start).
@@ -109,6 +135,19 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
                     ) from exc
                 existing.reload()
             return self._probe_from_container(existing)
+
+        external = self._probe_session_server(sandbox)
+        if external is not None:
+            return external
+
+        if docker_error is not None:
+            raise docker_error
+
+        if not sandbox.image:
+            raise RuntimeFailureError(
+                "Sandbox sem imagem definida — defina ``image`` antes de bootar.",
+                sandbox_id=sandbox.id,
+            )
 
         name = self._container_name(sandbox)
         ports = {

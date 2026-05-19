@@ -130,6 +130,19 @@ class TestUserRepositoryContract:
         assert found.role is UserRole.ADMIN
         assert found.is_admin is True
 
+    async def test_super_admin_flag_is_persisted(self, user_repo_impl: UserRepository) -> None:
+        user = User(
+            id=uuid.uuid4(),
+            email="super@test.com",
+            hashed_password="x",
+            role=UserRole.ADMIN,
+            is_super_admin=True,
+        )
+        await user_repo_impl.save(user)
+        found = await user_repo_impl.get_by_email("super@test.com")
+        assert found is not None
+        assert found.is_super_admin is True
+
     async def test_list_all_returns_saved_users(self, user_repo_impl: UserRepository) -> None:
         u1 = User(id=uuid.uuid4(), email="list1@test.com", hashed_password="x")
         u2 = User(

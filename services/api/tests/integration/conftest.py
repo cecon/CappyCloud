@@ -24,6 +24,7 @@ from app.adapters.primary.http.admin_user_access import (
 )
 from app.adapters.primary.http.deps import (
     get_agent,
+    get_ai_model_access_policy,
     get_conv_repo,
     get_mcp_repo,
     get_msg_repo,
@@ -36,6 +37,7 @@ from app.domain.entities import ContainerStatus, ModelTier, SandboxRuntime, User
 from app.main import app
 from app.ports.sandbox_bootstrap import SandboxBootstrapGateway
 from app.ports.sandbox_runtime import RuntimeProbe, SandboxRuntimeGateway
+from app.ports.user_access import AiModelAccessPolicy
 from httpx import ASGITransport, AsyncClient
 
 from tests.conftest import (
@@ -82,8 +84,22 @@ class _StubRuntimeGateway(SandboxRuntimeGateway):
         pass
 
 
+class _AllowAllAiModelAccessPolicy(AiModelAccessPolicy):
+    async def resolve_model_for_user(
+        self,
+        user_id: uuid.UUID,
+        role: UserRole,
+        requested_model_id: str | None,
+    ) -> str:
+        return requested_model_id or "openrouter/free"
+
+
 async def seed_user(
-    repo: InMemoryUserRepository, email: str, *, role: UserRole = UserRole.USER
+    repo: InMemoryUserRepository,
+    email: str,
+    *,
+    role: UserRole = UserRole.USER,
+    is_super_admin: bool = False,
 ) -> User:
     """Insere utilizador no repo sem passar pelo HTTP — para fixtures.
 
@@ -95,6 +111,7 @@ async def seed_user(
         email=email,
         hashed_password="hashed:password123",
         role=role,
+        is_super_admin=is_super_admin,
     )
     await repo.save(user)
     return user
@@ -174,6 +191,7 @@ async def client(
     app.dependency_overrides[get_password_service] = lambda: FakePasswordService()
     app.dependency_overrides[get_token_service] = lambda: FakeTokenService()
     app.dependency_overrides[get_agent] = lambda: FakeAgent()
+    app.dependency_overrides[get_ai_model_access_policy] = lambda: _AllowAllAiModelAccessPolicy()
     app.dependency_overrides[get_sandbox_repo] = lambda: sandbox_repo
     app.dependency_overrides[get_runtime_gateways] = lambda: runtimes
     app.dependency_overrides[get_bootstrap_gateways] = lambda: bootstraps
@@ -199,6 +217,24 @@ async def admin_headers(client: AsyncClient, user_repo: InMemoryUserRepository) 
     r = await client.post(
         "/api/auth/login",
         data={"username": "admin@test.com", "password": "password123"},
+    )
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+@pytest.fixture
+async def super_admin_headers(
+    client: AsyncClient, user_repo: InMemoryUserRepository
+) -> dict[str, str]:
+    """Autentica como ADMIN marcado como super admin."""
+    await seed_user(
+        user_repo,
+        "superadmin@test.com",
+        role=UserRole.ADMIN,
+        is_super_admin=True,
+    )
+    r = await client.post(
+        "/api/auth/login",
+        data={"username": "superadmin@test.com", "password": "password123"},
     )
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 

@@ -129,6 +129,15 @@ class Pipeline:
             yield sse({"type": "error", "message": "Pipeline não inicializado."})
             return
 
+        yield sse(
+            {
+                "type": "status",
+                "message": "Preparando contexto da conversa.",
+                "stage": "session",
+                "mode": "initializing",
+            }
+        )
+
         conversation_id = str(body.get("conversation_id") or "")
         repos = body.get("repos") or []
         session_root = str(body.get("session_root") or "")
@@ -227,6 +236,14 @@ class Pipeline:
 
         # Envia config MCP ao sandbox antes de cada dispatch (idempotente).
         user_id_str = str(body.get("user_id") or "")
+        yield sse(
+            {
+                "type": "status",
+                "message": "Sincronizando configuração do agente.",
+                "stage": "session",
+                "mode": "initializing",
+            }
+        )
         self._run(
             push_mcp_config(db_url(), user_id_str, sandbox_session_url),
             timeout=8,

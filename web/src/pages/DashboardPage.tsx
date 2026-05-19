@@ -212,7 +212,7 @@ export function DashboardPage() {
                       icon="source"
                       title="Repositórios"
                       description="Credenciais, branches e sync dos projetos."
-                      href="/settings"
+                      href="/admin/repositories"
                       cta="Preparar contexto"
                     />
                     <FeatureCard
@@ -233,7 +233,7 @@ export function DashboardPage() {
                       icon="hub"
                       title="MCP Manager"
                       description="Conectores, ferramentas externas e políticas de runtime."
-                      href="/settings"
+                      href="/admin/sandboxes"
                       cta="Gerenciar MCP"
                     />
                   </div>

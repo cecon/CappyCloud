@@ -12,6 +12,7 @@ type NavItem = {
   to: string
   icon: string
   label: string
+  superAdminOnly?: boolean
 }
 
 type NavGroup = {
@@ -44,14 +45,27 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/admin/sandboxes', icon: 'dns', label: 'Sandboxes' },
       { to: '/admin/repositories', icon: 'folder_managed', label: 'Repositórios' },
       { to: '/skills', icon: 'menu_book', label: 'Skills (por repo)' },
-      { to: '/admin/models', icon: 'token', label: 'Modelos LLM' },
-      { to: '/admin/providers', icon: 'cloud', label: 'Providers LLM' },
+      {
+        to: '/admin/skills-global',
+        icon: 'library_books',
+        label: 'Skills globais',
+        superAdminOnly: true,
+      },
+      { to: '/admin/models', icon: 'token', label: 'Modelos LLM', superAdminOnly: true },
+      { to: '/admin/providers', icon: 'cloud', label: 'Providers LLM', superAdminOnly: true },
     ],
   },
   {
     id: 'sistema',
     label: 'Sistema',
-    items: [{ to: '/settings', icon: 'settings', label: 'Configurações' }],
+    items: [
+      {
+        to: '/settings',
+        icon: 'settings',
+        label: 'Configurações',
+        superAdminOnly: true,
+      },
+    ],
   },
 ]
 
@@ -64,7 +78,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   '/mcp': { title: 'MCPs', subtitle: 'Servidores MCP carregados pelo sandbox' },
   '/settings': {
     title: 'Configurações',
-    subtitle: 'Provedores, modelos e preferências da plataforma',
+    subtitle: 'Conta e atalhos do ambiente',
   },
   '/admin/users': { title: 'Usuários', subtitle: 'Cadastro de utilizadores e papéis' },
   '/admin/sandboxes': {
@@ -110,7 +124,12 @@ export function AppLayout({ children }: AppLayoutProps) {
   const currentUserState = useCurrentUser()
   const isAdmin =
     currentUserState.status === 'ready' && currentUserState.user.role === 'admin'
-  const visibleGroups = NAV_GROUPS.filter((g) => !g.adminOnly || isAdmin)
+  const isSuperAdmin =
+    currentUserState.status === 'ready' && currentUserState.user.is_super_admin
+  const visibleGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !item.superAdminOnly || isSuperAdmin),
+  })).filter((group) => group.items.length > 0 && (!group.adminOnly || isAdmin))
   const [navCollapsed, setNavCollapsed] = useState(() => {
     try {
       return window.localStorage.getItem(APP_NAV_COLLAPSED_KEY) === 'true'
@@ -238,7 +257,9 @@ export function AppLayout({ children }: AppLayoutProps) {
               </span>
               <span className={styles.profileMeta}>
                 {currentUserState.status === 'ready'
-                  ? currentUserState.user.role === 'admin'
+                  ? currentUserState.user.is_super_admin
+                    ? 'Super admin'
+                    : currentUserState.user.role === 'admin'
                     ? 'Administrador'
                     : 'Utilizador'
                   : 'Perfil e preferências'}
@@ -276,14 +297,16 @@ export function AppLayout({ children }: AppLayoutProps) {
               <span className={styles.icon}>menu_book</span>
               Skills
             </Link>
-            <Link
-              to="/settings"
-              className={styles.iconButton}
-              title="Configurações"
-              aria-label="Configurações"
-            >
-              <span className={styles.icon}>settings</span>
-            </Link>
+            {isSuperAdmin && (
+              <Link
+                to="/settings"
+                className={styles.iconButton}
+                title="Configurações"
+                aria-label="Configurações"
+              >
+                <span className={styles.icon}>settings</span>
+              </Link>
+            )}
           </div>
         </header>
 

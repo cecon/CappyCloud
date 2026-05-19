@@ -46,6 +46,8 @@ async def load_attachment_bytes(
         return None
     out: list[dict] = []
     for att in atts:
+        if att.kind != "image" and not att.mime_type.lower().startswith("image/"):
+            continue
         try:
             content = await storage.read(att.storage_path)
         except Exception:
@@ -82,7 +84,11 @@ async def inject_attachments(
     if not atts:
         return prompt
 
-    model = atts[0].vision_model_used or "vision"
+    image_atts = [att for att in atts if att.kind == "image" or att.mime_type.startswith("image/")]
+    if not image_atts:
+        return prompt
+
+    model = image_atts[0].vision_model_used or "vision"
     sections: list[str] = [
         "## Imagens anexadas pelo utilizador",
         (
@@ -91,7 +97,7 @@ async def inject_attachments(
             "tivesse visto as imagens — não peça para reenviar."
         ),
     ]
-    for i, att in enumerate(atts, 1):
+    for i, att in enumerate(image_atts, 1):
         desc = att.vision_description or (
             "[descrição indisponível — pergunte ao utilizador o que estava "
             "na imagem se for crítico]"
@@ -102,3 +108,67 @@ async def inject_attachments(
         )
     sections.append("---\n\n## Mensagem do utilizador\n\n" + prompt)
     return "\n\n".join(sections)
+
+
+async def inject_artifact_chunks(
+    attachments: AttachmentRepository | None,
+    conversation_id: uuid.UUID,
+    attachment_ids: list[uuid.UUID] | None,
+    query: str,
+    prompt: str,
+    *,
+    limit: int = 6,
+) -> str:
+    """Prepende trechos relevantes dos arquivos anexados à conversa."""
+    if not attachment_ids or attachments is None:
+        return prompt
+    try:
+        atts = await attachments.list_by_ids(attachment_ids, conversation_id)
+    except Exception:
+        return prompt
+    artifact_atts = [
+        att for att in atts if att.kind != "image" and not att.mime_type.startswith("image/")
+    ]
+    if not artifact_atts:
+        return prompt
+    artifact_ids = [att.id for att in artifact_atts]
+    try:
+        chunks = await attachments.search_chunks(
+            conversation_id=conversation_id,
+            attachment_ids=artifact_ids,
+            query=query,
+            limit=limit,
+        )
+    except Exception:
+        return prompt
+    if not chunks:
+        return prompt
+
+    by_id = {att.id: att for att in artifact_atts}
+    sections = [
+        "## Arquivos anexados pelo utilizador",
+        (
+            "Use os trechos abaixo como material de investigação desta conversa. "
+            "Eles foram recuperados de arquivos anexados e não representam o arquivo inteiro."
+        ),
+    ]
+    for idx, chunk in enumerate(chunks, 1):
+        att = by_id.get(chunk.attachment_id)
+        filename = att.original_filename if att else str(chunk.attachment_id)
+        location = _format_chunk_location(chunk.line_start, chunk.line_end, chunk.page_start)
+        sections.append(
+            f"### Trecho {idx}: `{filename}`{location}\n\n```text\n{chunk.content[:6000]}\n```"
+        )
+    return "\n\n".join(sections) + "\n\n---\n\n" + prompt
+
+
+def _format_chunk_location(
+    line_start: int | None,
+    line_end: int | None,
+    page_start: int | None,
+) -> str:
+    if line_start is not None and line_end is not None:
+        return f" (linhas {line_start}-{line_end})"
+    if page_start is not None:
+        return f" (página {page_start})"
+    return ""

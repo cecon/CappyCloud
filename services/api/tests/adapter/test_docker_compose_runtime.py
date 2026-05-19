@@ -13,7 +13,7 @@ from app.adapters.secondary.sandbox_runtime.docker_compose import (
 )
 from app.domain.entities import ContainerStatus, Sandbox, SandboxRuntime
 from app.ports.sandbox_runtime import RuntimeFailureError
-from docker.errors import APIError, ImageNotFound, NotFound
+from docker.errors import APIError, DockerException, ImageNotFound, NotFound
 
 
 def _sandbox(
@@ -110,6 +110,50 @@ class TestEnsureService:
         docker_client.containers.run.assert_not_called()
         assert probe.status is ContainerStatus.RUNNING
 
+    async def test_finds_existing_compose_service_name_without_image(
+        self, runtime: DockerComposeSandboxRuntime, docker_client: MagicMock
+    ) -> None:
+        sb = _sandbox(name="cappycloud-sandbox", image="")
+        existing = _container_with_state({"Status": "running"})
+        docker_client.containers.get.side_effect = [NotFound("no prefixed"), existing]
+
+        probe = await runtime.ensure_service(sb)
+
+        assert probe.status is ContainerStatus.RUNNING
+        assert docker_client.containers.get.call_args_list[0].args[0] == (
+            "cappycloud-sandbox-cappycloud-sandbox"
+        )
+        assert docker_client.containers.get.call_args_list[1].args[0] == "cappycloud-sandbox"
+        docker_client.containers.run.assert_not_called()
+
+    async def test_uses_session_server_when_docker_is_unavailable(
+        self,
+        runtime: DockerComposeSandboxRuntime,
+        docker_client: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class Response:
+            status = 200
+
+            def __enter__(self) -> Response:
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                return None
+
+        sb = _sandbox(name="cappycloud-sandbox", image="")
+        docker_client.containers.get.side_effect = DockerException("no docker socket")
+        monkeypatch.setattr(
+            "app.adapters.secondary.sandbox_runtime.docker_compose.urllib.request.urlopen",
+            lambda *_args, **_kwargs: Response(),
+        )
+
+        probe = await runtime.ensure_service(sb)
+
+        assert probe.status is ContainerStatus.RUNNING
+        assert probe.runtime_ref == "http://cappycloud-sandbox:8080/repos/list"
+        docker_client.containers.run.assert_not_called()
+
     async def test_raises_runtime_failure_on_image_not_found(
         self, runtime: DockerComposeSandboxRuntime, docker_client: MagicMock
     ) -> None:
@@ -130,8 +174,12 @@ class TestEnsureService:
         with pytest.raises(RuntimeFailureError, match="Docker API"):
             await runtime.ensure_service(sb)
 
-    async def test_raises_when_image_blank(self, runtime: DockerComposeSandboxRuntime) -> None:
+    async def test_raises_when_image_blank(
+        self, runtime: DockerComposeSandboxRuntime, docker_client: MagicMock
+    ) -> None:
         sb = _sandbox(name="alpha", image="")
+        docker_client.containers.get.side_effect = NotFound("nope")
+
         with pytest.raises(RuntimeFailureError, match="sem imagem"):
             await runtime.ensure_service(sb)
 

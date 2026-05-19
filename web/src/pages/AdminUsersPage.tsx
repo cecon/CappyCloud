@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  ActionIcon,
   Alert,
   Badge,
   Button,
@@ -18,6 +19,13 @@ import {
   Title,
 } from '@mantine/core'
 import {
+  IconDotsVertical,
+  IconKey,
+  IconShieldDown,
+  IconShieldUp,
+  IconUserCog,
+} from '@tabler/icons-react'
+import {
   type AdminUser,
   errorToUserMessage,
   fetchAdminUsers,
@@ -27,6 +35,7 @@ import {
   updateAdminUserRole,
   type UserRole,
 } from '../api'
+import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
 import { UserAccessDrawer } from '../components/UserAccessDrawer'
 import { isPlausibleEmail } from '../validation'
 
@@ -159,7 +168,7 @@ export function AdminUsersPage() {
                 <Table.Tr>
                   <Table.Th>Email</Table.Th>
                   <Table.Th style={{ width: 110 }}>Papel</Table.Th>
-                  <Table.Th style={{ width: 280 }}>Ações</Table.Th>
+                  <ActionsHeader width={112} />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -176,6 +185,11 @@ export function AdminUsersPage() {
                               você
                             </Badge>
                           )}
+                          {u.is_super_admin && (
+                            <Badge size="xs" variant="filled" color="violet">
+                              SUPER ADMIN
+                            </Badge>
+                          )}
                         </Group>
                       </Table.Td>
                       <Table.Td>
@@ -186,54 +200,55 @@ export function AdminUsersPage() {
                           {u.role === 'admin' ? 'ADMIN' : 'USER'}
                         </Badge>
                       </Table.Td>
-                      <Table.Td>
-                        <Group gap="xs">
-                          <Button
-                            size="xs"
-                            variant="light"
-                            onClick={() => setAccessTarget(u)}
-                            disabled={u.role === 'admin'}
-                            title={
-                              u.role === 'admin'
-                                ? 'ADMIN tem acesso total — não é necessário gerir.'
-                                : 'Gerir sandboxes, repositórios e modelos liberados'
-                            }
-                          >
-                            Acessos
-                          </Button>
-                          <Menu shadow="md" position="bottom-end">
-                            <Menu.Target>
-                              <Button
-                                size="xs"
-                                variant="default"
-                                loading={isPending}
-                                disabled={isPending}
-                              >
-                                Alterar papel
-                              </Button>
-                            </Menu.Target>
-                            <Menu.Dropdown>
-                              <Menu.Item
-                                disabled={u.role === 'admin'}
-                                onClick={() => void changeRole(u, 'admin')}
-                              >
-                                Promover a ADMIN
-                              </Menu.Item>
-                              <Menu.Item
-                                disabled={u.role === 'user' || isSelf}
-                                onClick={() => void changeRole(u, 'user')}
-                              >
-                                Rebaixar para USER
-                                {isSelf && (
-                                  <Text size="xs" c="dimmed">
-                                    bloqueado: você mesmo
-                                  </Text>
-                                )}
-                              </Menu.Item>
-                            </Menu.Dropdown>
-                          </Menu>
-                        </Group>
-                      </Table.Td>
+                      <ActionsCell>
+                        <RowActionIcon
+                          label={u.role === 'admin' ? 'ADMIN tem acesso total' : 'Gerir acessos'}
+                          color="blue"
+                          onClick={() => setAccessTarget(u)}
+                          disabled={u.role === 'admin'}
+                        >
+                          <IconKey size={16} />
+                        </RowActionIcon>
+                        <Menu shadow="md" position="bottom-end">
+                          <Menu.Target>
+                            <ActionIcon
+                              aria-label="Alterar papel"
+                              title="Alterar papel"
+                              size="lg"
+                              variant="default"
+                              loading={isPending}
+                              disabled={isPending}
+                            >
+                              {isPending ? (
+                                <IconDotsVertical size={16} />
+                              ) : (
+                                <IconUserCog size={16} />
+                              )}
+                            </ActionIcon>
+                          </Menu.Target>
+                          <Menu.Dropdown>
+                            <Menu.Item
+                              disabled={u.role === 'admin'}
+                              leftSection={<IconShieldUp size={14} />}
+                              onClick={() => void changeRole(u, 'admin')}
+                            >
+                              Promover a ADMIN
+                            </Menu.Item>
+                            <Menu.Item
+                              disabled={u.role === 'user' || isSelf}
+                              leftSection={<IconShieldDown size={14} />}
+                              onClick={() => void changeRole(u, 'user')}
+                            >
+                              Rebaixar para USER
+                              {isSelf && (
+                                <Text size="xs" c="dimmed">
+                                  bloqueado: você mesmo
+                                </Text>
+                              )}
+                            </Menu.Item>
+                          </Menu.Dropdown>
+                        </Menu>
+                      </ActionsCell>
                     </Table.Tr>
                   )
                 })}

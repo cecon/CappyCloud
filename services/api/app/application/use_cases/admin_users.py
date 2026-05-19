@@ -24,6 +24,10 @@ class CannotDemoteSelfError(Exception):
     """ADMIN tentou rebaixar a si mesmo — bloqueado para evitar lockout."""
 
 
+class CannotChangeSuperAdminRoleError(Exception):
+    """Tentativa de alterar papel de SUPER ADMIN por outro utilizador."""
+
+
 class ListUsers:
     """Lista todos os utilizadores. Ordem cronológica de criação."""
 
@@ -54,6 +58,14 @@ class UpdateUserRole:
     ) -> User:
         if target_user_id == acting_user_id and new_role is not UserRole.ADMIN:
             raise CannotDemoteSelfError("Você não pode rebaixar a si mesmo. Peça a outro ADMIN.")
+
+        current = await self._users.get_by_id(target_user_id)
+        if current is None:
+            raise UserNotFoundError(f"Utilizador {target_user_id} não encontrado.")
+        if current.is_super_admin and target_user_id != acting_user_id:
+            raise CannotChangeSuperAdminRoleError(
+                "Papel de SUPER ADMIN não pode ser alterado por outro administrador."
+            )
 
         updated = await self._users.update_role(target_user_id, new_role)
         if updated is None:

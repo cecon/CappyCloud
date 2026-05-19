@@ -275,8 +275,14 @@ class TaskDispatcher:
             working_directory=working_directory,
         )
 
-        # stage='agent' é emitido pelo TaskRunner quando o LLM responder de
-        # facto (primeiro chunk/tool). Evita "tudo verde + erro logo a seguir".
+        await insert_status_event(
+            self._pool,
+            task_id,
+            "Aguardando resposta do agente.",
+            "agent",
+            mode,
+            state="active",
+        )
         try:
             await session.start(prompt, attachments=attachments)
         except Exception as exc:

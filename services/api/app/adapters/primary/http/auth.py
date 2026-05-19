@@ -39,7 +39,12 @@ async def register(
         user = await uc.execute(body.email, body.password, body.role)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return UserOut(id=user.id, email=user.email, role=user.role)
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        role=user.role,
+        is_super_admin=user.is_super_admin,
+    )
 
 
 @router.post("/login", response_model=Token)
@@ -64,4 +69,9 @@ async def me(
     current: Annotated[User, Depends(get_authenticated_user)],
 ) -> UserOut:
     """Devolve dados do utilizador autenticado, incluindo o papel."""
-    return UserOut(id=current.id, email=current.email, role=current.role)
+    return UserOut(
+        id=current.id,
+        email=current.email,
+        role=current.role,
+        is_super_admin=current.is_super_admin,
+    )

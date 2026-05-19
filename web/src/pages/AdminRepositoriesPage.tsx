@@ -15,6 +15,7 @@ import {
   TextInput,
   Title,
 } from '@mantine/core'
+import { IconRefresh, IconTrash } from '@tabler/icons-react'
 import {
   createRepository,
   deleteRepository,
@@ -27,6 +28,7 @@ import {
   type Sandbox,
   syncRepository,
 } from '../api'
+import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
 
 type FormState = {
   slug: string
@@ -199,7 +201,7 @@ export function AdminRepositoriesPage() {
                   <Table.Th>Clone URL</Table.Th>
                   <Table.Th style={{ width: 120 }}>Branch</Table.Th>
                   <Table.Th style={{ width: 120 }}>Estado</Table.Th>
-                  <Table.Th style={{ width: 180 }}>Ações</Table.Th>
+                  <ActionsHeader width={96} />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -226,28 +228,25 @@ export function AdminRepositoriesPage() {
                         {r.sandbox_status}
                       </Badge>
                     </Table.Td>
-                    <Table.Td>
-                      <Group gap="xs">
-                        <Button
-                          size="xs"
-                          variant="light"
-                          loading={busyId === r.id}
-                          disabled={busyId !== null || !r.sandbox_id}
-                          onClick={() => void handleSync(r.id)}
-                        >
-                          Sincronizar
-                        </Button>
-                        <Button
-                          size="xs"
-                          variant="subtle"
-                          color="red"
-                          disabled={busyId !== null}
-                          onClick={() => void handleDelete(r.id)}
-                        >
-                          Remover
-                        </Button>
-                      </Group>
-                    </Table.Td>
+                    <ActionsCell>
+                      <RowActionIcon
+                        label="Sincronizar repositório"
+                        color="blue"
+                        loading={busyId === r.id}
+                        disabled={busyId !== null || !r.sandbox_id}
+                        onClick={() => void handleSync(r.id)}
+                      >
+                        <IconRefresh size={16} />
+                      </RowActionIcon>
+                      <RowActionIcon
+                        label="Remover repositório"
+                        color="red"
+                        disabled={busyId !== null}
+                        onClick={() => void handleDelete(r.id)}
+                      >
+                        <IconTrash size={16} />
+                      </RowActionIcon>
+                    </ActionsCell>
                   </Table.Tr>
                 ))}
               </Table.Tbody>

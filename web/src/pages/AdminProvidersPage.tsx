@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   Alert,
   Badge,
-  Button,
   Container,
   Group,
   Loader,
@@ -12,6 +11,7 @@ import {
   Text,
   Title,
 } from '@mantine/core'
+import { IconRefresh } from '@tabler/icons-react'
 import {
   type AdminAiProvider,
   type AiModelSyncResult,
@@ -20,6 +20,8 @@ import {
   getToken,
   syncAdminProvider,
 } from '../api'
+import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
+import { useCurrentUser } from '../hooks/useCurrentUser'
 
 function formatTimestamp(iso: string | null): string {
   if (!iso) return '—'
@@ -31,6 +33,9 @@ function formatTimestamp(iso: string | null): string {
 }
 
 export function AdminProvidersPage() {
+  const currentUser = useCurrentUser()
+  const canSyncProviders =
+    currentUser.status === 'ready' && currentUser.user.is_super_admin
   const [providers, setProviders] = useState<AdminAiProvider[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [syncing, setSyncing] = useState<string | null>(null)
@@ -87,6 +92,12 @@ export function AdminProvidersPage() {
           </Alert>
         )}
 
+        {!canSyncProviders && (
+          <Alert color="yellow" title="Somente super admin sincroniza providers">
+            A sincronização pode ativar novos modelos free e atualizar preços globais.
+          </Alert>
+        )}
+
         {lastResult && (
           <Alert color="green" title="Sync concluído" withCloseButton onClose={() => setLastResult(null)}>
             {lastResult.fetched} modelos do provider — {lastResult.created} criados,{' '}
@@ -116,7 +127,7 @@ export function AdminProvidersPage() {
                   <Table.Th style={{ width: 90 }}>Modelos</Table.Th>
                   <Table.Th style={{ width: 90 }}>Estado</Table.Th>
                   <Table.Th style={{ width: 180 }}>Último sync</Table.Th>
-                  <Table.Th style={{ width: 130 }}>Ações</Table.Th>
+                  <ActionsHeader width={72} />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -143,17 +154,17 @@ export function AdminProvidersPage() {
                     <Table.Td>
                       <Text size="xs">{formatTimestamp(p.last_synced_at)}</Text>
                     </Table.Td>
-                    <Table.Td>
-                      <Button
-                        size="xs"
-                        variant="light"
+                    <ActionsCell>
+                      <RowActionIcon
+                        label="Sincronizar provider"
+                        color="blue"
                         loading={syncing === p.id}
-                        disabled={syncing !== null || !p.active}
+                        disabled={!canSyncProviders || syncing !== null || !p.active}
                         onClick={() => void handleSync(p.id)}
                       >
-                        Sincronizar
-                      </Button>
-                    </Table.Td>
+                        <IconRefresh size={16} />
+                      </RowActionIcon>
+                    </ActionsCell>
                   </Table.Tr>
                 ))}
               </Table.Tbody>

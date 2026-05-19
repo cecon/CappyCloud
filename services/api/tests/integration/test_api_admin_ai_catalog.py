@@ -41,6 +41,22 @@ class TestAdminAiCatalogRoleGuard:
         )
         assert r.status_code == 403
 
+    async def test_sync_provider_blocks_plain_admin(
+        self, client: AsyncClient, admin_headers: dict[str, str]
+    ) -> None:
+        r = await client.post(f"/api/admin/providers/{uuid.uuid4()}/sync", headers=admin_headers)
+        assert r.status_code == 403
+
+    async def test_patch_model_blocks_plain_admin(
+        self, client: AsyncClient, admin_headers: dict[str, str]
+    ) -> None:
+        r = await client.patch(
+            f"/api/admin/models/{uuid.uuid4()}",
+            json={"active": False},
+            headers=admin_headers,
+        )
+        assert r.status_code == 403
+
     async def test_endpoints_require_authentication(self, client: AsyncClient) -> None:
         # Sem token, sequer chega ao gate de role — 401:
         r = await client.get("/api/admin/providers")

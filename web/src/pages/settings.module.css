@@ -84,6 +84,113 @@
   margin: 0 0 1.25rem;
 }
 
+.headerLinks {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.profileGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
+  gap: 1rem;
+  align-items: center;
+}
+
+.identityBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.625rem;
+  min-width: 0;
+  color: var(--cc-on-surface);
+}
+
+.identityBlock strong {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 0.9375rem;
+}
+
+.rolePills {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.badge_super {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+}
+
+.settingsList {
+  display: grid;
+  margin-top: 0.75rem;
+}
+
+.settingsLink {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 24px;
+  gap: 0.875rem;
+  align-items: center;
+  min-height: 58px;
+  color: inherit;
+  text-decoration: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.settingsLink:first-child {
+  border-top: none;
+}
+
+.settingsLink:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.settingsLinkIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--cc-primary);
+  font-size: 1.25rem;
+}
+
+.settingsLinkContent {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 0.125rem;
+}
+
+.settingsLinkTitle {
+  color: var(--cc-on-surface);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.settingsLinkDesc {
+  color: var(--cc-on-surface-variant);
+  font-size: 0.78125rem;
+  line-height: 1.35;
+}
+
+.settingsLinkArrow {
+  justify-self: end;
+  color: var(--cc-on-surface-variant);
+  font-size: 1.125rem;
+}
+
 .crudLayout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

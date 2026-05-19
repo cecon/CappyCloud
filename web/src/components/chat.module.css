@@ -1695,7 +1695,7 @@
 
 .sessionProgressCard {
   align-self: flex-start;
-  width: min(320px, 92%);
+  width: min(460px, 92%);
   border: 1px solid var(--cc-outline-variant);
   border-radius: 8px;
   background: var(--cc-surface-container);
@@ -1739,6 +1739,18 @@
   font: 600 0.85rem 'Inter', sans-serif;
 }
 
+.sessionProgressHeaderText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.sessionProgressMeta {
+  color: var(--cc-on-surface-variant);
+  font: 500 0.72rem 'Inter', sans-serif;
+}
+
 .sessionProgressBootIcon {
   display: inline-flex;
   align-items: center;
@@ -1764,7 +1776,7 @@
 
 .sessionProgressPulse {
   height: 1px;
-  margin-top: 0.65rem;
+  margin-top: 0.7rem;
   background: linear-gradient(90deg, transparent, rgba(96, 165, 250, 0.9), transparent);
   background-size: 220% 100%;
   animation: sessionProgressShimmer 1.4s linear infinite;
@@ -1855,6 +1867,26 @@
 
 .sessionProgressLabelDone {
   animation: sessionLabelTick 0.3s ease both;
+}
+
+.sessionProgressStepBody {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.sessionProgressLabel {
+  color: var(--cc-on-surface);
+  font: 600 0.78rem 'Inter', sans-serif;
+  line-height: 1.35;
+}
+
+.sessionProgressDetail {
+  color: var(--cc-on-surface-variant);
+  font: 500 0.72rem 'Inter', sans-serif;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 @keyframes sessionStepIn {

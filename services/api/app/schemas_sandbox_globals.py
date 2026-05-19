@@ -50,6 +50,36 @@ class SandboxSkillOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class GlobalSkillCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    description: str = ""
+    content: str = ""
+    enabled: bool = True
+    sandbox_ids: list[uuid.UUID] = Field(default_factory=list)
+
+    @field_validator("name")
+    @classmethod
+    def name_valido(cls, v: str) -> str:
+        return _validate_name(v)
+
+
+class GlobalSkillUpdate(GlobalSkillCreate):
+    """Mesmo payload — todos os campos obrigatórios na atualização."""
+
+
+class GlobalSkillOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    description: str
+    content: str
+    enabled: bool
+    sandbox_ids: list[uuid.UUID]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ── SandboxAgent ─────────────────────────────────────────────────────────────
 
 

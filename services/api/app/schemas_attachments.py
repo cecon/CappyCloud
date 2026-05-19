@@ -26,6 +26,9 @@ class AttachmentOut(BaseModel):
     size_bytes: int
     kind: str = "image"
     has_description: bool = False
+    processing_status: str = "uploaded"
+    chunks_count: int = 0
+    processing_error: str | None = None
     vision_model_used: str | None = None
     uploaded_at: datetime
     preview_url: str

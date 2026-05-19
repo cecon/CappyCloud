@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,13 +14,14 @@ from app.adapters.primary.http.conversation_worktree_paths import (
     WORKTREE_FROM_CONVERSATION,
     resolve_git_paths_from_worktree_row,
 )
-from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
+from app.adapters.primary.http.deps import get_agent, get_authenticated_user, get_db_session
 from app.domain.entities import User
 from app.infrastructure.sandbox_worktree_client import (
     SandboxWorktreeError,
     worktree_ls_files,
     worktree_read_file,
 )
+from app.ports.agent import AgentPort
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -31,8 +33,8 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 async def cancel_conversation_task(
     conversation_id: uuid.UUID,
     current: Annotated[User, Depends(get_authenticated_user)],
-    request: Request,
     db: Annotated[AsyncSession, Depends(get_db_session)],
+    agent: Annotated[AgentPort, Depends(get_agent)],
 ) -> dict:
     """Cancela a task activa da conversa."""
     conv_row = await db.execute(
@@ -43,8 +45,7 @@ async def cancel_conversation_task(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada")
 
     try:
-        agent = request.app.state.agent
-        cancelled = agent.cancel_conversation(str(conversation_id))
+        cancelled = await asyncio.to_thread(agent.cancel_conversation, str(conversation_id))
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)

@@ -1,10 +1,14 @@
 import { Link } from 'react-router-dom'
+import { useCurrentUser } from '../../hooks/useCurrentUser'
 import styles from './TopBar.module.css'
 
 /**
  * Barra superior compacta: marca, contexto e ações globais.
  */
 export function TopBar() {
+  const currentUser = useCurrentUser()
+  const isSuperAdmin = currentUser.status === 'ready' && currentUser.user.is_super_admin
+
   return (
     <header className={styles.bar}>
       <div className={styles.left}>
@@ -36,9 +40,16 @@ export function TopBar() {
           <span className={styles.icon}>add</span>
           Nova sessão
         </Link>
-        <Link to="/settings" className={styles.avatar} title="Conta e configurações" aria-label="Conta">
-          <span className={styles.avatarInner}>CC</span>
-        </Link>
+        {isSuperAdmin && (
+          <Link
+            to="/settings"
+            className={styles.avatar}
+            title="Configurações"
+            aria-label="Configurações"
+          >
+            <span className={styles.avatarInner}>CC</span>
+          </Link>
+        )}
       </div>
     </header>
   )
