@@ -97,12 +97,12 @@ def test_render_session_tools_includes_space_param_when_space_set() -> None:
             {
                 "slug": "api",
                 "confluence_url": "https://x.example/wiki",
-                "confluence_space": "POSTOS",
+                "confluence_space": "FRONTEND",
             }
         ],
     )
     # &space= deve aparecer entre base_url e q
-    assert "&space=POSTOS&q=" in rendered
+    assert "&space=FRONTEND&q=" in rendered
 
 
 def test_render_session_tools_includes_space_label_when_space_set() -> None:
@@ -112,11 +112,43 @@ def test_render_session_tools_includes_space_label_when_space_set() -> None:
             {
                 "slug": "api",
                 "confluence_url": "https://x.example/wiki",
-                "confluence_space": "POSTOS",
+                "confluence_space": "FRONTEND",
             }
         ],
     )
-    assert "(space `POSTOS`)" in rendered
+    assert "(space `FRONTEND`)" in rendered
+
+
+def test_render_session_tools_includes_labels_param_when_labels_set() -> None:
+    rendered = render_session_tools(
+        SANDBOX_URL,
+        [
+            {
+                "slug": "react",
+                "confluence_url": "https://x.example/wiki",
+                "confluence_space": "Frontend",
+                "confluence_labels": ["react", "react-dom"],
+            }
+        ],
+    )
+    assert "&space=Frontend&labels=react,react-dom&q=" in rendered
+    assert "labels `react`, `react-dom`" in rendered
+    assert "parâmetros, cadastros, configurações" in rendered
+
+
+def test_render_session_tools_url_encodes_labels_with_special_chars() -> None:
+    rendered = render_session_tools(
+        SANDBOX_URL,
+        [
+            {
+                "slug": "api",
+                "confluence_url": "https://x.example/wiki",
+                "confluence_labels": ["react dom", "react&native"],
+            }
+        ],
+    )
+    assert "&labels=react%20dom,react%26native&q=" in rendered
+    assert "&labels=react dom" not in rendered
 
 
 def test_render_session_tools_omits_space_when_space_missing() -> None:

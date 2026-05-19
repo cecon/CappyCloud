@@ -15,7 +15,7 @@ import {
   TextInput,
   Title,
 } from '@mantine/core'
-import { IconRefresh, IconTrash } from '@tabler/icons-react'
+import { IconPencil, IconRefresh, IconTrash } from '@tabler/icons-react'
 import {
   createRepository,
   deleteRepository,
@@ -27,6 +27,7 @@ import {
   type RepositoryCreate,
   type Sandbox,
   syncRepository,
+  updateRepository,
 } from '../api'
 import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
 
@@ -35,6 +36,9 @@ type FormState = {
   name: string
   clone_url: string
   default_branch: string
+  confluence_url: string
+  confluence_space: string
+  confluence_labels: string
   pat_token: string
   sandbox_id: string | null
 }
@@ -44,8 +48,41 @@ const EMPTY_FORM: FormState = {
   name: '',
   clone_url: '',
   default_branch: 'main',
+  confluence_url: '',
+  confluence_space: '',
+  confluence_labels: '',
   pat_token: '',
   sandbox_id: null,
+}
+
+function parseLabels(value: string): string[] {
+  const seen = new Set<string>()
+  return value
+    .split(',')
+    .map((label) => label.trim().toLowerCase())
+    .filter((label) => {
+      if (!label || seen.has(label)) return false
+      seen.add(label)
+      return true
+    })
+}
+
+function labelsToText(labels: string[] | null | undefined): string {
+  return labels?.join(', ') ?? ''
+}
+
+function formFromRepository(repo: Repository): FormState {
+  return {
+    slug: repo.slug,
+    name: repo.name,
+    clone_url: repo.clone_url,
+    default_branch: repo.default_branch,
+    confluence_url: repo.confluence_url,
+    confluence_space: repo.confluence_space,
+    confluence_labels: labelsToText(repo.confluence_labels),
+    pat_token: '',
+    sandbox_id: repo.sandbox_id,
+  }
 }
 
 function statusColor(s: string): string {
@@ -63,8 +100,10 @@ export function AdminRepositoriesPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const [createOpen, setCreateOpen] = useState(false)
+  const [editingRepo, setEditingRepo] = useState<Repository | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [creating, setCreating] = useState(false)
+  const [updating, setUpdating] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
   const reload = useCallback(async () => {
@@ -94,15 +133,7 @@ export function AdminRepositoriesPage() {
     setCreating(true)
     setFormError(null)
     try {
-      const payload: RepositoryCreate = {
-        slug: form.slug.trim(),
-        name: form.name.trim(),
-        clone_url: form.clone_url.trim(),
-        default_branch: form.default_branch.trim() || 'main',
-        pat_token: form.pat_token.trim() || null,
-        sandbox_id: form.sandbox_id || null,
-      }
-      await createRepository(token, payload)
+      await createRepository(token, buildPayload())
       setForm(EMPTY_FORM)
       setCreateOpen(false)
       await reload()
@@ -111,6 +142,50 @@ export function AdminRepositoriesPage() {
     } finally {
       setCreating(false)
     }
+  }
+
+  async function handleUpdate() {
+    const token = getToken()
+    if (!token || !editingRepo) return
+    if (!form.slug.trim() || !form.name.trim() || !form.clone_url.trim()) {
+      setFormError('Slug, nome e clone URL são obrigatórios.')
+      return
+    }
+    setUpdating(true)
+    setFormError(null)
+    try {
+      await updateRepository(token, editingRepo.id, buildPayload(editingRepo))
+      setForm(EMPTY_FORM)
+      setEditingRepo(null)
+      await reload()
+    } catch (err) {
+      setFormError(errorToUserMessage(err))
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  function buildPayload(existing?: Repository): RepositoryCreate {
+    return {
+      slug: form.slug.trim(),
+      name: form.name.trim(),
+      clone_url: form.clone_url.trim(),
+      default_branch: form.default_branch.trim() || 'main',
+      confluence_url: form.confluence_url.trim(),
+      confluence_space: form.confluence_space.trim(),
+      confluence_labels: parseLabels(form.confluence_labels),
+      pat_token: form.pat_token.trim() || null,
+      provider_id: existing?.provider_id ?? null,
+      sandbox_id: form.sandbox_id || null,
+      signoz_service_name: existing?.signoz_service_name ?? null,
+    }
+  }
+
+  function openEdit(repo: Repository) {
+    setCreateOpen(false)
+    setEditingRepo(repo)
+    setForm(formFromRepository(repo))
+    setFormError(null)
   }
 
   async function handleSync(repoId: string) {
@@ -166,6 +241,7 @@ export function AdminRepositoriesPage() {
             onClick={() => {
               setForm(EMPTY_FORM)
               setFormError(null)
+              setEditingRepo(null)
               setCreateOpen(true)
             }}
           >
@@ -200,8 +276,9 @@ export function AdminRepositoriesPage() {
                   <Table.Th>Slug</Table.Th>
                   <Table.Th>Clone URL</Table.Th>
                   <Table.Th style={{ width: 120 }}>Branch</Table.Th>
+                  <Table.Th>Confluence</Table.Th>
                   <Table.Th style={{ width: 120 }}>Estado</Table.Th>
-                  <ActionsHeader width={96} />
+                  <ActionsHeader width={136} />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -224,11 +301,41 @@ export function AdminRepositoriesPage() {
                       <Text size="sm">{r.default_branch}</Text>
                     </Table.Td>
                     <Table.Td>
+                      <Stack gap={4}>
+                        {r.confluence_url ? (
+                          <Text size="xs" c="dimmed">
+                            {r.confluence_space || 'Sem space'}
+                          </Text>
+                        ) : (
+                          <Text size="xs" c="dimmed">
+                            -
+                          </Text>
+                        )}
+                        {r.confluence_labels?.length > 0 && (
+                          <Group gap={4}>
+                            {r.confluence_labels.map((label) => (
+                              <Badge key={label} size="xs" variant="light" color="blue">
+                                {label}
+                              </Badge>
+                            ))}
+                          </Group>
+                        )}
+                      </Stack>
+                    </Table.Td>
+                    <Table.Td>
                       <Badge color={statusColor(r.sandbox_status)} variant="light">
                         {r.sandbox_status}
                       </Badge>
                     </Table.Td>
                     <ActionsCell>
+                      <RowActionIcon
+                        label="Editar repositório"
+                        color="gray"
+                        disabled={busyId !== null}
+                        onClick={() => openEdit(r)}
+                      >
+                        <IconPencil size={16} />
+                      </RowActionIcon>
                       <RowActionIcon
                         label="Sincronizar repositório"
                         color="blue"
@@ -294,6 +401,24 @@ export function AdminRepositoriesPage() {
             onChange={(e) => setForm({ ...form, default_branch: e.currentTarget.value })}
           />
           <TextInput
+            label="Confluence URL"
+            placeholder="https://confluence.example.com"
+            value={form.confluence_url}
+            onChange={(e) => setForm({ ...form, confluence_url: e.currentTarget.value })}
+          />
+          <TextInput
+            label="Confluence space"
+            placeholder="Frontend"
+            value={form.confluence_space}
+            onChange={(e) => setForm({ ...form, confluence_space: e.currentTarget.value })}
+          />
+          <TextInput
+            label="Rótulos Confluence"
+            placeholder="react, react-dom, react-native"
+            value={form.confluence_labels}
+            onChange={(e) => setForm({ ...form, confluence_labels: e.currentTarget.value })}
+          />
+          <TextInput
             label="PAT (opcional)"
             description="Cria um GitProvider implícito com o token cifrado."
             type="password"
@@ -314,6 +439,96 @@ export function AdminRepositoriesPage() {
             </Button>
             <Button onClick={() => void handleCreate()} loading={creating}>
               Criar
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={editingRepo !== null}
+        onClose={() => {
+          setEditingRepo(null)
+          setForm(EMPTY_FORM)
+          setFormError(null)
+        }}
+        title={editingRepo ? `Editar ${editingRepo.name}` : 'Editar repositório'}
+        centered
+        size="lg"
+      >
+        <Stack gap="md">
+          {formError && (
+            <Alert color="red" title="Não foi possível atualizar">
+              {formError}
+            </Alert>
+          )}
+          <TextInput
+            label="Slug"
+            value={form.slug}
+            onChange={(e) => setForm({ ...form, slug: e.currentTarget.value })}
+            required
+          />
+          <TextInput
+            label="Nome"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.currentTarget.value })}
+            required
+          />
+          <TextInput
+            label="Clone URL"
+            value={form.clone_url}
+            onChange={(e) => setForm({ ...form, clone_url: e.currentTarget.value })}
+            required
+          />
+          <TextInput
+            label="Branch default"
+            value={form.default_branch}
+            onChange={(e) => setForm({ ...form, default_branch: e.currentTarget.value })}
+          />
+          <TextInput
+            label="Confluence URL"
+            placeholder="https://confluence.example.com"
+            value={form.confluence_url}
+            onChange={(e) => setForm({ ...form, confluence_url: e.currentTarget.value })}
+          />
+          <TextInput
+            label="Confluence space"
+            placeholder="Frontend"
+            value={form.confluence_space}
+            onChange={(e) => setForm({ ...form, confluence_space: e.currentTarget.value })}
+          />
+          <TextInput
+            label="Rótulos Confluence"
+            placeholder="kubernetes, kubelet"
+            value={form.confluence_labels}
+            onChange={(e) => setForm({ ...form, confluence_labels: e.currentTarget.value })}
+          />
+          <TextInput
+            label="PAT (opcional)"
+            type="password"
+            autoComplete="off"
+            value={form.pat_token}
+            onChange={(e) => setForm({ ...form, pat_token: e.currentTarget.value })}
+          />
+          <Select
+            label="Sandbox"
+            data={sandboxOptions}
+            value={form.sandbox_id ?? ''}
+            onChange={(v) => setForm({ ...form, sandbox_id: v || null })}
+          />
+          <Group justify="flex-end" mt="sm">
+            <Button
+              variant="default"
+              onClick={() => {
+                setEditingRepo(null)
+                setForm(EMPTY_FORM)
+                setFormError(null)
+              }}
+              disabled={updating}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={() => void handleUpdate()} loading={updating}>
+              Salvar
             </Button>
           </Group>
         </Stack>

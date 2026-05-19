@@ -56,7 +56,7 @@ custo, branch resolution), escreva testes que **matem mutantes**:
 
 - Asserts **sobre o valor**, não sobre tipo/existência:
   ✗ `assert isinstance(repo, dict)`
-  ✓ `assert repo["confluence_space"] == "POSTOS"`
+  ✓ `assert repo["confluence_space"] == "FRONTEND"`
 - Cobrir **fronteira explicitamente**: limite, +1, -1, string vazia,
   whitespace puro, lista vazia, lista com 1 item.
 - Para cada condicional, **ambos os ramos** + um teste exatamente no

@@ -9,15 +9,26 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from app.adapters.primary.http.deps import (
     get_authenticated_user,
+    get_change_password_uc,
     get_login_uc,
     get_register_uc,
     require_role,
 )
-from app.application.use_cases.auth import LoginUser, RegisterUser
+from app.application.use_cases.auth import ChangePassword, LoginUser, RegisterUser
 from app.domain.entities import User, UserRole
-from app.schemas import Token, UserCreate, UserOut
+from app.schemas import PasswordChangeBody, Token, UserCreate, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _to_user_out(user: User) -> UserOut:
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        role=user.role,
+        is_super_admin=user.is_super_admin,
+        must_change_password=user.must_change_password,
+    )
 
 
 @router.post(
@@ -36,15 +47,15 @@ async def register(
     variáveis ``FIRST_ADMIN_EMAIL``/``FIRST_ADMIN_PASSWORD`` no boot).
     """
     try:
-        user = await uc.execute(body.email, body.password, body.role)
+        user = await uc.execute(
+            body.email,
+            body.password,
+            body.role,
+            must_change_password=body.must_change_password,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return UserOut(
-        id=user.id,
-        email=user.email,
-        role=user.role,
-        is_super_admin=user.is_super_admin,
-    )
+    return _to_user_out(user)
 
 
 @router.post("/login", response_model=Token)
@@ -69,9 +80,20 @@ async def me(
     current: Annotated[User, Depends(get_authenticated_user)],
 ) -> UserOut:
     """Devolve dados do utilizador autenticado, incluindo o papel."""
-    return UserOut(
-        id=current.id,
-        email=current.email,
-        role=current.role,
-        is_super_admin=current.is_super_admin,
-    )
+    return _to_user_out(current)
+
+
+@router.post("/change-password", response_model=UserOut)
+async def change_password(
+    body: PasswordChangeBody,
+    current: Annotated[User, Depends(get_authenticated_user)],
+    uc: Annotated[ChangePassword, Depends(get_change_password_uc)],
+) -> UserOut:
+    """Troca a senha do utilizador autenticado e libera o primeiro acesso."""
+    try:
+        updated = await uc.execute(current.id, body.current_password, body.new_password)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return _to_user_out(updated)

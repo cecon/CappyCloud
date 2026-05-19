@@ -1,0 +1,72 @@
+diff --git a/src/grpc/server.ts b/src/grpc/server.ts
+index 2cb1a5f..4dca43e 100644
+--- a/src/grpc/server.ts
++++ b/src/grpc/server.ts
+@@ -183,6 +183,34 @@ function cappycloudValidateNumericParameterGrep(
+   return `Tool blocked: numeric parameter lookup must search inside discovered Parametros directories, not the worktree root. Allowed worktree: ${worktree}. Use find/git ls-files to locate */Parametros, then set Grep path to that directory.`
+ }
+ 
++function cappycloudWrapNumericParameterGrepTool(tool: any, worktree: string, numericParameterMode: boolean): any {
++  if (!numericParameterMode || tool?.name !== 'Grep') {
++    return tool
++  }
++  return {
++    ...tool,
++    async call(args: any, context: any, canUseTool: any, parentMessage: any, onProgress?: any) {
++      const guardMessage = cappycloudValidateNumericParameterGrep(tool.name, args, worktree, numericParameterMode)
++      if (guardMessage) {
++        const mode = args?.output_mode === 'files_with_matches' || args?.output_mode === 'count'
++          ? args.output_mode
++          : 'content'
++        return {
++          data: {
++            mode,
++            numFiles: 0,
++            filenames: [],
++            content: guardMessage,
++            numLines: 0,
++            numMatches: 0,
++          },
++        }
++      }
++      return tool.call(args, context, canUseTool, parentMessage, onProgress)
++    },
++  }
++}
++
+ function cappycloudValidateToolScope(toolName: string, input: unknown, worktree: string, numericParameterMode = false): string | null {
+   if (CAPPYCLOUD_PATH_GUARDED_TOOLS.has(toolName)) {
+     for (const rawPath of cappycloudCollectPathInputs(input)) {
+@@ -193,11 +222,6 @@ function cappycloudValidateToolScope(toolName: string, input: unknown, worktree:
+     }
+   }
+ 
+-  const numericParameterGuardMessage = cappycloudValidateNumericParameterGrep(toolName, input, worktree, numericParameterMode)
+-  if (numericParameterGuardMessage) {
+-    return numericParameterGuardMessage
+-  }
+-
+   if (CAPPYCLOUD_COMMAND_GUARDED_TOOLS.has(toolName) && input && typeof input === 'object') {
+     const command = (input as Record<string, unknown>).command
+     if (typeof command === 'string') {
+@@ -301,7 +330,10 @@ export class GrpcServer {
+             grpcToolsByName.set(tool.name, tool)
+           }
+           const grpcAllowedWorktree = path.resolve(req.working_directory || process.cwd())
+-          const grpcNumericParameterMode = /Regra obrigatória para parâmetro numérico/.test(String(req.message || ''))
++          const grpcNumericParameterMode = /Regra obrigatória para parâmetro numérico|par[aâ]metro[^\n]{0,80}\b\d{1,12}\b/i.test(String(req.message || ''))
++          if (grpcNumericParameterMode) {
++            console.log('[grpc] numeric parameter mode enabled')
++          }
+ 
+           engine = new QueryEngine({
+             cwd: grpcAllowedWorktree,
+@@ -309,7 +341,7 @@ export class GrpcServer {
+ 
+           engine = new QueryEngine({
+             cwd: grpcAllowedWorktree,
+-            tools: Array.from(grpcToolsByName.values()),
++            tools: Array.from(grpcToolsByName.values()).map(tool => cappycloudWrapNumericParameterGrepTool(tool, grpcAllowedWorktree, grpcNumericParameterMode)),
+             commands: grpcMcpCommands,
+             mcpClients: grpcMcpClients,
+             agents: [],

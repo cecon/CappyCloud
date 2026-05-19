@@ -30,6 +30,7 @@ def _repo(
     slug: str = "alpha",
     confluence_url: str = "",
     confluence_space: str = "",
+    confluence_labels: list[str] | None = None,
 ) -> Repository:
     return Repository(
         id=uuid.uuid4(),
@@ -38,6 +39,7 @@ def _repo(
         clone_url=f"https://git.example/{slug}.git",
         confluence_url=confluence_url,
         confluence_space=confluence_space,
+        confluence_labels=confluence_labels or [],
     )
 
 
@@ -48,7 +50,7 @@ async def test_enrich_propagates_url_and_space_when_both_configured() -> None:
     repo_store = InMemoryRepositoryRepository()
     repo = _repo(
         confluence_url="https://docs.example.com/wiki",
-        confluence_space="POSTOS",
+        confluence_space="FRONTEND",
     )
     repo_store.add(repo)
 
@@ -58,7 +60,23 @@ async def test_enrich_propagates_url_and_space_when_both_configured() -> None:
 
     assert len(enriched) == 1
     assert enriched[0]["confluence_url"] == "https://docs.example.com/wiki"
-    assert enriched[0]["confluence_space"] == "POSTOS"
+    assert enriched[0]["confluence_space"] == "FRONTEND"
+
+
+async def test_enrich_propagates_labels_when_url_configured() -> None:
+    repo_store = InMemoryRepositoryRepository()
+    repo = _repo(
+        confluence_url="https://docs.example.com/wiki",
+        confluence_space="Frontend",
+        confluence_labels=["react", "react-dom"],
+    )
+    repo_store.add(repo)
+
+    enriched = await enrich_repos_for_pipeline(
+        repo_store, [{"slug": "alpha", "repo_id": str(repo.id)}]
+    )
+
+    assert enriched[0]["confluence_labels"] == ["react", "react-dom"]
 
 
 async def test_enrich_overwrites_clone_url_with_authenticated_version() -> None:
@@ -85,7 +103,7 @@ async def test_enrich_overwrites_clone_url_with_authenticated_version() -> None:
 async def test_enrich_omits_space_when_url_empty() -> None:
     """Space órfão (sem URL) não vaza pro pipeline."""
     repo_store = InMemoryRepositoryRepository()
-    repo = _repo(confluence_url="", confluence_space="ORPHAN")
+    repo = _repo(confluence_url="", confluence_space="ORPHAN", confluence_labels=["react"])
     repo_store.add(repo)
 
     enriched = await enrich_repos_for_pipeline(
@@ -94,6 +112,7 @@ async def test_enrich_omits_space_when_url_empty() -> None:
 
     assert "confluence_url" not in enriched[0]
     assert "confluence_space" not in enriched[0]
+    assert "confluence_labels" not in enriched[0]
 
 
 async def test_enrich_emits_url_but_not_space_when_only_url_configured() -> None:
@@ -113,7 +132,7 @@ async def test_enrich_emits_url_but_not_space_when_only_url_configured() -> None
 async def test_enrich_preserves_other_keys_in_repo_dict() -> None:
     """Enrich não pode apagar nem sobrescrever campos pré-existentes do dict de repo."""
     repo_store = InMemoryRepositoryRepository()
-    repo = _repo(confluence_url="https://docs.example.com/wiki", confluence_space="POSTOS")
+    repo = _repo(confluence_url="https://docs.example.com/wiki", confluence_space="FRONTEND")
     repo_store.add(repo)
 
     enriched = await enrich_repos_for_pipeline(
@@ -183,7 +202,7 @@ class _SpyConversations(InMemoryConversationRepository):
 
 async def test_ensure_repo_ids_sets_url_and_space_when_both_configured() -> None:
     repo_store = InMemoryRepositoryRepository()
-    repo = _repo(confluence_url="https://docs.example.com/wiki", confluence_space="POSTOS")
+    repo = _repo(confluence_url="https://docs.example.com/wiki", confluence_space="FRONTEND")
     repo_store.add(repo)
     conv = _conv_with_slug("alpha")
     conv_store = InMemoryConversationRepository()
@@ -193,13 +212,30 @@ async def test_ensure_repo_ids_sets_url_and_space_when_both_configured() -> None
 
     assert conv.repos[0]["repo_id"] == str(repo.id)
     assert conv.repos[0]["confluence_url"] == "https://docs.example.com/wiki"
-    assert conv.repos[0]["confluence_space"] == "POSTOS"
+    assert conv.repos[0]["confluence_space"] == "FRONTEND"
+
+
+async def test_ensure_repo_ids_sets_labels_when_url_configured() -> None:
+    repo_store = InMemoryRepositoryRepository()
+    repo = _repo(
+        confluence_url="https://docs.example.com/wiki",
+        confluence_space="Frontend",
+        confluence_labels=["react", "react-dom"],
+    )
+    repo_store.add(repo)
+    conv = _conv_with_slug("alpha")
+    conv_store = InMemoryConversationRepository()
+    await conv_store.save(conv)
+
+    await ensure_repo_ids(repo_store, conv_store, conv)
+
+    assert conv.repos[0]["confluence_labels"] == ["react", "react-dom"]
 
 
 async def test_ensure_repo_ids_no_confluence_keys_when_url_empty() -> None:
     """Repo cadastrado mas sem URL → não escreve confluence_* no dict."""
     repo_store = InMemoryRepositoryRepository()
-    repo = _repo(confluence_url="", confluence_space="ORPHAN")
+    repo = _repo(confluence_url="", confluence_space="ORPHAN", confluence_labels=["react"])
     repo_store.add(repo)
     conv = _conv_with_slug("alpha")
     conv_store = InMemoryConversationRepository()
@@ -210,6 +246,7 @@ async def test_ensure_repo_ids_no_confluence_keys_when_url_empty() -> None:
     assert conv.repos[0]["repo_id"] == str(repo.id)
     assert "confluence_url" not in conv.repos[0]
     assert "confluence_space" not in conv.repos[0]
+    assert "confluence_labels" not in conv.repos[0]
 
 
 async def test_ensure_repo_ids_url_only_when_space_empty() -> None:
@@ -230,7 +267,7 @@ async def test_ensure_repo_ids_url_only_when_space_empty() -> None:
 async def test_ensure_repo_ids_noop_when_repo_id_already_set() -> None:
     """Se o repo já tem repo_id, ensure_repo_ids não toca."""
     repo_store = InMemoryRepositoryRepository()
-    repo = _repo(confluence_url="https://docs.example.com/wiki", confluence_space="POSTOS")
+    repo = _repo(confluence_url="https://docs.example.com/wiki", confluence_space="FRONTEND")
     repo_store.add(repo)
     conv = Conversation(
         id=uuid.uuid4(),
@@ -271,7 +308,7 @@ async def test_ensure_repo_ids_noop_when_no_repos() -> None:
 async def test_ensure_repo_ids_persists_exactly_once_when_change_happens() -> None:
     """changed=True deve disparar exatamente UM update — mata mutações em ``changed``."""
     repo_store = InMemoryRepositoryRepository()
-    repo = _repo(confluence_url="https://docs.example.com/wiki", confluence_space="POSTOS")
+    repo = _repo(confluence_url="https://docs.example.com/wiki", confluence_space="FRONTEND")
     repo_store.add(repo)
     conv = _conv_with_slug("alpha")
     conv_store = _SpyConversations()

@@ -91,6 +91,11 @@ TOOLS = [
             "properties": {
                 "query": {"type": "string", "description": "Termo de busca textual."},
                 "space": {"type": "string", "description": "Space key opcional."},
+                "labels": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Rótulos opcionais; a busca retorna páginas com qualquer um deles.",
+                },
                 "limit": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5},
             },
             "required": ["query"],

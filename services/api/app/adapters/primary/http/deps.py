@@ -31,7 +31,7 @@ from app.adapters.secondary.persistence.sqlalchemy_user_repo import (
     SQLAlchemyUserRepository,
 )
 from app.application.use_cases.ai_models import ListAiModels
-from app.application.use_cases.auth import GetCurrentUser, LoginUser, RegisterUser
+from app.application.use_cases.auth import ChangePassword, GetCurrentUser, LoginUser, RegisterUser
 from app.application.use_cases.conversations import (
     CreateConversation,
     ListConversations,
@@ -164,6 +164,13 @@ def get_current_user_uc(
     return GetCurrentUser(users, tokens)
 
 
+def get_change_password_uc(
+    users: Annotated[UserRepository, Depends(get_user_repo)],
+    passwords: Annotated[PasswordService, Depends(get_password_service)],
+) -> ChangePassword:
+    return ChangePassword(users, passwords)
+
+
 def get_list_ai_models_uc(
     catalog: Annotated[ModelCatalogService, Depends(get_model_catalog_service)],
 ) -> ListAiModels:
@@ -171,18 +178,28 @@ def get_list_ai_models_uc(
 
 
 async def get_authenticated_user(
+    request: Request,
     token: Annotated[str, Depends(oauth2_scheme)],
     uc: Annotated[GetCurrentUser, Depends(get_current_user_uc)],
 ) -> User:
     """FastAPI dependency that resolves the current authenticated user."""
     try:
-        return await uc.execute(token)
+        user = await uc.execute(token)
     except PermissionError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+    if user.must_change_password and request.url.path not in {
+        "/api/auth/me",
+        "/api/auth/change-password",
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Troque a senha inicial antes de continuar.",
+        )
+    return user
 
 
 def require_role(required: UserRole):

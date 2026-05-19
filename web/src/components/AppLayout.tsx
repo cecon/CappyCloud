@@ -55,18 +55,6 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/admin/providers', icon: 'cloud', label: 'Providers LLM', superAdminOnly: true },
     ],
   },
-  {
-    id: 'sistema',
-    label: 'Sistema',
-    items: [
-      {
-        to: '/settings',
-        icon: 'settings',
-        label: 'Configurações',
-        superAdminOnly: true,
-      },
-    ],
-  },
 ]
 
 const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
@@ -122,10 +110,18 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { pathname } = useLocation()
   const meta = PAGE_TITLES[pathname] ?? PAGE_TITLES['/']
   const currentUserState = useCurrentUser()
+  const currentUser = currentUserState.status === 'ready' ? currentUserState.user : null
   const isAdmin =
     currentUserState.status === 'ready' && currentUserState.user.role === 'admin'
   const isSuperAdmin =
     currentUserState.status === 'ready' && currentUserState.user.is_super_admin
+  const currentUserRoleLabel = currentUser
+    ? currentUser.is_super_admin
+      ? 'Super admin'
+      : currentUser.role === 'admin'
+        ? 'Administrador'
+        : 'Utilizador'
+    : 'Perfil e preferências'
   const visibleGroups = NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) => !item.superAdminOnly || isSuperAdmin),
@@ -242,70 +238,60 @@ export function AppLayout({ children }: AppLayoutProps) {
           })}
         </nav>
 
-        <div className={styles.profile}>
-          <button type="button" className={styles.profileButton} title="Perfil do usuário">
-            <span className={styles.avatar}>
-              {currentUserState.status === 'ready'
-                ? currentUserState.user.email.slice(0, 2).toUpperCase()
-                : 'EM'}
-            </span>
-            <span className={styles.profileText}>
-              <span className={styles.profileName}>
-                {currentUserState.status === 'ready'
-                  ? currentUserState.user.email
-                  : 'Usuário'}
-              </span>
-              <span className={styles.profileMeta}>
-                {currentUserState.status === 'ready'
-                  ? currentUserState.user.is_super_admin
-                    ? 'Super admin'
-                    : currentUserState.user.role === 'admin'
-                    ? 'Administrador'
-                    : 'Utilizador'
-                  : 'Perfil e preferências'}
-              </span>
-            </span>
-          </button>
-          <button
-            type="button"
-            className={styles.logoutButton}
-            onClick={logout}
-            title="Sair"
-          >
-            <span className={styles.icon}>logout</span>
-          </button>
-        </div>
+        {isSuperAdmin && (
+          <div className={styles.sidebarFooter}>
+            <Link
+              to="/settings"
+              className={`${styles.settingsLink} ${
+                pathname === '/settings' ? styles.settingsLinkActive : ''
+              }`}
+              aria-current={pathname === '/settings' ? 'page' : undefined}
+              title="Configurações"
+            >
+              <span className={styles.icon}>settings</span>
+              <span className={styles.settingsLabel}>Configurações</span>
+            </Link>
+          </div>
+        )}
       </aside>
 
       <div className={styles.workspace}>
         <header className={styles.header}>
-          <div>
+          <div className={styles.headerTitleBlock}>
             <h1 className={styles.title}>{meta.title}</h1>
             <p className={styles.subtitle}>{meta.subtitle}</p>
           </div>
           <div className={styles.headerActions}>
-            <button
-              type="button"
-              className={styles.iconButton}
-              onClick={() => setNavCollapsed((prev) => !prev)}
-              title={navCollapsed ? 'Expandir menu principal' : 'Recolher menu principal'}
-              aria-label={navCollapsed ? 'Expandir menu principal' : 'Recolher menu principal'}
-            >
-              <span className={styles.icon}>{navToggleIcon}</span>
-            </button>
-            <Link to="/skills" className={styles.headerLink}>
-              <span className={styles.icon}>menu_book</span>
-              Skills
-            </Link>
-            {isSuperAdmin && (
+            {currentUser && (
+              <div className={styles.headerProfile} title={currentUser.email}>
+                <span className={styles.avatar}>
+                  {currentUser.email.slice(0, 2).toUpperCase()}
+                </span>
+                <span className={styles.accountText}>
+                  <span className={styles.accountName}>{currentUser.email}</span>
+                  <span className={styles.accountMeta}>{currentUserRoleLabel}</span>
+                </span>
+              </div>
+            )}
+            {currentUser && (
               <Link
-                to="/settings"
+                to="/change-password"
                 className={styles.iconButton}
-                title="Configurações"
-                aria-label="Configurações"
+                title="Alterar senha"
+                aria-label="Alterar senha"
               >
-                <span className={styles.icon}>settings</span>
+                <span className={styles.icon}>key</span>
               </Link>
+            )}
+            {currentUser && (
+              <button
+                type="button"
+                className={styles.logoutButton}
+                onClick={logout}
+                title="Sair"
+              >
+                <span className={styles.icon}>logout</span>
+              </button>
             )}
           </div>
         </header>

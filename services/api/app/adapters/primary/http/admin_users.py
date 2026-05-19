@@ -25,6 +25,16 @@ from app.schemas import UserOut, UserRoleUpdate
 router = APIRouter(prefix="/admin/users", tags=["admin"])
 
 
+def _to_user_out(user: User) -> UserOut:
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        role=user.role,
+        is_super_admin=user.is_super_admin,
+        must_change_password=user.must_change_password,
+    )
+
+
 def _get_list_users_uc(
     users: Annotated[UserRepository, Depends(get_user_repo)],
 ) -> ListUsers:
@@ -47,9 +57,7 @@ async def list_users(
 ) -> list[UserOut]:
     """Lista todos os utilizadores (ADMIN only)."""
     rows = await uc.execute()
-    return [
-        UserOut(id=u.id, email=u.email, role=u.role, is_super_admin=u.is_super_admin) for u in rows
-    ]
+    return [_to_user_out(u) for u in rows]
 
 
 @router.patch(
@@ -74,9 +82,4 @@ async def update_user_role(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except CannotChangeSuperAdminRoleError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    return UserOut(
-        id=updated.id,
-        email=updated.email,
-        role=updated.role,
-        is_super_admin=updated.is_super_admin,
-    )
+    return _to_user_out(updated)

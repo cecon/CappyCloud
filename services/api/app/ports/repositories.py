@@ -65,6 +65,16 @@ class UserRepository(ABC):
         """Atualiza apenas o papel. Devolve o utilizador atualizado, ou ``None``
         se o id não existir. Não mexe noutros campos."""
 
+    @abstractmethod
+    async def update_password(
+        self,
+        user_id: uuid.UUID,
+        hashed_password: str,
+        *,
+        must_change_password: bool,
+    ) -> User | None:
+        """Atualiza senha e estado de troca obrigatória do utilizador."""
+
 
 class SandboxRepository(ABC):
     """Port para o cadastro de sandboxes (ADR-004).
@@ -155,12 +165,12 @@ class RepositoryRepository(ABC):
         """
 
     @abstractmethod
-    async def get_confluence_settings(self, repo_id: uuid.UUID) -> tuple[str, str]:
-        """Retorna ``(confluence_url, confluence_space)`` configurados para o repositório.
+    async def get_confluence_settings(self, repo_id: uuid.UUID) -> tuple[str, str, list[str]]:
+        """Retorna ``(confluence_url, confluence_space, confluence_labels)`` do repo.
 
         Strings vazias quando o campo não está preenchido. ``space`` só faz
         sentido quando ``url`` está preenchida — o caller decide se ignora ou
-        propaga o space órfão.
+        propaga metadados órfãos.
         """
 
 

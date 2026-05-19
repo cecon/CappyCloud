@@ -104,6 +104,29 @@ class TestCreateConversation:
         assert conv.repos[0]["slug"] == "demo-repo"
         assert conv.repos[0]["repo_id"] == str(repo.id)
 
+    async def test_resolves_repo_confluence_labels(
+        self,
+        conv_repo: InMemoryConversationRepository,
+        user_id: uuid.UUID,
+    ) -> None:
+        repo_catalog = InMemoryRepositoryRepository()
+        repo = Repository(
+            id=uuid.uuid4(),
+            slug="react",
+            name="React",
+            clone_url="https://github.com/facebook/react.git",
+            confluence_url="https://confluence.example.com",
+            confluence_space="Frontend",
+            confluence_labels=["react", "react-dom"],
+        )
+        repo_catalog.add(repo)
+        uc = CreateConversation(conv_repo, repo_catalog)
+
+        conv = await uc.execute(user_id, repos=[{"slug": "react"}])
+
+        assert conv.repos[0]["confluence_space"] == "Frontend"
+        assert conv.repos[0]["confluence_labels"] == ["react", "react-dom"]
+
     async def test_repo_id_is_none_for_unknown_slug(
         self,
         conv_repo: InMemoryConversationRepository,

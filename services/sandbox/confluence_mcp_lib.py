@@ -38,7 +38,7 @@ def _headers() -> dict[str, str]:
     if pat:
         headers["Authorization"] = f"Bearer {pat}"
     elif email and token:
-        raw = base64.b64encode(f"{email}:{token}".encode("utf-8")).decode("ascii")
+        raw = base64.b64encode(f"{email}:{token}".encode()).decode("ascii")
         headers["Authorization"] = f"Basic {raw}"
     return headers
 
@@ -59,6 +59,28 @@ def _clip(value: str, limit: int = MAX_TEXT_CHARS) -> str:
     if len(value) <= limit:
         return value
     return value[:limit].rstrip() + "\n...[truncado]"
+
+
+def _clean_labels(raw_labels: Any) -> list[str]:
+    if isinstance(raw_labels, str):
+        values = raw_labels.split(",")
+    elif isinstance(raw_labels, (list, tuple)):
+        values = raw_labels
+    else:
+        return []
+    labels: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        label = str(raw).strip()
+        key = label.lower()
+        if label and key not in seen:
+            seen.add(key)
+            labels.append(label)
+    return labels
+
+
+def _cql_string(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def _page_id_from_url(url_or_id: str) -> str:
@@ -111,13 +133,17 @@ def _get_json(url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     if resp.status_code == 401:
         raise RuntimeError("Confluence retornou 401. Verifique email/token/PAT.")
     if resp.status_code == 403:
-        raise RuntimeError("Confluence retornou 403. Credencial sem permissão para esta página/space.")
+        raise RuntimeError(
+            "Confluence retornou 403. Credencial sem permissão para esta página/space."
+        )
     if resp.status_code >= 400:
         raise RuntimeError(f"Confluence HTTP {resp.status_code}: {resp.text[:500]}")
     return resp.json()
 
 
-def _site_search(query: str, limit: int, space: str = "") -> tuple[int | None, list[dict[str, Any]]]:
+def _site_search(
+    query: str, limit: int, space: str = ""
+) -> tuple[int | None, list[dict[str, Any]]]:
     resp = requests.get(
         f"{_base_url()}/dosearchsite.action",
         headers={**_headers(), "Accept": "text/html,application/xhtml+xml"},
@@ -145,10 +171,12 @@ def _site_search(query: str, limit: int, space: str = "") -> tuple[int | None, l
             continue
         space_match = re.search(r'(?is)<a class="container"[^>]*>(.*?)</a>', item)
         result_space = _strip_html(space_match.group(1)) if space_match else None
-        if expected_space and expected_space != "all" and result_space and result_space.lower() not in {
-            expected_space,
-            "postos",
-        }:
+        if (
+            expected_space
+            and expected_space != "all"
+            and result_space
+            and result_space.lower() != expected_space
+        ):
             continue
         result_url = href.replace("&amp;", "&")
         if result_url.startswith("/"):
@@ -164,7 +192,9 @@ def _site_search(query: str, limit: int, space: str = "") -> tuple[int | None, l
                 "title": _strip_html(raw_title),
                 "space": result_space,
                 "url": result_url,
-                "excerpt": _clip(_strip_html(highlight_match.group(1)) if highlight_match else "", 900),
+                "excerpt": _clip(
+                    _strip_html(highlight_match.group(1)) if highlight_match else "", 900
+                ),
             }
         )
         if len(results) >= limit:
@@ -192,12 +222,19 @@ def confluence_search(arguments: dict[str, Any]) -> dict[str, Any]:
     query = str(arguments.get("query") or "").strip()
     limit = max(1, min(int(arguments.get("limit") or 5), 10))
     space = str(arguments.get("space") or "").strip()
+    labels = _clean_labels(arguments.get("labels") or arguments.get("label"))
     if not query:
         raise ValueError("query é obrigatório")
 
-    cql = f'type=page AND text ~ "{query.replace(chr(34), chr(92) + chr(34))}"'
+    cql_filters: list[str] = []
     if space:
-        cql = f'space="{space}" AND {cql}'
+        cql_filters.append(f'space="{_cql_string(space)}"')
+    if labels:
+        label_values = ",".join(f'"{_cql_string(label)}"' for label in labels)
+        cql_filters.append(f"label in ({label_values})")
+    cql_filters.append("type=page")
+    cql_filters.append(f'text ~ "{_cql_string(query)}"')
+    cql = " AND ".join(cql_filters)
     data = _get_json(
         f"{_rest_base()}/content/search",
         {"cql": cql, "limit": limit, "expand": "body.storage,body.view,version,space"},
@@ -214,10 +251,16 @@ def confluence_search(arguments: dict[str, Any]) -> dict[str, Any]:
     ]
     source = "rest-cql"
     total: int | None = data.get("size")
-    if not results:
+    if not results and not labels:
         total, results = _site_search(query, limit, space)
         source = "site-search"
-    return {"query": query, "source": source, "total": total, "count": len(results), "results": results}
+    return {
+        "query": query,
+        "source": source,
+        "total": total,
+        "count": len(results),
+        "results": results,
+    }
 
 
 def confluence_get_page(arguments: dict[str, Any]) -> dict[str, Any]:

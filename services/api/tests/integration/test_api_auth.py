@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from app.domain.entities import UserRole
 from httpx import AsyncClient
+
+from tests.conftest import InMemoryUserRepository
+from tests.integration.conftest import seed_user
 
 
 class TestHealth:
@@ -44,7 +48,23 @@ class TestAuthEndpoints:
         assert data["email"] == "new@test.com"
         # Sem role no body → default USER (ADR-005 §1).
         assert data["role"] == "user"
+        assert data["must_change_password"] is True
         assert "id" in data
+
+    async def test_register_can_disable_first_login_password_change(
+        self, client: AsyncClient, admin_headers: dict[str, str]
+    ) -> None:
+        r = await client.post(
+            "/api/auth/register",
+            json={
+                "email": "ready@test.com",
+                "password": "password123",
+                "must_change_password": False,
+            },
+            headers=admin_headers,
+        )
+        assert r.status_code == 201
+        assert r.json()["must_change_password"] is False
 
     async def test_admin_can_create_another_admin(
         self, client: AsyncClient, admin_headers: dict[str, str]
@@ -127,6 +147,7 @@ class TestAuthEndpoints:
         body = r.json()
         assert body["email"] == "regular@test.com"
         assert body["role"] == "user"
+        assert body["must_change_password"] is False
 
     async def test_me_returns_admin_role(
         self, client: AsyncClient, admin_headers: dict[str, str]
@@ -136,3 +157,54 @@ class TestAuthEndpoints:
         body = r.json()
         assert body["email"] == "admin@test.com"
         assert body["role"] == "admin"
+
+    async def test_change_password_clears_first_login_lock(
+        self,
+        client: AsyncClient,
+        user_repo: InMemoryUserRepository,
+    ) -> None:
+        await seed_user(
+            user_repo,
+            "firstlogin@test.com",
+            role=UserRole.USER,
+            must_change_password=True,
+        )
+        login = await client.post(
+            "/api/auth/login",
+            data={"username": "firstlogin@test.com", "password": "password123"},
+        )
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        locked = await client.get("/api/conversations", headers=headers)
+        assert locked.status_code == 403
+
+        changed = await client.post(
+            "/api/auth/change-password",
+            json={"current_password": "password123", "new_password": "newpassword123"},
+            headers=headers,
+        )
+        assert changed.status_code == 200
+        assert changed.json()["must_change_password"] is False
+
+        old_login = await client.post(
+            "/api/auth/login",
+            data={"username": "firstlogin@test.com", "password": "password123"},
+        )
+        assert old_login.status_code == 401
+
+        new_login = await client.post(
+            "/api/auth/login",
+            data={"username": "firstlogin@test.com", "password": "newpassword123"},
+        )
+        assert new_login.status_code == 200
+
+    async def test_change_password_rejects_wrong_current_password(
+        self, client: AsyncClient, user_headers: dict[str, str]
+    ) -> None:
+        r = await client.post(
+            "/api/auth/change-password",
+            json={"current_password": "badpassword", "new_password": "newpassword123"},
+            headers=user_headers,
+        )
+        assert r.status_code == 400

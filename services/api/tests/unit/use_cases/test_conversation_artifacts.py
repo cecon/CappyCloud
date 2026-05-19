@@ -55,7 +55,7 @@ async def test_uploaded_log_artifact_is_injected_into_agent_prompt() -> None:
         mime_type="application/octet-stream",
         content=(
             b"2026-05-18 10:00:01 INFO boot ok\n"
-            b"2026-05-18 10:00:02 ERROR SmartPOS timeout during init\n"
+            b"2026-05-18 10:00:02 ERROR Kubernetes timeout during init\n"
         ),
         max_bytes=50 * 1024 * 1024,
         image_max_bytes=8 * 1024 * 1024,
@@ -75,7 +75,7 @@ async def test_uploaded_log_artifact_is_injected_into_agent_prompt() -> None:
     ).execute(
         conv.id,
         user_id,
-        "procure timeout do SmartPOS",
+        "procure timeout do Kubernetes",
         attachment_ids=[attachment.id],
     )
     async for _ in stream:
@@ -84,12 +84,12 @@ async def test_uploaded_log_artifact_is_injected_into_agent_prompt() -> None:
     assert agent.last_user_message is not None
     assert "Arquivos anexados pelo utilizador" in agent.last_user_message
     assert "startup.log" in agent.last_user_message
-    assert "SmartPOS timeout during init" in agent.last_user_message
+    assert "Kubernetes timeout during init" in agent.last_user_message
     assert "linhas 1-2" in agent.last_user_message
 
     messages = await msg_repo.list_by_conversation(conv.id)
     user_message = next(msg for msg in messages if msg.role == "user")
-    assert user_message.content == "procure timeout do SmartPOS"
+    assert user_message.content == "procure timeout do Kubernetes"
 
 
 async def test_artifact_chunks_do_not_leak_between_conversations() -> None:

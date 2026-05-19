@@ -4,6 +4,7 @@ import {
   Alert,
   Badge,
   Button,
+  Checkbox,
   Container,
   Group,
   Loader,
@@ -43,9 +44,15 @@ type CreateFormState = {
   email: string
   password: string
   role: UserRole
+  mustChangePassword: boolean
 }
 
-const EMPTY_FORM: CreateFormState = { email: '', password: '', role: 'user' }
+const EMPTY_FORM: CreateFormState = {
+  email: '',
+  password: '',
+  role: 'user',
+  mustChangePassword: true,
+}
 
 export function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUser[] | null>(null)
@@ -93,7 +100,7 @@ export function AdminUsersPage() {
     setCreating(true)
     setFormError(null)
     try {
-      await registerRequest(token, email, form.password, form.role)
+      await registerRequest(token, email, form.password, form.role, form.mustChangePassword)
       setForm(EMPTY_FORM)
       setCreateOpen(false)
       await reload()
@@ -190,6 +197,11 @@ export function AdminUsersPage() {
                               SUPER ADMIN
                             </Badge>
                           )}
+                          {u.must_change_password && (
+                            <Badge size="xs" variant="light" color="orange">
+                              troca pendente
+                            </Badge>
+                          )}
                         </Group>
                       </Table.Td>
                       <Table.Td>
@@ -280,12 +292,19 @@ export function AdminUsersPage() {
             required
           />
           <PasswordInput
-            label="Senha inicial"
-            description="Mínimo 8 caracteres. O utilizador deverá trocar no 1.º acesso."
+            label="Senha temporária"
+            description="Mínimo 8 caracteres. Use uma senha provisória para o primeiro login."
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.currentTarget.value })}
             autoComplete="new-password"
             required
+          />
+          <Checkbox
+            label="Exigir troca de senha no primeiro acesso"
+            checked={form.mustChangePassword}
+            onChange={(e) =>
+              setForm({ ...form, mustChangePassword: e.currentTarget.checked })
+            }
           />
           <Select
             label="Papel"

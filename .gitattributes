@@ -17,6 +17,7 @@ Dockerfile  text eol=lf
 *.css       text eol=lf
 *.html      text eol=lf
 *.env*      text eol=lf
+*.patch     text eol=lf -whitespace
 
 # Binários — sem conversão
 *.png       binary

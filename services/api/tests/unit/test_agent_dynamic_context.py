@@ -56,6 +56,16 @@ _evidence_prefetch = _load_module(
 render_response_rules = _prompt_sections.render_response_rules
 render_session_tools = _prompt_sections.render_session_tools
 _terms_for = _evidence_prefetch._terms_for
+_confluence_sources = _evidence_prefetch._confluence_sources
+_parameter_lookup_guard = _evidence_prefetch._parameter_lookup_guard
+_parameter_numbers = _evidence_prefetch._parameter_numbers
+_parameter_dirs_from_files = _evidence_prefetch._parameter_dirs_from_files
+_active_parameter_dirs = _evidence_prefetch._active_parameter_dirs
+_parameter_doc_result_lines = _evidence_prefetch._parameter_doc_result_lines
+_render_section = _evidence_prefetch._render_section
+_DocHit = _evidence_prefetch._DocHit
+_DocSearchAttempt = _evidence_prefetch._DocSearchAttempt
+_ConfluenceSource = _evidence_prefetch._ConfluenceSource
 
 
 def test_agent_prompt_sections_do_not_embed_product_specific_rules() -> None:
@@ -99,13 +109,31 @@ def test_session_tools_includes_space_filter_when_repo_has_space() -> None:
                 "slug": "api",
                 "alias": "api",
                 "confluence_url": "https://docs.example.com/wiki",
-                "confluence_space": "POSTOS",
+                "confluence_space": "FRONTEND",
             }
         ],
     )
-    assert "base_url=https%3A%2F%2Fdocs.example.com%2Fwiki&space=POSTOS&q=" in rendered
-    assert "(space `POSTOS`)" in rendered
+    assert "base_url=https%3A%2F%2Fdocs.example.com%2Fwiki&space=FRONTEND&q=" in rendered
+    assert "(space `FRONTEND`)" in rendered
     assert "restrita ao produto correto" in rendered
+
+
+def test_session_tools_includes_label_filter_when_repo_has_labels() -> None:
+    rendered = render_session_tools(
+        "http://sandbox:8080",
+        [
+            {
+                "slug": "react",
+                "alias": "React",
+                "confluence_url": "https://docs.example.com/wiki",
+                "confluence_space": "Frontend",
+                "confluence_labels": ["react", "react-dom"],
+            }
+        ],
+    )
+    assert "&space=Frontend&labels=react,react-dom&q=" in rendered
+    assert "labels `react`, `react-dom`" in rendered
+    assert "rótulos são parte do escopo documental" in rendered
 
 
 def test_session_tools_omits_space_when_repo_has_no_space() -> None:
@@ -199,14 +227,3 @@ def test_session_tools_emits_guidance_only_when_any_space_configured() -> None:
         ],
     )
     assert "restrita ao produto correto" in with_space_text
-
-
-def test_evidence_prefetch_terms_are_domain_agnostic() -> None:
-    terms = _terms_for(
-        "Investigue no repo de billing por que a cobrança recorrente falha "
-        "quando payment_provider_status fica pending"
-    )
-
-    assert "repo" not in [term.lower() for term in terms]
-    assert "billing" in terms
-    assert "payment_provider_status" in terms

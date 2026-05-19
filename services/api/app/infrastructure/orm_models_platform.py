@@ -115,6 +115,9 @@ class Repository(Base):
     default_branch: Mapped[str] = mapped_column(String(256), nullable=False, default="main")
     confluence_url: Mapped[str] = mapped_column(Text, nullable=False, default="")
     confluence_space: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    confluence_labels: Mapped[list[str]] = mapped_column(
+        JSONBType, nullable=False, default=list, server_default="[]"
+    )
     sandbox_id: Mapped[uuid.UUID | None] = mapped_column(
         UUIDType, ForeignKey("sandboxes.id", ondelete="SET NULL"), nullable=True, index=True
     )

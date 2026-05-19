@@ -91,6 +91,9 @@ COPY patches/auto-approve-tools.patch /tmp/auto-approve-tools.patch
 COPY patches/multimodal-proto.patch /tmp/multimodal-proto.patch
 COPY patches/multimodal-grpc-handler.patch /tmp/multimodal-grpc-handler.patch
 COPY patches/mcp-grpc-integration.patch /tmp/mcp-grpc-integration.patch
+COPY patches/worktree-tool-guard.patch /tmp/worktree-tool-guard.patch
+COPY patches/numeric-parameter-grep-guard.patch /tmp/numeric-parameter-grep-guard.patch
+COPY patches/numeric-parameter-grep-wrapper.patch /tmp/numeric-parameter-grep-wrapper.patch
 RUN sed -i 's/\r$//' /tmp/*.patch
 WORKDIR /openclaude
 RUN git clone --depth=1 https://github.com/Gitlawb/openclaude.git . \
@@ -99,10 +102,15 @@ RUN git clone --depth=1 https://github.com/Gitlawb/openclaude.git . \
     && git apply /tmp/multimodal-proto.patch \
     && git apply /tmp/multimodal-grpc-handler.patch \
     && git apply /tmp/mcp-grpc-integration.patch \
+    && git apply /tmp/worktree-tool-guard.patch \
+    && git apply /tmp/numeric-parameter-grep-guard.patch \
+    && git apply /tmp/numeric-parameter-grep-wrapper.patch \
     && sed -i 's/^detectStubLeaks()$/setImmediate(() => detectStubLeaks())/' src/entrypoints/sdk/index.ts \
     && rm -f /tmp/grep-tool-n-alias.patch /tmp/auto-approve-tools.patch \
             /tmp/multimodal-proto.patch /tmp/multimodal-grpc-handler.patch \
-            /tmp/mcp-grpc-integration.patch \
+            /tmp/mcp-grpc-integration.patch /tmp/worktree-tool-guard.patch \
+            /tmp/numeric-parameter-grep-guard.patch \
+            /tmp/numeric-parameter-grep-wrapper.patch \
     && bun install \
     && bun run build
 

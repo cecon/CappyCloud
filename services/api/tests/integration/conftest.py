@@ -100,6 +100,7 @@ async def seed_user(
     *,
     role: UserRole = UserRole.USER,
     is_super_admin: bool = False,
+    must_change_password: bool = False,
 ) -> User:
     """Insere utilizador no repo sem passar pelo HTTP — para fixtures.
 
@@ -112,6 +113,7 @@ async def seed_user(
         hashed_password="hashed:password123",
         role=role,
         is_super_admin=is_super_admin,
+        must_change_password=must_change_password,
     )
     await repo.save(user)
     return user

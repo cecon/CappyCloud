@@ -45,6 +45,7 @@ class User:
     hashed_password: str
     role: UserRole = UserRole.USER
     is_super_admin: bool = False
+    must_change_password: bool = False
     created_at: datetime = field(default_factory=_utcnow)
 
     @property
@@ -142,6 +143,7 @@ class Repository:
     default_branch: str = "main"
     confluence_url: str = ""
     confluence_space: str = ""
+    confluence_labels: list[str] = field(default_factory=list)
     provider_id: uuid.UUID | None = None
     sandbox_id: uuid.UUID | None = None
     sandbox_status: str = "not_cloned"
