@@ -78,7 +78,11 @@ async def _fetch_code_for_parameter_dir(
 ) -> list[_CodeHit]:
     resp = await client.post(
         f"{session_url.rstrip('/')}/worktree/search",
-        json={"worktree_path": directory.path, "query": number, "limit": _CODE_MATCHES_PER_TERM},
+        json={
+            "worktree_path": directory.path,
+            "query": number,
+            "limit": _CODE_MATCHES_PER_TERM,
+        },
     )
     if resp.status_code != 200:
         return []
@@ -115,7 +119,9 @@ async def _fetch_code(
             continue
         repo_name = str(repo.get("slug") or repo.get("alias") or worktree)
         for term in terms:
-            tasks.append(_fetch_code_for(client, session_url, worktree, repo_name, term))
+            tasks.append(
+                _fetch_code_for(client, session_url, worktree, repo_name, term)
+            )
     results = await asyncio.gather(*tasks, return_exceptions=True)
     hits: list[_CodeHit] = []
     for result in results:
@@ -133,7 +139,11 @@ async def _fetch_code_for(
 ) -> list[_CodeHit]:
     resp = await client.post(
         f"{session_url.rstrip('/')}/worktree/search",
-        json={"worktree_path": worktree, "query": term, "limit": _CODE_MATCHES_PER_TERM},
+        json={
+            "worktree_path": worktree,
+            "query": term,
+            "limit": _CODE_MATCHES_PER_TERM,
+        },
     )
     if resp.status_code != 200:
         return []
@@ -144,7 +154,9 @@ async def _fetch_code_for(
         path = str(item.get("path") or "").strip()
         text = str(item.get("text") or "").strip()
         if path and text:
-            hits.append(_CodeHit(term, repo_name, path, int(item.get("line") or 0), _trim(text)))
+            hits.append(
+                _CodeHit(term, repo_name, path, int(item.get("line") or 0), _trim(text))
+            )
     return hits
 
 
@@ -180,7 +192,9 @@ def _active_parameter_dirs(
     return _sort_parameter_dirs(preferred or directories)
 
 
-def _sort_parameter_dirs(directories: list[_ParameterDirectory]) -> list[_ParameterDirectory]:
+def _sort_parameter_dirs(
+    directories: list[_ParameterDirectory],
+) -> list[_ParameterDirectory]:
     return sorted(directories, key=lambda item: (not item.preferred, item.path.lower()))
 
 

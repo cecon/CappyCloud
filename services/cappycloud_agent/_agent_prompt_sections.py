@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from urllib.parse import quote
 
 
 def _clean_confluence_labels(raw_labels: object) -> list[str]:
     if isinstance(raw_labels, str):
-        values = raw_labels.split(",")
+        values: Sequence[object] = raw_labels.split(",")
     elif isinstance(raw_labels, (list, tuple)):
-        values = raw_labels
+        values = list(raw_labels)
     else:
         return []
     labels: list[str] = []
@@ -42,7 +43,9 @@ def render_repo_skills(skills: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def render_session_tools(sandbox_session_url: str, repos: list[dict] | None = None) -> str:
+def render_session_tools(
+    sandbox_session_url: str, repos: list[dict] | None = None
+) -> str:
     parts = [
         "## Ferramentas do servidor de sessão\n\n"
         "### Busca de documentação\n"
@@ -92,7 +95,8 @@ def render_session_tools(sandbox_session_url: str, repos: list[dict] | None = No
                 "restrita ao produto correto e não vaza para outros spaces do Confluence."
             )
         any_labels_configured = any(
-            _clean_confluence_labels(repo.get("confluence_labels")) for repo in confluence_repos
+            _clean_confluence_labels(repo.get("confluence_labels"))
+            for repo in confluence_repos
         )
         if any_labels_configured:
             lines.append(
@@ -127,7 +131,7 @@ def render_session_tools(sandbox_session_url: str, repos: list[dict] | None = No
         "```bash\n"
         f"curl -s -X POST '{sandbox_session_url}/task' \\\n"
         "  -H 'Content-Type: application/json' \\\n"
-        "  -d '{\"description\":\"<título>\",\"prompt\":\"<instrução completa>\"}'\n"
+        '  -d \'{"description":"<título>","prompt":"<instrução completa>"}\'\n'
         "```\n"
         "O campo `result` da resposta contém o texto produzido pelo sub-agente.\n"
         "Use `jq -r '.result'` para extrair apenas o texto."

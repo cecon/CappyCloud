@@ -12,10 +12,8 @@ from typing import Optional
 import asyncpg
 
 from ._agent_context import (
-    fetch_other_repos,
     fetch_worktree_top_levels,
     inject_section_before_user_message,
-    render_other_repos_section,
     render_worktree_top_level_section,
 )
 from ._grpc_helpers import build_worktree_missing_error
@@ -78,16 +76,5 @@ async def validate_and_inject_worktree(
     section = render_worktree_top_level_section(top_level)
     if section:
         prompt = inject_section_before_user_message(prompt, section)
-
-    # Outros repos do host: visão cruzada read-only para investigação.
-    # Falha silenciosa — endpoint pode não existir em sandboxes antigos.
-    try:
-        other = await fetch_other_repos(sandbox_session_url, repos)
-    except Exception as exc:  # noqa: BLE001
-        log.debug("[Worktree] fetch_other_repos falhou: %s", exc)
-        other = []
-    other_section = render_other_repos_section(other)
-    if other_section:
-        prompt = inject_section_before_user_message(prompt, other_section)
 
     return prompt

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from ._evidence_models import _ConfluenceSource
 
 _TEXT_LIMIT = 220
@@ -26,9 +28,9 @@ def _dedupe(items: list[str]) -> list[str]:
 
 def _clean_labels(raw_labels: object) -> list[str]:
     if isinstance(raw_labels, str):
-        values = raw_labels.split(",")
+        values: Sequence[object] = raw_labels.split(",")
     elif isinstance(raw_labels, (list, tuple)):
-        values = raw_labels
+        values = list(raw_labels)
     else:
         return []
     labels: list[str] = []

@@ -21,7 +21,6 @@ from ._agent_prompt_sections import (  # noqa: E402
     render_response_rules,
     render_session_tools,
 )
-from ._other_repos import fetch_other_repos, render_other_repos_section  # noqa: F401
 
 _RAG_TOP_N = int(os.getenv("RAG_TOP_N", "3"))
 _REPO_SKILLS_LIMIT = int(os.getenv("REPO_SKILLS_LIMIT", "20"))
@@ -85,8 +84,7 @@ def render_worktree_top_level_section(
         "## Estrutura do worktree\n\n"
         "O repositório já foi provisionado. Use estes caminhos absolutos ao "
         "consultar arquivos e nunca conclua que a pasta está vazia sem rodar "
-        "`ls` ou `git ls-files` no worktree:\n\n"
-        + "\n\n".join(sections)
+        "`ls` ou `git ls-files` no worktree:\n\n" + "\n\n".join(sections)
     )
 
 
@@ -203,7 +201,6 @@ def build_prompt_with_agent(
     repos: list[dict] | None = None,
     session_root: str = "",
     worktree_top_level: dict[str, list[str]] | None = None,
-    other_repos: list[str] | None = None,
 ) -> str:
     """Monta o prompt final colando top-N skills + msg do user.
 
@@ -250,10 +247,6 @@ def build_prompt_with_agent(
                     "Confirma com `ls`/`git ls-files` antes de afirmar que "
                     "alguma pasta não existe:\n\n" + "\n\n".join(sections)
                 )
-
-    other_section = render_other_repos_section(other_repos or [])
-    if other_section:
-        parts.append(other_section)
 
     if skills:
         parts.append(render_repo_skills(skills))

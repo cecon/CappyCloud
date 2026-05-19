@@ -61,7 +61,7 @@ class SandboxRecord:
             repo = self.repos[0]
             worktree_path = repo.get("worktree_path")
             if worktree_path:
-                return worktree_path
+                return str(worktree_path)
             alias = repo.get("alias") or repo.get("slug")
             if self.session_root and alias:
                 return f"{self.session_root.rstrip('/')}/{alias}"
@@ -121,17 +121,29 @@ class SessionStore:
         if self._pool:
             await self._pool.close()
 
+    def _require_redis(self) -> aioredis.Redis:
+        if self._redis is None:
+            raise RuntimeError("SessionStore não conectado ao Redis.")
+        return self._redis
+
+    def _require_pool(self) -> asyncpg.Pool:
+        if self._pool is None:
+            raise RuntimeError("SessionStore não conectado ao Postgres.")
+        return self._pool
+
     @staticmethod
     def _key(user_id: str, chat_id: str) -> str:
         return f"sandbox:{user_id}:{chat_id}"
 
     async def get(self, user_id: str, chat_id: str) -> Optional[SandboxRecord]:
         key = self._key(user_id, chat_id)
-        raw = await self._redis.get(key)
+        redis = self._require_redis()
+        pool = self._require_pool()
+        raw = await redis.get(key)
         if raw:
             return SandboxRecord.from_dict(json.loads(raw))
 
-        async with self._pool.acquire() as conn:
+        async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 SELECT *
@@ -146,15 +158,17 @@ class SessionStore:
             )
         if row:
             record = SandboxRecord.from_dict(dict(row))
-            await self._redis.setex(key, self._idle_ttl, json.dumps(record.to_dict()))
+            await redis.setex(key, self._idle_ttl, json.dumps(record.to_dict()))
             return record
         return None
 
     async def save(self, record: SandboxRecord) -> None:
         key = self._key(record.user_id, record.chat_id)
-        await self._redis.setex(key, self._idle_ttl, json.dumps(record.to_dict()))
+        redis = self._require_redis()
+        pool = self._require_pool()
+        await redis.setex(key, self._idle_ttl, json.dumps(record.to_dict()))
 
-        async with self._pool.acquire() as conn:
+        async with pool.acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO cappy_sessions
@@ -182,8 +196,10 @@ class SessionStore:
 
     async def refresh_ttl(self, user_id: str, chat_id: str) -> None:
         key = self._key(user_id, chat_id)
-        await self._redis.expire(key, self._idle_ttl)
-        async with self._pool.acquire() as conn:
+        redis = self._require_redis()
+        pool = self._require_pool()
+        await redis.expire(key, self._idle_ttl)
+        async with pool.acquire() as conn:
             await conn.execute(
                 "UPDATE cappy_sessions SET last_active=NOW() WHERE user_id=$1 AND chat_id=$2",
                 user_id,
@@ -192,8 +208,10 @@ class SessionStore:
 
     async def delete(self, user_id: str, chat_id: str) -> None:
         key = self._key(user_id, chat_id)
-        await self._redis.delete(key)
-        async with self._pool.acquire() as conn:
+        redis = self._require_redis()
+        pool = self._require_pool()
+        await redis.delete(key)
+        async with pool.acquire() as conn:
             await conn.execute(
                 "DELETE FROM cappy_sessions WHERE user_id=$1 AND chat_id=$2",
                 user_id,
@@ -201,7 +219,8 @@ class SessionStore:
             )
 
     async def list_expired_sessions(self) -> list[dict]:
-        async with self._pool.acquire() as conn:
+        pool = self._require_pool()
+        async with pool.acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT user_id, chat_id, sandbox_id, session_root, repos

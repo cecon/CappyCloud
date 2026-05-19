@@ -22,8 +22,9 @@ def stream_task_events(
     out_q: queue.Queue = queue.Queue()
 
     async def _produce() -> None:
-        pool = await asyncpg.create_pool(database_url, min_size=1, max_size=2)
+        pool = None
         try:
+            pool = await asyncpg.create_pool(database_url, min_size=1, max_size=2)
             last_id = cursor
             while True:
                 if last_id is None:
@@ -48,18 +49,33 @@ def stream_task_events(
                 status_row = await pool.fetchrow(
                     "SELECT status FROM agent_tasks WHERE id=$1::uuid", task_id
                 )
-                if (status_row and status_row["status"] in ("done", "error")) and not rows:
+                if (
+                    status_row and status_row["status"] in ("done", "error")
+                ) and not rows:
                     break
                 if not rows:
                     await asyncio.sleep(0.5)
+        except Exception as exc:  # noqa: BLE001 - stream precisa fechar com erro visível
+            out_q.put(
+                (
+                    "error",
+                    {"message": f"Falha ao acompanhar eventos do agente: {exc}"},
+                    None,
+                )
+            )
         finally:
             out_q.put(None)
-            await pool.close()
+            if pool is not None:
+                await pool.close()
 
     asyncio.run_coroutine_threadsafe(_produce(), loop)
 
     while True:
-        item = out_q.get(timeout=310)
+        try:
+            item = out_q.get(timeout=30)
+        except queue.Empty:
+            yield ": heartbeat\n\n"
+            continue
         if item is None:
             break
         event_type, data, eid = item
