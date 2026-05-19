@@ -76,7 +76,9 @@ class SQLAlchemyRepositoryRepository(RepositoryRepository):
             return ("", "", [])
         url = str(repo_row.confluence_url or "").strip()
         space = str(repo_row.confluence_space or "").strip()
-        labels = [str(label).strip() for label in (repo_row.confluence_labels or []) if str(label).strip()]
+        labels = [
+            str(label).strip() for label in (repo_row.confluence_labels or []) if str(label).strip()
+        ]
         return (url, space, labels)
 
     @staticmethod

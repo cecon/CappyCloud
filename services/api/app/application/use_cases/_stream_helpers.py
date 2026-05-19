@@ -74,9 +74,11 @@ async def enrich_repos_for_pipeline(
                 auth_url = await repositories.get_authenticated_clone_url(repo_id)
                 if auth_url:
                     next_repo["clone_url"] = auth_url
-                confluence_url, confluence_space, confluence_labels = (
-                    await repositories.get_confluence_settings(repo_id)
-                )
+                (
+                    confluence_url,
+                    confluence_space,
+                    confluence_labels,
+                ) = await repositories.get_confluence_settings(repo_id)
                 if confluence_url:
                     next_repo["confluence_url"] = confluence_url
                     if confluence_space:
