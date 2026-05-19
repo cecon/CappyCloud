@@ -13,49 +13,22 @@ def _utcnow() -> datetime:
 
 
 class UserRole(StrEnum):
-    """Papel do utilizador no controlo de acesso.
-
-    Valores são strings persistidas em BD (lower-case), seguindo ADR-005.
-    ``ADMIN`` ignora tabelas de acesso (vê tudo); ``USER`` só acessa o que
-    lhe é atribuído explicitamente (sandboxes, repositórios, modelos).
-    """
-
     ADMIN = "admin"
     USER = "user"
 
 
 class SandboxRuntime(StrEnum):
-    """Orquestrador de containers usado para uma sandbox (ADR-004 §8).
-
-    ``COMPOSE`` é a única implementação completa hoje. ``SWARM`` é stub
-    até que o adapter de produção seja implementado.
-    """
-
     COMPOSE = "compose"
     SWARM = "swarm"
 
 
 class ModelTier(StrEnum):
-    """Categoria de preço do modelo LLM (ADR-006 §6).
-
-    Derivada pelo sync a partir do preço do provider:
-    - ``FREE``: input_cost == 0 e output_cost == 0.
-    - ``PAID``: qualquer custo > 0.
-    - ``UNKNOWN``: sem dados de preço (fallback defensivo).
-    """
-
     FREE = "free"
     PAID = "paid"
     UNKNOWN = "unknown"
 
 
 class ContainerStatus(StrEnum):
-    """Estado do container no orquestrador (ADR-004 §3).
-
-    Independente do ``status`` lógico (active|draining|offline) — este
-    descreve o ciclo de vida físico do container, não o uso dele.
-    """
-
     NOT_CREATED = "not_created"
     STARTING = "starting"
     RUNNING = "running"
@@ -81,18 +54,6 @@ class User:
 
 @dataclass
 class Sandbox:
-    """Container sandbox hospedando openclaude gRPC + session_server HTTP.
-
-    Após ADR-004, a sandbox é entidade cadastrável que descreve uma instância
-    a ser orquestrada (Docker Compose ou Swarm). Campos:
-
-    - ``runtime``: qual adapter usa para criar/iniciar o container.
-    - ``image``: imagem Docker.
-    - ``env_vars``: variáveis injetadas no container (não-sensíveis).
-    - ``container_status``: estado físico do container no orquestrador.
-    - ``status``: estado lógico (uso), independente.
-    """
-
     id: uuid.UUID
     name: str
     host: str
@@ -109,8 +70,6 @@ class Sandbox:
 
 @dataclass
 class GitProvider:
-    """Provedor de repositórios git com credenciais criptografadas."""
-
     id: uuid.UUID
     name: str
     provider_type: str  # github | azure_devops | gitlab | bitbucket
@@ -124,8 +83,6 @@ class GitProvider:
 
 @dataclass
 class AiProvider:
-    """Provedor de modelos IA (OpenRouter, Anthropic, OpenAI…)."""
-
     id: uuid.UUID
     name: str
     base_url: str = "https://openrouter.ai/api/v1"
@@ -138,15 +95,6 @@ class AiProvider:
 
 @dataclass
 class AiModel:
-    """Modelo IA com capabilities, preços e flags de default por capability.
-
-    capabilities: ['text', 'vision', 'embedding', 'video']
-    is_default:   {'text': True, 'vision': False, ...}
-    Preços em USD por **1 milhão** de tokens (formato OpenRouter normalizado).
-    ``tier`` é derivado pelo sync: input+output == 0 → free; > 0 → paid
-    (ADR-006 §6).
-    """
-
     id: uuid.UUID
     provider_id: uuid.UUID
     model_id: str
@@ -163,8 +111,6 @@ class AiModel:
 
 @dataclass
 class UserSandboxAccess:
-    """Permissão binária user → sandbox (ADR-005 §2)."""
-
     id: uuid.UUID
     user_id: uuid.UUID
     sandbox_id: uuid.UUID
@@ -173,8 +119,6 @@ class UserSandboxAccess:
 
 @dataclass
 class UserRepositoryAccess:
-    """Permissão binária user → repository (ADR-005 §2)."""
-
     id: uuid.UUID
     user_id: uuid.UUID
     repository_id: uuid.UUID
@@ -183,8 +127,6 @@ class UserRepositoryAccess:
 
 @dataclass
 class UserAiModelAccess:
-    """Permissão binária user → ai_model (ADR-005 §2, ADR-006 §3)."""
-
     id: uuid.UUID
     user_id: uuid.UUID
     ai_model_id: uuid.UUID
@@ -193,11 +135,6 @@ class UserAiModelAccess:
 
 @dataclass
 class Repository:
-    """Repositório git com estado de sincronização no sandbox.
-
-    sandbox_status: not_cloned | cloning | cloned | error
-    """
-
     id: uuid.UUID
     slug: str
     name: str
@@ -219,12 +156,6 @@ class Repository:
 
 @dataclass
 class SandboxSyncItem:
-    """Item na fila de sincronização DB → sandbox VM.
-
-    operation: clone_repo | remove_repo | update_git_auth | reconfigure_model
-    status:    pending | processing | done | error
-    """
-
     id: uuid.UUID
     sandbox_id: uuid.UUID
     operation: str
@@ -235,9 +166,6 @@ class SandboxSyncItem:
     last_error: str | None = None
     created_at: datetime = field(default_factory=_utcnow)
     processed_at: datetime | None = None
-
-
-# ── Conversations ─────────────────────────────────────────────
 
 
 @dataclass
@@ -252,31 +180,24 @@ class RepoEnvironment:
 
 @dataclass
 class Conversation:
-    """Thread de conversa com rastreamento completo de sessão, PR e CI."""
-
     id: uuid.UUID
     user_id: uuid.UUID
     title: str
     created_at: datetime = field(default_factory=_utcnow)
     updated_at: datetime = field(default_factory=_utcnow)
-    # Infra
     sandbox_id: uuid.UUID | None = None
     ai_model_id: uuid.UUID | None = None
-    # Multi-repo session
     repos: list[dict] = field(default_factory=list)
     session_root: str | None = None
-    # Worktree state
     worktree_exists: bool = False
     lines_added: int = 0
     lines_removed: int = 0
     files_changed: int = 0
-    # PR tracking
     pr_url: str | None = None
     pr_status: str = "none"  # none | open | draft | merged | closed
     pr_approved: bool = False
     pr_number: int | None = None
     github_repo_slug: str | None = None
-    # CI tracking
     ci_status: str = "unknown"  # unknown | pending | running | passed | failed
     ci_url: str | None = None
 
@@ -288,7 +209,6 @@ class Message:
     role: str
     content: str
     created_at: datetime = field(default_factory=_utcnow)
-    # Uso por turno — preenchido apenas em mensagens do assistente.
     model_used: str | None = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -297,14 +217,6 @@ class Message:
 
 @dataclass
 class MessageAttachment:
-    """Anexo (imagem inicialmente) carregado pelo utilizador numa conversa.
-
-    O bytes vivem num storage separado (volume Docker / S3); aqui só metadado
-    + ``vision_description``: o texto produzido por um modelo de visão que é
-    injetado no prompt do agente para permitir que modelos text-only raciocinem
-    sobre o conteúdo da imagem.
-    """
-
     id: uuid.UUID
     conversation_id: uuid.UUID
     mime_type: str
@@ -324,12 +236,6 @@ class MessageAttachment:
 
 @dataclass
 class ConversationArtifactChunk:
-    """Trecho indexado de um artefato anexado a uma conversa.
-
-    Escopo: sempre ``conversation_id``. Usado para buscar trechos relevantes
-    de logs/documentos anexados sem carregar o arquivo inteiro no prompt.
-    """
-
     id: uuid.UUID
     attachment_id: uuid.UUID
     conversation_id: uuid.UUID
@@ -343,17 +249,8 @@ class ConversationArtifactChunk:
     created_at: datetime = field(default_factory=_utcnow)
 
 
-# ── MCP (Model Context Protocol) ─────────────────────────────
-
-
 @dataclass
 class GlobalSkill:
-    """Skill global do catálogo da plataforma.
-
-    Pode ser associada a uma ou mais sandboxes. No boot, cada sandbox recebe
-    as skills globais atribuídas a ela em ``~/.claude/skills/<name>/SKILL.md``.
-    """
-
     id: uuid.UUID
     name: str
     description: str = ""
@@ -366,13 +263,6 @@ class GlobalSkill:
 
 @dataclass
 class SandboxSkill:
-    """Projeção de uma skill global materializada em uma sandbox.
-
-    Materializada em ``~/.claude/skills/<name>/SKILL.md`` no container ao boot.
-    Não confundir com ``Skill`` (por repositório, RAG) em
-    ``orm_models_agent.py`` — essa é injetada por worktree, não por sandbox.
-    """
-
     id: uuid.UUID
     sandbox_id: uuid.UUID
     name: str  # slug; vira o nome da pasta em ~/.claude/skills/
@@ -385,15 +275,6 @@ class SandboxSkill:
 
 @dataclass
 class SandboxAgent:
-    """Subagente *global* por sandbox (ADR-004 §6).
-
-    Materializado em ``~/.claude/agents/<name>.md`` com frontmatter YAML
-    contendo ``name``, ``description``, ``tools``, ``model``; o corpo é o
-    ``system_prompt``.
-
-    ``name`` é único por (sandbox, name).
-    """
-
     id: uuid.UUID
     sandbox_id: uuid.UUID
     name: str  # slug; vira o nome do arquivo <name>.md
@@ -408,16 +289,6 @@ class SandboxAgent:
 
 @dataclass
 class McpServer:
-    """Servidor MCP configurado por sandbox (ADR-004 §6).
-
-    Mapeia para uma entrada em ``mcpServers`` no ``~/.claude/settings.json``
-    do openclaude rodando dentro do container da sandbox. Como o container é
-    compartilhado por todos os utilizadores autorizados, a configuração de
-    MCP é por sandbox, não por utilizador. Apenas ADMINs gerenciam.
-
-    ``name`` é único por (sandbox, name) e vira a chave em ``mcpServers``.
-    """
-
     id: uuid.UUID
     sandbox_id: uuid.UUID
     name: str  # chave única por sandbox (ex: "github", "filesystem")

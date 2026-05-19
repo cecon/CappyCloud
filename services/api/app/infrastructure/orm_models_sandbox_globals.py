@@ -40,9 +40,7 @@ class GlobalSkillSandbox(Base):
     """Associação entre skill global e sandbox que deve recebê-la."""
 
     __tablename__ = "global_skill_sandboxes"
-    __table_args__ = (
-        UniqueConstraint("skill_id", "sandbox_id", name="uq_global_skill_sandbox"),
-    )
+    __table_args__ = (UniqueConstraint("skill_id", "sandbox_id", name="uq_global_skill_sandbox"),)
 
     skill_id: Mapped[uuid.UUID] = mapped_column(
         UUIDType,

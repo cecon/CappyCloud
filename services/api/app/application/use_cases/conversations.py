@@ -8,6 +8,12 @@ import uuid
 from collections.abc import AsyncGenerator
 
 from app.application.use_cases import _attachments_helpers as _att
+from app.application.use_cases._conversation_crud import (
+    CreateConversation,
+    ListConversations,
+    ListMessages,
+)
+from app.application.use_cases._conversation_titles import DEFAULT_TITLE, TITLE_MAX_LEN
 from app.application.use_cases._stream_helpers import (
     build_pipeline_body,
     compute_cost,
@@ -27,19 +33,24 @@ from app.ports.repositories import (
 from app.ports.services import AttachmentStorage
 from app.ports.user_access import AiModelAccessPolicy
 
-_TITLE_MAX_LEN = 80
-_DEFAULT_TITLE = "Nova conversa"
+__all__ = [
+    "CreateConversation",
+    "ListConversations",
+    "ListMessages",
+    "StreamMessage",
+]
+
 _SSE_HEARTBEAT_INTERVAL_S = 10.0
 _SSE_INITIAL_FLUSH_BYTES = 2048
 
 
 def _sse_comment(message: str, *, padding: int = 0) -> bytes:
     suffix = " " * max(0, padding)
-    return f": {message}{suffix}\n\n".encode("utf-8")
+    return f": {message}{suffix}\n\n".encode()
 
 
 def _sse_payload(payload: dict) -> bytes:
-    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8")
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
 
 def _next_chunk(gen):
@@ -47,83 +58,6 @@ def _next_chunk(gen):
         return next(gen)
     except StopIteration:
         return None
-
-
-class ListConversations:
-    def __init__(self, conversations: ConversationRepository) -> None:
-        self._conversations = conversations
-
-    async def execute(self, user_id: uuid.UUID) -> list[Conversation]:
-        return await self._conversations.list_by_user(user_id)
-
-
-class CreateConversation:
-    def __init__(
-        self,
-        conversations: ConversationRepository,
-        repositories: RepositoryRepository | None = None,
-    ) -> None:
-        self._conversations = conversations
-        self._repositories = repositories
-
-    async def execute(
-        self,
-        user_id: uuid.UUID,
-        title: str | None = None,
-        sandbox_id: uuid.UUID | None = None,
-        repos: list[dict] | None = None,
-    ) -> Conversation:
-        conv_id = uuid.uuid4()
-        short_id = conv_id.hex[:12]
-
-        resolved_repos: list[dict] = []
-        for r in repos or []:
-            slug = r["slug"]
-            alias = r.get("alias") or slug
-            base = r.get("base_branch") or "main"
-            branch_name = f"cappy/{slug}/{short_id}-{alias}"
-            worktree_path = f"/repos/sessions/{short_id}/{alias}"
-            repo_entity = await self._repositories.get_by_slug(slug) if self._repositories else None
-            resolved_repos.append(
-                {
-                    "slug": slug,
-                    "alias": alias,
-                    "base_branch": base,
-                    "branch_name": branch_name,
-                    "worktree_path": worktree_path,
-                    "repo_id": str(repo_entity.id) if repo_entity else None,
-                    "confluence_url": repo_entity.confluence_url if repo_entity else "",
-                    "confluence_space": repo_entity.confluence_space if repo_entity else "",
-                }
-            )
-
-        session_root = f"/repos/sessions/{short_id}"
-
-        conv = Conversation(
-            id=conv_id,
-            user_id=user_id,
-            title=title or _DEFAULT_TITLE,
-            sandbox_id=sandbox_id,
-            repos=resolved_repos,
-            session_root=session_root,
-        )
-        return await self._conversations.save(conv)
-
-
-class ListMessages:
-    def __init__(
-        self,
-        conversations: ConversationRepository,
-        messages: MessageRepository,
-    ) -> None:
-        self._conversations = conversations
-        self._messages = messages
-
-    async def execute(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> list[Message]:
-        conv = await self._conversations.get(conversation_id, user_id)
-        if not conv:
-            raise LookupError("Conversa não encontrada.")
-        return await self._messages.list_by_conversation(conversation_id)
 
 
 class StreamMessage:
@@ -189,8 +123,8 @@ class StreamMessage:
             )
         )
 
-        if conv.title == _DEFAULT_TITLE:
-            conv.title = content[:_TITLE_MAX_LEN] + ("…" if len(content) > _TITLE_MAX_LEN else "")
+        if conv.title == DEFAULT_TITLE:
+            conv.title = content[:TITLE_MAX_LEN] + ("…" if len(content) > TITLE_MAX_LEN else "")
             await self._conversations.update(conv)
 
         history = await self._messages.list_by_conversation(conversation_id)
@@ -325,7 +259,7 @@ class StreamMessage:
                         timeout=_SSE_HEARTBEAT_INTERVAL_S,
                     )
                     break
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield _sse_comment("heartbeat")
             if chunk is None:
                 break

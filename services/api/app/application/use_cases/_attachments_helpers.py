@@ -157,8 +157,7 @@ async def inject_artifact_chunks(
         filename = att.original_filename if att else str(chunk.attachment_id)
         location = _format_chunk_location(chunk.line_start, chunk.line_end, chunk.page_start)
         sections.append(
-            f"### Trecho {idx}: `{filename}`{location}\n\n"
-            f"```text\n{chunk.content[:6000]}\n```"
+            f"### Trecho {idx}: `{filename}`{location}\n\n```text\n{chunk.content[:6000]}\n```"
         )
     return "\n\n".join(sections) + "\n\n---\n\n" + prompt
 

@@ -31,15 +31,11 @@ class SandboxSkillRepository(ABC):
         """Devolve skill global por nome único."""
 
     @abstractmethod
-    async def create_global(
-        self, skill: GlobalSkill, sandbox_ids: list[uuid.UUID]
-    ) -> GlobalSkill:
+    async def create_global(self, skill: GlobalSkill, sandbox_ids: list[uuid.UUID]) -> GlobalSkill:
         """Persiste nova skill global e suas associações com sandboxes."""
 
     @abstractmethod
-    async def update_global(
-        self, skill: GlobalSkill, sandbox_ids: list[uuid.UUID]
-    ) -> GlobalSkill:
+    async def update_global(self, skill: GlobalSkill, sandbox_ids: list[uuid.UUID]) -> GlobalSkill:
         """Atualiza skill global e substitui associações com sandboxes."""
 
     @abstractmethod

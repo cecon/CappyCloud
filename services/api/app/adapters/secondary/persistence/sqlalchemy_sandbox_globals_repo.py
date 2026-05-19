@@ -1,4 +1,4 @@
-"""SQLAlchemy adapters para SandboxSkillRepository e SandboxAgentRepository."""
+"""SQLAlchemy adapter para SandboxSkillRepository."""
 
 from __future__ import annotations
 
@@ -8,11 +8,14 @@ from sqlalchemy import delete, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.entities import (
-    GlobalSkill as GlobalSkillEntity,
+from app.adapters.secondary.persistence._sandbox_global_mappers import (
+    global_entity_to_sandbox_entity,
+    global_skill_to_entity,
+    global_skill_to_sandbox_entity,
+    legacy_skill_to_entity,
 )
 from app.domain.entities import (
-    SandboxAgent as SandboxAgentEntity,
+    GlobalSkill as GlobalSkillEntity,
 )
 from app.domain.entities import (
     SandboxSkill as SandboxSkillEntity,
@@ -24,12 +27,9 @@ from app.infrastructure.orm_models_sandbox_globals import (
     GlobalSkillSandbox as GlobalSkillSandboxORM,
 )
 from app.infrastructure.orm_models_sandbox_globals import (
-    SandboxAgent as SandboxAgentORM,
-)
-from app.infrastructure.orm_models_sandbox_globals import (
     SandboxSkill as SandboxSkillORM,
 )
-from app.ports.sandbox_globals import SandboxAgentRepository, SandboxSkillRepository
+from app.ports.sandbox_globals import SandboxSkillRepository
 
 
 class SQLAlchemySandboxSkillRepository(SandboxSkillRepository):
@@ -46,14 +46,14 @@ class SQLAlchemySandboxSkillRepository(SandboxSkillRepository):
             .where(GlobalSkillSandboxORM.sandbox_id == sandbox_id)
             .order_by(GlobalSkillORM.created_at)
         )
-        global_rows = [self._to_sandbox_entity(r, sandbox_id) for r in rows.scalars()]
+        global_rows = [global_skill_to_sandbox_entity(r, sandbox_id) for r in rows.scalars()]
 
         legacy_rows = await self._session.execute(
             select(SandboxSkillORM)
             .where(SandboxSkillORM.sandbox_id == sandbox_id)
             .order_by(SandboxSkillORM.created_at)
         )
-        return global_rows + [self._legacy_to_entity(r) for r in legacy_rows.scalars()]
+        return global_rows + [legacy_skill_to_entity(r) for r in legacy_rows.scalars()]
 
     async def list_global(self) -> list[GlobalSkillEntity]:
         rows = (
@@ -77,7 +77,7 @@ class SQLAlchemySandboxSkillRepository(SandboxSkillRepository):
         by_skill: dict[uuid.UUID, list[uuid.UUID]] = {}
         for row in sandbox_rows:
             by_skill.setdefault(row.skill_id, []).append(row.sandbox_id)
-        return [self._to_global_entity(row, by_skill.get(row.id, [])) for row in rows]
+        return [global_skill_to_entity(row, by_skill.get(row.id, [])) for row in rows]
 
     async def get_global(self, skill_id: uuid.UUID) -> GlobalSkillEntity | None:
         row = await self._session.get(GlobalSkillORM, skill_id)
@@ -94,7 +94,7 @@ class SQLAlchemySandboxSkillRepository(SandboxSkillRepository):
             .scalars()
             .all()
         )
-        return self._to_global_entity(row, [item.sandbox_id for item in sandbox_rows])
+        return global_skill_to_entity(row, [item.sandbox_id for item in sandbox_rows])
 
     async def get_global_by_name(self, name: str) -> GlobalSkillEntity | None:
         row = await self._session.scalar(select(GlobalSkillORM).where(GlobalSkillORM.name == name))
@@ -117,7 +117,7 @@ class SQLAlchemySandboxSkillRepository(SandboxSkillRepository):
             self._session.add(GlobalSkillSandboxORM(skill_id=skill.id, sandbox_id=sandbox_id))
         await self._session.commit()
         await self._session.refresh(orm)
-        return self._to_global_entity(orm, list(dict.fromkeys(sandbox_ids)))
+        return global_skill_to_entity(orm, list(dict.fromkeys(sandbox_ids)))
 
     async def update_global(
         self, skill: GlobalSkillEntity, sandbox_ids: list[uuid.UUID]
@@ -137,7 +137,7 @@ class SQLAlchemySandboxSkillRepository(SandboxSkillRepository):
             self._session.add(GlobalSkillSandboxORM(skill_id=skill.id, sandbox_id=sandbox_id))
         await self._session.commit()
         await self._session.refresh(orm)
-        return self._to_global_entity(orm, unique_sandbox_ids)
+        return global_skill_to_entity(orm, unique_sandbox_ids)
 
     async def delete_global(self, skill_id: uuid.UUID) -> bool:
         result: CursorResult = await self._session.execute(  # type: ignore[assignment]
@@ -159,11 +159,11 @@ class SQLAlchemySandboxSkillRepository(SandboxSkillRepository):
             )
         )
         if global_row is not None:
-            return self._to_sandbox_entity(global_row, sandbox_id)
+            return global_skill_to_sandbox_entity(global_row, sandbox_id)
         legacy = await self._session.get(SandboxSkillORM, skill_id)
         if not legacy or legacy.sandbox_id != sandbox_id:
             return None
-        return self._legacy_to_entity(legacy)
+        return legacy_skill_to_entity(legacy)
 
     async def get_by_name(self, name: str, sandbox_id: uuid.UUID) -> SandboxSkillEntity | None:
         global_row = await self._session.scalar(
@@ -178,14 +178,14 @@ class SQLAlchemySandboxSkillRepository(SandboxSkillRepository):
             )
         )
         if global_row is not None:
-            return self._to_sandbox_entity(global_row, sandbox_id)
+            return global_skill_to_sandbox_entity(global_row, sandbox_id)
         row = await self._session.scalar(
             select(SandboxSkillORM).where(
                 SandboxSkillORM.sandbox_id == sandbox_id,
                 SandboxSkillORM.name == name,
             )
         )
-        return self._legacy_to_entity(row) if row else None
+        return legacy_skill_to_entity(row) if row else None
 
     async def create(self, skill: SandboxSkillEntity) -> SandboxSkillEntity:
         created = await self.create_global(
@@ -198,7 +198,7 @@ class SQLAlchemySandboxSkillRepository(SandboxSkillRepository):
             ),
             [skill.sandbox_id],
         )
-        return self._to_sandbox_entity_from_global(created, skill.sandbox_id)
+        return global_entity_to_sandbox_entity(created, skill.sandbox_id)
 
     async def _create_legacy(self, skill: SandboxSkillEntity) -> SandboxSkillEntity:
         orm = SandboxSkillORM(
@@ -212,7 +212,7 @@ class SQLAlchemySandboxSkillRepository(SandboxSkillRepository):
         self._session.add(orm)
         await self._session.commit()
         await self._session.refresh(orm)
-        return self._legacy_to_entity(orm)
+        return legacy_skill_to_entity(orm)
 
     async def update(self, skill: SandboxSkillEntity) -> SandboxSkillEntity:
         orm = await self._session.get(GlobalSkillORM, skill.id)
@@ -241,7 +241,7 @@ class SQLAlchemySandboxSkillRepository(SandboxSkillRepository):
                 ),
                 sandbox_ids,
             )
-            return self._to_sandbox_entity_from_global(updated, skill.sandbox_id)
+            return global_entity_to_sandbox_entity(updated, skill.sandbox_id)
 
         legacy = await self._session.get(SandboxSkillORM, skill.id)
         if not legacy or legacy.sandbox_id != skill.sandbox_id:
@@ -252,7 +252,7 @@ class SQLAlchemySandboxSkillRepository(SandboxSkillRepository):
         legacy.enabled = skill.enabled
         await self._session.commit()
         await self._session.refresh(legacy)
-        return self._legacy_to_entity(legacy)
+        return legacy_skill_to_entity(legacy)
 
     async def delete(self, skill_id: uuid.UUID, sandbox_id: uuid.UUID) -> bool:
         result: CursorResult = await self._session.execute(  # type: ignore[assignment]
@@ -280,142 +280,3 @@ class SQLAlchemySandboxSkillRepository(SandboxSkillRepository):
         )
         await self._session.commit()
         return legacy_result.rowcount > 0
-
-    @staticmethod
-    def _to_global_entity(
-        orm: GlobalSkillORM, sandbox_ids: list[uuid.UUID]
-    ) -> GlobalSkillEntity:
-        return GlobalSkillEntity(
-            id=orm.id,
-            name=orm.name,
-            description=orm.description or "",
-            content=orm.content or "",
-            enabled=orm.enabled,
-            sandbox_ids=list(sandbox_ids),
-            created_at=orm.created_at,
-            updated_at=orm.updated_at,
-        )
-
-    @staticmethod
-    def _to_sandbox_entity(orm: GlobalSkillORM, sandbox_id: uuid.UUID) -> SandboxSkillEntity:
-        return SandboxSkillEntity(
-            id=orm.id,
-            sandbox_id=sandbox_id,
-            name=orm.name,
-            description=orm.description or "",
-            content=orm.content or "",
-            enabled=orm.enabled,
-            created_at=orm.created_at,
-            updated_at=orm.updated_at,
-        )
-
-    @staticmethod
-    def _to_sandbox_entity_from_global(
-        skill: GlobalSkillEntity, sandbox_id: uuid.UUID
-    ) -> SandboxSkillEntity:
-        return SandboxSkillEntity(
-            id=skill.id,
-            sandbox_id=sandbox_id,
-            name=skill.name,
-            description=skill.description,
-            content=skill.content,
-            enabled=skill.enabled,
-            created_at=skill.created_at,
-            updated_at=skill.updated_at,
-        )
-
-    @staticmethod
-    def _legacy_to_entity(orm: SandboxSkillORM) -> SandboxSkillEntity:
-        return SandboxSkillEntity(
-            id=orm.id,
-            sandbox_id=orm.sandbox_id,
-            name=orm.name,
-            description=orm.description or "",
-            content=orm.content or "",
-            enabled=orm.enabled,
-            created_at=orm.created_at,
-            updated_at=orm.updated_at,
-        )
-
-
-class SQLAlchemySandboxAgentRepository(SandboxAgentRepository):
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
-
-    async def list_for_sandbox(self, sandbox_id: uuid.UUID) -> list[SandboxAgentEntity]:
-        rows = await self._session.execute(
-            select(SandboxAgentORM)
-            .where(SandboxAgentORM.sandbox_id == sandbox_id)
-            .order_by(SandboxAgentORM.created_at)
-        )
-        return [self._to_entity(r) for r in rows.scalars()]
-
-    async def get(self, agent_id: uuid.UUID, sandbox_id: uuid.UUID) -> SandboxAgentEntity | None:
-        row = await self._session.get(SandboxAgentORM, agent_id)
-        if not row or row.sandbox_id != sandbox_id:
-            return None
-        return self._to_entity(row)
-
-    async def get_by_name(self, name: str, sandbox_id: uuid.UUID) -> SandboxAgentEntity | None:
-        row = await self._session.scalar(
-            select(SandboxAgentORM).where(
-                SandboxAgentORM.sandbox_id == sandbox_id,
-                SandboxAgentORM.name == name,
-            )
-        )
-        return self._to_entity(row) if row else None
-
-    async def create(self, agent: SandboxAgentEntity) -> SandboxAgentEntity:
-        orm = SandboxAgentORM(
-            id=agent.id,
-            sandbox_id=agent.sandbox_id,
-            name=agent.name,
-            description=agent.description,
-            system_prompt=agent.system_prompt,
-            model=agent.model,
-            tools=list(agent.tools),
-            enabled=agent.enabled,
-        )
-        self._session.add(orm)
-        await self._session.commit()
-        await self._session.refresh(orm)
-        return self._to_entity(orm)
-
-    async def update(self, agent: SandboxAgentEntity) -> SandboxAgentEntity:
-        orm = await self._session.get(SandboxAgentORM, agent.id)
-        if not orm or orm.sandbox_id != agent.sandbox_id:
-            raise ValueError(f"SandboxAgent {agent.id} not found for sandbox {agent.sandbox_id}")
-        orm.name = agent.name
-        orm.description = agent.description
-        orm.system_prompt = agent.system_prompt
-        orm.model = agent.model
-        orm.tools = list(agent.tools)
-        orm.enabled = agent.enabled
-        await self._session.commit()
-        await self._session.refresh(orm)
-        return self._to_entity(orm)
-
-    async def delete(self, agent_id: uuid.UUID, sandbox_id: uuid.UUID) -> bool:
-        result: CursorResult = await self._session.execute(  # type: ignore[assignment]
-            delete(SandboxAgentORM).where(
-                SandboxAgentORM.id == agent_id,
-                SandboxAgentORM.sandbox_id == sandbox_id,
-            )
-        )
-        await self._session.commit()
-        return result.rowcount > 0
-
-    @staticmethod
-    def _to_entity(orm: SandboxAgentORM) -> SandboxAgentEntity:
-        return SandboxAgentEntity(
-            id=orm.id,
-            sandbox_id=orm.sandbox_id,
-            name=orm.name,
-            description=orm.description or "",
-            system_prompt=orm.system_prompt or "",
-            model=orm.model or "",
-            tools=list(orm.tools or []),
-            enabled=orm.enabled,
-            created_at=orm.created_at,
-            updated_at=orm.updated_at,
-        )

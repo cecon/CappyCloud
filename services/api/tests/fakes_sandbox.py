@@ -171,16 +171,12 @@ class InMemorySandboxSkillRepository(SandboxSkillRepository):
                 return await self.get_global(sk.id)
         return None
 
-    async def create_global(
-        self, skill: GlobalSkill, sandbox_ids: list[uuid.UUID]
-    ) -> GlobalSkill:
+    async def create_global(self, skill: GlobalSkill, sandbox_ids: list[uuid.UUID]) -> GlobalSkill:
         self._store[skill.id] = skill
         self._assignments[skill.id] = set(sandbox_ids)
         return (await self.get_global(skill.id)) or skill
 
-    async def update_global(
-        self, skill: GlobalSkill, sandbox_ids: list[uuid.UUID]
-    ) -> GlobalSkill:
+    async def update_global(self, skill: GlobalSkill, sandbox_ids: list[uuid.UUID]) -> GlobalSkill:
         if skill.id not in self._store:
             raise ValueError(f"GlobalSkill {skill.id} not found")
         self._store[skill.id] = skill

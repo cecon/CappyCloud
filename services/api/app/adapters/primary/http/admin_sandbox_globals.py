@@ -10,8 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.primary.http.deps import require_role, require_super_admin
 from app.adapters.primary.http.deps_base import get_db_session
-from app.adapters.secondary.persistence.sqlalchemy_sandbox_globals_repo import (
+from app.adapters.secondary.persistence.sqlalchemy_sandbox_agent_repo import (
     SQLAlchemySandboxAgentRepository,
+)
+from app.adapters.secondary.persistence.sqlalchemy_sandbox_globals_repo import (
     SQLAlchemySandboxSkillRepository,
 )
 from app.application.use_cases.sandbox_globals import (

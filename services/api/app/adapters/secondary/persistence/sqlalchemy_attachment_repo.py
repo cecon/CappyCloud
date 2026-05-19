@@ -147,9 +147,7 @@ class SQLAlchemyAttachmentRepository(AttachmentRepository):
         if not attachment_ids:
             return []
         terms = [
-            term.strip()
-            for term in query.replace("\n", " ").split(" ")
-            if len(term.strip()) >= 3
+            term.strip() for term in query.replace("\n", " ").split(" ") if len(term.strip()) >= 3
         ][:8]
         filters = [
             ChunkORM.conversation_id == conversation_id,
@@ -158,25 +156,33 @@ class SQLAlchemyAttachmentRepository(AttachmentRepository):
         if terms:
             filters.append(or_(*[ChunkORM.content.ilike(f"%{term}%") for term in terms]))
         rows = (
-            await self._session.execute(
-                select(ChunkORM)
-                .where(*filters)
-                .order_by(ChunkORM.attachment_id, ChunkORM.chunk_index)
-                .limit(limit)
-            )
-        ).scalars().all()
-        if not rows and terms:
-            rows = (
+            (
                 await self._session.execute(
                     select(ChunkORM)
-                    .where(
-                        ChunkORM.conversation_id == conversation_id,
-                        ChunkORM.attachment_id.in_(attachment_ids),
-                    )
+                    .where(*filters)
                     .order_by(ChunkORM.attachment_id, ChunkORM.chunk_index)
                     .limit(limit)
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
+        )
+        if not rows and terms:
+            rows = (
+                (
+                    await self._session.execute(
+                        select(ChunkORM)
+                        .where(
+                            ChunkORM.conversation_id == conversation_id,
+                            ChunkORM.attachment_id.in_(attachment_ids),
+                        )
+                        .order_by(ChunkORM.attachment_id, ChunkORM.chunk_index)
+                        .limit(limit)
+                    )
+                )
+                .scalars()
+                .all()
+            )
         return [self._chunk_to_entity(row) for row in rows]
 
     @staticmethod
