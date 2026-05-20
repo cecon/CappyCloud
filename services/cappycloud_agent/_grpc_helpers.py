@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -80,6 +81,55 @@ GRPC_CONNECTION_LOST = (
 )
 
 GRPC_UNEXPECTED_END = "O agente encerrou a conexão inesperadamente (possível rate limit ou timeout do modelo)."
+
+_PROVIDER_API_ERROR_RE = re.compile(
+    r"^API Error:\s*(?P<status>\d{3})\s*(?P<payload>\{.*\})\s*$",
+    re.DOTALL,
+)
+
+
+def provider_api_error_message(text: str) -> str | None:
+    """Converte o texto cru de erro do provider em mensagem segura para a UI.
+
+    Alguns providers/OpenRouter devolvem falhas como um ``text_chunk`` contendo
+    ``API Error: 429 {...}`` em vez de um evento gRPC de erro. Se deixarmos isso
+    passar como texto normal, a UI mostra JSON cru, marca o agente como
+    respondido e ainda pode expor campos internos como ``user_id``.
+    """
+    match = _PROVIDER_API_ERROR_RE.match(text.strip())
+    if not match:
+        return None
+
+    status = match.group("status")
+    raw_payload = match.group("payload")
+    try:
+        payload = json.loads(raw_payload)
+    except json.JSONDecodeError:
+        safe = raw_payload.split('"user_id"', 1)[0].strip().rstrip(",{ ")
+        return f"Provedor de IA retornou erro {status}: {safe[:400]}"
+
+    error = payload.get("error") if isinstance(payload, dict) else {}
+    if not isinstance(error, dict):
+        return f"Provedor de IA retornou erro {status}."
+
+    metadata = error.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    provider = str(metadata.get("provider_name") or "").strip()
+    raw = str(metadata.get("raw") or error.get("message") or "").strip()
+    code = str(error.get("code") or status)
+    message = raw or "erro sem detalhe retornado pelo provedor"
+
+    if " is temporarily rate-limited upstream" in message:
+        model = message.split(" is temporarily rate-limited upstream", 1)[0]
+        message = f"{model} está temporariamente limitado no provedor upstream"
+
+    parts = [f"Provedor de IA retornou erro {code}: {message}."]
+    if provider:
+        parts.append(f"Provider: {provider}.")
+    parts.append("Troque o modelo ou tente novamente em instantes.")
+    return " ".join(parts)
 
 
 def build_done_empty_error(

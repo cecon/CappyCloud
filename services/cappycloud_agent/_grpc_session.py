@@ -214,8 +214,14 @@ class GrpcSession:
                 event = msg.WhichOneof("event")
 
                 if event == "text_chunk":
-                    streamed_text = True
-                    await self._out_queue.put(handlers.text_chunk_event(msg))
+                    out = handlers.text_chunk_event(msg)
+                    if out[0] == "text":
+                        streamed_text = True
+                    elif out[0] == "error":
+                        received_done = True
+                    await self._out_queue.put(out)
+                    if out[0] == "error":
+                        return
 
                 elif event == "tool_start":
                     await self._out_queue.put(

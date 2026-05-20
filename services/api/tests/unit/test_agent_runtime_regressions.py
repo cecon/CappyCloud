@@ -187,3 +187,24 @@ def test_done_full_text_becomes_text_event_when_chunks_are_missing() -> None:
         {"content": "Resposta final"},
     )
     assert _grpc_event_handlers.final_text_fallback_event(msg, streamed_text=True) is None
+
+
+def test_provider_api_error_text_chunk_becomes_error_event() -> None:
+    msg = types.SimpleNamespace(
+        text_chunk=types.SimpleNamespace(
+            text=(
+                'API Error: 429 {"error":{"message":"Provider returned error",'
+                '"code":429,"metadata":{"raw":"deepseek/deepseek-v4-flash:free '
+                'is temporarily rate-limited upstream","provider_name":"Crucible",'
+                '"is_byok":false}},"user_id":"user_should_not_leak"}'
+            )
+        )
+    )
+
+    event_type, data = _grpc_event_handlers.text_chunk_event(msg)
+
+    assert event_type == "error"
+    assert "429" in data["message"]
+    assert "deepseek/deepseek-v4-flash:free" in data["message"]
+    assert "Crucible" in data["message"]
+    assert "user_should_not_leak" not in data["message"]

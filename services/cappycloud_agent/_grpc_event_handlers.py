@@ -11,12 +11,17 @@ import logging
 from typing import Any
 
 from ._grpc_helpers import PendingAction, build_done_empty_error, parse_choices
+from ._grpc_helpers import provider_api_error_message
 
 log = logging.getLogger(__name__)
 
 
 def text_chunk_event(msg: Any) -> tuple[str, dict]:
-    return ("text", {"content": msg.text_chunk.text})
+    text = str(msg.text_chunk.text or "")
+    provider_error = provider_api_error_message(text)
+    if provider_error:
+        return ("error", {"message": provider_error})
+    return ("text", {"content": text})
 
 
 def tool_start_event(msg: Any, session_id: str) -> tuple[str, dict]:

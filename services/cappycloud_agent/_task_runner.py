@@ -33,6 +33,7 @@ log = logging.getLogger(__name__)
 # pensar entre chunks; um valor pequeno mata investigações legítimas. Cada
 # chunk recebido reinicia o relógio (ver _run loop).
 STREAM_IDLE_TIMEOUT_S = float(os.getenv("AGENT_STREAM_IDLE_TIMEOUT_S", "900"))
+FIRST_EVENT_TIMEOUT_S = float(os.getenv("AGENT_FIRST_EVENT_TIMEOUT_S", "75"))
 
 
 class TaskRunner:
@@ -102,21 +103,28 @@ class TaskRunner:
         """
         await self._update_task(status="running", started_at=_now())
         agent_stage_marked = False
+        first_event_received = False
         try:
             while True:
+                timeout_s = (
+                    STREAM_IDLE_TIMEOUT_S
+                    if first_event_received
+                    else FIRST_EVENT_TIMEOUT_S
+                )
                 try:
                     event_type, data = await asyncio.wait_for(
                         self._session._out_queue.get(),
-                        timeout=STREAM_IDLE_TIMEOUT_S,
+                        timeout=timeout_s,
                     )
                 except asyncio.TimeoutError:
-                    minutes = int(STREAM_IDLE_TIMEOUT_S // 60)
+                    message = _timeout_message(first_event_received, timeout_s)
                     await self._insert_event(
-                        "timeout",
-                        {"message": f"Stream silencioso por {minutes} min."},
+                        "error",
+                        {"message": message},
                     )
                     await self._update_task(status="error", completed_at=_now())
                     return
+                first_event_received = True
 
                 if event_type == "done":
                     usage = data if isinstance(data, dict) else {}
@@ -271,6 +279,19 @@ def _normalise(data) -> dict:
         return {k: v for k, v in vars(data).items() if not k.startswith("_")}
     except TypeError:
         return {"value": str(data)}
+
+
+def _timeout_message(first_event_received: bool, timeout_s: float) -> str:
+    seconds = int(timeout_s)
+    if not first_event_received:
+        return (
+            f"O provedor de IA não retornou nenhum evento em {seconds}s. "
+            "O modelo pode estar lento, indisponível ou limitado. "
+            "Troque o modelo ou tente novamente em instantes."
+        )
+
+    minutes = int(timeout_s // 60)
+    return f"Stream do agente ficou silencioso por {minutes} min."
 
 
 def _json(data: dict) -> str:
