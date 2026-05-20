@@ -30,6 +30,27 @@ permite que cada ambiente mantenha instrucoes especificas: regras de negocio,
 arquivos importantes, fontes obrigatorias, XMLs de banco e formato esperado de
 resposta.
 
+## Agentes arquiteturais por repositorio
+
+Agentes arquiteturais tambem sao configuracao do ambiente, nao seed fixo do
+produto.
+
+Quando uma conversa seleciona repositorios, o pipeline procura em
+`sandbox_agents` da sandbox ativa por agents habilitados com a convencao
+`<repo-slug-normalizado>-architect`. Exemplos:
+
+- repo `autosystem` -> agent `autosystem-architect`;
+- repo `Seller` -> agent `seller-architect`;
+- repo `smartpos` -> agent `smartpos-architect`.
+
+Se o agent existir, seu `system_prompt` entra no prompt antes das skills do
+repositorio. Se nao existir, o fluxo segue normalmente so com worktree, skills,
+MCPs e documentacao externa disponiveis.
+
+Nao crie migration para cadastrar agentes de projetos especificos. Cada sandbox
+ou ambiente deve cadastrar seus proprios `SandboxAgent`s via API/admin ou setup
+operacional.
+
 ## Documentacao externa
 
 Fontes como Confluence, observabilidade ou outras APIs devem entrar por

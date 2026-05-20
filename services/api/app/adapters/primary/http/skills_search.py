@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -36,10 +37,13 @@ async def do_search(
     session: AsyncSession,
     q: str,
     limit: int,
+    repo_ids: list[uuid.UUID] | None = None,
 ) -> list[SkillSearchResult]:
     """Busca híbrida: vetorial (cosine) se houver embedding; senão lexical (ILIKE)."""
     query_emb = await embed_text(q)
     filters: list = [Skill.active.is_(True)]
+    if repo_ids:
+        filters.append(Skill.repository_id.in_(repo_ids))
 
     if query_emb is not None:
         distance = Skill.embedding.cosine_distance(query_emb)
@@ -76,15 +80,17 @@ async def search_skills(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     q: str = Query(min_length=1, max_length=512),
     limit: int = Query(default=5, ge=1, le=20),
+    repo_id: Annotated[list[uuid.UUID] | None, Query()] = None,
 ) -> list[SkillSearchResult]:
     """Busca de Skills (autenticada por JWT)."""
-    return await do_search(session, q, limit)
+    return await do_search(session, q, limit, repo_id)
 
 
 @router.get("/_search/internal", response_model=list[SkillSearchResult])
 async def search_skills_internal(
     q: str = Query(min_length=1, max_length=512),
     limit: int = Query(default=5, ge=1, le=20),
+    repo_id: Annotated[list[uuid.UUID] | None, Query()] = None,
     x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
 ) -> list[SkillSearchResult]:
     """Endpoint interno usado pelo sandbox para o LLM consultar skills via Bash.
@@ -95,4 +101,4 @@ async def search_skills_internal(
     if not _INTERNAL_TOKEN or x_internal_token != _INTERNAL_TOKEN:
         raise HTTPException(status_code=403, detail="Internal token inválido")
     async with async_session_factory() as session:
-        return await do_search(session, q, limit)
+        return await do_search(session, q, limit, repo_id)

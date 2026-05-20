@@ -239,6 +239,9 @@ const server = http.createServer(async (req, res) => {
       const apiPort = process.env.API_PORT_INTERNAL || '8080'
       const internalToken = process.env.INTERNAL_API_TOKEN || ''
       const params = new URLSearchParams({ q, limit })
+      for (const repoId of url.searchParams.getAll('repo_id')) {
+        if (repoId) params.append('repo_id', repoId)
+      }
       const apiUrl = `http://${apiHost}:${apiPort}/api/skills/_search/internal?${params}`
       try {
         const resp = await fetch(apiUrl, {

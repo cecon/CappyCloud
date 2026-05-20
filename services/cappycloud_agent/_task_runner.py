@@ -17,13 +17,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from datetime import datetime, timezone
-from typing import Optional
+from contextlib import suppress
+from datetime import UTC, datetime
 
 import asyncpg
 
 from ._grpc_helpers import PendingAction
 from ._grpc_session import GrpcSession
+from ._task_final_message import persist_final_message_if_missing
 from ._task_usage import persist_usage
 
 log = logging.getLogger(__name__)
@@ -45,13 +46,17 @@ class TaskRunner:
         session: GrpcSession,
         db_url: str,
         model_used: str = "",
+        conversation_id: str | None = None,
     ) -> None:
         self._task_id = task_id
         self._session = session
         self._db_url = db_url
         self._model_used = model_used
-        self._pool: Optional[asyncpg.Pool] = None
-        self._task: Optional[asyncio.Task] = None
+        self._conversation_id = conversation_id
+        self._text_parts: list[str] = []
+        self._last_error_message: str | None = None
+        self._pool: asyncpg.Pool | None = None
+        self._task: asyncio.Task | None = None
 
     # ── Public API ────────────────────────────────────────────────
 
@@ -78,16 +83,14 @@ class TaskRunner:
         return self._task is not None and not self._task.done()
 
     @property
-    def pending_action(self) -> Optional[PendingAction]:
+    def pending_action(self) -> PendingAction | None:
         return self._session.pending_action
 
     async def close(self) -> None:
         if self._task:
             self._task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
         await self._session.close()
         if self._pool:
             await self._pool.close()
@@ -116,15 +119,18 @@ class TaskRunner:
                         self._session._out_queue.get(),
                         timeout=timeout_s,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     message = _timeout_message(first_event_received, timeout_s)
+                    self._last_error_message = message
                     await self._insert_event(
                         "error",
                         {"message": message},
                     )
                     await self._update_task(status="error", completed_at=_now())
+                    await self._persist_final_message()
                     return
                 first_event_received = True
+                self._capture_output(event_type, data)
 
                 if event_type == "done":
                     usage = data if isinstance(data, dict) else {}
@@ -168,10 +174,12 @@ class TaskRunner:
 
                 elif event_type in ("done",):
                     await self._update_task(status="done", completed_at=_now())
+                    await self._persist_final_message()
                     return
 
                 elif event_type in ("error", "timeout"):
                     await self._update_task(status="error", completed_at=_now())
+                    await self._persist_final_message()
                     return
 
         except asyncio.CancelledError:
@@ -179,8 +187,10 @@ class TaskRunner:
             raise
         except Exception as exc:
             log.exception("[TaskRunner %s] unexpected error", self._task_id[:8])
+            self._last_error_message = str(exc)
             await self._insert_event("error", {"message": str(exc)})
             await self._update_task(status="error", completed_at=_now())
+            await self._persist_final_message()
 
     async def _wait_for_resume(self) -> None:
         """Espera até a sessão deixar de estar em pending_action."""
@@ -209,8 +219,8 @@ class TaskRunner:
     async def _update_task(
         self,
         status: str,
-        started_at: Optional[datetime] = None,
-        completed_at: Optional[datetime] = None,
+        started_at: datetime | None = None,
+        completed_at: datetime | None = None,
     ) -> None:
         if not self._pool:
             return
@@ -218,14 +228,18 @@ class TaskRunner:
             async with self._pool.acquire() as conn:
                 if started_at:
                     await conn.execute(
-                        "UPDATE agent_tasks SET status=$1, started_at=$2, last_event_at=NOW() WHERE id=$3::uuid",
+                        "UPDATE agent_tasks "
+                        "SET status=$1, started_at=$2, last_event_at=NOW() "
+                        "WHERE id=$3::uuid",
                         status,
                         started_at,
                         self._task_id,
                     )
                 elif completed_at:
                     await conn.execute(
-                        "UPDATE agent_tasks SET status=$1, completed_at=$2, last_event_at=NOW() WHERE id=$3::uuid",
+                        "UPDATE agent_tasks "
+                        "SET status=$1, completed_at=$2, last_event_at=NOW() "
+                        "WHERE id=$3::uuid",
                         status,
                         completed_at,
                         self._task_id,
@@ -261,9 +275,27 @@ class TaskRunner:
             self._pool, self._task_id, model_used, prompt_tokens, completion_tokens
         )
 
+    def _capture_output(self, event_type: str, data) -> None:
+        normalised = _normalise(data)
+        if event_type == "text":
+            self._text_parts.append(str(normalised.get("content") or ""))
+        elif event_type in ("error", "timeout"):
+            self._last_error_message = str(
+                normalised.get("message") or normalised.get("value") or data or ""
+            )
+
+    async def _persist_final_message(self) -> None:
+        await persist_final_message_if_missing(
+            self._pool,
+            task_id=self._task_id,
+            conversation_id=self._conversation_id,
+            raw_text="".join(self._text_parts),
+            error_message=self._last_error_message,
+        )
+
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _normalise(data) -> dict:

@@ -125,6 +125,13 @@ def _render_section(
     ]
     if docs:
         parts.append("### Documentação encontrada")
+        parts.append(
+            "As páginas abaixo vieram do Confluence configurado para o repositório. "
+            "Para pergunta de suporte, configuração, integração ou procedimento, a "
+            "resposta final deve incluir uma seção `Fontes consultadas` citando "
+            "título e URL dessas páginas. Não omita a fonte documental quando ela "
+            "foi encontrada automaticamente."
+        )
         parts.extend(
             f"- `{hit.query}` → {hit.title}"
             + (f" ({hit.url})" if hit.url else "")

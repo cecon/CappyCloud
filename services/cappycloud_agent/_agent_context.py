@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
+import re
+import uuid
 
 import asyncpg
 import httpx
@@ -17,6 +18,7 @@ import httpx
 log = logging.getLogger(__name__)
 
 from ._agent_prompt_sections import (  # noqa: E402
+    render_repo_agents,
     render_repo_skills,
     render_response_rules,
     render_session_tools,
@@ -113,7 +115,7 @@ async def _fetch_worktree_top_level(
         if resp.status_code != 200:
             return []
         files = resp.json().get("files") or []
-    except Exception as exc:  # noqa: BLE001 - contexto opcional
+    except Exception as exc:
         log.debug("ls-files falhou para %s: %s", worktree_path, exc)
         return []
 
@@ -169,7 +171,7 @@ async def load_agent_context(
     if not db_url:
         return []
 
-    conn: Optional[asyncpg.Connection] = None
+    conn: asyncpg.Connection | None = None
     try:
         conn = await asyncpg.connect(_asyncpg_dsn(db_url))
 
@@ -186,12 +188,94 @@ async def load_agent_context(
                     skills.append(rs)
                     existing_titles.add(rs["title"])
         return skills
-    except Exception as exc:  # noqa: BLE001 - degrada graciosamente
+    except Exception as exc:
         log.warning("load_agent_context falhou: %s", exc)
         return []
     finally:
         if conn:
             await conn.close()
+
+
+async def load_repo_agent_profiles(
+    db_url: str,
+    repos: list[dict] | None,
+    sandbox_id: str = "",
+) -> list[dict]:
+    """Carrega agents cadastrados na sandbox por convenção ``<repo>-architect``."""
+    if not db_url or not repos:
+        return []
+    resolved_sandbox_id = str(sandbox_id or _sandbox_id_for_repos(repos)).strip()
+    if not resolved_sandbox_id:
+        return []
+    try:
+        uuid.UUID(resolved_sandbox_id)
+    except ValueError:
+        return []
+    agent_names = _agent_names_for_repos(repos)
+    if not agent_names:
+        return []
+
+    conn: asyncpg.Connection | None = None
+    try:
+        conn = await asyncpg.connect(_asyncpg_dsn(db_url))
+        rows = await conn.fetch(
+            """
+            SELECT name, description, system_prompt, model
+            FROM sandbox_agents
+            WHERE enabled = TRUE
+              AND sandbox_id = $1::uuid
+              AND lower(name) = ANY($2::text[])
+            ORDER BY array_position($2::text[], lower(name))
+            """,
+            resolved_sandbox_id,
+            agent_names,
+        )
+        return [
+            {
+                "slug": r["name"],
+                "name": r["name"],
+                "description": r["description"] or "",
+                "system_prompt": str(r["system_prompt"] or "").strip(),
+                "default_model": r["model"] or "",
+            }
+            for r in rows
+        ]
+    except Exception as exc:
+        log.warning("load_repo_agent_profiles falhou: %s", exc)
+        return []
+    finally:
+        if conn:
+            await conn.close()
+
+
+def _sandbox_id_for_repos(repos: list[dict]) -> str:
+    for repo in repos:
+        sandbox_id = str(repo.get("sandbox_id") or "").strip()
+        if sandbox_id:
+            return sandbox_id
+    return ""
+
+
+def _agent_names_for_repos(repos: list[dict]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for repo in repos:
+        raw_slug = str(repo.get("slug") or repo.get("alias") or "").strip()
+        if not raw_slug:
+            continue
+        name_part = _normalise_agent_name_part(raw_slug)
+        if not name_part:
+            continue
+        agent_name = f"{name_part}-architect"
+        if agent_name not in seen:
+            seen.add(agent_name)
+            out.append(agent_name)
+    return out
+
+
+def _normalise_agent_name_part(value: str) -> str:
+    normalised = re.sub(r"[^a-zA-Z0-9_-]+", "-", value.strip().lower())
+    return normalised.strip("-_")
 
 
 def build_prompt_with_agent(
@@ -201,6 +285,7 @@ def build_prompt_with_agent(
     repos: list[dict] | None = None,
     session_root: str = "",
     worktree_top_level: dict[str, list[str]] | None = None,
+    agent_profiles: list[dict] | None = None,
 ) -> str:
     """Monta o prompt final colando top-N skills + msg do user.
 
@@ -247,6 +332,9 @@ def build_prompt_with_agent(
                     "Confirma com `ls`/`git ls-files` antes de afirmar que "
                     "alguma pasta não existe:\n\n" + "\n\n".join(sections)
                 )
+
+    if agent_profiles:
+        parts.append(render_repo_agents(agent_profiles))
 
     if skills:
         parts.append(render_repo_skills(skills))

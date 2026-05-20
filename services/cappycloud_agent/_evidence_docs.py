@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
-
 import httpx
 
 from ._evidence_models import _ConfluenceSource, _DocHit, _DocSearchAttempt
 from ._evidence_utils import _clean_labels, _trim
 
 _DOC_RESULTS_PER_TERM = 3
+_DOC_TERMS_LIMIT = 2
 
 
 async def _fetch_docs(
@@ -21,21 +20,29 @@ async def _fetch_docs(
     confluence_sources = _confluence_sources(repos)
     if not confluence_sources:
         return ([], [])
-    attempts = [
-        _DocSearchAttempt(term, source)
-        for source in confluence_sources
-        for term in terms[:4]
-    ]
-    tasks = [
-        _fetch_docs_for(client, session_url, source, term)
-        for source in confluence_sources
-        for term in terms[:4]
-    ]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    primary_sources = [_without_labels(source) for source in confluence_sources]
+    attempts: list[_DocSearchAttempt] = []
     hits: list[_DocHit] = []
-    for result in results:
-        if isinstance(result, list):
-            hits.extend(result)
+    for source in primary_sources:
+        for term in terms[:_DOC_TERMS_LIMIT]:
+            attempts.append(_DocSearchAttempt(term, source))
+            try:
+                hits.extend(await _fetch_docs_for(client, session_url, source, term))
+            except Exception:
+                continue
+            if hits:
+                return (_unique_docs(hits)[:8], attempts)
+    if not hits:
+        label_sources = [source for source in confluence_sources if source.labels]
+        for source in label_sources:
+            for term in terms[:_DOC_TERMS_LIMIT]:
+                attempts.append(_DocSearchAttempt(term, source))
+                try:
+                    hits.extend(await _fetch_docs_for(client, session_url, source, term))
+                except Exception:
+                    continue
+                if hits:
+                    return (_unique_docs(hits)[:8], attempts)
     return (_unique_docs(hits)[:8], attempts)
 
 
@@ -90,6 +97,10 @@ def _confluence_sources(repos: list[dict]) -> list[_ConfluenceSource]:
             seen.add(key)
             sources.append(_ConfluenceSource(base_url, space, labels))
     return sources
+
+
+def _without_labels(source: _ConfluenceSource) -> _ConfluenceSource:
+    return _ConfluenceSource(source.base_url, source.space, ())
 
 
 def _unique_docs(hits: list[_DocHit]) -> list[_DocHit]:

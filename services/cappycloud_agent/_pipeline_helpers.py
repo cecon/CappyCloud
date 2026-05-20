@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import uuid
+from contextlib import suppress
 
 import asyncpg
 import httpx
@@ -67,7 +68,7 @@ async def build_prompt_with_worktree_context(
         section = render_worktree_top_level_section(top_level)
         if section:
             return inject_section_before_user_message(prompt, section)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("[Dispatcher] worktree top-level fetch falhou: %s", exc)
     return prompt
 
@@ -123,7 +124,7 @@ async def push_mcp_config(
             len(mcp_servers),
             resp.status_code,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("[MCP] falha ao enviar config ao sandbox: %s", exc)
 
 
@@ -140,10 +141,8 @@ async def fetch_signoz_service_names(
     try:
         valid_ids = []
         for rid in repo_ids:
-            try:
+            with suppress(ValueError):
                 valid_ids.append(uuid.UUID(rid))
-            except ValueError:
-                pass
         if not valid_ids:
             return {}
         conn = await asyncpg.connect(database_url)
@@ -156,7 +155,7 @@ async def fetch_signoz_service_names(
         finally:
             await conn.close()
         return {row["id"]: row["signoz_service_name"] for row in rows}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("[Signoz] falha ao buscar service names: %s", exc)
         return {}
 
@@ -184,27 +183,25 @@ async def has_enabled_signoz_mcp(
         finally:
             await conn.close()
         return row is not None
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("[Signoz] falha ao verificar MCP ativo: %s", exc)
         return False
 
 
 async def fetch_default_text_model_id(database_url: str) -> str | None:
-    """Busca o modelo texto grátis default ativo no catálogo do banco."""
+    """Busca o modelo texto default ativo no catálogo do banco."""
     if not database_url:
         return None
-    free_filter = """AND capabilities ? 'text'
-                  AND (model_id LIKE '%:free' OR model_id = 'openrouter/free')"""
     try:
         conn = await asyncpg.connect(database_url)
         try:
             row = await conn.fetchrow(
-                f"""
+                """
                 SELECT model_id
                 FROM ai_models
                 WHERE active = TRUE
                   AND COALESCE((is_default->>'text')::boolean, FALSE) = TRUE
-                  {free_filter}
+                  AND capabilities ? 'text'
                 ORDER BY display_name
                 LIMIT 1
                 """
@@ -212,11 +209,11 @@ async def fetch_default_text_model_id(database_url: str) -> str | None:
             if row:
                 return str(row["model_id"])
             row = await conn.fetchrow(
-                f"""
+                """
                 SELECT model_id
                 FROM ai_models
                 WHERE active = TRUE
-                  {free_filter}
+                  AND capabilities ? 'text'
                 ORDER BY display_name
                 LIMIT 1
                 """
@@ -224,15 +221,15 @@ async def fetch_default_text_model_id(database_url: str) -> str | None:
             return str(row["model_id"]) if row else None
         finally:
             await conn.close()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("[Models] falha ao buscar modelo default: %s", exc)
         return None
 
 
-async def resolve_free_text_model_id(
+async def resolve_text_model_id(
     database_url: str, requested_model: str | None
 ) -> str | None:
-    """Mantém o modelo pedido só se ele estiver liberado como free/text."""
+    """Mantém o modelo pedido se ele estiver ativo e suportar texto."""
     if database_url and requested_model:
         try:
             conn = await asyncpg.connect(database_url)
@@ -244,7 +241,6 @@ async def resolve_free_text_model_id(
                     WHERE active = TRUE
                       AND model_id = $1
                       AND capabilities ? 'text'
-                      AND (model_id LIKE '%:free' OR model_id = 'openrouter/free')
                     LIMIT 1
                     """,
                     requested_model,
@@ -253,9 +249,12 @@ async def resolve_free_text_model_id(
                     return requested_model
             finally:
                 await conn.close()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.warning("[Models] falha ao validar modelo pedido: %s", exc)
     return await fetch_default_text_model_id(database_url)
+
+
+resolve_free_text_model_id = resolve_text_model_id
 
 
 def build_signoz_context_section(
@@ -285,7 +284,8 @@ def build_signoz_context_section(
             + "\n".join(lines)
             + "\n\nNão tente consultar logs, traces ou métricas do SigNoz nesta execução. "
             "Informe ao utilizador que a integração SigNoz está temporariamente indisponível. "
-            "Não peça para configurar `service.name`: ele já está mapeado acima para estes repositórios."
+            "Não peça para configurar `service.name`: ele já está mapeado acima para "
+            "estes repositórios."
         )
     return (
         "## Observabilidade (SigNoz MCP)\n\n"
@@ -296,6 +296,8 @@ def build_signoz_context_section(
         "- Use SigNoz somente para repositórios listados acima.\n"
         "- Não peça ao utilizador para configurar `service.name`; ele já está mapeado acima.\n"
         "- Se o utilizador não informar período, consulte por padrão a última hora.\n"
-        "- Se a pergunta estiver ampla demais, peça um filtro operacional útil, como CNPJ, hardware/terminal, loja, endpoint, erro esperado ou janela de tempo específica.\n"
-        "- Se houver dados suficientes, consulte primeiro com o `service.name` e período padrão antes de pedir mais detalhes."
+        "- Se a pergunta estiver ampla demais, peça um filtro operacional útil, como CNPJ, "
+        "hardware/terminal, loja, endpoint, erro esperado ou janela de tempo específica.\n"
+        "- Se houver dados suficientes, consulte primeiro com o `service.name` e período "
+        "padrão antes de pedir mais detalhes."
     )

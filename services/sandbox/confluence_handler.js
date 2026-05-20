@@ -4,6 +4,7 @@
 const BASE_URL = (process.env.CONFLUENCE_BASE_URL || '').replace(/\/$/, '')
 const MAIN_MENU_URL = process.env.CONFLUENCE_MAIN_MENU_URL || ''
 const MAX_TEXT_CHARS = 18000
+const CONFLUENCE_TIMEOUT_MS = Number(process.env.CONFLUENCE_TIMEOUT_MS || 45000)
 
 function configuredBaseUrl(url) {
   const value = (url.searchParams.get('base_url') || BASE_URL || '').trim().replace(/\/$/, '')
@@ -91,7 +92,10 @@ async function fetchJson(url, params = {}) {
       full.searchParams.set(key, String(value))
     }
   }
-  const resp = await fetch(full, { headers: { Accept: 'application/json' } })
+  const resp = await fetch(full, {
+    headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(CONFLUENCE_TIMEOUT_MS),
+  })
   const text = await resp.text()
   if (resp.status >= 400) {
     throw new Error(`Confluence HTTP ${resp.status}: ${text.slice(0, 300)}`)
@@ -106,7 +110,10 @@ async function fetchText(url, params = {}) {
       full.searchParams.set(key, String(value))
     }
   }
-  const resp = await fetch(full, { headers: { Accept: 'text/html,application/xhtml+xml' } })
+  const resp = await fetch(full, {
+    headers: { Accept: 'text/html,application/xhtml+xml' },
+    signal: AbortSignal.timeout(CONFLUENCE_TIMEOUT_MS),
+  })
   const text = await resp.text()
   if (resp.status >= 400) {
     throw new Error(`Confluence HTTP ${resp.status}: ${text.slice(0, 300)}`)
@@ -196,6 +203,34 @@ async function siteSearch(baseUrl, query, limit, space) {
   return parseSiteSearchResultsForSpace(baseUrl, html, limit, space)
 }
 
+async function restCqlSearch(baseUrl, q, limit, space, labels) {
+  const cqlFilters = []
+  if (space && space !== 'all') {
+    cqlFilters.push(`space="${cqlString(space)}"`)
+  }
+  if (labels.length > 0) {
+    cqlFilters.push(`label in (${labels.map(label => `"${cqlString(label)}"`).join(',')})`)
+  }
+  cqlFilters.push('type=page')
+  cqlFilters.push(`text ~ "${cqlString(q)}"`)
+  const cql = cqlFilters.join(' AND ')
+  const data = await fetchJson(`${baseUrl}/rest/api/content/search`, {
+    cql,
+    limit,
+    expand: 'body.storage,body.view,version,space',
+  })
+  return {
+    total: data.size,
+    results: (data.results || []).map(page => ({
+      id: page.id,
+      title: page.title,
+      space: page.space && page.space.key,
+      url: pageUrl(page, baseUrl),
+      excerpt: clip(pageText(page), 900),
+    })),
+  }
+}
+
 async function tryHandle(req, res, { json }) {
   const url = new URL(req.url, `http://${req.headers.host}`)
   const pathname = url.pathname
@@ -239,41 +274,32 @@ async function tryHandle(req, res, { json }) {
         return true
       }
       const labels = parseLabels(url)
-      const cqlFilters = []
-      if (space && space !== 'all') {
-        cqlFilters.push(`space="${cqlString(space)}"`)
-      }
-      if (labels.length > 0) {
-        cqlFilters.push(`label in (${labels.map(label => `"${cqlString(label)}"`).join(',')})`)
-      }
-      cqlFilters.push('type=page')
-      cqlFilters.push(`text ~ "${cqlString(q)}"`)
-      const cql = cqlFilters.join(' AND ')
-      const data = await fetchJson(`${baseUrl}/rest/api/content/search`, {
-        cql,
-        limit,
-        expand: 'body.storage,body.view,version,space',
-      })
-      let results = (data.results || []).map(page => ({
-        id: page.id,
-        title: page.title,
-        space: page.space && page.space.key,
-        url: pageUrl(page, baseUrl),
-        excerpt: clip(pageText(page), 900),
-      }))
-      let total = data.size
+      let search = await restCqlSearch(baseUrl, q, limit, space, labels)
+      let results = search.results
+      let total = search.total
       let source = 'rest-cql'
+      let fallback = null
 
-      if (results.length === 0 && labels.length === 0) {
-        const fallback = await siteSearch(baseUrl, q, limit, space)
-        results = fallback.results
-        total = fallback.total
+      if (results.length === 0 && labels.length > 0) {
+        search = await restCqlSearch(baseUrl, q, limit, space, [])
+        results = search.results
+        total = search.total
+        source = 'rest-cql-without-labels'
+        fallback = 'without-labels'
+      }
+
+      if (results.length === 0) {
+        const siteFallback = await siteSearch(baseUrl, q, limit, space)
+        results = siteFallback.results
+        total = siteFallback.total
         source = 'site-search'
+        fallback = labels.length > 0 ? 'site-search-without-labels' : 'site-search'
       }
 
       await json(res, 200, {
         query: q,
         source,
+        fallback,
         total,
         count: results.length,
         results,

@@ -7,6 +7,37 @@ O agente deve trabalhar somente dentro do worktree da conversa ou dos caminhos
 absolutos listados no prompt da sessão. Caminhos globais como `/repos/<slug>/`
 não fazem parte do escopo da conversa.
 
+## Regras De Evidência
+
+- Responda em português e entregue a conclusão consolidada, não o plano de
+  investigação.
+- `Grep`, listagem de arquivos e busca textual servem para localizar
+  candidatos; não são evidência suficiente para afirmar regra de negócio,
+  procedimento, SQL, campo de tabela ou configuração.
+- Antes de recomendar procedimento ou citar arquivo como prova, leia o trecho
+  exato com `Read`/comando equivalente. Cite somente arquivos/linhas realmente
+  abertos na conversa.
+- Para SQL, flags, parâmetros e configurações, confirme nomes reais em
+  migrations, mappings, XML/Glade, seeds ou consultas existentes. Se o schema
+  não estiver comprovado, marque a consulta como template e peça o DDL/log.
+- Para suporte operacional, prefira caminho de tela/configuração, sincronização
+  oficial, relatório/consulta de validação e coleta de log. Não recomende
+  `UPDATE` direto salvo pedido explícito de intervenção técnica de banco.
+- Antes de orientar procedimento operacional, identifique a rotina oficial:
+  tela/view, endpoint, job configurado ou comando documentado. Se leu apenas
+  controller/função interna, continue investigando o chamador.
+- Não recomende criar script novo, chamar função interna por shell ou rodar
+  código ad hoc como caminho principal, salvo pedido explícito de automação
+  técnica.
+- Cite caminhos exatamente como vistos no worktree; não adicione prefixos como
+  `src/` ou pastas que não apareceram no caminho lido.
+- Quando o prompt da sessão listar Confluence para o repo, consulte
+  `/confluence/search` antes de responder dúvidas de suporte operacional,
+  configuração, cadastro, regra funcional, integração ou procedimento.
+- Use `&space=` como filtro primário. `labels` são refinamento opcional; se a
+  busca com `labels` retornar zero, erro, timeout ou páginas pouco aderentes,
+  repita sem `&labels=`, mantendo `&space=` e termos de busca mais curtos.
+
 ## Skills Globais Disponíveis
 
 ### Referência Compartilhada

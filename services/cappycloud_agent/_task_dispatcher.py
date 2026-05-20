@@ -8,11 +8,11 @@ import uuid
 
 import asyncpg
 
-from ._pipeline_helpers import build_prompt_with_worktree_context
 from ._environment_manager import EnvironmentManager
 from ._evidence_prefetch import inject_evidence_prefetch
 from ._grpc_session import GrpcSession
 from ._orphan_recovery import reconnect_orphaned_tasks
+from ._pipeline_helpers import build_prompt_with_worktree_context
 from ._session_store import SessionStore
 from ._task_events import (
     insert_error_event,
@@ -42,6 +42,7 @@ class TaskDispatcher:
         self._model = openrouter_model
         self._pool: asyncpg.Pool | None = None
         self._runners: dict[str, TaskRunner] = {}
+        self._launch_tasks: set[asyncio.Task] = set()
 
     async def start(self) -> None:
         """Conecta ao DB e reconecta tasks órfãs de um restart anterior."""
@@ -49,6 +50,11 @@ class TaskDispatcher:
         await self._reconnect_orphaned_tasks()
 
     async def stop(self) -> None:
+        for task in list(self._launch_tasks):
+            task.cancel()
+        if self._launch_tasks:
+            await asyncio.gather(*self._launch_tasks, return_exceptions=True)
+        self._launch_tasks.clear()
         for runner in list(self._runners.values()):
             await runner.close()
         self._runners.clear()
@@ -84,7 +90,7 @@ class TaskDispatcher:
             triggered_by,
             trigger_payload or {},
         )
-        asyncio.create_task(
+        launch_task = asyncio.create_task(
             self._launch_runner(
                 task_id,
                 prompt,
@@ -98,6 +104,8 @@ class TaskDispatcher:
             ),
             name=f"dispatch-{task_id[:8]}",
         )
+        self._launch_tasks.add(launch_task)
+        launch_task.add_done_callback(self._launch_tasks.discard)
         return task_id
 
     def get_runner(self, task_id: str) -> TaskRunner | None:
@@ -315,6 +323,7 @@ class TaskDispatcher:
             session=session,
             db_url=self._db_url,
             model_used=override_model or self._model,
+            conversation_id=conversation_id,
         )
         self._runners[task_id] = runner
         await runner.start()
