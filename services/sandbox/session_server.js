@@ -29,6 +29,7 @@ const gitHandlers = require('./git_handlers')
 const mcpHandler = require('./mcp_handler')
 const confluenceHandler = require('./confluence_handler')
 const repoHandlers = require('./repo_handlers')
+const repoGraphHandlers = require('./repo_graph_handlers')
 const taskHandler = require('./task_handler')
 const worktreeHandlers = require('./worktree_handlers')
 
@@ -216,6 +217,10 @@ const server = http.createServer(async (req, res) => {
       await destroySession({ session_root, repos })
       console.log(`[session_server] removed session ${session_id}`)
       return json(res, 200, { deleted: true, session_id })
+    }
+
+    if (await repoGraphHandlers.tryHandle(req, res, { json })) {
+      return
     }
 
     // /repos/clone (POST) e /repos/:slug (DELETE)

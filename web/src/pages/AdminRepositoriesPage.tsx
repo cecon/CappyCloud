@@ -29,6 +29,7 @@ import {
   syncRepository,
   updateRepository,
 } from '../api'
+import { RepositoryGraphPanel } from '../components/RepositoryGraphPanel'
 import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
 
 type FormState = {
@@ -254,6 +255,8 @@ export function AdminRepositoriesPage() {
             {actionError}
           </Alert>
         )}
+
+        {repos && repos.length > 0 && <RepositoryGraphPanel repos={repos} />}
 
         <Paper withBorder p="md" radius="md">
           {loadError ? (
