@@ -14,13 +14,13 @@ import asyncio
 import logging
 import os
 from collections.abc import Generator
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
 from ._agent_context import (
     build_prompt_with_agent,
     load_agent_context,
+    load_repo_agent_profiles,
 )
 from ._environment_manager import EnvironmentManager
 from ._pipeline_event_stream import stream_task_events
@@ -31,7 +31,7 @@ from ._pipeline_helpers import (
     has_enabled_signoz_mcp,
     inject_repo_context,
     push_mcp_config,
-    resolve_free_text_model_id,
+    resolve_text_model_id,
     sse,
 )
 from ._session_store import SessionStore
@@ -65,11 +65,11 @@ class Pipeline:
             REDIS_URL=os.getenv("REDIS_URL", "redis://redis:6379"),
             DATABASE_URL=db_url(),
         )
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._store: Optional[SessionStore] = None
-        self._env_manager: Optional[EnvironmentManager] = None
-        self._dispatcher: Optional[TaskDispatcher] = None
-        self._gc_task: Optional[asyncio.Task] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._store: SessionStore | None = None
+        self._env_manager: EnvironmentManager | None = None
+        self._dispatcher: TaskDispatcher | None = None
+        self._gc_task: asyncio.Task | None = None
 
     async def on_startup(self) -> None:
         log.info("CappyCloud agent pipeline starting…")
@@ -126,7 +126,7 @@ class Pipeline:
         model_id: str,
         messages: list,
         body: dict,
-    ) -> Generator[str, None, None]:
+    ) -> Generator[str]:
         if self._dispatcher is None:
             yield sse({"type": "error", "message": "Pipeline não inicializado."})
             return
@@ -153,6 +153,7 @@ class Pipeline:
         repo_ids: list[str] = [r["repo_id"] for r in repos if r.get("repo_id")]
 
         skills_top: list[dict] = []
+        agent_profiles: list[dict] = []
         if repo_ids:
             try:
                 skills_top = self._run(
@@ -163,8 +164,20 @@ class Pipeline:
                     ),
                     timeout=10,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.warning("Falha ao carregar agent_context: %s", exc)
+        if repos:
+            try:
+                agent_profiles = self._run(
+                    load_repo_agent_profiles(
+                        self.valves.DATABASE_URL,
+                        repos,
+                        sandbox_id=sandbox_id,
+                    ),
+                    timeout=5,
+                )
+            except Exception as exc:
+                log.warning("Falha ao carregar repo_agent_profiles: %s", exc)
 
         sandbox_host = os.getenv("SANDBOX_HOST", "cappycloud-sandbox")
         sandbox_session_port = os.getenv("SANDBOX_SESSION_PORT", "8080")
@@ -181,6 +194,7 @@ class Pipeline:
             repos=repos,
             session_root=session_root,
             worktree_top_level=None,
+            agent_profiles=agent_profiles,
         )
         prompt = inject_repo_context(prompt, repos, session_root)
 
@@ -205,10 +219,10 @@ class Pipeline:
                     from ._agent_context import inject_section_before_user_message
 
                     prompt = inject_section_before_user_message(prompt, signoz_section)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.warning("[Signoz] falha ao injetar contexto: %s", exc)
 
-        task_id: Optional[str] = self._run(
+        task_id: str | None = self._run(
             self._dispatcher.get_active_task_id(conversation_id or "__none__"),
             timeout=10,
         )
@@ -221,10 +235,10 @@ class Pipeline:
 
         try:
             override_model = self._run(
-                resolve_free_text_model_id(db_url(), body.get("override_model")),
+                resolve_text_model_id(db_url(), body.get("override_model")),
                 timeout=5,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.warning("[Models] resolução do modelo free falhou: %s", exc)
             override_model = None
 
@@ -294,8 +308,8 @@ class Pipeline:
         yield from self._stream_events(task_id, cursor)
 
     def _stream_events(
-        self, task_id: str, cursor: Optional[int]
-    ) -> Generator[str, None, None]:
+        self, task_id: str, cursor: int | None
+    ) -> Generator[str]:
         if self._loop is None:
             return
         yield from stream_task_events(

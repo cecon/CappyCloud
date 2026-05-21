@@ -52,6 +52,9 @@ class CreateConversation:
                     "branch_name": f"cappy/{slug}/{short_id}-{alias}",
                     "worktree_path": f"/repos/sessions/{short_id}/{alias}",
                     "repo_id": str(repo_entity.id) if repo_entity else None,
+                    "sandbox_id": str(repo_entity.sandbox_id)
+                    if repo_entity and repo_entity.sandbox_id
+                    else None,
                     "confluence_url": repo_entity.confluence_url if repo_entity else "",
                     "confluence_space": repo_entity.confluence_space if repo_entity else "",
                     "confluence_labels": list(repo_entity.confluence_labels) if repo_entity else [],

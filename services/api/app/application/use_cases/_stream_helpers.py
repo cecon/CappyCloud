@@ -47,6 +47,8 @@ async def ensure_repo_ids(
         repo_entity = await repositories.get_by_slug(slug)
         if repo_entity:
             r["repo_id"] = str(repo_entity.id)
+            if repo_entity.sandbox_id:
+                r["sandbox_id"] = str(repo_entity.sandbox_id)
             if repo_entity.confluence_url:
                 r["confluence_url"] = repo_entity.confluence_url
                 if repo_entity.confluence_space:
@@ -74,6 +76,9 @@ async def enrich_repos_for_pipeline(
                 auth_url = await repositories.get_authenticated_clone_url(repo_id)
                 if auth_url:
                     next_repo["clone_url"] = auth_url
+                repo_entity = await repositories.get(repo_id)
+                if repo_entity and repo_entity.sandbox_id:
+                    next_repo["sandbox_id"] = str(repo_entity.sandbox_id)
                 (
                     confluence_url,
                     confluence_space,

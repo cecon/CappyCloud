@@ -14,6 +14,7 @@ import requests
 SERVER_NAME = "cappycloud-confluence"
 SERVER_VERSION = "0.1.0"
 MAX_TEXT_CHARS = 18_000
+CONFLUENCE_TIMEOUT_SECONDS = 45
 
 
 def _base_url() -> str:
@@ -109,7 +110,7 @@ def _page_id_from_display_url(url: str) -> str:
     configured = urlparse(_base_url())
     if configured.netloc and parsed.netloc != configured.netloc:
         raise ValueError("URL fora do Confluence configurado")
-    resp = requests.get(url, headers=_headers(), timeout=20)
+    resp = requests.get(url, headers=_headers(), timeout=CONFLUENCE_TIMEOUT_SECONDS)
     if resp.status_code >= 400:
         raise RuntimeError(f"Confluence HTTP {resp.status_code}: {resp.text[:500]}")
     match = re.search(r'<meta\s+name="ajs-page-id"\s+content="(\d+)"', resp.text, re.I)
@@ -129,7 +130,12 @@ def _resolve_page_id(url_or_id: str) -> str:
 
 
 def _get_json(url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-    resp = requests.get(url, headers=_headers(), params=params, timeout=20)
+    resp = requests.get(
+        url,
+        headers=_headers(),
+        params=params,
+        timeout=CONFLUENCE_TIMEOUT_SECONDS,
+    )
     if resp.status_code == 401:
         raise RuntimeError("Confluence retornou 401. Verifique email/token/PAT.")
     if resp.status_code == 403:
@@ -148,7 +154,7 @@ def _site_search(
         f"{_base_url()}/dosearchsite.action",
         headers={**_headers(), "Accept": "text/html,application/xhtml+xml"},
         params={"queryString": query},
-        timeout=20,
+        timeout=CONFLUENCE_TIMEOUT_SECONDS,
     )
     if resp.status_code >= 400:
         raise RuntimeError(f"Confluence HTTP {resp.status_code}: {resp.text[:500]}")
@@ -218,14 +224,12 @@ def _page_url(page: dict[str, Any]) -> str:
     return f"{base.rstrip('/')}{webui}" if webui.startswith("/") else webui
 
 
-def confluence_search(arguments: dict[str, Any]) -> dict[str, Any]:
-    query = str(arguments.get("query") or "").strip()
-    limit = max(1, min(int(arguments.get("limit") or 5), 10))
-    space = str(arguments.get("space") or "").strip()
-    labels = _clean_labels(arguments.get("labels") or arguments.get("label"))
-    if not query:
-        raise ValueError("query é obrigatório")
-
+def _rest_cql_search(
+    query: str,
+    limit: int,
+    space: str,
+    labels: list[str],
+) -> tuple[int | None, list[dict[str, Any]]]:
     cql_filters: list[str] = []
     if space:
         cql_filters.append(f'space="{_cql_string(space)}"')
@@ -249,14 +253,32 @@ def confluence_search(arguments: dict[str, Any]) -> dict[str, Any]:
         }
         for item in data.get("results", [])
     ]
+    return data.get("size"), results
+
+
+def confluence_search(arguments: dict[str, Any]) -> dict[str, Any]:
+    query = str(arguments.get("query") or "").strip()
+    limit = max(1, min(int(arguments.get("limit") or 5), 10))
+    space = str(arguments.get("space") or "").strip()
+    labels = _clean_labels(arguments.get("labels") or arguments.get("label"))
+    if not query:
+        raise ValueError("query é obrigatório")
+
+    total, results = _rest_cql_search(query, limit, space, labels)
     source = "rest-cql"
-    total: int | None = data.get("size")
-    if not results and not labels:
+    fallback = None
+    if not results and labels:
+        total, results = _rest_cql_search(query, limit, space, [])
+        source = "rest-cql-without-labels"
+        fallback = "without-labels"
+    if not results:
         total, results = _site_search(query, limit, space)
         source = "site-search"
+        fallback = "site-search-without-labels" if labels else "site-search"
     return {
         "query": query,
         "source": source,
+        "fallback": fallback,
         "total": total,
         "count": len(results),
         "results": results,

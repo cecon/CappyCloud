@@ -219,10 +219,11 @@ o `command` aponta para um executável existente no container.
 ### Documentação externa
 
 Quando uma fonte de documentação externa estiver configurada para o repositório
-da sessão, consulte-a como fonte complementar de pesquisa. Se a MCP tool não
-estiver disponível, use HTTP via `curl` com o parâmetro `base_url` informado no
-prompt da sessão. Se nenhum repositório tiver URL configurada, não consulte
-`/confluence/*`.
+da sessão, consulte-a como fonte obrigatória para perguntas de suporte
+operacional, configuração, cadastro, regra funcional, integração ou
+procedimento. Se a MCP tool não estiver disponível, use HTTP via `curl` com o
+parâmetro `base_url` informado no prompt da sessão. Se nenhum repositório tiver
+URL configurada, não consulte `/confluence/*`.
 
 - Busca: `curl -s "$SANDBOX_SESSION_URL/confluence/search?base_url=<url>&q=<termo>&limit=5"`
 - Busca com filtro de space: `curl -s "$SANDBOX_SESSION_URL/confluence/search?base_url=<url>&space=<SPACE_KEY>&q=<termo>&limit=5"`
@@ -234,8 +235,11 @@ na seção "Documentação externa por repositório"), use **sempre** o parâmet
 `&space=<SPACE_KEY>` nas buscas desse repositório. Sem o filtro, a busca
 retorna páginas de outros produtos do mesmo Confluence e o agente acaba
 abrindo pageId fora do contexto certo.
-Quando houver `labels`, mantenha também `&labels=` para restringir às páginas
-marcadas como parte do produto.
+Quando houver `labels`, trate-as como refinamento opcional. A busca principal
+deve manter `&space=` e pode começar sem `&labels=`. Se usar labels e a busca
+retornar zero resultados, erro, timeout ou páginas pouco aderentes ao módulo
+perguntado, repita sem `&labels=`, mantendo `&space=` e termos de busca mais
+curtos. Labels são dica de escopo, não bloqueio absoluto.
 
 ### MCP Servers disponíveis
 
@@ -276,6 +280,31 @@ o `command` aponta para um executável existente no container.
 6. **Cite o ficheiro e a linha** quando referir código existente.
 7. **Ao implementar**, mantenha mudanças pequenas, coerentes com o estilo local
    e verificadas por testes/lint quando existirem.
+8. **Não exponha investigação como resposta final.** Não inclua frases como
+   "Search...", "Open...", "Read...", "Grep...", "Bash...", nomes de tools ou
+   comandos exploratórios na resposta ao utilizador. Use ferramentas em silêncio
+   e entregue apenas a conclusão consolidada.
+9. **Grep não é evidência de comportamento.** `Grep`, listagem de arquivos e
+   busca textual servem para localizar candidatos. Antes de afirmar regra de
+   negócio, procedimento, SQL, campo de tabela ou configuração, leia o trecho
+   exato com `Read`/comando equivalente. Cite apenas arquivos/linhas que você
+   realmente abriu nesta conversa.
+10. **Para SQL, flags, parâmetros e configurações**, confirme nomes reais em
+    migrations, mappings, XML/Glade, seeds ou consultas existentes antes de
+    responder. Se o schema não estiver comprovado, marque a consulta como
+    template e peça o DDL/log necessário. Não invente flags de reprocessamento,
+    colunas ou status por inferência.
+11. **Procedimento operacional deve partir da rotina oficial.** Antes de
+    recomendar como corrigir, identifique tela/view, endpoint, job configurado
+    ou comando documentado que chama a regra. Se leu apenas controller/função
+    interna, continue investigando o chamador. Não recomende criar script novo,
+    chamar função interna por shell ou rodar código ad hoc como caminho
+    principal, salvo pedido explícito de automação técnica.
+12. **Cite caminhos exatamente como vistos.** Não adicione prefixos como `src/`
+    nem pastas que não apareceram no caminho lido.
+13. **Finalize depois das ferramentas.** Depois de usar Read/Grep/Bash/MCP, não
+    encerre apenas com plano ou resultado bruto; produza uma resposta com
+    diagnóstico, evidências, correção e validação quando for suporte operacional.
 
 ---
 
