@@ -110,7 +110,7 @@ def render_session_tools(sandbox_session_url: str, repos: list[dict] | None = No
                 encoded_labels = quote(",".join(confluence_labels), safe=",")
                 label_query = f"{primary_query}&labels={encoded_labels}"
                 labels_text = ", ".join(f"`{label}`" for label in confluence_labels)
-                filters.append(f"labels opcionais {labels_text}")
+                filters.append(f"labels {labels_text} (opcionais)")
             filter_label = f" ({'; '.join(filters)})" if filters else ""
             lines.append(
                 f"- **{alias}**{filter_label}: `curl -s "
@@ -135,8 +135,8 @@ def render_session_tools(sandbox_session_url: str, repos: list[dict] | None = No
         )
         if any_labels_configured:
             lines.append(
-                "Quando o repositório tem `labels` configurados, trate-os como refinamento "
-                "opcional. A busca principal deve manter `&space=` e não precisa usar labels. "
+                "Quando usados, rótulos são parte do escopo documental, mas trate-os como "
+                "refinamento opcional. A busca principal deve manter `&space=` e não precisa usar labels. "
                 "Se usar `&labels=` e os resultados forem vazios, lentos ou pouco aderentes "
                 "ao módulo perguntado, repita sem `&labels=` mantendo `&space=` e termos de "
                 "busca mais curtos. Labels ajudam o escopo, mas podem estar incompletos."

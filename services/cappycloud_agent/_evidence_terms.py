@@ -118,6 +118,10 @@ def _terms_for(message: str) -> list[str]:
         else:
             terms.append(f"{product} recolha")
 
+    terms.extend(product_words)
+    terms.extend(word for word in signal_words if "_" in word)
+    terms.extend(signal_words[:3])
+
     for index in range(max(0, len(signal_words) - 2)):
         terms.append(" ".join(signal_words[index : index + 3]))
     for index in range(max(0, len(signal_words) - 1)):

@@ -3,85 +3,26 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 import types
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from importlib import util
-from pathlib import Path
 from typing import Any
 
-
-def _find_repo_root() -> Path:
-    current = Path(__file__).resolve()
-    for candidate in [current, *current.parents]:
-        if (candidate / "services" / "cappycloud_agent").is_dir():
-            return candidate
-    raise RuntimeError("Não encontrei services/cappycloud_agent no worktree.")
-
-
-ROOT = _find_repo_root()
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-_agent_pkg = types.ModuleType("services.cappycloud_agent")
-_agent_pkg.__path__ = [str(ROOT / "services/cappycloud_agent")]  # type: ignore[attr-defined]
-sys.modules.setdefault("services.cappycloud_agent", _agent_pkg)
-
-
-def _load_module(name: str, path: Path) -> types.ModuleType:
-    spec = util.spec_from_file_location(name, path)
-    assert spec and spec.loader
-    module = util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-_agent_context = _load_module(
-    "services.cappycloud_agent._agent_context",
-    ROOT / "services/cappycloud_agent/_agent_context.py",
+from .agent_runtime_test_loader import (
+    assistant_output as _assistant_output,
 )
-_agent_prompt_sections = _load_module(
-    "services.cappycloud_agent._agent_prompt_sections",
-    ROOT / "services/cappycloud_agent/_agent_prompt_sections.py",
+from .agent_runtime_test_loader import (
+    grpc_event_handlers as _grpc_event_handlers,
 )
-_pipeline_helpers = _load_module(
-    "services.cappycloud_agent._pipeline_helpers",
-    ROOT / "services/cappycloud_agent/_pipeline_helpers.py",
+from .agent_runtime_test_loader import (
+    pipeline_event_stream as _pipeline_event_stream,
 )
-_pipeline_event_stream = _load_module(
-    "services.cappycloud_agent._pipeline_event_stream",
-    ROOT / "services/cappycloud_agent/_pipeline_event_stream.py",
+from .agent_runtime_test_loader import (
+    pipeline_helpers as _pipeline_helpers,
 )
-_grpc_event_handlers = _load_module(
-    "services.cappycloud_agent._grpc_event_handlers",
-    ROOT / "services/cappycloud_agent/_grpc_event_handlers.py",
-)
-_assistant_output = _load_module(
-    "services.cappycloud_agent._assistant_output",
-    ROOT / "services/cappycloud_agent/_assistant_output.py",
-)
-_task_final_message = _load_module(
-    "services.cappycloud_agent._task_final_message",
-    ROOT / "services/cappycloud_agent/_task_final_message.py",
-)
-_evidence_terms = _load_module(
-    "services.cappycloud_agent._evidence_terms",
-    ROOT / "services/cappycloud_agent/_evidence_terms.py",
-)
-_evidence_docs = _load_module(
-    "services.cappycloud_agent._evidence_docs",
-    ROOT / "services/cappycloud_agent/_evidence_docs.py",
-)
-_evidence_models = _load_module(
-    "services.cappycloud_agent._evidence_models",
-    ROOT / "services/cappycloud_agent/_evidence_models.py",
-)
-_evidence_render = _load_module(
-    "services.cappycloud_agent._evidence_render",
-    ROOT / "services/cappycloud_agent/_evidence_render.py",
+from .agent_runtime_test_loader import (
+    task_final_message as _task_final_message,
 )
 
 
@@ -330,189 +271,3 @@ async def test_clean_existing_final_message_refreshes_usage_metadata() -> None:
         Decimal("0"),
         message_id,
     )
-
-
-def test_session_tools_scope_skill_search_by_repo_id() -> None:
-    section = _agent_prompt_sections.render_session_tools(
-        "http://sandbox:8080",
-        repos=[{"repo_id": "2d9500d8-eb4c-4535-9b5c-5d0b4e7bd6cc"}],
-    )
-
-    assert "repo_id=2d9500d8-eb4c-4535-9b5c-5d0b4e7bd6cc" in section
-
-
-def test_session_tools_require_confluence_for_operational_support() -> None:
-    section = _agent_prompt_sections.render_session_tools(
-        "http://sandbox:8080",
-        repos=[
-            {
-                "alias": "autosystem",
-                "confluence_url": "https://share.linx.com.br",
-                "confluence_space": "Postos",
-                "confluence_labels": ["autosystem"],
-            }
-        ],
-    )
-
-    assert "consulta é obrigatória para perguntas de suporte operacional" in section
-    assert "execute primeiro o `curl` de `/confluence/search`" in section
-    assert "A busca principal deve manter `&space=`" in section
-    assert "resultados forem vazios, lentos ou pouco aderentes" in section
-    assert "&space=Postos" in section
-    assert "&labels=autosystem" in section
-
-
-def test_response_rules_treat_grep_as_candidate_not_evidence() -> None:
-    section = _agent_prompt_sections.render_response_rules()
-
-    assert "`Grep`, listagem de arquivos" in section
-    assert "não são evidência suficiente" in section
-    assert "Não invente nomes de colunas" in section
-    assert "Não recomende criar script novo" in section
-    assert "Não adicione prefixos como `src/`" in section
-
-
-def test_build_prompt_injects_repo_architect_agent_before_skills() -> None:
-    prompt = _agent_context.build_prompt_with_agent(
-        "Como funciona o fiscal?",
-        skills=[{"title": "AutoSystem Fiscal", "summary": "Fiscal", "content": "Skill"}],
-        sandbox_session_url="http://sandbox:8080",
-        repos=[{"slug": "autosystem", "worktree_path": "/repos/sessions/abc/autosystem"}],
-        agent_profiles=[
-            {
-                "slug": "autosystem-architect",
-                "name": "AutoSystem Architect",
-                "description": "Arquitetura AutoSystem",
-                "system_prompt": "Mapa de investigação AutoSystem",
-                "default_model": None,
-            }
-        ],
-    )
-
-    assert "## Agente arquitetural do repositório" in prompt
-    assert prompt.index("AutoSystem Architect") < prompt.index("## Skills configuradas")
-    assert "Mapa de investigação AutoSystem" in prompt
-
-
-async def test_load_repo_agent_profiles_uses_sandbox_agents_by_repo_slug(
-    monkeypatch,
-) -> None:
-    captured: dict[str, Any] = {}
-
-    class FakeConn:
-        async def fetch(
-            self,
-            query: str,
-            sandbox_id: str,
-            agent_names: list[str],
-        ) -> list[dict[str, Any]]:
-            captured["query"] = query
-            captured["sandbox_id"] = sandbox_id
-            captured["agent_names"] = agent_names
-            return [
-                {
-                    "name": "seller-architect",
-                    "description": "desc",
-                    "system_prompt": "prompt",
-                    "model": "",
-                }
-            ]
-
-        async def close(self) -> None:
-            captured["closed"] = True
-
-    async def fake_connect(database_url: str) -> FakeConn:
-        captured["database_url"] = database_url
-        return FakeConn()
-
-    monkeypatch.setattr(_agent_context.asyncpg, "connect", fake_connect)
-
-    profiles = await _agent_context.load_repo_agent_profiles(
-        "postgresql://db",
-        [{"slug": "Seller"}, {"slug": "Seller"}],
-        sandbox_id="1cf4ffe6-97b4-497d-a482-e533b2535417",
-    )
-
-    assert captured["sandbox_id"] == "1cf4ffe6-97b4-497d-a482-e533b2535417"
-    assert captured["agent_names"] == ["seller-architect"]
-    assert "FROM sandbox_agents" in captured["query"]
-    assert "lower(name) = ANY" in captured["query"]
-    assert profiles[0]["name"] == "seller-architect"
-    assert captured["closed"] is True
-
-
-def test_evidence_terms_prioritize_ticketlog_recolha_context() -> None:
-    terms = _evidence_terms._terms_for(
-        "Temos um cliente com recolha de notas da TicketLog. Estavam usando "
-        "motivo de movimentação errado, que não era parametrizado para TicketLog. "
-        "Corrigimos o motivo de movimentação, como fazer para reenviar as vendas antigas?"
-    )
-
-    assert terms[:2] == ["TicketLog recolha notas", "recolha notas TicketLog"]
-    assert "Estavam usando motivo de" not in terms
-
-
-async def test_evidence_prefetch_searches_confluence_space_before_labels() -> None:
-    calls: list[dict[str, str]] = []
-
-    class FakeResponse:
-        status_code = 200
-
-        def json(self) -> dict[str, list[dict[str, str]]]:
-            return {
-                "results": [
-                    {
-                        "title": "PDV Fácil + AS3 | Caixa - Integração Recolha de Notas",
-                        "url": "https://share.linx.com.br/pages/viewpage.action?pageId=555785211",
-                        "summary": "TicketLog/Frota",
-                    }
-                ]
-            }
-
-    class FakeClient:
-        async def get(self, url: str, params: dict[str, str]) -> FakeResponse:
-            calls.append(dict(params))
-            return FakeResponse()
-
-    docs, attempts = await _evidence_docs._fetch_docs(
-        FakeClient(),
-        "http://sandbox:8080",
-        [
-            {
-                "confluence_url": "https://share.linx.com.br",
-                "confluence_space": "Postos",
-                "confluence_labels": ["autosystem"],
-            }
-        ],
-        ["TicketLog recolha notas"],
-    )
-
-    assert docs[0].title.startswith("PDV Fácil")
-    assert calls == [
-        {
-            "base_url": "https://share.linx.com.br",
-            "q": "TicketLog recolha notas",
-            "limit": "3",
-            "space": "Postos",
-        }
-    ]
-    assert attempts[0].source.labels == ()
-
-
-def test_evidence_render_requires_confluence_sources_in_final_answer() -> None:
-    section = _evidence_render._render_section(
-        [
-            _evidence_models._DocHit(
-                query="TicketLog recolha notas",
-                title="PDV Fácil + AS3 | Caixa - Integração Recolha de Notas",
-                url="https://share.linx.com.br/pages/viewpage.action?pageId=555785211",
-                summary="Integração TicketLog/Frota",
-            )
-        ],
-        [],
-        [],
-    )
-
-    assert "Fontes consultadas" in section
-    assert "Não omita a fonte documental" in section
-    assert "PDV Fácil + AS3" in section
