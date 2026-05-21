@@ -113,7 +113,8 @@ async function deleteRepo(slug, json, res) {
  */
 async function tryHandle(req, res, { json, readBody, injectToken }) {
   if (!req.url) return false
-  const path = req.url.split('?')[0]
+  const url = new URL(req.url, 'http://localhost')
+  const path = url.pathname
 
   if (req.method === 'GET' && path === '/repos/list') {
     await listRepos(json, res)

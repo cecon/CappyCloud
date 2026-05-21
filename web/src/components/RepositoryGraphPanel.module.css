@@ -1,0 +1,547 @@
+.graphShell {
+  padding: var(--mantine-spacing-md);
+  overflow: hidden;
+  border: 1px solid var(--mantine-color-dark-4);
+  border-radius: var(--mantine-radius-md);
+  background:
+    linear-gradient(135deg, rgba(79, 142, 247, 0.08), transparent 36%),
+    linear-gradient(315deg, rgba(62, 207, 142, 0.06), transparent 38%),
+    var(--mantine-color-dark-7);
+}
+
+.graphHeader {
+  position: relative;
+  z-index: 2;
+}
+
+.metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mantine-spacing-xs);
+  margin-top: var(--mantine-spacing-md);
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 340px;
+}
+
+.hitRail {
+  display: flex;
+  gap: var(--mantine-spacing-xs);
+  min-height: 34px;
+  margin-top: var(--mantine-spacing-sm);
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.hitRail :global(.mantine-Button-root) {
+  flex: 0 0 auto;
+}
+
+.graphStage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--mantine-spacing-md);
+  margin-top: var(--mantine-spacing-sm);
+  min-height: 590px;
+}
+
+.scenePanel {
+  position: relative;
+  min-height: 590px;
+  overflow: hidden;
+  border-radius: var(--mantine-radius-md);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 34%),
+    linear-gradient(135deg, rgba(79, 142, 247, 0.08), rgba(62, 207, 142, 0.035) 45%, transparent 78%),
+    #0b0c10;
+}
+
+.scenePanel::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(circle at 50% 50%, black, transparent 75%);
+}
+
+.nvlFrame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.nvlFrame:active {
+  cursor: grabbing;
+}
+
+.nvlFrame canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.nvlFrame [role="image"] {
+  outline: none;
+}
+
+.viewportControls {
+  position: absolute;
+  top: var(--mantine-spacing-sm);
+  left: var(--mantine-spacing-sm);
+  z-index: 4;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--mantine-radius-sm);
+  background: rgba(13, 13, 15, 0.78);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.26);
+}
+
+:global(.repoGraphNodeHtml) {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 7px;
+  align-items: center;
+  min-width: 112px;
+  max-width: 220px;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(11, 12, 16, 0.82);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+  color: #f2f5fb;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.15;
+  pointer-events: auto;
+  text-align: left;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.65);
+  transform: translate(-50%, -50%);
+  white-space: normal;
+  cursor: pointer;
+}
+
+:global(.repoGraphNodeHtmlBadge) {
+  min-width: 30px;
+  padding: 2px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #cfd6e6;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+  text-shadow: none;
+}
+
+:global(.repoGraphNodeHtmlText) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:global(.repoGraphNodeHtmlMeta) {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  color: #9aa4b5;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  text-shadow: none;
+  white-space: nowrap;
+}
+
+:global(.repoGraphNodeHtml-ui_action) {
+  border-color: rgba(245, 166, 35, 0.48);
+  background: rgba(87, 57, 7, 0.92);
+}
+
+:global(.repoGraphNodeHtml-button) {
+  display: inline-flex;
+  min-width: 48px;
+  max-width: 96px;
+  min-height: 20px;
+  justify-content: center;
+  padding: 4px 8px;
+  border-color: rgba(245, 166, 35, 0.68);
+  border-radius: 7px;
+  background:
+    linear-gradient(180deg, rgba(255, 205, 97, 0.42), rgba(245, 166, 35, 0.18)),
+    rgba(52, 34, 6, 0.96);
+  box-shadow: 0 8px 18px rgba(245, 166, 35, 0.13), 0 6px 16px rgba(0, 0, 0, 0.28);
+  text-align: center;
+}
+
+:global(.repoGraphNodeHtml-button .repoGraphNodeHtmlBadge) {
+  display: none;
+}
+
+:global(.repoGraphNodeHtml-button .repoGraphNodeHtmlText) {
+  max-width: 80px;
+  color: #fff4d6;
+  font-size: 7.5px;
+  font-weight: 760;
+  line-height: 1.1;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.repoGraphNodeHtml-button .repoGraphNodeHtmlMeta) {
+  display: none;
+}
+
+:global(.repoGraphNodeHtml-button.repoGraphNodeHtml-selected) {
+  max-width: 104px;
+  border-radius: 7px;
+}
+
+:global(.repoGraphNodeHtml-input) {
+  min-width: 150px;
+  border-color: rgba(158, 216, 255, 0.54);
+  border-radius: 5px;
+  background:
+    linear-gradient(180deg, rgba(158, 216, 255, 0.16), rgba(158, 216, 255, 0.03)),
+    rgba(9, 20, 28, 0.96);
+}
+
+:global(.repoGraphNodeHtml-input::after) {
+  position: absolute;
+  right: 8px;
+  bottom: 5px;
+  left: 8px;
+  height: 1px;
+  content: "";
+  background: rgba(158, 216, 255, 0.34);
+}
+
+:global(.repoGraphNodeHtml-input .repoGraphNodeHtmlBadge) {
+  border-color: rgba(158, 216, 255, 0.32);
+  background: rgba(158, 216, 255, 0.12);
+  color: #bde8ff;
+}
+
+:global(.repoGraphNodeHtml-grid) {
+  min-width: 150px;
+  border-color: rgba(62, 207, 142, 0.52);
+  background:
+    linear-gradient(rgba(62, 207, 142, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(62, 207, 142, 0.1) 1px, transparent 1px),
+    rgba(9, 31, 23, 0.95);
+  background-size: 18px 18px;
+}
+
+:global(.repoGraphNodeHtml-grid .repoGraphNodeHtmlBadge) {
+  border-color: rgba(62, 207, 142, 0.34);
+  background: rgba(62, 207, 142, 0.14);
+  color: #aef1cf;
+}
+
+:global(.repoGraphNodeHtml-screen) {
+  min-width: 132px;
+  border-color: rgba(158, 216, 255, 0.44);
+  background: rgba(17, 48, 70, 0.92);
+}
+
+:global(.repoGraphNodeHtml-route) {
+  border-color: rgba(158, 216, 255, 0.44);
+  background: rgba(17, 48, 70, 0.92);
+}
+
+:global(.repoGraphNodeHtml-file) {
+  min-width: 126px;
+  max-width: 200px;
+  border-color: rgba(79, 142, 247, 0.38);
+  background: rgba(12, 20, 31, 0.94);
+}
+
+:global(.repoGraphNodeHtml-file .repoGraphNodeHtmlBadge) {
+  border-color: rgba(79, 142, 247, 0.34);
+  background: rgba(79, 142, 247, 0.16);
+  color: #b8d0ff;
+}
+
+:global(.repoGraphNodeHtml-language) {
+  display: inline-flex;
+  min-width: 50px;
+  max-width: 88px;
+  min-height: auto;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #e9edf7;
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+:global(.repoGraphNodeHtml-language .repoGraphNodeHtmlBadge) {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  place-items: center;
+  padding: 0;
+  border-color: rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: #2a3141;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  color: #f3f5fb;
+  font-size: 7px;
+}
+
+:global(.repoGraphNodeHtml-language .repoGraphNodeHtmlText) {
+  width: 88px;
+  padding: 1px 3px;
+  overflow: hidden;
+  color: #edf1f9;
+  font-size: 7.5px;
+  font-weight: 700;
+  line-height: 1.1;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.82);
+  white-space: nowrap;
+}
+
+:global(.repoGraphNodeHtml-language .repoGraphNodeHtmlMeta) {
+  width: 84px;
+  color: #9da7b7;
+  font-size: 7px;
+  text-align: center;
+}
+
+:global(.repoGraphNodeHtml-badge-js .repoGraphNodeHtmlBadge) {
+  border-color: rgba(245, 166, 35, 0.46);
+  background: linear-gradient(180deg, #f6d45c, #d7a718);
+  color: #18130a;
+}
+
+:global(.repoGraphNodeHtml-badge-ts .repoGraphNodeHtmlBadge) {
+  border-color: rgba(79, 142, 247, 0.5);
+  background: linear-gradient(180deg, #5fa8ff, #2567c7);
+  color: #f6fbff;
+}
+
+:global(.repoGraphNodeHtml-badge-react .repoGraphNodeHtmlBadge) {
+  border-color: rgba(97, 218, 251, 0.56);
+  background: radial-gradient(circle, rgba(97, 218, 251, 0.32), rgba(15, 45, 64, 0.98));
+  color: #c9f6ff;
+}
+
+:global(.repoGraphNodeHtml-badge-rx .repoGraphNodeHtmlBadge) {
+  border-color: rgba(197, 140, 255, 0.58);
+  background:
+    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.34), transparent 18%),
+    linear-gradient(180deg, #8d62d9, #543294);
+  color: #f6f0ff;
+}
+
+:global(.repoGraphNodeHtml-badge-py .repoGraphNodeHtmlBadge) {
+  border-color: rgba(245, 196, 71, 0.46);
+  background: linear-gradient(135deg, #3776ab 0 48%, #ffd343 49% 100%);
+  color: #101318;
+}
+
+:global(.repoGraphNodeHtml-badge-cs .repoGraphNodeHtmlBadge) {
+  border-color: rgba(197, 140, 255, 0.48);
+  background: linear-gradient(180deg, #8d58d3, #4f2f8f);
+  color: #f8f4ff;
+}
+
+:global(.repoGraphNodeHtml-badge-css .repoGraphNodeHtmlBadge) {
+  border-color: rgba(94, 169, 255, 0.48);
+  background: linear-gradient(180deg, #41a3ff, #1959b7);
+  color: #eef8ff;
+}
+
+:global(.repoGraphNodeHtml-badge-html .repoGraphNodeHtmlBadge) {
+  border-color: rgba(255, 120, 74, 0.46);
+  background: linear-gradient(180deg, #ff8a56, #d94f24);
+  color: #fff6f0;
+}
+
+:global(.repoGraphNodeHtml-badge-ui .repoGraphNodeHtmlBadge) {
+  border-color: rgba(158, 216, 255, 0.48);
+  background: linear-gradient(180deg, #77c7ff, #26688d);
+  color: #f2fbff;
+}
+
+:global(.repoGraphNodeHtml-badge-json .repoGraphNodeHtmlBadge),
+:global(.repoGraphNodeHtml-badge-env .repoGraphNodeHtmlBadge),
+:global(.repoGraphNodeHtml-badge-git .repoGraphNodeHtmlBadge) {
+  border-color: rgba(180, 188, 202, 0.34);
+  background: linear-gradient(180deg, #3a4353, #1c2330);
+  color: #dfe6f3;
+}
+
+:global(.repoGraphNodeHtml-badge-reducer .repoGraphNodeHtmlBadge) {
+  border-color: rgba(62, 207, 142, 0.46);
+  background: linear-gradient(180deg, #35d39b, #13845f);
+  color: #07120e;
+}
+
+:global(.repoGraphNodeHtml-badge-db .repoGraphNodeHtmlBadge) {
+  border-color: rgba(95, 208, 186, 0.5);
+  background: linear-gradient(180deg, #5fd0ba, #267969);
+  color: #06110f;
+}
+
+:global(.repoGraphNodeHtml-code) {
+  min-width: 120px;
+  max-width: 180px;
+  border-color: rgba(184, 188, 115, 0.38);
+  background: rgba(22, 24, 18, 0.88);
+}
+
+:global(.repoGraphNodeHtml-method),
+:global(.repoGraphNodeHtml-function),
+:global(.repoGraphNodeHtml-class) {
+  max-width: 136px;
+  border-color: rgba(184, 188, 115, 0.42);
+  background: rgba(29, 31, 20, 0.82);
+  font-size: 9px;
+  font-weight: 650;
+}
+
+:global(.repoGraphNodeHtml-language.repoGraphNodeHtml-method),
+:global(.repoGraphNodeHtml-language.repoGraphNodeHtml-function),
+:global(.repoGraphNodeHtml-language.repoGraphNodeHtml-class),
+:global(.repoGraphNodeHtml-language.repoGraphNodeHtml-saga),
+:global(.repoGraphNodeHtml-language.repoGraphNodeHtml-reducer) {
+  max-width: 88px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 7.5px;
+}
+
+:global(.repoGraphNodeHtml-call),
+:global(.repoGraphNodeHtml-action),
+:global(.repoGraphNodeHtml-data) {
+  max-width: 130px;
+  border-color: rgba(180, 180, 190, 0.28);
+  background: rgba(19, 19, 23, 0.78);
+  color: #d7d8df;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+:global(.repoGraphNodeHtml-selected) {
+  z-index: 3;
+  max-width: 250px;
+  border-color: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 0 0 1px rgba(245, 166, 35, 0.5), 0 12px 26px rgba(0, 0, 0, 0.38);
+  font-size: 12px;
+}
+
+:global(.repoGraphNodeHtml-language.repoGraphNodeHtml-selected) {
+  max-width: 88px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+:global(.repoGraphNodeHtml-language.repoGraphNodeHtml-selected .repoGraphNodeHtmlBadge) {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.22), 0 14px 28px rgba(0, 0, 0, 0.34);
+}
+
+.loadingArea {
+  min-height: 590px;
+  align-items: center;
+}
+
+.nodeInspector {
+  min-width: 0;
+  padding: var(--mantine-spacing-md);
+  border: 1px solid var(--mantine-color-dark-4);
+  border-radius: var(--mantine-radius-md);
+  background: rgba(13, 13, 15, 0.78);
+  backdrop-filter: blur(10px);
+}
+
+.inspectorBlock {
+  padding: var(--mantine-spacing-sm);
+  border: 1px solid var(--mantine-color-dark-4);
+  border-radius: var(--mantine-radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.edgeRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--mantine-spacing-xs);
+  align-items: center;
+  padding: 7px 0;
+  border-top: 1px solid var(--mantine-color-dark-4);
+}
+
+.edgeRowButton {
+  display: grid;
+  width: 100%;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--mantine-spacing-xs);
+  align-items: center;
+  padding: 7px 0;
+  border: 0;
+  border-top: 1px solid var(--mantine-color-dark-4);
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.edgeRowButton:hover {
+  background: rgba(255, 255, 255, 0.035);
+  transform: translateX(2px);
+}
+
+.edgeLabel {
+  min-width: 0;
+}
+
+.signature {
+  display: block;
+  max-height: 90px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--mantine-color-dark-4);
+  border-radius: var(--mantine-radius-sm);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--mantine-color-dark-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1.45;
+}
+
+@media (max-width: 1180px) {
+  .graphStage {
+    grid-template-columns: 1fr;
+  }
+
+  .nodeInspector {
+    min-height: 240px;
+  }
+}

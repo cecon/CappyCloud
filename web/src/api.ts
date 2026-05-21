@@ -917,6 +917,103 @@ export interface Repository {
   signoz_service_name?: string | null
 }
 
+export interface RepositoryGraphStats {
+  files: number
+  code_files?: number
+  modules: number
+  links: number
+  isolated: number
+  symbols?: number
+  entrypoints?: number
+  unreferenced_files?: number
+  ui_actions?: number
+  flows?: number
+}
+
+export interface RepositoryGraphNode {
+  id: string
+  label: string
+  type: 'repo' | 'module' | string
+  path: string
+  file_count: number
+  import_count: number
+  imported_by_count: number
+  isolated: boolean
+}
+
+export interface RepositoryGraphEdge {
+  id: string
+  source: string
+  target: string
+  type: 'contains' | 'imports' | string
+  weight: number
+}
+
+export interface RepositoryGraphFinding {
+  id: string
+  type: string
+  severity: 'low' | 'medium' | 'high' | string
+  title: string
+  detail: string
+  node_id: string
+  path: string
+}
+
+export interface RepositoryGraphFile {
+  id: string
+  path: string
+  label: string
+  module: string
+  extension: string
+  line_count: number
+  symbol_count: number
+  imports: string[]
+  imported_by: string[]
+  import_count: number
+  imported_by_count: number
+  isolated: boolean
+  entrypoint: boolean
+  unreferenced: boolean
+  symbols: string[]
+}
+
+export interface RepositoryGraphSymbol {
+  id: string
+  name: string
+  kind: string
+  file_path: string
+  line: number
+  signature: string
+  exported: boolean
+  container: string
+  element?: string
+  handler?: string
+}
+
+export interface RepositoryGraphSemanticNode {
+  id: string
+  label: string
+  type: string
+  path: string
+  line: number
+  detail: string
+}
+
+export interface RepositoryGraph {
+  slug: string
+  repo_path: string
+  generated_at: string
+  stats: RepositoryGraphStats
+  nodes: RepositoryGraphNode[]
+  edges: RepositoryGraphEdge[]
+  files: RepositoryGraphFile[]
+  symbols: RepositoryGraphSymbol[]
+  file_edges: RepositoryGraphEdge[]
+  semantic_nodes: RepositoryGraphSemanticNode[]
+  semantic_edges: RepositoryGraphEdge[]
+  findings: RepositoryGraphFinding[]
+}
+
 export interface RepositoryCreate {
   slug: string
   name: string
@@ -940,6 +1037,22 @@ export async function fetchRepositories(token: string): Promise<Repository[]> {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) return []
+  return res.json()
+}
+
+export async function fetchRepositoryGraph(
+  token: string,
+  repoId: string,
+  maxFiles = 1200,
+): Promise<RepositoryGraph> {
+  const res = await apiFetch(
+    `/api/repositories/${repoId}/graph?max_files=${encodeURIComponent(String(maxFiles))}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao carregar grafo do repositório')
+  }
   return res.json()
 }
 

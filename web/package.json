@@ -15,6 +15,8 @@
     "@mantine/core": "^9.0.2",
     "@mantine/form": "^9.0.2",
     "@mantine/hooks": "^9.0.2",
+    "@neo4j-nvl/base": "^1.1.0",
+    "@neo4j-nvl/react": "^1.1.0",
     "@tabler/icons-react": "^3.41.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

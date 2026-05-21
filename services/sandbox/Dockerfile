@@ -148,6 +148,8 @@ COPY git_handlers.js /git_handlers.js
 COPY mcp_handler.js /mcp_handler.js
 COPY confluence_handler.js /confluence_handler.js
 COPY repo_handlers.js /repo_handlers.js
+COPY repo_graph /repo_graph
+COPY repo_graph_handlers.js /repo_graph_handlers.js
 COPY task_handler.js /task_handler.js
 COPY worktree_handlers.js /worktree_handlers.js
 COPY confluence_mcp_lib.py /usr/local/bin/confluence_mcp_lib.py
