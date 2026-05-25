@@ -166,10 +166,7 @@ def test_evidence_prefetch_prioritizes_imported_schema_for_sql_questions() -> No
                 title="DATABASE_SCHEMA_Edu_CBE_2.md (parte 28/246)",
                 url="DATABASE_SCHEMA_Edu_CBE_2.md",
                 summary=(
-                    "#### dbo.tgGerEmpr\n"
-                    "- PK: EstaCod, EmprCod\n"
-                    "- Colunas:\n"
-                    "  - `EmprIndIna` bit\n"
+                    "#### dbo.tgGerEmpr\n- PK: EstaCod, EmprCod\n- Colunas:\n  - `EmprIndIna` bit\n"
                 ),
                 source="repository_document",
             )
