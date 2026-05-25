@@ -143,6 +143,20 @@ _auth_url() {
     echo "$url"
 }
 
+# ── Helper: busca a branch base com a URL autenticada da sessão ─
+_fetch_base_branch() {
+    local repo_dir="$1"
+    local branch="$2"
+    local remote="origin"
+
+    if [ -n "${CLONE_URL}" ]; then
+        remote=$(_auth_url "$CLONE_URL")
+    fi
+
+    git -C "$repo_dir" fetch "$remote" \
+        "+refs/heads/${branch}:refs/remotes/origin/${branch}" 2>&1
+}
+
 # ── Helper: push não-fatal ────────────────────────────────────
 _push_session_branch() {
     local repo_dir="$1"
@@ -169,16 +183,19 @@ _create_worktree() {
     local resolved_base="${base_branch:-}"
 
     if [ -n "$resolved_base" ]; then
-        # Verifica se a branch base existe localmente
-        if ! git -C "$main_repo" rev-parse --verify "$resolved_base" >/dev/null 2>&1; then
-            echo "[session_start] Buscando ${resolved_base} no remote…"
-            git -C "$main_repo" fetch origin "${resolved_base}:${resolved_base}" 2>&1 || true
-            # Se ainda não existe, detecta a default real
-            if ! git -C "$main_repo" rev-parse --verify "$resolved_base" >/dev/null 2>&1; then
-                echo "[session_start] AVISO: ${resolved_base} não encontrada."
-                resolved_base=$(_default_branch "$main_repo")
-                echo "[session_start] Branch default detectada: ${resolved_base}"
-            fi
+        # Atualiza a branch base usando a URL autenticada do cadastro quando
+        # disponível. Em repos dinâmicos, o clone do volume pode ter um origin
+        # antigo/sem token; a clone_url da sessão é a fonte confiável.
+        echo "[session_start] Buscando ${resolved_base} no remote…"
+        _fetch_base_branch "$main_repo" "$resolved_base" || true
+
+        local remote_base="refs/remotes/origin/${resolved_base}"
+        if git -C "$main_repo" rev-parse --verify "$remote_base" >/dev/null 2>&1; then
+            resolved_base="$remote_base"
+        elif ! git -C "$main_repo" rev-parse --verify "$resolved_base" >/dev/null 2>&1; then
+            echo "[session_start] AVISO: ${resolved_base} não encontrada."
+            resolved_base=$(_default_branch "$main_repo")
+            echo "[session_start] Branch default detectada: ${resolved_base}"
         fi
     else
         resolved_base=$(_default_branch "$main_repo")
