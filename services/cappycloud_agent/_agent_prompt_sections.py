@@ -61,7 +61,9 @@ def render_repo_agents(agent_profiles: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def render_session_tools(sandbox_session_url: str, repos: list[dict] | None = None) -> str:
+def render_session_tools(
+    sandbox_session_url: str, repos: list[dict] | None = None
+) -> str:
     repo_ids = [
         str(repo.get("repo_id")).strip()
         for repo in (repos or [])
@@ -131,7 +133,8 @@ def render_session_tools(sandbox_session_url: str, repos: list[dict] | None = No
                 "restrita ao produto correto e não vaza para outros spaces do Confluence."
             )
         any_labels_configured = any(
-            _clean_confluence_labels(repo.get("confluence_labels")) for repo in confluence_repos
+            _clean_confluence_labels(repo.get("confluence_labels"))
+            for repo in confluence_repos
         )
         if any_labels_configured:
             lines.append(
@@ -195,7 +198,13 @@ def render_response_rules() -> str:
         "campo de tabela ou configuração. Antes de recomendar um procedimento ou citar um "
         "arquivo como prova, leia o trecho exato com `Read`/comando equivalente e baseie a "
         "resposta somente em arquivos, linhas, schema ou documentação realmente abertos nesta "
-        "conversa. Se você só encontrou nomes de arquivos, diga que ainda não há evidência "
+        "conversa. Trechos de `documento importado` exibidos na seção de evidências "
+        "automáticas já são documentação aberta; não reabra esses arquivos via `Read` "
+        "quando o bloco importado já trouxer tabela, coluna, PK ou flag necessária. "
+        "Para perguntas de SQL/schema, um bloco importado `#### dbo.<tabela>` conta "
+        "como schema comprovado; não substitua essa evidência por uma entidade do código "
+        "se o próprio documento diferenciar cadastro legado/fiscal e camada SaaS. "
+        "Se você só encontrou nomes de arquivos, diga que ainda não há evidência "
         "suficiente em vez de completar a resposta por inferência.\n\n"
         "Quando consultar documentação externa, inclua uma seção curta de fontes consultadas "
         "com o título e a URL das páginas realmente usadas. Quando cruzar com código, inclua "

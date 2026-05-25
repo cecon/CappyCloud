@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infrastructure.orm_models_platform import AiModel
+from app.infrastructure.orm_models_platform import AiModel, AiProvider
 from app.ports.repositories import AiModelCapabilityLookup
 
 
@@ -21,8 +21,10 @@ class SQLAlchemyAiModelCapabilityLookup(AiModelCapabilityLookup):
         row = (
             await self._session.execute(
                 select(AiModel.capabilities)
+                .join(AiProvider)
                 .where(AiModel.model_id == model_id)
                 .where(AiModel.active.is_(True))
+                .where(AiProvider.active.is_(True))
                 .limit(1)
             )
         ).first()

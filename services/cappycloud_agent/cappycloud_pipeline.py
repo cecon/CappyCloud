@@ -135,8 +135,6 @@ class Pipeline:
             {
                 "type": "status",
                 "message": "Preparando contexto da conversa.",
-                "stage": "session",
-                "mode": "initializing",
             }
         )
 
@@ -256,8 +254,6 @@ class Pipeline:
             {
                 "type": "status",
                 "message": "Sincronizando configuração do agente.",
-                "stage": "session",
-                "mode": "initializing",
             }
         )
         self._run(
@@ -307,9 +303,7 @@ class Pipeline:
 
         yield from self._stream_events(task_id, cursor)
 
-    def _stream_events(
-        self, task_id: str, cursor: int | None
-    ) -> Generator[str]:
+    def _stream_events(self, task_id: str, cursor: int | None) -> Generator[str]:
         if self._loop is None:
             return
         yield from stream_task_events(

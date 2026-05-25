@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 
 from ._evidence_utils import _dedupe
@@ -39,11 +40,16 @@ _STOP_TERMS = {
     "evidência",
     "fazer",
     "foram",
+    "gera",
+    "gerar",
+    "gere",
     "para",
     "pela",
     "pelo",
     "investigue",
     "isso",
+    "lista",
+    "listar",
     "mapeie",
     "mostre",
     "nao",
@@ -52,6 +58,7 @@ _STOP_TERMS = {
     "notas",
     "onde",
     "procure",
+    "query",
     "quando",
     "qual",
     "quais",
@@ -61,14 +68,20 @@ _STOP_TERMS = {
     "repositório",
     "sem",
     "sobre",
+    "sql",
     "temos",
+    "uma",
     "usando",
     "usar",
     "voces",
     "vocês",
 }
 _CONNECTOR_TERMS = {"de", "da", "das", "do", "dos", "e", "em", "no", "nos"}
-_PRODUCT_HINTS = {"autosystem", "linx", "seller", "smartpos", "ticketlog"}
+
+
+def _configured_product_hints() -> set[str]:
+    raw = os.getenv("CAPPYCLOUD_EVIDENCE_PRODUCT_HINTS", "")
+    return {item.strip().lower() for item in raw.split(",") if item.strip()}
 
 
 def _word_tokens(message: str) -> list[str]:
@@ -77,12 +90,16 @@ def _word_tokens(message: str) -> list[str]:
 
 def _is_signal_token(token: str) -> bool:
     lowered = token.lower()
-    return len(lowered) >= 3 and lowered not in _STOP_TERMS and lowered not in _CONNECTOR_TERMS
+    return (
+        len(lowered) >= 3
+        and lowered not in _STOP_TERMS
+        and lowered not in _CONNECTOR_TERMS
+    )
 
 
 def _is_product_token(token: str) -> bool:
     lowered = token.lower()
-    if lowered in _PRODUCT_HINTS:
+    if lowered in _configured_product_hints():
         return True
     return (
         any(ch.isupper() for ch in token[1:])
@@ -107,11 +124,8 @@ def _terms_for(message: str) -> list[str]:
     product_words = [word for word in signal_words if _is_product_token(word)]
 
     lowered_signals = {word.lower() for word in signal_words}
-    if "recolha" in lowered_signals and "ticketlog" in lowered_signals:
-        product = next(
-            (word for word in product_words if word.lower() == "ticketlog"),
-            "TicketLog",
-        )
+    if "recolha" in lowered_signals and product_words:
+        product = product_words[0]
         if "notas" in raw:
             terms.append(f"{product} recolha notas")
             terms.append(f"recolha notas {product}")
@@ -139,8 +153,12 @@ def _terms_for(message: str) -> list[str]:
     for phrase in phrase_candidates:
         phrase = " ".join(phrase.split())
         phrase_tokens = [
-            token for token in _word_tokens(phrase) if token.lower() not in _CONNECTOR_TERMS
+            token
+            for token in _word_tokens(phrase)
+            if token.lower() not in _CONNECTOR_TERMS
         ]
+        if not phrase_tokens or not _is_signal_token(phrase_tokens[0]):
+            continue
         signal_count = sum(1 for token in phrase_tokens if _is_signal_token(token))
         if 4 <= len(phrase) <= 60 and phrase.lower() in raw and signal_count >= 2:
             terms.append(phrase)

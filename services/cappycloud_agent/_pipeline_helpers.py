@@ -3,6 +3,8 @@ import logging
 import os
 import uuid
 from contextlib import suppress
+from dataclasses import dataclass
+from urllib.parse import urlsplit, urlunsplit
 
 import asyncpg
 import httpx
@@ -14,6 +16,13 @@ from ._agent_context import (
 )
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class LlmProviderRuntimeConfig:
+    base_url: str
+    api_key: str
+    api_format: str
 
 
 def db_url() -> str:
@@ -197,12 +206,14 @@ async def fetch_default_text_model_id(database_url: str) -> str | None:
         try:
             row = await conn.fetchrow(
                 """
-                SELECT model_id
-                FROM ai_models
-                WHERE active = TRUE
-                  AND COALESCE((is_default->>'text')::boolean, FALSE) = TRUE
-                  AND capabilities ? 'text'
-                ORDER BY display_name
+                SELECT m.model_id
+                FROM ai_models m
+                JOIN ai_providers p ON p.id = m.provider_id
+                WHERE m.active = TRUE
+                  AND p.active = TRUE
+                  AND COALESCE((m.is_default->>'text')::boolean, FALSE) = TRUE
+                  AND m.capabilities ? 'text'
+                ORDER BY m.display_name
                 LIMIT 1
                 """
             )
@@ -210,11 +221,13 @@ async def fetch_default_text_model_id(database_url: str) -> str | None:
                 return str(row["model_id"])
             row = await conn.fetchrow(
                 """
-                SELECT model_id
-                FROM ai_models
-                WHERE active = TRUE
-                  AND capabilities ? 'text'
-                ORDER BY display_name
+                SELECT m.model_id
+                FROM ai_models m
+                JOIN ai_providers p ON p.id = m.provider_id
+                WHERE m.active = TRUE
+                  AND p.active = TRUE
+                  AND m.capabilities ? 'text'
+                ORDER BY m.display_name
                 LIMIT 1
                 """
             )
@@ -237,10 +250,12 @@ async def resolve_text_model_id(
                 row = await conn.fetchrow(
                     """
                     SELECT 1
-                    FROM ai_models
-                    WHERE active = TRUE
-                      AND model_id = $1
-                      AND capabilities ? 'text'
+                    FROM ai_models m
+                    JOIN ai_providers p ON p.id = m.provider_id
+                    WHERE m.active = TRUE
+                      AND p.active = TRUE
+                      AND m.model_id = $1
+                      AND m.capabilities ? 'text'
                     LIMIT 1
                     """,
                     requested_model,
@@ -255,6 +270,111 @@ async def resolve_text_model_id(
 
 
 resolve_free_text_model_id = resolve_text_model_id
+
+
+def _decrypt_secret(ciphertext: str) -> str:
+    if not ciphertext:
+        return ""
+    try:
+        from app.infrastructure.encryption import get_encryptor
+
+        return get_encryptor().decrypt(ciphertext)
+    except Exception as exc:
+        log.warning("[Models] falha ao decriptar chave do provider: %s", exc)
+        return ""
+
+
+def _normalise_runtime_base_url(raw_url: str) -> tuple[str, str | None]:
+    raw = (raw_url or "").strip()
+    if not raw:
+        return "", None
+    parsed = urlsplit(raw)
+    path = parsed.path.rstrip("/")
+    lower_path = path.lower()
+    inferred: str | None = None
+    if lower_path.endswith("/responses"):
+        path = path[: -len("/responses")]
+        inferred = "responses"
+    elif lower_path.endswith("/chat/completions"):
+        path = path[: -len("/chat/completions")]
+        inferred = "chat_completions"
+    host = parsed.netloc.split("@")[-1].split(":")[0].lower()
+    if host.endswith(".services.ai.azure.com"):
+        if not path:
+            path = "/openai/v1"
+        elif _path_has_azure_project_openai_v1(path):
+            path = "/openai/v1"
+    return urlunsplit(
+        (parsed.scheme, parsed.netloc, path.rstrip("/"), "", "")
+    ), inferred
+
+
+def _path_has_azure_project_openai_v1(path: str) -> bool:
+    parts = [part.lower() for part in path.strip("/").split("/") if part]
+    return (
+        len(parts) >= 5
+        and parts[:2] == ["api", "projects"]
+        and parts[-2:]
+        == [
+            "openai",
+            "v1",
+        ]
+    )
+
+
+async def resolve_model_provider_runtime_config(
+    database_url: str, model_id: str | None
+) -> LlmProviderRuntimeConfig | None:
+    """Resolve base URL/chave/formato do provider do modelo selecionado.
+
+    Retorna ``None`` quando o modelo não tem provider configurado com chave; nesse
+    caso o sandbox usa as variáveis de ambiente padrão, preservando OpenRouter.
+    """
+    if not database_url or not model_id:
+        return None
+    try:
+        conn = await asyncpg.connect(database_url)
+        try:
+            row = await conn.fetchrow(
+                """
+                SELECT p.base_url, p.api_key_encrypted, p.api_format, p.name
+                FROM ai_models m
+                JOIN ai_providers p ON p.id = m.provider_id
+                WHERE m.active = TRUE
+                  AND p.active = TRUE
+                  AND m.model_id = $1
+                  AND m.capabilities ? 'text'
+                ORDER BY m.display_name
+                LIMIT 1
+                """,
+                model_id,
+            )
+        finally:
+            await conn.close()
+        if not row:
+            return None
+        api_key = _decrypt_secret(str(row["api_key_encrypted"] or ""))
+        if not api_key:
+            return None
+        base_url, inferred_format = _normalise_runtime_base_url(
+            str(row["base_url"] or "")
+        )
+        if not base_url:
+            return None
+        configured_format = str(row["api_format"] or "chat_completions").strip()
+        api_format = inferred_format or configured_format or "chat_completions"
+        if api_format not in {"chat_completions", "responses"}:
+            api_format = "chat_completions"
+        return LlmProviderRuntimeConfig(
+            base_url=base_url,
+            api_key=api_key,
+            api_format=api_format,
+        )
+    except Exception as exc:
+        log.warning(
+            "[Models] falha ao resolver provider do modelo '%s': %s", model_id, exc
+        )
+        return None
 
 
 def build_signoz_context_section(

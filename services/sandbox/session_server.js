@@ -129,6 +129,29 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { status: 'ok' })
     }
 
+    // GET /sessions/:id/status — checagem leve sem criar worktrees.
+    const statusMatch = pathname.match(/^\/sessions\/([^/]+)\/status$/)
+    if (req.method === 'GET' && statusMatch) {
+      const session_id = statusMatch[1]
+      const session_root = url.searchParams.get('session_root') || ''
+      let repos = []
+      try { repos = JSON.parse(url.searchParams.get('repos') || '[]') } catch {}
+      if (!Array.isArray(repos)) repos = []
+
+      const root_exists = !!session_root && fs.existsSync(session_root)
+      const repos_status = repos
+        .map(repo => {
+          const alias = repo && (repo.alias || repo.slug)
+          if (!alias || !session_root) return null
+          const worktree_path = repo.worktree_path || path.join(session_root, alias)
+          const worktree_exists = fs.existsSync(path.join(worktree_path, '.git'))
+          return { alias, worktree_path, exists: worktree_exists }
+        })
+        .filter(Boolean)
+      const ready = root_exists && repos_status.every(r => r.exists)
+      return json(res, 200, { session_id, session_root, root_exists, repos: repos_status, ready })
+    }
+
     // POST /sessions — cria sessão multi-repo
     if (req.method === 'POST' && pathname === '/sessions') {
       const body = await readBody(req)

@@ -96,6 +96,7 @@ async def create_ai_provider(
         id=uuid.uuid4(),
         name=body.name,
         base_url=body.base_url,
+        api_format=body.api_format,
         api_key_encrypted=enc.encrypt(body.api_key) if body.api_key else "",
     )
     session.add(provider)
@@ -136,7 +137,13 @@ async def list_ai_models(
     - ADMIN vê todos os modelos ativos (filtra apenas por capability ``text``).
     - USER vê apenas modelos para os quais tem ``UserAiModelAccess``.
     """
-    stmt = select(AiModel).where(_active_text_model_filter()).order_by(AiModel.display_name)
+    stmt = (
+        select(AiModel)
+        .join(AiProvider)
+        .where(_active_text_model_filter())
+        .where(AiProvider.active.is_(True))
+        .order_by(AiModel.display_name)
+    )
     if current.role is not UserRole.ADMIN:
         allowed = await SQLAlchemyUserAiModelAccessRepository(session).list_resources_for_user(
             current.id

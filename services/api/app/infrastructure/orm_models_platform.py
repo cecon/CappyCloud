@@ -50,6 +50,9 @@ class AiProvider(Base):
     base_url: Mapped[str] = mapped_column(
         Text, nullable=False, default="https://openrouter.ai/api/v1"
     )
+    api_format: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default="chat_completions", default="chat_completions"
+    )
     api_key_encrypted: Mapped[str] = mapped_column(Text, nullable=False, default="")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

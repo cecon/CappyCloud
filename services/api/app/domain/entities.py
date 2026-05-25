@@ -300,3 +300,17 @@ class McpServer:
     enabled: bool = True
     created_at: datetime = field(default_factory=_utcnow)
     updated_at: datetime = field(default_factory=_utcnow)
+
+
+@dataclass
+class UserMcpServer:
+    id: uuid.UUID
+    user_id: uuid.UUID
+    repository_id: uuid.UUID
+    name: str
+    token_hash: str
+    token_preview: str
+    enabled: bool = True
+    created_at: datetime = field(default_factory=_utcnow)
+    updated_at: datetime = field(default_factory=_utcnow)
+    last_used_at: datetime | None = None

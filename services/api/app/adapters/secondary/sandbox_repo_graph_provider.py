@@ -49,3 +49,34 @@ class SandboxRepositoryGraphProvider(RepositoryGraphProvider):
         if not detail:
             detail = response.text[:800] if response.text else f"HTTP {response.status_code}"
         raise SandboxRepoGraphError(detail, status_code=response.status_code)
+
+    async def fetch_commit_sha(
+        self,
+        *,
+        sandbox_host: str,
+        sandbox_port: int,
+        slug: str,
+        ref: str,
+    ) -> str:
+        safe_slug = quote(slug, safe="")
+        url = f"http://{sandbox_host}:{sandbox_port}/repos/{safe_slug}/commit"
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+                response = await client.get(url, params={"ref": ref or "HEAD"})
+        except httpx.RequestError as exc:
+            raise SandboxRepoGraphError(f"Falha ao conectar ao sandbox: {exc}") from exc
+
+        data: object = {}
+        if response.headers.get("content-type", "").startswith("application/json"):
+            data = response.json()
+        if response.status_code < 400 and isinstance(data, dict):
+            commit_sha = str(data.get("commit_sha") or "").strip()
+            if commit_sha:
+                return commit_sha
+
+        detail = ""
+        if isinstance(data, dict):
+            detail = str(data.get("detail") or data.get("error") or "").strip()
+        if not detail:
+            detail = response.text[:800] if response.text else f"HTTP {response.status_code}"
+        raise SandboxRepoGraphError(detail, status_code=response.status_code)

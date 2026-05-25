@@ -20,6 +20,8 @@ from app.schemas import SkillSearchResult
 router = APIRouter(prefix="/skills", tags=["skills"])
 
 _INTERNAL_TOKEN = os.getenv("INTERNAL_API_TOKEN", "").strip()
+_SKILL_SUMMARY_LIMIT = 300
+_DOCUMENT_SUMMARY_LIMIT = 2000
 
 
 def _row_to_result(skill: Skill, score: float) -> SkillSearchResult:
@@ -27,10 +29,16 @@ def _row_to_result(skill: Skill, score: float) -> SkillSearchResult:
         id=skill.id,
         slug=skill.slug,
         title=skill.title,
-        summary=skill.summary or skill.content[:300],
+        summary=_result_summary(skill),
         score=score,
         source_url=skill.source_url,
     )
+
+
+def _result_summary(skill: Skill) -> str:
+    if skill.document_id is not None:
+        return (skill.content or skill.summary or "")[:_DOCUMENT_SUMMARY_LIMIT]
+    return (skill.summary or skill.content or "")[:_SKILL_SUMMARY_LIMIT]
 
 
 async def do_search(

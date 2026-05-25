@@ -78,3 +78,7 @@ evidence_render = load_agent_module(
     "services.cappycloud_agent._evidence_render",
     ROOT / "services/cappycloud_agent/_evidence_render.py",
 )
+evidence_prefetch = load_agent_module(
+    "services.cappycloud_agent._evidence_prefetch",
+    ROOT / "services/cappycloud_agent/_evidence_prefetch.py",
+)

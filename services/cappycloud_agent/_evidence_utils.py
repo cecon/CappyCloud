@@ -9,9 +9,9 @@ from ._evidence_models import _ConfluenceSource
 _TEXT_LIMIT = 220
 
 
-def _trim(text: str) -> str:
+def _trim(text: str, limit: int = _TEXT_LIMIT) -> str:
     one_line = " ".join(str(text).split())
-    return one_line[:_TEXT_LIMIT]
+    return one_line[:limit]
 
 
 def _dedupe(items: list[str]) -> list[str]:

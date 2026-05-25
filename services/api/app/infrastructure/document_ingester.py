@@ -4,8 +4,10 @@ Fluxo (todas as fontes):
   1. Extrair (title, raw_text) conforme source_type:
        - url   → reusa ``skill_importer.import_url`` (HTML→markdown)
        - text  → usa o conteúdo já recebido
+       - markdown/txt → decodifica o upload como texto
        - pdf   → ``pypdf`` (lazy import)
        - xlsx  → ``openpyxl`` (lazy import)
+       - docx  → ``python-docx`` (lazy import)
   2. Calcular checksum sha256 do texto normalizado.
   3. Dividir em chunks de ~CHUNK_CHARS caracteres (com overlap simples).
   4. Para cada chunk: criar uma Skill (repository_id=<>, document_id=<>,
@@ -60,6 +62,25 @@ def _extract_text(content: str | None, fallback_title: str) -> tuple[str, str]:
     return title, content
 
 
+def _extract_text_blob(blob: bytes, fallback_title: str, *, source_type: str) -> tuple[str, str]:
+    if not blob:
+        raise IngesterError(f"{source_type} vazio")
+    text = _decode_text_blob(blob, source_type=source_type)
+    title = fallback_title or text.strip().splitlines()[0][:120] or "Documento"
+    return title, text
+
+
+def _decode_text_blob(blob: bytes, *, source_type: str) -> str:
+    for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            text = blob.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+        if text.strip():
+            return text
+    raise IngesterError(f"{source_type} sem texto legível")
+
+
 def _extract_pdf(blob: bytes, fallback_title: str) -> tuple[str, str]:
     try:
         from pypdf import PdfReader
@@ -100,6 +121,26 @@ def _extract_xlsx(blob: bytes, fallback_title: str) -> tuple[str, str]:
         parts.append("")
     text = "\n".join(parts).strip()
     return fallback_title or "Planilha", text
+
+
+def _extract_docx(blob: bytes, fallback_title: str) -> tuple[str, str]:
+    try:
+        from docx import Document as DocxDocument
+    except ImportError as exc:
+        raise IngesterError(
+            "python-docx não instalado — adicionar ao requirements.txt para suportar DOCX"
+        ) from exc
+    try:
+        doc = DocxDocument(io.BytesIO(blob))
+    except Exception as exc:
+        raise IngesterError(f"DOCX inválido: {exc}") from exc
+    parts = [p.text.strip() for p in doc.paragraphs if p.text and p.text.strip()]
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells if cell.text and cell.text.strip()]
+            if cells:
+                parts.append(" | ".join(cells))
+    return fallback_title or "Documento Word", "\n\n".join(parts)
 
 
 # ── Chunking simples ────────────────────────────────────────────
@@ -223,7 +264,13 @@ async def _extract(
     if st == "url":
         return await _extract_url(document.source_uri)
     if st == "text":
+        if raw_blob is not None:
+            return _extract_text_blob(raw_blob, fallback, source_type=st)
         return _extract_text(text_content, fallback)
+    if st in {"markdown", "txt"}:
+        if raw_blob is None:
+            return _extract_text(text_content, fallback)
+        return _extract_text_blob(raw_blob, fallback, source_type=st)
     if st == "pdf":
         if raw_blob is None:
             raise IngesterError("PDF sem blob — upload obrigatório")
@@ -232,6 +279,10 @@ async def _extract(
         if raw_blob is None:
             raise IngesterError("XLSX sem blob — upload obrigatório")
         return _extract_xlsx(raw_blob, fallback)
+    if st == "docx":
+        if raw_blob is None:
+            raise IngesterError("DOCX sem blob — upload obrigatório")
+        return _extract_docx(raw_blob, fallback)
     raise IngesterError(f"source_type não suportado: {st}")
 
 

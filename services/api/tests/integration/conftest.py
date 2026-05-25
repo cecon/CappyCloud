@@ -29,12 +29,18 @@ from app.adapters.primary.http.deps import (
     get_mcp_repo,
     get_msg_repo,
     get_password_service,
+    get_repository_mcp_tool_gateway,
+    get_repository_repo,
     get_token_service,
+    get_user_mcp_repo,
     get_user_repo,
+    get_user_repository_access_repo,
 )
+from app.adapters.primary.http.repository_mcp import get_mcp_telemetry_recorder
 from app.application.use_cases.admin_user_access import ModelsByTierLookup
 from app.domain.entities import ContainerStatus, ModelTier, SandboxRuntime, User, UserRole
 from app.main import app
+from app.ports.repository_mcp import RepositoryMcpToolGateway
 from app.ports.sandbox_bootstrap import SandboxBootstrapGateway
 from app.ports.sandbox_runtime import RuntimeProbe, SandboxRuntimeGateway
 from app.ports.user_access import AiModelAccessPolicy
@@ -48,10 +54,12 @@ from tests.conftest import (
     InMemoryConversationRepository,
     InMemoryMcpRepository,
     InMemoryMessageRepository,
+    InMemoryRepositoryRepository,
     InMemorySandboxAgentRepository,
     InMemorySandboxRepository,
     InMemorySandboxSkillRepository,
     InMemoryUserAiModelAccessRepository,
+    InMemoryUserMcpServerRepository,
     InMemoryUserRepository,
     InMemoryUserRepositoryAccessRepository,
     InMemoryUserSandboxAccessRepository,
@@ -94,6 +102,15 @@ class _AllowAllAiModelAccessPolicy(AiModelAccessPolicy):
         return requested_model_id or "openrouter/free"
 
 
+class _FakeRepositoryMcpToolGateway(RepositoryMcpToolGateway):
+    async def call_tool(self, server, tool_name, arguments):  # type: ignore[no-untyped-def]
+        return {
+            "tool": tool_name,
+            "repository_id": str(server.repository_id),
+            "arguments": arguments,
+        }
+
+
 async def seed_user(
     repo: InMemoryUserRepository,
     email: str,
@@ -127,6 +144,16 @@ def sandbox_repo() -> InMemorySandboxRepository:
 @pytest.fixture
 def mcp_repo() -> InMemoryMcpRepository:
     return InMemoryMcpRepository()
+
+
+@pytest.fixture
+def user_mcp_repo() -> InMemoryUserMcpServerRepository:
+    return InMemoryUserMcpServerRepository()
+
+
+@pytest.fixture
+def repository_repo() -> InMemoryRepositoryRepository:
+    return InMemoryRepositoryRepository()
 
 
 @pytest.fixture
@@ -167,8 +194,10 @@ def models_by_tier_lookup() -> _StubModelsByTierLookup:
 @pytest.fixture
 async def client(
     user_repo: InMemoryUserRepository,
+    repository_repo: InMemoryRepositoryRepository,
     sandbox_repo: InMemorySandboxRepository,
     mcp_repo: InMemoryMcpRepository,
+    user_mcp_repo: InMemoryUserMcpServerRepository,
     skill_repo: InMemorySandboxSkillRepository,
     agent_repo: InMemorySandboxAgentRepository,
     sandbox_bootstrap: FakeSandboxBootstrap,
@@ -190,6 +219,7 @@ async def client(
     app.dependency_overrides[get_user_repo] = lambda: user_repo
     app.dependency_overrides[get_conv_repo] = lambda: conv_repo
     app.dependency_overrides[get_msg_repo] = lambda: msg_repo
+    app.dependency_overrides[get_repository_repo] = lambda: repository_repo
     app.dependency_overrides[get_password_service] = lambda: FakePasswordService()
     app.dependency_overrides[get_token_service] = lambda: FakeTokenService()
     app.dependency_overrides[get_agent] = lambda: FakeAgent()
@@ -198,10 +228,16 @@ async def client(
     app.dependency_overrides[get_runtime_gateways] = lambda: runtimes
     app.dependency_overrides[get_bootstrap_gateways] = lambda: bootstraps
     app.dependency_overrides[get_mcp_repo] = lambda: mcp_repo
+    app.dependency_overrides[get_user_mcp_repo] = lambda: user_mcp_repo
+    app.dependency_overrides[get_repository_mcp_tool_gateway] = lambda: (
+        _FakeRepositoryMcpToolGateway()
+    )
+    app.dependency_overrides[get_mcp_telemetry_recorder] = lambda: lambda record: None
     app.dependency_overrides[get_sandbox_skill_repo] = lambda: skill_repo
     app.dependency_overrides[get_sandbox_agent_repo] = lambda: agent_repo
     app.dependency_overrides[get_sandbox_access_repo] = lambda: sandbox_access_repo
     app.dependency_overrides[get_repository_access_repo] = lambda: repository_access_repo
+    app.dependency_overrides[get_user_repository_access_repo] = lambda: repository_access_repo
     app.dependency_overrides[get_ai_model_access_repo] = lambda: ai_model_access_repo
     app.dependency_overrides[get_models_by_tier_lookup] = lambda: models_by_tier_lookup
 

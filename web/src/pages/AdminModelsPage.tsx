@@ -45,6 +45,13 @@ function formatPrice(value: number | null): string {
   return `$${value.toFixed(2)}`
 }
 
+function capabilityColor(capability: string): string {
+  if (capability === 'embedding') return 'cyan'
+  if (capability === 'vision') return 'grape'
+  if (capability === 'text') return 'blue'
+  return 'gray'
+}
+
 export function AdminModelsPage() {
   const currentUser = useCurrentUser()
   const canManageCatalog =
@@ -96,6 +103,16 @@ export function AdminModelsPage() {
     () => new Map(providers.map((p) => [p.id, p])),
     [providers],
   )
+  const activeProviders = useMemo(
+    () => providers.filter((p) => p.active),
+    [providers],
+  )
+
+  useEffect(() => {
+    if (providerId !== 'all' && !activeProviders.some((p) => p.id === providerId)) {
+      setProviderId('all')
+    }
+  }, [activeProviders, providerId])
 
   async function toggleActive(model: AiModel) {
     const token = getToken()
@@ -128,14 +145,66 @@ export function AdminModelsPage() {
     }
   }
 
+  async function toggleCapability(model: AiModel, capability: string) {
+    const token = getToken()
+    if (!token) return
+    const current = new Set(model.capabilities ?? [])
+    if (current.has(capability)) {
+      current.delete(capability)
+    } else {
+      current.add(capability)
+    }
+    const nextCapabilities = Array.from(current)
+    if (nextCapabilities.length === 0) return
+    setBusyId(model.id)
+    setActionError(null)
+    try {
+      const updated = await patchAdminModel(token, model.id, {
+        capabilities: nextCapabilities,
+      })
+      setModels((prev) => (prev ? prev.map((m) => (m.id === updated.id ? updated : m)) : prev))
+    } catch (err) {
+      setActionError(errorToUserMessage(err))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function toggleDefault(model: AiModel, capability: 'text' | 'embedding') {
+    const token = getToken()
+    if (!token) return
+    const enabled = !model.is_default?.[capability]
+    setBusyId(model.id)
+    setActionError(null)
+    try {
+      const updated = await patchAdminModel(token, model.id, {
+        ...(capability === 'text'
+          ? { is_default_text: enabled }
+          : { is_default_embedding: enabled }),
+      })
+      setModels((prev) => {
+        if (!prev) return prev
+        if (!enabled) return prev.map((m) => (m.id === updated.id ? updated : m))
+        return prev.map((m) => {
+          if (m.id === updated.id) return updated
+          return { ...m, is_default: { ...(m.is_default ?? {}), [capability]: false } }
+        })
+      })
+    } catch (err) {
+      setActionError(errorToUserMessage(err))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   return (
     <Container size="lg" py="xl">
       <Stack gap="lg">
         <Stack gap={4}>
           <Title order={2}>Modelos LLM</Title>
           <Text c="dimmed" size="sm">
-            Catálogo sincronizado a partir dos providers. Tier é derivado do preço, mas pode ser
-            ajustado manualmente. Modelos desativados não aparecem para utilizadores.
+            Catálogo sincronizado a partir dos providers ativos. Tier é derivado do preço, mas
+            pode ser ajustado manualmente. Modelos desativados não aparecem para utilizadores.
           </Text>
         </Stack>
 
@@ -157,8 +226,8 @@ export function AdminModelsPage() {
               label="Provider"
               w={240}
               data={[
-                { value: 'all', label: 'Todos' },
-                ...providers.map((p) => ({ value: p.id, label: p.name })),
+                { value: 'all', label: 'Todos ativos' },
+                ...activeProviders.map((p) => ({ value: p.id, label: p.name })),
               ]}
               value={providerId}
               onChange={(v) => v && setProviderId(v as string)}
@@ -198,6 +267,9 @@ export function AdminModelsPage() {
                 <Table.Tr>
                   <Table.Th>Nome</Table.Th>
                   <Table.Th style={{ width: 140 }}>Provider</Table.Th>
+                  <Table.Th style={{ width: 190 }}>Capabilities</Table.Th>
+                  <Table.Th style={{ width: 130 }}>Default texto</Table.Th>
+                  <Table.Th style={{ width: 150 }}>Default embedding</Table.Th>
                   <Table.Th style={{ width: 140 }}>Tier</Table.Th>
                   <Table.Th style={{ width: 110 }}>In $/1M</Table.Th>
                   <Table.Th style={{ width: 110 }}>Out $/1M</Table.Th>
@@ -219,6 +291,50 @@ export function AdminModelsPage() {
                       </Table.Td>
                       <Table.Td>
                         <Text size="sm">{prov?.name ?? '—'}</Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Group gap={6}>
+                          {(m.capabilities ?? []).map((capability) => (
+                            <Badge
+                              key={capability}
+                              size="xs"
+                              variant="light"
+                              color={capabilityColor(capability)}
+                            >
+                              {capability}
+                            </Badge>
+                          ))}
+                        </Group>
+                        <Group gap="xs" mt={6}>
+                          <Switch
+                            size="xs"
+                            label="text"
+                            checked={m.capabilities?.includes('text') ?? false}
+                            disabled={!canManageCatalog || busyId === m.id}
+                            onChange={() => void toggleCapability(m, 'text')}
+                          />
+                          <Switch
+                            size="xs"
+                            label="embedding"
+                            checked={m.capabilities?.includes('embedding') ?? false}
+                            disabled={!canManageCatalog || busyId === m.id}
+                            onChange={() => void toggleCapability(m, 'embedding')}
+                          />
+                        </Group>
+                      </Table.Td>
+                      <Table.Td>
+                        <Switch
+                          checked={!!m.is_default?.text}
+                          disabled={!canManageCatalog || busyId === m.id}
+                          onChange={() => void toggleDefault(m, 'text')}
+                        />
+                      </Table.Td>
+                      <Table.Td>
+                        <Switch
+                          checked={!!m.is_default?.embedding}
+                          disabled={!canManageCatalog || busyId === m.id}
+                          onChange={() => void toggleDefault(m, 'embedding')}
+                        />
                       </Table.Td>
                       <Table.Td>
                         <Select

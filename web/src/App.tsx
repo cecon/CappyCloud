@@ -15,6 +15,9 @@ const ChangePasswordPage = lazy(() =>
 )
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })))
 const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })))
+const McpServerPage = lazy(() =>
+  import('./pages/McpServerPage').then((m) => ({ default: m.McpServerPage })),
+)
 const RunsPage = lazy(() => import('./pages/RunsPage').then(m => ({ default: m.RunsPage })))
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })))
 const AdminUsersPage = lazy(() =>
@@ -132,7 +135,12 @@ export default function App() {
             <ProtectedPage><RunsPage /></ProtectedPage>
           }
         />
-        <Route path="/mcp" element={<Navigate to="/admin/sandboxes" replace />} />
+        <Route
+          path="/mcp"
+          element={
+            <ProtectedPage><McpServerPage /></ProtectedPage>
+          }
+        />
         <Route
           path="/analytics"
           element={

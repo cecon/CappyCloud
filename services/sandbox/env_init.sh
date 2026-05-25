@@ -222,6 +222,50 @@ console.log('[env_init] OpenAI shim usage patch applied.');
 PATCH_EOF
 fi
 
+# ── Patch openclaude OpenAI shim: Azure AI Foundry OpenAI v1 ─
+# O endpoint novo do Azure AI Foundry (`...services.ai.azure.com/openai/v1`)
+# segue o cliente OpenAI oficial: base_url=/openai/v1 e model=deployment.
+# O openclaude upstream também suporta Azure antigo, mas transforma qualquer
+# host Azure em `/openai/deployments/{model}/chat/completions?api-version=...`.
+# Para o v1, preservamos `/openai/v1/chat/completions` e auth Bearer.
+if [ -f "$_OPENAI_SHIM_TS" ]; then
+    node - "$_OPENAI_SHIM_TS" << 'PATCH_EOF'
+const fs = require('fs');
+const file = process.argv[2];
+let c = fs.readFileSync(file, 'utf8');
+if (c.includes('CappyCloud Azure AI Foundry v1')) {
+  console.log('[env_init] Azure v1 shim patch: already present.');
+  process.exit(0);
+}
+const azureFlagNeedle = "    let isBankr = false\n    try {";
+const azureFlagReplacement = "    let isAzureOpenAIV1 = false\n    try {\n      const { pathname } = new URL(request.baseUrl)\n      isAzureOpenAIV1 = isAzure && /\\/openai\\/v1\\/?$/i.test(pathname)\n    } catch { /* malformed URL — not Azure OpenAI v1 */ }\n\n    let isBankr = false\n    try {";
+if (c.includes(azureFlagNeedle)) {
+  c = c.replace(azureFlagNeedle, azureFlagReplacement);
+} else {
+  console.log('[env_init] Azure v1 shim patch: flag needle not found, skipping.');
+  process.exit(0);
+}
+const azureAuthNeedle = "      } else if (isAzure) {\n        // Azure uses api-key header instead of Bearer token\n        headers['api-key'] = authValue";
+const azureAuthReplacement = "      } else if (isAzure && !isAzureOpenAIV1) {\n        // Azure uses api-key header instead of Bearer token for legacy deployment endpoints.\n        headers['api-key'] = authValue";
+if (c.includes(azureAuthNeedle)) {
+  c = c.replace(azureAuthNeedle, azureAuthReplacement);
+} else {
+  console.log('[env_init] Azure v1 shim patch: auth needle not found, skipping.');
+  process.exit(0);
+}
+const azureUrlNeedle = "      if (isAzure) {\n        const apiVersion = process.env.AZURE_OPENAI_API_VERSION ?? '2024-12-01-preview'";
+const azureUrlReplacement = "      if (isAzure) {\n        const normalizedBaseForV1 = baseUrl.replace(/\\/+$/, '')\n        if (/\\/openai\\/v1$/i.test(normalizedBaseForV1)) {\n          // CappyCloud Azure AI Foundry v1: OpenAI-compatible path, model is the deployment name.\n          return `${normalizedBaseForV1}/chat/completions`\n        }\n        const apiVersion = process.env.AZURE_OPENAI_API_VERSION ?? '2024-12-01-preview'";
+if (c.includes(azureUrlNeedle)) {
+  c = c.replace(azureUrlNeedle, azureUrlReplacement);
+} else {
+  console.log('[env_init] Azure v1 shim patch: URL needle not found, skipping.');
+  process.exit(0);
+}
+fs.writeFileSync(file, c);
+console.log('[env_init] Azure v1 shim patch applied.');
+PATCH_EOF
+fi
+
 # ── Patch openclaude gRPC: modelo dinâmico por request ───────
 # O QueryEngine recebe `userSpecifiedModel`, mas partes do shim OpenAI ainda
 # consultam process.env.OPENAI_MODEL. Em modo gRPC/headless, alinhar a env ao
@@ -232,7 +276,7 @@ if [ -f "$_GRPC_TS" ]; then
 const fs = require('fs');
 const file = process.argv[2];
 let c = fs.readFileSync(file, 'utf8');
-if (c.includes('CappyCloud dynamic model override') && c.includes('CappyCloud billable usage')) {
+if (c.includes('CappyCloud dynamic model override') && c.includes('CappyCloud provider override') && c.includes('CappyCloud billable usage')) {
   console.log('[env_init] gRPC dynamic model patch: already present.');
   process.exit(0);
 }
@@ -241,12 +285,22 @@ if (c.includes(importNeedle) && !c.includes("from '../cost-tracker.js'")) {
   c = c.replace(importNeedle, importNeedle + "\nimport { getModelUsage } from '../cost-tracker.js'");
 }
 const needle = "          const req = clientMessage.request\n          sessionId = req.session_id || ''";
-const replacement = "          const req = clientMessage.request\n          const requestedModel = String(req.model || '').trim()\n          const previousOpenAIModel = process.env.OPENAI_MODEL\n          if (requestedModel) {\n            // CappyCloud dynamic model override: OpenAI shim fallback paths read OPENAI_MODEL.\n            process.env.OPENAI_MODEL = requestedModel\n            console.log(`[grpc] dynamic model override: ${requestedModel}`)\n          }\n          sessionId = req.session_id || ''";
+const replacement = "          const req = clientMessage.request\n          const requestedModel = String(req.model || '').trim()\n          const requestedProviderBaseUrl = String(req.provider_base_url || '').trim().replace(/\\/+$/, '')\n          const requestedProviderApiKey = String(req.provider_api_key || '').trim()\n          const requestedProviderApiFormat = String(req.provider_api_format || '').trim()\n          const previousOpenAIModel = process.env.OPENAI_MODEL\n          const previousOpenAIBaseUrl = process.env.OPENAI_BASE_URL\n          const previousOpenAIApiKey = process.env.OPENAI_API_KEY\n          const previousOpenAIApiFormat = process.env.OPENAI_API_FORMAT\n          if (requestedModel) {\n            // CappyCloud dynamic model override: OpenAI shim fallback paths read OPENAI_MODEL.\n            process.env.OPENAI_MODEL = requestedModel\n            console.log(`[grpc] dynamic model override: ${requestedModel}`)\n          }\n          if (requestedProviderBaseUrl && requestedProviderApiKey) {\n            // CappyCloud provider override: route this request to the selected provider without logging secrets.\n            process.env.OPENAI_BASE_URL = requestedProviderBaseUrl\n            process.env.OPENAI_API_KEY = requestedProviderApiKey\n            if (requestedProviderApiFormat === 'responses' || requestedProviderApiFormat === 'chat_completions') {\n              process.env.OPENAI_API_FORMAT = requestedProviderApiFormat\n            }\n            console.log(`[grpc] provider override: ${requestedProviderBaseUrl} format=${process.env.OPENAI_API_FORMAT || 'chat_completions'}`)\n          }\n          sessionId = req.session_id || ''";
 if (c.includes(needle)) {
   c = c.replace(needle, replacement);
 } else if (!c.includes('CappyCloud dynamic model override')) {
   console.log('[env_init] gRPC dynamic model patch: needle not found, skipping.');
   process.exit(0);
+}
+const providerVarsNeedle = "          const requestedModel = String(req.model || '').trim()\n          const previousOpenAIModel = process.env.OPENAI_MODEL\n          if (requestedModel) {";
+const providerVarsReplacement = "          const requestedModel = String(req.model || '').trim()\n          const requestedProviderBaseUrl = String(req.provider_base_url || '').trim().replace(/\\/+$/, '')\n          const requestedProviderApiKey = String(req.provider_api_key || '').trim()\n          const requestedProviderApiFormat = String(req.provider_api_format || '').trim()\n          const previousOpenAIModel = process.env.OPENAI_MODEL\n          const previousOpenAIBaseUrl = process.env.OPENAI_BASE_URL\n          const previousOpenAIApiKey = process.env.OPENAI_API_KEY\n          const previousOpenAIApiFormat = process.env.OPENAI_API_FORMAT\n          if (requestedModel) {";
+if (!c.includes('CappyCloud provider override') && c.includes(providerVarsNeedle)) {
+  c = c.replace(providerVarsNeedle, providerVarsReplacement);
+}
+const providerBlockNeedle = "          if (requestedModel) {\n            // CappyCloud dynamic model override: OpenAI shim fallback paths read OPENAI_MODEL.\n            process.env.OPENAI_MODEL = requestedModel\n            console.log(`[grpc] dynamic model override: ${requestedModel}`)\n          }\n          sessionId = req.session_id || ''";
+const providerBlockReplacement = "          if (requestedModel) {\n            // CappyCloud dynamic model override: OpenAI shim fallback paths read OPENAI_MODEL.\n            process.env.OPENAI_MODEL = requestedModel\n            console.log(`[grpc] dynamic model override: ${requestedModel}`)\n          }\n          if (requestedProviderBaseUrl && requestedProviderApiKey) {\n            // CappyCloud provider override: route this request to the selected provider without logging secrets.\n            process.env.OPENAI_BASE_URL = requestedProviderBaseUrl\n            process.env.OPENAI_API_KEY = requestedProviderApiKey\n            if (requestedProviderApiFormat === 'responses' || requestedProviderApiFormat === 'chat_completions') {\n              process.env.OPENAI_API_FORMAT = requestedProviderApiFormat\n            }\n            console.log(`[grpc] provider override: ${requestedProviderBaseUrl} format=${process.env.OPENAI_API_FORMAT || 'chat_completions'}`)\n          }\n          sessionId = req.session_id || ''";
+if (!c.includes('CappyCloud provider override') && c.includes(providerBlockNeedle)) {
+  c = c.replace(providerBlockNeedle, providerBlockReplacement);
 }
 const usageNeedle = "          // Track accumulated response data for FinalResponse\n          let fullText = ''";
 const usageReplacement = "          // Track accumulated response data for FinalResponse\n          const usageBefore = JSON.parse(JSON.stringify(getModelUsage()))\n          let fullText = ''";
@@ -274,11 +328,15 @@ if (c.includes('CappyCloud accumulated usage: OpenRouter bills every tool-loop A
   );
 }
 const resetNeedle = "          engine = null\n\n        } else if (clientMessage.input) {";
-const resetReplacement = "          engine = null\n          if (typeof previousOpenAIModel === 'string') {\n            process.env.OPENAI_MODEL = previousOpenAIModel\n          } else {\n            delete process.env.OPENAI_MODEL\n          }\n\n        } else if (clientMessage.input) {";
+const resetReplacement = "          engine = null\n          if (typeof previousOpenAIModel === 'string') {\n            process.env.OPENAI_MODEL = previousOpenAIModel\n          } else {\n            delete process.env.OPENAI_MODEL\n          }\n          if (typeof previousOpenAIBaseUrl === 'string') {\n            process.env.OPENAI_BASE_URL = previousOpenAIBaseUrl\n          } else {\n            delete process.env.OPENAI_BASE_URL\n          }\n          if (typeof previousOpenAIApiKey === 'string') {\n            process.env.OPENAI_API_KEY = previousOpenAIApiKey\n          } else {\n            delete process.env.OPENAI_API_KEY\n          }\n          if (typeof previousOpenAIApiFormat === 'string') {\n            process.env.OPENAI_API_FORMAT = previousOpenAIApiFormat\n          } else {\n            delete process.env.OPENAI_API_FORMAT\n          }\n\n        } else if (clientMessage.input) {";
 if (!c.includes(resetNeedle)) {
   console.log('[env_init] gRPC dynamic model reset patch: needle not found, skipping reset.');
 } else {
   c = c.replace(resetNeedle, resetReplacement);
+}
+const dynamicResetNeedle = "          engine = null\n          if (typeof previousOpenAIModel === 'string') {\n            process.env.OPENAI_MODEL = previousOpenAIModel\n          } else {\n            delete process.env.OPENAI_MODEL\n          }\n\n        } else if (clientMessage.input) {";
+if (!c.includes('process.env.OPENAI_BASE_URL = previousOpenAIBaseUrl') && c.includes(dynamicResetNeedle)) {
+  c = c.replace(dynamicResetNeedle, resetReplacement);
 }
 fs.writeFileSync(file, c);
 console.log('[env_init] gRPC dynamic model patch applied.');

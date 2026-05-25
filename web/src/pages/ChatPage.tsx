@@ -1077,6 +1077,7 @@ export function ChatPage() {
         onActionRequired(action) { setStreamActivityAt(Date.now()); setPendingAction(action) },
         onStatus(status) {
           setStreamActivityAt(Date.now())
+          if (!status.stage) return
           const statusWithMode = { ...status, mode: status.mode ?? 'initializing' }
           setSessionProgress((prev) =>
             reduceSessionProgress(
@@ -1237,6 +1238,7 @@ export function ChatPage() {
         onActionRequired(action) { setStreamActivityAt(Date.now()); setPendingAction(action) },
         onStatus(status) {
           setStreamActivityAt(Date.now())
+          if (!status.stage) return
           const statusWithMode = { ...status, mode: status.mode ?? 'initializing' }
           setSessionProgress((prev) =>
             reduceSessionProgress(

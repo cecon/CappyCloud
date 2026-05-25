@@ -47,12 +47,14 @@ class TaskRunner:
         db_url: str,
         model_used: str = "",
         conversation_id: str | None = None,
+        emit_session_progress: bool = True,
     ) -> None:
         self._task_id = task_id
         self._session = session
         self._db_url = db_url
         self._model_used = model_used
         self._conversation_id = conversation_id
+        self._emit_session_progress = emit_session_progress
         self._text_parts: list[str] = []
         self._last_error_message: str | None = None
         self._pool: asyncpg.Pool | None = None
@@ -155,15 +157,16 @@ class TaskRunner:
                     "action_required",
                 ):
                     agent_stage_marked = True
-                    await self._insert_event(
-                        "status",
-                        {
-                            "message": "Agente respondeu",
-                            "stage": "agent",
-                            "mode": "initializing",
-                            "state": "done",
-                        },
-                    )
+                    if self._emit_session_progress:
+                        await self._insert_event(
+                            "status",
+                            {
+                                "message": "Agente respondeu",
+                                "stage": "agent",
+                                "mode": "initializing",
+                                "state": "done",
+                            },
+                        )
 
                 if event_type == "action_required":
                     await self._update_task(status="paused")

@@ -12,7 +12,10 @@ from ._environment_manager import EnvironmentManager
 from ._evidence_prefetch import inject_evidence_prefetch
 from ._grpc_session import GrpcSession
 from ._orphan_recovery import reconnect_orphaned_tasks
-from ._pipeline_helpers import build_prompt_with_worktree_context
+from ._pipeline_helpers import (
+    build_prompt_with_worktree_context,
+    resolve_model_provider_runtime_config,
+)
 from ._session_store import SessionStore
 from ._task_events import (
     insert_error_event,
@@ -208,32 +211,34 @@ class TaskDispatcher:
                 sandbox_id=sandbox_id,
             )
             sandbox = lease.record
-            mode = "initializing" if lease.created else "resuming"
-            session_message = "Sessão criada" if lease.created else "Sessão retomada"
-            repository_message = (
-                "Repositório preparado" if lease.created else "Repositório sincronizado"
-            )
-            await insert_status_event(
-                self._pool, task_id, "Sessão do agente preparada.", "session", mode
-            )
-            if repos:
-                repo_slugs = ", ".join(
-                    str(repo.get("slug") or repo.get("alias") or "?") for repo in repos
-                )
+            emit_session_progress = lease.created
+            if emit_session_progress:
                 await insert_status_event(
                     self._pool,
                     task_id,
-                    f"{repository_message}: {repo_slugs}.",
-                    "repository",
-                    mode,
+                    "Sessão do agente preparada.",
+                    "session",
+                    "initializing",
                 )
-            await insert_status_event(
-                self._pool,
-                task_id,
-                f"{session_message} em {sandbox.working_directory}",
-                "ready",
-                mode,
-            )
+                if repos:
+                    repo_slugs = ", ".join(
+                        str(repo.get("slug") or repo.get("alias") or "?")
+                        for repo in repos
+                    )
+                    await insert_status_event(
+                        self._pool,
+                        task_id,
+                        f"Repositório preparado: {repo_slugs}.",
+                        "repository",
+                        "initializing",
+                    )
+                await insert_status_event(
+                    self._pool,
+                    task_id,
+                    f"Sessão criada em {sandbox.working_directory}",
+                    "ready",
+                    "initializing",
+                )
         except Exception as exc:
             log.exception(
                 "[Dispatcher] Falha ao criar sessão para task %s", task_id[:8]
@@ -284,22 +289,32 @@ class TaskDispatcher:
             session_root=session_root or sandbox.session_root,
         )
 
+        effective_model = override_model or self._model
+        provider_config = await resolve_model_provider_runtime_config(
+            self._db_url,
+            effective_model,
+        )
+
         session = GrpcSession(
             container_ip=sandbox.grpc_host,
             grpc_port=sandbox.grpc_port,
             session_id=f"{user_id}:{chat_id}",
-            model=override_model or self._model,
+            model=effective_model,
             working_directory=working_directory,
+            provider_base_url=provider_config.base_url if provider_config else "",
+            provider_api_key=provider_config.api_key if provider_config else "",
+            provider_api_format=provider_config.api_format if provider_config else "",
         )
 
-        await insert_status_event(
-            self._pool,
-            task_id,
-            "Aguardando resposta do agente.",
-            "agent",
-            mode,
-            state="active",
-        )
+        if emit_session_progress:
+            await insert_status_event(
+                self._pool,
+                task_id,
+                "Aguardando resposta do agente.",
+                "agent",
+                "initializing",
+                state="active",
+            )
         try:
             await session.start(prompt, attachments=attachments)
         except Exception as exc:
@@ -322,8 +337,9 @@ class TaskDispatcher:
             task_id=task_id,
             session=session,
             db_url=self._db_url,
-            model_used=override_model or self._model,
+            model_used=effective_model,
             conversation_id=conversation_id,
+            emit_session_progress=emit_session_progress,
         )
         self._runners[task_id] = runner
         await runner.start()

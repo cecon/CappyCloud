@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import suppress
 from queue import Queue
-from typing import Optional
 
 import grpc.aio
 import openclaude_pb2
@@ -59,21 +59,43 @@ class GrpcSession:
         session_id: str,
         model: str,
         working_directory: str = "/workspace",
+        provider_base_url: str = "",
+        provider_api_key: str = "",
+        provider_api_format: str = "",
     ) -> None:
         self._ip = container_ip
         self._port = grpc_port
         self._session_id = session_id
         self._model = model
         self._wd = working_directory
+        self._provider_base_url = provider_base_url
+        self._provider_api_key = provider_api_key
+        self._provider_api_format = provider_api_format
 
         # Client → gRPC server: ChatRequest and UserInput messages
         self._req_queue: asyncio.Queue = asyncio.Queue()
         # gRPC server → pipeline: (event_type, data) tuples
         self._out_queue: asyncio.Queue = asyncio.Queue()
 
-        self.pending_action: Optional[PendingAction] = None
-        self._task: Optional[asyncio.Task] = None
-        self._channel: Optional[grpc.aio.Channel] = None
+        self.pending_action: PendingAction | None = None
+        self._task: asyncio.Task | None = None
+        self._channel: grpc.aio.Channel | None = None
+
+    def _chat_request(
+        self,
+        message: str,
+        attachments: list[dict] | None = None,
+    ):
+        return openclaude_pb2.ChatRequest(
+            message=message,
+            working_directory=self._wd,
+            session_id=self._session_id,
+            model=self._model,
+            provider_base_url=self._provider_base_url,
+            provider_api_key=self._provider_api_key,
+            provider_api_format=self._provider_api_format,
+            attachments=_build_attachments_pb(attachments),
+        )
 
     # ── Startup ──────────────────────────────────────────────────
 
@@ -92,13 +114,7 @@ class GrpcSession:
 
         await self._req_queue.put(
             openclaude_pb2.ClientMessage(
-                request=openclaude_pb2.ChatRequest(
-                    message=message,
-                    working_directory=self._wd,
-                    session_id=self._session_id,
-                    model=self._model,
-                    attachments=_build_attachments_pb(attachments),
-                )
+                request=self._chat_request(message, attachments=attachments)
             )
         )
 
@@ -131,12 +147,7 @@ class GrpcSession:
         """Send a new message in an existing conversation (no pending action)."""
         await self._req_queue.put(
             openclaude_pb2.ClientMessage(
-                request=openclaude_pb2.ChatRequest(
-                    message=message,
-                    working_directory=self._wd,
-                    session_id=self._session_id,
-                    attachments=_build_attachments_pb(attachments),
-                )
+                request=self._chat_request(message, attachments=attachments)
             )
         )
 
@@ -159,7 +170,7 @@ class GrpcSession:
                     event_type, data = await asyncio.wait_for(
                         self._out_queue.get(), timeout=loop_timeout
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     out_q.put(("timeout", None))
                     return
 
@@ -190,10 +201,8 @@ class GrpcSession:
         if self._task:
             self._task.cancel()
         if self._channel:
-            try:
+            with suppress(Exception):
                 await self._channel.close()
-            except Exception:
-                pass
 
     _STOP = object()  # Sentinel to terminate the request generator
 
@@ -283,7 +292,5 @@ class GrpcSession:
             await self._out_queue.put(("error", str(exc)))
         finally:
             if self._channel:
-                try:
+                with suppress(Exception):
                     await self._channel.close()
-                except Exception:
-                    pass

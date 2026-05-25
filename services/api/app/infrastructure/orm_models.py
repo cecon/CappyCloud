@@ -294,7 +294,16 @@ from app.infrastructure.orm_models_execution import (  # noqa: F401, E402
     Routine,
     RoutineRun,
 )
-from app.infrastructure.orm_models_mcp import McpServer  # noqa: F401, E402
+from app.infrastructure.orm_models_graph import (  # noqa: F401, E402
+    GraphEdge,
+    GraphNode,
+    GraphReconciliationRun,
+)
+from app.infrastructure.orm_models_mcp import (  # noqa: F401, E402
+    McpServer,
+    McpToolInvocation,
+    UserMcpServer,
+)
 from app.infrastructure.orm_models_platform import (  # noqa: F401, E402
     AiModel,
     AiProvider,

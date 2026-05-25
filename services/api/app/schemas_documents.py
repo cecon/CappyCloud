@@ -8,13 +8,13 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 # Tipos de fonte aceites na criação. ``text`` permite colar conteúdo direto.
-_SOURCE_TYPES = {"pdf", "xlsx", "url", "text"}
+_SOURCE_TYPES = {"pdf", "xlsx", "url", "text", "markdown", "txt", "docx"}
 
 
 class DocumentCreate(BaseModel):
     """Cria um documento por URL ou texto colado.
 
-    Para upload de ficheiros (PDF/XLSX) usa o endpoint multipart dedicado.
+    Para upload de arquivos (PDF/XLSX/Markdown/TXT/DOCX) usa o endpoint multipart dedicado.
     """
 
     source_type: str = Field(min_length=2, max_length=32)

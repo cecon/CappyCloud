@@ -22,6 +22,12 @@ const userLinks: SettingsLink[] = [
     title: 'Skills',
     description: 'Manter instruções reutilizáveis do agente.',
   },
+  {
+    to: '/mcp',
+    icon: 'lan',
+    title: 'MCP Server',
+    description: 'Endpoints para ferramentas externas consultarem repositórios.',
+  },
 ]
 
 const adminLinks: SettingsLink[] = [

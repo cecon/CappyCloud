@@ -264,6 +264,7 @@ class GitProviderOut(BaseModel):
 class AiProviderCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     base_url: str = Field(default="https://openrouter.ai/api/v1", max_length=2048)
+    api_format: str = Field(default="chat_completions", max_length=32)
     api_key: str = Field(default="", description="API key em texto plano — será criptografada")
 
 
@@ -271,6 +272,7 @@ class AiProviderOut(BaseModel):
     id: uuid.UUID
     name: str
     base_url: str
+    api_format: str = "chat_completions"
     active: bool
     last_synced_at: datetime | None = None
     created_at: datetime
@@ -307,7 +309,7 @@ class AiModelOut(BaseModel):
 
 
 class AiModelSyncResult(BaseModel):
-    """Resultado de um sync de catálogo OpenRouter → DB."""
+    """Resultado de um sync de catálogo de modelos → DB."""
 
     provider_id: uuid.UUID
     fetched: int
@@ -383,7 +385,7 @@ class ConversationUsage(BaseModel):
 
 class SendMessageBody(BaseModel):
     content: str = Field(min_length=1, max_length=1_000_000)
-    # OpenRouter model ID (ex.: anthropic/claude-3.5-sonnet). None usa default.
+    # Model ID do catálogo ai_models. None usa o default ativo de texto.
     model_id: str | None = Field(default=None, max_length=256)
     # Anexos previamente carregados via POST /conversations/{id}/attachments.
     attachment_ids: list[uuid.UUID] | None = None
