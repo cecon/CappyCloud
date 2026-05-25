@@ -64,7 +64,9 @@ async def persist_final_message_if_missing(
             )
             if task is None:
                 return
-            existing = await _find_existing_response_message(conn, conv_id, content, task)
+            existing = await _find_existing_response_message(
+                conn, conv_id, content, task
+            )
             if existing:
                 await _clean_existing_message(conn, existing, content, task)
                 return
@@ -86,7 +88,9 @@ async def persist_final_message_if_missing(
                 _decimal_cost(task["cost_usd"]),
             )
     except Exception as exc:
-        log.warning("[TaskRunner %s] final message persistence failed: %s", task_id[:8], exc)
+        log.warning(
+            "[TaskRunner %s] final message persistence failed: %s", task_id[:8], exc
+        )
 
 
 async def _find_existing_response_message(

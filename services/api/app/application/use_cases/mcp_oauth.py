@@ -2,20 +2,34 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import re
 import secrets
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
-
-from jose import JWTError, jwt
 
 from app.application.use_cases.mcp_oauth_clients import (
     server_id_from_static_client_id,
     static_redirect_allowed,
+)
+from app.application.use_cases.mcp_oauth_utils import (
+    OAUTH_TOKEN_PREFIX as OAUTH_TOKEN_PREFIX,
+)
+from app.application.use_cases.mcp_oauth_utils import (
+    McpOAuthError,
+    McpOAuthTokenCodec,
+    server_id_from_resource,
+)
+from app.application.use_cases.mcp_oauth_utils import (
+    canonical_resource as _canonical_resource,
+)
+from app.application.use_cases.mcp_oauth_utils import (
+    issuer_from_resource as _issuer_from_resource,
+)
+from app.application.use_cases.mcp_oauth_utils import (
+    pkce_matches as _pkce_matches,
+)
+from app.application.use_cases.mcp_oauth_utils import (
+    urlquote as _urlquote,
 )
 from app.application.use_cases.user_mcp_servers import hash_mcp_token
 from app.domain.entities import UserMcpServer
@@ -28,11 +42,6 @@ REFRESH_TTL_SECONDS = 30 * 24 * 60 * 60
 OAUTH_SCOPE = "repository:read"
 DEFAULT_TOKEN_ENDPOINT_AUTH_METHOD = "none"
 SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS = ("none", "client_secret_basic", "client_secret_post")
-OAUTH_TOKEN_PREFIX = "cappy_oauth_"
-
-
-class McpOAuthError(Exception):
-    """OAuth request cannot be completed."""
 
 
 class McpOAuthService:
@@ -44,8 +53,7 @@ class McpOAuthService:
         algorithm: str,
     ) -> None:
         self._repo = repo
-        self._secret = secret
-        self._algorithm = algorithm
+        self._codec = McpOAuthTokenCodec(secret=secret, algorithm=algorithm)
 
     def register_client(
         self,
@@ -59,7 +67,7 @@ class McpOAuthService:
         if token_endpoint_auth_method not in SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS:
             raise McpOAuthError("token_endpoint_auth_method inválido.")
         client_secret = secrets.token_urlsafe(32)
-        client_id = self._encode(
+        client_id = self._codec.encode(
             {
                 "typ": "mcp_oauth_client",
                 "redirect_uris": redirect_uris,
@@ -108,7 +116,7 @@ class McpOAuthService:
         if resource_server_id is not None and resource_server_id != server.id:
             raise McpOAuthError("Token MCP não pertence ao endpoint informado.")
         resolved_resource = _canonical_resource(resolved_resource)
-        code = self._encode(
+        code = self._codec.encode(
             {
                 "typ": "mcp_oauth_code",
                 "sid": str(server.id),
@@ -139,7 +147,7 @@ class McpOAuthService:
         if grant_type != "authorization_code":
             raise McpOAuthError("grant_type inválido.")
         await self._validate_client_auth(client_id, client_secret)
-        payload = self._decode(code, expected_type="mcp_oauth_code")
+        payload = self._codec.decode(code, expected_type="mcp_oauth_code")
         if payload.get("client_id") != client_id or payload.get("redirect_uri") != redirect_uri:
             raise McpOAuthError("authorization code não pertence a este cliente.")
         if not _pkce_matches(
@@ -182,7 +190,7 @@ class McpOAuthService:
         if grant_type != "refresh_token":
             raise McpOAuthError("grant_type inválido.")
         await self._validate_client_auth(client_id, client_secret)
-        payload = self._decode(refresh_token, expected_type="mcp_oauth_refresh")
+        payload = self._codec.decode(refresh_token, expected_type="mcp_oauth_refresh")
         if client_id and payload.get("client_id") != client_id:
             raise McpOAuthError("refresh token não pertence a este cliente.")
         resource = _canonical_resource(str(payload.get("resource") or payload.get("aud") or ""))
@@ -212,7 +220,7 @@ class McpOAuthService:
         if token.startswith("cappy_mcp_"):
             server = await self._server_from_mcp_token(token)
         else:
-            payload = self._decode(token, expected_type="mcp_oauth_access")
+            payload = self._codec.decode(token, expected_type="mcp_oauth_access")
             resolved = await self._repo.get_by_id(uuid.UUID(str(payload["sid"])))
             if resolved is None or not resolved.enabled:
                 raise McpOAuthError("MCP server desativado ou inexistente.")
@@ -257,11 +265,11 @@ class McpOAuthService:
             "resource": resource,
             "scope": OAUTH_SCOPE,
         }
-        access_token = self._encode_opaque_oauth_token(
+        access_token = self._codec.encode_opaque(
             {"typ": "mcp_oauth_access", "jti": secrets.token_urlsafe(16), **base},
             ttl_seconds=ACCESS_TTL_SECONDS,
         )
-        refresh_token = self._encode_opaque_oauth_token(
+        refresh_token = self._codec.encode_opaque(
             {"typ": "mcp_oauth_refresh", "jti": secrets.token_urlsafe(16), **base},
             ttl_seconds=REFRESH_TTL_SECONDS,
         )
@@ -272,7 +280,7 @@ class McpOAuthService:
             if not static_redirect_allowed(redirect_uri):
                 raise McpOAuthError("redirect_uri não permitida para este client_id.")
             return
-        payload = self._decode(client_id, expected_type="mcp_oauth_client")
+        payload = self._codec.decode(client_id, expected_type="mcp_oauth_client")
         redirect_uris = payload.get("redirect_uris")
         if not isinstance(redirect_uris, list) or redirect_uri not in redirect_uris:
             raise McpOAuthError("redirect_uri não registrada para este client_id.")
@@ -286,101 +294,10 @@ class McpOAuthService:
             if not client_secret or hash_mcp_token(client_secret) != server.token_hash:
                 raise McpOAuthError("client_secret inválido.")
             return
-        payload = self._decode(client_id, expected_type="mcp_oauth_client")
+        payload = self._codec.decode(client_id, expected_type="mcp_oauth_client")
         method = str(payload.get("token_endpoint_auth_method") or "none")
         if method == "none":
             return
         secret_hash = str(payload.get("client_secret_hash") or "")
         if not client_secret or hash_mcp_token(client_secret) != secret_hash:
             raise McpOAuthError("client_secret inválido.")
-
-    def _encode(self, payload: dict[str, Any], *, ttl_seconds: int) -> str:
-        now = datetime.now(UTC)
-        data = {**payload, "iat": now, "exp": now + timedelta(seconds=ttl_seconds)}
-        return str(jwt.encode(data, self._secret, algorithm=self._algorithm))
-
-    def _encode_opaque_oauth_token(self, payload: dict[str, Any], *, ttl_seconds: int) -> str:
-        encoded = self._encode(payload, ttl_seconds=ttl_seconds)
-        wrapped = base64.urlsafe_b64encode(encoded.encode("ascii")).decode("ascii").rstrip("=")
-        return f"{OAUTH_TOKEN_PREFIX}{wrapped}"
-
-    def _decode(self, token: str, *, expected_type: str) -> dict[str, Any]:
-        token = _unwrap_opaque_oauth_token(token)
-        try:
-            payload: dict[str, Any] = jwt.decode(
-                token,
-                self._secret,
-                algorithms=[self._algorithm],
-                options={"verify_aud": False},
-            )
-        except JWTError as exc:
-            raise McpOAuthError("Token OAuth inválido ou expirado.") from exc
-        if payload.get("typ") != expected_type:
-            raise McpOAuthError("Token OAuth com finalidade inválida.")
-        return payload
-
-
-def _unwrap_opaque_oauth_token(token: str) -> str:
-    if not token.startswith(OAUTH_TOKEN_PREFIX):
-        return token
-    encoded = token.removeprefix(OAUTH_TOKEN_PREFIX)
-    padded = f"{encoded}{'=' * (-len(encoded) % 4)}"
-    try:
-        return base64.urlsafe_b64decode(padded.encode("ascii")).decode("ascii")
-    except (ValueError, UnicodeDecodeError) as exc:
-        raise McpOAuthError("Token OAuth inválido ou expirado.") from exc
-
-
-def server_id_from_resource(resource: str) -> uuid.UUID | None:
-    match = re.search(r"/api/mcp/servers/([0-9a-fA-F-]{36})(?:$|[/?#])", resource or "")
-    if not match:
-        return None
-    try:
-        return uuid.UUID(match.group(1))
-    except ValueError:
-        return None
-
-
-def _pkce_matches(verifier: str, challenge: str, method: str) -> bool:
-    if not challenge:
-        return True
-    if not verifier:
-        return False
-    if method.upper() == "S256":
-        digest = hashlib.sha256(verifier.encode("ascii")).digest()
-        encoded = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
-        return encoded == challenge
-    return verifier == challenge
-
-
-def _urlquote(value: str) -> str:
-    from urllib.parse import quote
-
-    return quote(value, safe="")
-
-
-def _canonical_resource(resource: str) -> str:
-    if not resource:
-        return ""
-    parsed = urlsplit(resource)
-    scheme = parsed.scheme.lower()
-    hostname = (parsed.hostname or "").lower()
-    port = parsed.port
-    netloc = hostname
-    if port and not ((scheme == "https" and port == 443) or (scheme == "http" and port == 80)):
-        netloc = f"{netloc}:{port}"
-    path = parsed.path.rstrip("/") or "/"
-    return urlunsplit((scheme, netloc, path, parsed.query, ""))
-
-
-def _issuer_from_resource(resource: str) -> str:
-    parsed = urlsplit(resource)
-    if not parsed.scheme or not parsed.hostname:
-        return ""
-    scheme = parsed.scheme.lower()
-    hostname = parsed.hostname.lower()
-    port = parsed.port
-    netloc = hostname
-    if port and not ((scheme == "https" and port == 443) or (scheme == "http" and port == 80)):
-        netloc = f"{netloc}:{port}"
-    return urlunsplit((scheme, netloc, "", "", ""))

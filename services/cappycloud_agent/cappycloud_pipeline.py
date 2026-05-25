@@ -25,16 +25,18 @@ from ._agent_context import (
 from ._environment_manager import EnvironmentManager
 from ._pipeline_event_stream import stream_task_events
 from ._pipeline_helpers import (
-    build_signoz_context_section,
     db_url,
-    fetch_signoz_service_names,
-    has_enabled_signoz_mcp,
     inject_repo_context,
     push_mcp_config,
     resolve_text_model_id,
     sse,
 )
 from ._session_store import SessionStore
+from ._signoz_context import (
+    build_signoz_context_section,
+    fetch_signoz_service_names,
+    has_enabled_signoz_mcp,
+)
 from ._task_dispatcher import TaskDispatcher
 
 log = logging.getLogger(__name__)

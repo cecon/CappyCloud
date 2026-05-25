@@ -5,6 +5,7 @@ Revises: d177e4b41f25
 Create Date: 2026-05-23 08:47:29.656852
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -13,8 +14,8 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'bc534248ac67'
-down_revision: Union[str, Sequence[str], None] = 'd177e4b41f25'
+revision: str = "bc534248ac67"
+down_revision: Union[str, Sequence[str], None] = "d177e4b41f25"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

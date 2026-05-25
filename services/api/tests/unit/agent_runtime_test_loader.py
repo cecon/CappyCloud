@@ -46,6 +46,10 @@ pipeline_helpers = load_agent_module(
     "services.cappycloud_agent._pipeline_helpers",
     ROOT / "services/cappycloud_agent/_pipeline_helpers.py",
 )
+signoz_context = load_agent_module(
+    "services.cappycloud_agent._signoz_context",
+    ROOT / "services/cappycloud_agent/_signoz_context.py",
+)
 pipeline_event_stream = load_agent_module(
     "services.cappycloud_agent._pipeline_event_stream",
     ROOT / "services/cappycloud_agent/_pipeline_event_stream.py",

@@ -22,6 +22,9 @@ from .agent_runtime_test_loader import (
     pipeline_helpers as _pipeline_helpers,
 )
 from .agent_runtime_test_loader import (
+    signoz_context as _signoz_context,
+)
+from .agent_runtime_test_loader import (
     task_final_message as _task_final_message,
 )
 
@@ -97,9 +100,9 @@ async def test_has_enabled_signoz_mcp_reads_by_sandbox(monkeypatch) -> None:
         captured["database_url"] = database_url
         return FakeConn()
 
-    monkeypatch.setattr(_pipeline_helpers.asyncpg, "connect", fake_connect)
+    monkeypatch.setattr(_signoz_context.asyncpg, "connect", fake_connect)
 
-    assert await _pipeline_helpers.has_enabled_signoz_mcp("postgresql://db", str(sandbox_id))
+    assert await _signoz_context.has_enabled_signoz_mcp("postgresql://db", str(sandbox_id))
     assert "sandbox_id = $1" in captured["query"]
     assert "user_id" not in captured["query"]
     assert captured["arg"] == sandbox_id
