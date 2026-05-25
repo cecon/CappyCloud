@@ -19,3 +19,14 @@ class RepositoryGraphProvider(ABC):
         max_files: int,
     ) -> dict[str, Any]:
         """Return the lightweight graph payload for a repository clone."""
+
+    @abstractmethod
+    async def fetch_commit_sha(
+        self,
+        *,
+        sandbox_host: str,
+        sandbox_port: int,
+        slug: str,
+        ref: str,
+    ) -> str:
+        """Return the resolved commit SHA for a sandbox repository ref."""

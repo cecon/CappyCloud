@@ -245,8 +245,6 @@ class StreamMessage:
             {
                 "type": "status",
                 "message": "Conexão com o agente aberta.",
-                "stage": "session",
-                "mode": "initializing",
             }
         )
 

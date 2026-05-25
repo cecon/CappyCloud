@@ -46,6 +46,7 @@ from .fakes_sandbox import (  # noqa: F401
     InMemorySandboxAgentRepository,
     InMemorySandboxRepository,
     InMemorySandboxSkillRepository,
+    InMemoryUserMcpServerRepository,
 )
 
 # ---------------------------------------------------------------------------

@@ -124,16 +124,41 @@ def _render_section(
         "validar o conteúdo relevante.",
     ]
     if docs:
+        has_repo_docs = any(hit.source == "repository_document" for hit in docs)
         parts.append("### Documentação encontrada")
-        parts.append(
-            "As páginas abaixo vieram do Confluence configurado para o repositório. "
-            "Para pergunta de suporte, configuração, integração ou procedimento, a "
-            "resposta final deve incluir uma seção `Fontes consultadas` citando "
-            "título e URL dessas páginas. Não omita a fonte documental quando ela "
-            "foi encontrada automaticamente."
+        doc_instruction = (
+            "Os itens abaixo vieram das fontes documentais configuradas para o "
+            "repositório: Confluence e/ou documentos importados indexados. "
+            "Para pergunta de suporte, configuração, integração, procedimento "
+            "ou schema importado, a resposta final deve incluir uma seção "
+            "`Fontes consultadas` citando título e URL/origem dessas fontes. "
+            "Não omita a fonte documental quando ela foi encontrada "
+            "automaticamente."
         )
+        if has_repo_docs:
+            doc_instruction += (
+                " Itens marcados como `documento importado` vieram de arquivos "
+                "Markdown, PDF, DOCX, XLSX ou textos indexados no repositório; "
+                "para perguntas sobre esses arquivos, priorize esses trechos "
+                "antes de inferir pelo código. Esses itens já foram extraídos "
+                "do índice documental do CappyCloud e os trechos exibidos aqui "
+                "já contam como conteúdo aberto do documento. Para schema "
+                "importado, blocos `#### dbo.<tabela>` abaixo são evidência "
+                "direta de tabela, PK, coluna e flag; se eles responderem à "
+                "pergunta, responda sem abrir arquivos com Grep/Read. Não tente provar a "
+                "existência do arquivo no worktree com Grep/Read e não responda "
+                "que o documento não foi localizado se esta seção trouxe trechos "
+                "dele. Se um trecho importado apontar uma tabela provável, mas "
+                "não trouxer as colunas ou flags necessárias, consulte novamente "
+                "`/skills/search` com o nome exato da tabela, por exemplo "
+                "`dbo.<tabela>`, antes de responder. Se a pergunta citar uma "
+                "tabela específica, use apenas o "
+                "bloco `#### dbo.<tabela>` correspondente dentro do trecho; não "
+                "misture PKs ou colunas de tabelas vizinhas no mesmo chunk."
+            )
+        parts.append(doc_instruction)
         parts.extend(
-            f"- `{hit.query}` → {hit.title}"
+            f"- `{hit.query}` → [{_doc_source_label(hit)}] {hit.title}"
             + (f" ({hit.url})" if hit.url else "")
             + (f": {hit.summary}" if hit.summary else "")
             for hit in docs
@@ -159,3 +184,9 @@ def _render_section(
             for hit in code
         )
     return "\n".join(parts)
+
+
+def _doc_source_label(hit: _DocHit) -> str:
+    if hit.source == "repository_document":
+        return "documento importado"
+    return "Confluence"

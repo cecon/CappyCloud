@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -27,14 +29,23 @@ class RepositoryGraphNode(BaseModel):
     import_count: int = 0
     imported_by_count: int = 0
     isolated: bool = False
+    source_extractor: str | None = None
+    extractor_version: str | None = None
+    attrs: dict[str, Any] | None = None
 
 
 class RepositoryGraphEdge(BaseModel):
     id: str
     source: str
     target: str
+    target_external: str | None = None
     type: str
     weight: int = 1
+    evidence: dict[str, Any] | None = None
+    confidence: str | None = None
+    source_extractor: str | None = None
+    extractor_version: str | None = None
+    attrs: dict[str, Any] | None = None
 
 
 class RepositoryGraphFinding(BaseModel):
@@ -45,6 +56,8 @@ class RepositoryGraphFinding(BaseModel):
     detail: str
     node_id: str
     path: str = ""
+    source: str | None = None
+    level: str | None = None
 
 
 class RepositoryGraphFile(BaseModel):
@@ -63,6 +76,8 @@ class RepositoryGraphFile(BaseModel):
     entrypoint: bool = False
     unreferenced: bool = False
     symbols: list[str] = Field(default_factory=list)
+    source_extractor: str | None = None
+    extractor_version: str | None = None
 
 
 class RepositoryGraphSymbol(BaseModel):
@@ -76,6 +91,9 @@ class RepositoryGraphSymbol(BaseModel):
     container: str = ""
     element: str = ""
     handler: str = ""
+    source_extractor: str | None = None
+    extractor_version: str | None = None
+    attrs: dict[str, Any] | None = None
 
 
 class RepositoryGraphSemanticNode(BaseModel):
@@ -85,6 +103,9 @@ class RepositoryGraphSemanticNode(BaseModel):
     path: str = ""
     line: int = 0
     detail: str = ""
+    source_extractor: str | None = None
+    extractor_version: str | None = None
+    attrs: dict[str, Any] | None = None
 
 
 class RepositoryGraphOut(BaseModel):

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.application.use_cases.admin_user_access import ModelsByTierLookup
 from app.domain.entities import ModelTier
 from app.infrastructure.orm_models_platform import AiModel as AiModelORM
+from app.infrastructure.orm_models_platform import AiProvider
 
 
 class SQLAlchemyModelsByTierLookup(ModelsByTierLookup):
@@ -18,6 +19,12 @@ class SQLAlchemyModelsByTierLookup(ModelsByTierLookup):
 
     async def list_active_model_ids_by_tier(self, tier: ModelTier) -> list[uuid.UUID]:
         result = await self._session.execute(
-            select(AiModelORM.id).where(AiModelORM.tier == tier.value, AiModelORM.active.is_(True))
+            select(AiModelORM.id)
+            .join(AiProvider)
+            .where(
+                AiModelORM.tier == tier.value,
+                AiModelORM.active.is_(True),
+                AiProvider.active.is_(True),
+            )
         )
         return list(result.scalars().all())

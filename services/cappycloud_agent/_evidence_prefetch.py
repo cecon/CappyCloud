@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 
 import httpx
 
@@ -64,7 +65,13 @@ async def inject_evidence_prefetch(
     doc_terms = parameter_numbers or terms
     async with httpx.AsyncClient(timeout=httpx.Timeout(50.0)) as client:
         docs_task = asyncio.create_task(
-            _fetch_docs(client, sandbox_session_url, repos, doc_terms)
+            _fetch_docs(
+                client,
+                sandbox_session_url,
+                repos,
+                doc_terms,
+                user_message=user_message,
+            )
         )
         if parameter_numbers:
             parameter_dirs = await _fetch_parameter_directories(
@@ -93,6 +100,8 @@ async def inject_evidence_prefetch(
                 _fetch_code(client, sandbox_session_url, repos, session_root, terms)
             )
             (docs, doc_attempts), code = await asyncio.gather(docs_task, code_task)
+            if _should_prioritize_imported_schema(user_message, docs):
+                code = []
             parameter_guard = ""
 
     evidence_section = _render_section(docs, code, doc_attempts)
@@ -100,3 +109,28 @@ async def inject_evidence_prefetch(
     if not section:
         return prompt
     return inject_section_before_user_message(prompt, section)
+
+
+def _should_prioritize_imported_schema(user_message: str, docs: list[_DocHit]) -> bool:
+    if not _looks_like_schema_request(user_message):
+        return False
+    return any(_is_imported_schema_hit(doc) for doc in docs)
+
+
+def _looks_like_schema_request(user_message: str) -> bool:
+    if "## Mensagem do utilizador" in user_message:
+        user_message = user_message.split("## Mensagem do utilizador", 1)[1]
+    return bool(
+        re.search(
+            r"\b(sql|query|consulta|consultar|listar|liste|tabela|campo|coluna|schema|banco|ddl)\b",
+            user_message,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _is_imported_schema_hit(doc: _DocHit) -> bool:
+    if doc.source != "repository_document":
+        return False
+    summary = doc.summary.lower()
+    return "#### dbo." in summary and ("- colunas:" in summary or "- pk:" in summary)

@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cappy-doc-import-extractor"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["asyncpg>=0.29.0"]
+
+[project.scripts]
+cappy-doc-import-extractor = "cappy_doc_import_extractor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

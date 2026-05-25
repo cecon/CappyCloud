@@ -15,7 +15,7 @@ import {
   TextInput,
   Title,
 } from '@mantine/core'
-import { IconPencil, IconRefresh, IconTrash } from '@tabler/icons-react'
+import { IconFileText, IconPencil, IconRefresh, IconTrash } from '@tabler/icons-react'
 import {
   createRepository,
   deleteRepository,
@@ -30,6 +30,7 @@ import {
   updateRepository,
 } from '../api'
 import { RepositoryGraphPanel } from '../components/RepositoryGraphPanel'
+import { RepositoryDocumentsModal } from '../components/RepositoryDocumentsModal'
 import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
 
 type FormState = {
@@ -102,6 +103,7 @@ export function AdminRepositoriesPage() {
 
   const [createOpen, setCreateOpen] = useState(false)
   const [editingRepo, setEditingRepo] = useState<Repository | null>(null)
+  const [documentsRepo, setDocumentsRepo] = useState<Repository | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [creating, setCreating] = useState(false)
   const [updating, setUpdating] = useState(false)
@@ -281,7 +283,7 @@ export function AdminRepositoriesPage() {
                   <Table.Th style={{ width: 120 }}>Branch</Table.Th>
                   <Table.Th>Confluence</Table.Th>
                   <Table.Th style={{ width: 120 }}>Estado</Table.Th>
-                  <ActionsHeader width={136} />
+                  <ActionsHeader width={178} />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -332,6 +334,14 @@ export function AdminRepositoriesPage() {
                     </Table.Td>
                     <ActionsCell>
                       <RowActionIcon
+                        label="Importar documentos"
+                        color="violet"
+                        disabled={busyId !== null}
+                        onClick={() => setDocumentsRepo(r)}
+                      >
+                        <IconFileText size={16} />
+                      </RowActionIcon>
+                      <RowActionIcon
                         label="Editar repositório"
                         color="gray"
                         disabled={busyId !== null}
@@ -364,6 +374,13 @@ export function AdminRepositoriesPage() {
           )}
         </Paper>
       </Stack>
+
+      <RepositoryDocumentsModal
+        opened={documentsRepo !== null}
+        repository={documentsRepo}
+        token={getToken() ?? ''}
+        onClose={() => setDocumentsRepo(null)}
+      />
 
       <Modal
         opened={createOpen}

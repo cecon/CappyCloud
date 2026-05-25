@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     vision_max_tokens: int = 800
     vision_timeout_s: int = 60
 
+    # MCP observability. Rows are sanitized and pruned once per day.
+    mcp_telemetry_retention_days: int = 180
+
 
 @lru_cache
 def get_settings() -> Settings:

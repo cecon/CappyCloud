@@ -144,6 +144,18 @@ def test_evidence_terms_prioritize_ticketlog_recolha_context() -> None:
     assert "Estavam usando motivo de" not in terms
 
 
+def test_evidence_terms_ignore_sql_request_filler_words() -> None:
+    terms = _evidence_terms._terms_for("Gere uma query para listar as empresas ativas")
+
+    assert "empresas" in terms
+    assert "ativas" in terms
+    assert "empresas ativas" in terms
+    assert "Gere" not in terms
+    assert "uma" not in terms
+    assert "query" not in terms
+    assert "listar as empresas ativas" not in terms
+
+
 async def test_evidence_prefetch_searches_confluence_space_before_labels() -> None:
     calls: list[dict[str, str]] = []
 

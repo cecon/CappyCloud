@@ -27,10 +27,12 @@ import {
   IconArrowBackUp,
   IconBoxMultiple,
   IconClick,
+  IconDatabaseImport,
   IconFileCode,
   IconFocusCentered,
   IconFunction,
   IconHandGrab,
+  IconLink,
   IconRefresh,
   IconRoute,
   IconSearch,
@@ -44,8 +46,15 @@ import type { Node as NvlNode, Relationship as NvlRelationship } from '@neo4j-nv
 import { useSearchParams } from 'react-router-dom'
 import {
   errorToUserMessage,
+  fetchGraphReconciliationSummary,
   fetchRepositoryGraph,
+  fetchRepoDocuments,
   getToken,
+  materializeRepositoryGraph,
+  reimportRepoDocumentGraph,
+  reconcileRepositoryGraph,
+  type GraphReconciliationSummary,
+  type RepoDocument,
   type Repository,
   type RepositoryGraph,
   type RepositoryGraphEdge,
@@ -93,6 +102,24 @@ type VisualRelationship = NvlRelationship & {
   from: string
   to: string
   type: string
+}
+
+type PlaceholderKindSummary = {
+  total?: number
+  resolved_strict?: number
+  resolved_fuzzy?: number
+  resolved_llm?: number
+  unresolved?: number
+}
+
+function placeholderKindSummary(
+  summary: Record<string, unknown> | null | undefined,
+  kind: 'ref_entity' | 'table_physical',
+): PlaceholderKindSummary | null {
+  const placeholderKinds = summary?.placeholder_kinds
+  if (!placeholderKinds || typeof placeholderKinds !== 'object') return null
+  const entry = (placeholderKinds as Record<string, unknown>)[kind]
+  return entry && typeof entry === 'object' ? (entry as PlaceholderKindSummary) : null
 }
 
 type VisualGraph = {
@@ -787,7 +814,13 @@ export function RepositoryGraphPanel({ repos }: RepositoryGraphPanelProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('flows')
   const [navigationStack, setNavigationStack] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
+  const [materializing, setMaterializing] = useState(false)
+  const [reimportingSchema, setReimportingSchema] = useState(false)
+  const [reconciling, setReconciling] = useState(false)
+  const [materializeStatus, setMaterializeStatus] = useState<string | null>(null)
+  const [reconciliationSummary, setReconciliationSummary] = useState<GraphReconciliationSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [documents, setDocuments] = useState<RepoDocument[]>([])
 
   const preferredRepoKey = useMemo(
     () => (searchParams.get('repo') ?? searchParams.get('repository') ?? searchParams.get('repo_id') ?? '').trim().toLowerCase(),
@@ -807,6 +840,32 @@ export function RepositoryGraphPanel({ repos }: RepositoryGraphPanelProps) {
   }, [preferredRepoKey, repos, selectedRepoId])
 
   const selectedRepo = useMemo(() => repos.find((repo) => repo.id === selectedRepoId) ?? null, [repos, selectedRepoId])
+  const schemaDocuments = useMemo(
+    () =>
+      documents.filter(
+        (doc) => doc.status === 'indexed' && ['markdown'].includes(String(doc.source_type)),
+      ),
+    [documents],
+  )
+
+  useEffect(() => {
+    const token = getToken()
+    if (!token || !selectedRepoId) {
+      setDocuments([])
+      return
+    }
+    let cancelled = false
+    fetchRepoDocuments(token, selectedRepoId)
+      .then((items) => {
+        if (!cancelled) setDocuments(items)
+      })
+      .catch(() => {
+        if (!cancelled) setDocuments([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedRepoId])
 
   const loadGraph = useCallback(async () => {
     const token = getToken()
@@ -843,9 +902,74 @@ export function RepositoryGraphPanel({ repos }: RepositoryGraphPanelProps) {
     }
   }, [selectedRepoId])
 
+  const enqueueMaterialization = useCallback(async () => {
+    const token = getToken()
+    if (!token || !selectedRepoId) return
+    setMaterializing(true)
+    setMaterializeStatus(null)
+    setError(null)
+    try {
+      const job = await materializeRepositoryGraph(token, selectedRepoId)
+      setMaterializeStatus(`Materialização enfileirada: ${job.commit_sha?.slice(0, 12) || job.job_id.slice(0, 8)}`)
+    } catch (err) {
+      setError(errorToUserMessage(err))
+    } finally {
+      setMaterializing(false)
+    }
+  }, [selectedRepoId])
+
+  const enqueueSchemaReimport = useCallback(async () => {
+    const token = getToken()
+    const document = schemaDocuments[0]
+    if (!token || !selectedRepoId || !document) return
+    setReimportingSchema(true)
+    setMaterializeStatus(null)
+    setError(null)
+    try {
+      const job = await reimportRepoDocumentGraph(token, selectedRepoId, document.id)
+      setMaterializeStatus(`Reimportação de schema enfileirada: ${job.job_id.slice(0, 8)}`)
+    } catch (err) {
+      setError(errorToUserMessage(err))
+    } finally {
+      setReimportingSchema(false)
+    }
+  }, [schemaDocuments, selectedRepoId])
+
+  const loadReconciliationSummary = useCallback(async (commitSha?: string) => {
+    const token = getToken()
+    if (!token || !selectedRepoId) return
+    try {
+      const summary = await fetchGraphReconciliationSummary(token, selectedRepoId, commitSha)
+      setReconciliationSummary(summary.summary ? summary : null)
+    } catch {
+      setReconciliationSummary(null)
+    }
+  }, [selectedRepoId])
+
+  const enqueueReconciliation = useCallback(async () => {
+    const token = getToken()
+    if (!token || !selectedRepoId) return
+    setReconciling(true)
+    setMaterializeStatus(null)
+    setError(null)
+    try {
+      const job = await reconcileRepositoryGraph(token, selectedRepoId, { mode: 'all' })
+      setMaterializeStatus(`Reconciliação enfileirada: ${job.commit_sha?.slice(0, 12) || job.job_id.slice(0, 8)}`)
+      void loadReconciliationSummary(job.commit_sha)
+    } catch (err) {
+      setError(errorToUserMessage(err))
+    } finally {
+      setReconciling(false)
+    }
+  }, [loadReconciliationSummary, selectedRepoId])
+
   useEffect(() => {
     void loadGraph()
   }, [loadGraph])
+
+  useEffect(() => {
+    void loadReconciliationSummary()
+  }, [loadReconciliationSummary])
 
   const allFiles = useMemo(() => fallbackFiles(graph), [graph])
   const allSymbols = useMemo(() => graph?.symbols ?? [], [graph])
@@ -1094,6 +1218,8 @@ export function RepositoryGraphPanel({ repos }: RepositoryGraphPanelProps) {
     value: repo.id,
     label: `${repo.name} (${repo.sandbox_status})`,
   }))
+  const refPlaceholderSummary = placeholderKindSummary(reconciliationSummary?.summary, 'ref_entity')
+  const tablePlaceholderSummary = placeholderKindSummary(reconciliationSummary?.summary, 'table_physical')
 
   return (
     <section className={styles.graphShell}>
@@ -1121,6 +1247,41 @@ export function RepositoryGraphPanel({ repos }: RepositoryGraphPanelProps) {
               <IconRefresh size={16} />
             </ActionIcon>
           </Tooltip>
+          <Tooltip label="Re-materializar graph persistente">
+            <ActionIcon
+              variant="light"
+              color="grape"
+              onClick={() => void enqueueMaterialization()}
+              loading={materializing}
+              aria-label="Re-materializar graph"
+            >
+              <IconDatabaseImport size={16} />
+            </ActionIcon>
+          </Tooltip>
+          {schemaDocuments.length > 0 && (
+            <Tooltip label="Re-importar schema do documento">
+              <ActionIcon
+                variant="light"
+                color="teal"
+                onClick={() => void enqueueSchemaReimport()}
+                loading={reimportingSchema}
+                aria-label="Re-importar schema"
+              >
+                <IconDatabaseImport size={16} />
+              </ActionIcon>
+            </Tooltip>
+          )}
+          <Tooltip label="Reconciliar refs Roslyn com schema">
+            <ActionIcon
+              variant="light"
+              color="orange"
+              onClick={() => void enqueueReconciliation()}
+              loading={reconciling}
+              aria-label="Reconciliar referências"
+            >
+              <IconLink size={16} />
+            </ActionIcon>
+          </Tooltip>
         </Group>
       </Group>
 
@@ -1133,6 +1294,43 @@ export function RepositoryGraphPanel({ repos }: RepositoryGraphPanelProps) {
       {error && (
         <Alert color="red" mt="md" title="Não foi possível carregar o graph">
           {error}
+        </Alert>
+      )}
+
+      {materializeStatus && (
+        <Alert color="violet" mt="md">
+          {materializeStatus}
+        </Alert>
+      )}
+
+      {reconciliationSummary?.summary && (
+        <Alert color="orange" mt="md" title="Resumo da reconciliação">
+          <Group gap="xs">
+            <Badge variant="light" color="green">
+              strict {String(reconciliationSummary.summary.resolved_strict ?? 0)}
+            </Badge>
+            <Badge variant="light" color="yellow">
+              fuzzy {String(reconciliationSummary.summary.resolved_fuzzy ?? 0)}
+            </Badge>
+            <Badge variant="light" color="blue">
+              llm {String(reconciliationSummary.summary.resolved_llm ?? 0)}
+            </Badge>
+            <Badge variant="light" color="gray">
+              sem match {String(reconciliationSummary.summary.unresolved_llm_no_match ?? 0)}
+            </Badge>
+            {refPlaceholderSummary && (
+              <Badge variant="light" color="violet">
+                refs {String(refPlaceholderSummary.resolved_strict ?? 0)}/
+                {String(refPlaceholderSummary.total ?? 0)}
+              </Badge>
+            )}
+            {tablePlaceholderSummary && (
+              <Badge variant="light" color="cyan">
+                tabelas {String(tablePlaceholderSummary.resolved_strict ?? 0)}/
+                {String(tablePlaceholderSummary.total ?? 0)}
+              </Badge>
+            )}
+          </Group>
         </Alert>
       )}
 

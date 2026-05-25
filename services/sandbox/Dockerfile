@@ -32,6 +32,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libcairo2 \
     && rm -rf /var/lib/apt/lists/*
 
+# ── .NET 8 SDK para build/runtime do extractor Roslyn C# ─────
+RUN curl -fsSL https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb \
+        -o /tmp/packages-microsoft-prod.deb \
+    && dpkg -i /tmp/packages-microsoft-prod.deb \
+    && rm /tmp/packages-microsoft-prod.deb \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends dotnet-sdk-8.0 \
+    && rm -rf /var/lib/apt/lists/*
+
 # ── Python libs para geração de artefactos (relatórios, diagramas) ──
 # Instalados system-wide (--break-system-packages é seguro neste container
 # isolado e elimina a fricção de venv para cada task do agente).
@@ -87,14 +96,14 @@ ENV PATH="/root/.bun/bin:${PATH}"
 
 # ── Clone and build openclaude from source ────────────────────
 ARG OPENCLAUDE_REF=f71e7692373a61d28c82fc3fadff3feaa4071ede
-COPY patches/grep-tool-n-alias.patch /tmp/grep-tool-n-alias.patch
-COPY patches/auto-approve-tools.patch /tmp/auto-approve-tools.patch
-COPY patches/multimodal-proto.patch /tmp/multimodal-proto.patch
-COPY patches/multimodal-grpc-handler.patch /tmp/multimodal-grpc-handler.patch
-COPY patches/mcp-grpc-integration.patch /tmp/mcp-grpc-integration.patch
-COPY patches/worktree-tool-guard.patch /tmp/worktree-tool-guard.patch
-COPY patches/numeric-parameter-grep-guard.patch /tmp/numeric-parameter-grep-guard.patch
-COPY patches/numeric-parameter-grep-wrapper.patch /tmp/numeric-parameter-grep-wrapper.patch
+COPY services/sandbox/patches/grep-tool-n-alias.patch /tmp/grep-tool-n-alias.patch
+COPY services/sandbox/patches/auto-approve-tools.patch /tmp/auto-approve-tools.patch
+COPY services/sandbox/patches/multimodal-proto.patch /tmp/multimodal-proto.patch
+COPY services/sandbox/patches/multimodal-grpc-handler.patch /tmp/multimodal-grpc-handler.patch
+COPY services/sandbox/patches/mcp-grpc-integration.patch /tmp/mcp-grpc-integration.patch
+COPY services/sandbox/patches/worktree-tool-guard.patch /tmp/worktree-tool-guard.patch
+COPY services/sandbox/patches/numeric-parameter-grep-guard.patch /tmp/numeric-parameter-grep-guard.patch
+COPY services/sandbox/patches/numeric-parameter-grep-wrapper.patch /tmp/numeric-parameter-grep-wrapper.patch
 RUN sed -i 's/\r$//' /tmp/*.patch
 WORKDIR /openclaude
 RUN git init . \
@@ -118,6 +127,22 @@ RUN git init . \
     && bun install \
     && bun run build
 
+# ── C# repository graph extractor (Roslyn) ───────────────────
+COPY tools/extractors/csharp /tmp/cappy-roslyn-extractor-src
+RUN dotnet publish /tmp/cappy-roslyn-extractor-src/Cappy.RoslynExtractor.csproj \
+        -c Release \
+        -o /opt/cappy-roslyn-extractor \
+        --no-self-contained \
+    && ln -sf /opt/cappy-roslyn-extractor/cappy-roslyn-extractor \
+        /usr/local/bin/cappy-roslyn-extractor \
+    && chmod +x /opt/cappy-roslyn-extractor/cappy-roslyn-extractor \
+    && rm -rf /tmp/cappy-roslyn-extractor-src
+
+# ── SQL repository graph extractor (sqlglot) ─────────────────
+COPY tools/extractors/sql /tmp/cappy-sql-extractor-src
+RUN pip3 install --no-cache-dir --break-system-packages /tmp/cappy-sql-extractor-src \
+    && rm -rf /tmp/cappy-sql-extractor-src
+
 # ── signoz-mcp-server (binário Go, modo stdio) ────────────────
 # Detecta a arquitetura em runtime para suportar amd64 e arm64.
 # Extrai para /tmp e move o binário para evitar problemas com paths internos
@@ -138,22 +163,22 @@ RUN mkdir -p /repos
 WORKDIR /repos
 
 # ── Agent instructions injected into every workspace ──────────
-COPY CLAUDE.md /app/CLAUDE.md
+COPY services/sandbox/CLAUDE.md /app/CLAUDE.md
 
 # ── Entrypoints e scripts ─────────────────────────────────────
-COPY env_init.sh /env_init.sh
-COPY session_start.sh /session_start.sh
-COPY session_server.js /session_server.js
-COPY git_handlers.js /git_handlers.js
-COPY mcp_handler.js /mcp_handler.js
-COPY confluence_handler.js /confluence_handler.js
-COPY repo_handlers.js /repo_handlers.js
-COPY repo_graph /repo_graph
-COPY repo_graph_handlers.js /repo_graph_handlers.js
-COPY task_handler.js /task_handler.js
-COPY worktree_handlers.js /worktree_handlers.js
-COPY confluence_mcp_lib.py /usr/local/bin/confluence_mcp_lib.py
-COPY confluence_mcp_server.py /usr/local/bin/confluence-mcp-server
+COPY services/sandbox/env_init.sh /env_init.sh
+COPY services/sandbox/session_start.sh /session_start.sh
+COPY services/sandbox/session_server.js /session_server.js
+COPY services/sandbox/git_handlers.js /git_handlers.js
+COPY services/sandbox/mcp_handler.js /mcp_handler.js
+COPY services/sandbox/confluence_handler.js /confluence_handler.js
+COPY services/sandbox/repo_handlers.js /repo_handlers.js
+COPY services/sandbox/repo_graph /repo_graph
+COPY services/sandbox/repo_graph_handlers.js /repo_graph_handlers.js
+COPY services/sandbox/task_handler.js /task_handler.js
+COPY services/sandbox/worktree_handlers.js /worktree_handlers.js
+COPY services/sandbox/confluence_mcp_lib.py /usr/local/bin/confluence_mcp_lib.py
+COPY services/sandbox/confluence_mcp_server.py /usr/local/bin/confluence-mcp-server
 RUN sed -i 's/\r//' /env_init.sh /session_start.sh \
     && chmod +x /env_init.sh /session_start.sh /usr/local/bin/confluence-mcp-server
 

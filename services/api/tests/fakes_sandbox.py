@@ -13,12 +13,10 @@ from dataclasses import replace
 from app.domain.entities import (
     ContainerStatus,
     GlobalSkill,
-    McpServer,
     Sandbox,
     SandboxAgent,
     SandboxSkill,
 )
-from app.ports.mcp_repository import McpServerRepository
 from app.ports.repositories import SandboxRepository
 from app.ports.sandbox_bootstrap import SandboxBootstrapGateway
 from app.ports.sandbox_globals import SandboxAgentRepository, SandboxSkillRepository
@@ -26,6 +24,13 @@ from app.ports.sandbox_runtime import (
     RuntimeFailureError,
     RuntimeProbe,
     SandboxRuntimeGateway,
+)
+
+from tests.fakes_mcp import (
+    InMemoryMcpRepository as InMemoryMcpRepository,
+)
+from tests.fakes_mcp import (
+    InMemoryUserMcpServerRepository as InMemoryUserMcpServerRepository,
 )
 
 
@@ -61,46 +66,6 @@ class FakeRuntimeGateway(SandboxRuntimeGateway):
 
     async def remove(self, sandbox: Sandbox) -> None:
         self.calls.append("remove")
-
-
-class InMemoryMcpRepository(McpServerRepository):
-    """In-memory MCP store for testing (ADR-004 §6, por sandbox)."""
-
-    def __init__(self) -> None:
-        self._store: dict[uuid.UUID, McpServer] = {}
-
-    async def list_for_sandbox(self, sandbox_id: uuid.UUID) -> list[McpServer]:
-        rows = [m for m in self._store.values() if m.sandbox_id == sandbox_id]
-        return sorted(rows, key=lambda m: m.created_at)
-
-    async def get(self, mcp_id: uuid.UUID, sandbox_id: uuid.UUID) -> McpServer | None:
-        mcp = self._store.get(mcp_id)
-        if mcp is None or mcp.sandbox_id != sandbox_id:
-            return None
-        return mcp
-
-    async def get_by_name(self, name: str, sandbox_id: uuid.UUID) -> McpServer | None:
-        return next(
-            (m for m in self._store.values() if m.sandbox_id == sandbox_id and m.name == name),
-            None,
-        )
-
-    async def create(self, mcp: McpServer) -> McpServer:
-        self._store[mcp.id] = mcp
-        return mcp
-
-    async def update(self, mcp: McpServer) -> McpServer:
-        if mcp.id not in self._store:
-            raise ValueError(f"McpServer {mcp.id} not found")
-        self._store[mcp.id] = mcp
-        return mcp
-
-    async def delete(self, mcp_id: uuid.UUID, sandbox_id: uuid.UUID) -> bool:
-        mcp = self._store.get(mcp_id)
-        if mcp is None or mcp.sandbox_id != sandbox_id:
-            return False
-        del self._store[mcp_id]
-        return True
 
 
 class FakeSandboxBootstrap(SandboxBootstrapGateway):

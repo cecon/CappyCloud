@@ -42,8 +42,8 @@ services:
   # Único serviço com volume de repositórios — a API não monta /repos.
   sandbox:
     build:
-      context: services/sandbox
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/sandbox/Dockerfile
     container_name: cappycloud-sandbox
     restart: unless-stopped
     environment:
@@ -85,11 +85,11 @@ services:
       SANDBOX_IDLE_TIMEOUT: ${SANDBOX_IDLE_TIMEOUT:-1800}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       REDIS_URL: redis://redis:6379
-      # Embeddings (RAG): por default usa OpenRouter (mesma chave que o chat).
-      # Para usar OpenAI direto, define EMBEDDING_API_KEY + EMBEDDING_BASE_URL.
-      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-${OPENROUTER_API_KEY:-}}
-      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://openrouter.ai/api/v1}
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openai/text-embedding-3-small}
+      # Embeddings (RAG): preferir catálogo ai_models com capability "embedding".
+      # Fallback por env só é usado quando as três vars EMBEDDING_* são explícitas.
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-CHANGE_ME_internal_token}
     networks:
       - cappycloud_net

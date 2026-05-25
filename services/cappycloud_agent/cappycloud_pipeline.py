@@ -25,16 +25,18 @@ from ._agent_context import (
 from ._environment_manager import EnvironmentManager
 from ._pipeline_event_stream import stream_task_events
 from ._pipeline_helpers import (
-    build_signoz_context_section,
     db_url,
-    fetch_signoz_service_names,
-    has_enabled_signoz_mcp,
     inject_repo_context,
     push_mcp_config,
     resolve_text_model_id,
     sse,
 )
 from ._session_store import SessionStore
+from ._signoz_context import (
+    build_signoz_context_section,
+    fetch_signoz_service_names,
+    has_enabled_signoz_mcp,
+)
 from ._task_dispatcher import TaskDispatcher
 
 log = logging.getLogger(__name__)
@@ -135,8 +137,6 @@ class Pipeline:
             {
                 "type": "status",
                 "message": "Preparando contexto da conversa.",
-                "stage": "session",
-                "mode": "initializing",
             }
         )
 
@@ -256,8 +256,6 @@ class Pipeline:
             {
                 "type": "status",
                 "message": "Sincronizando configuração do agente.",
-                "stage": "session",
-                "mode": "initializing",
             }
         )
         self._run(
@@ -307,9 +305,7 @@ class Pipeline:
 
         yield from self._stream_events(task_id, cursor)
 
-    def _stream_events(
-        self, task_id: str, cursor: int | None
-    ) -> Generator[str]:
+    def _stream_events(self, task_id: str, cursor: int | None) -> Generator[str]:
         if self._loop is None:
             return
         yield from stream_task_events(

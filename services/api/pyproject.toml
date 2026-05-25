@@ -22,6 +22,7 @@ dev = [
     "ruff>=0.15",
     "mypy>=1.16",
     "pre-commit>=3.8",
+    "sqlglot==30.8.0",
     "types-passlib>=1.7",
     "mutmut>=2.5",
 ]
@@ -114,7 +115,12 @@ omit = [
     # MCP Servers — HTTP router + repo adapter + use cases + catálogo externo.
     # Integração com openclaude requer sandbox; cobertura via testes de integração.
     "app/adapters/primary/http/mcp_servers.py",
+    "app/adapters/primary/http/mcp_oauth.py",
+    "app/adapters/primary/http/repository_mcp.py",
+    "app/adapters/primary/http/user_mcp_servers.py",
     "app/adapters/secondary/persistence/sqlalchemy_mcp_repo.py",
+    "app/adapters/secondary/persistence/sqlalchemy_user_mcp_repo.py",
+    "app/adapters/secondary/repository_mcp_tool_gateway.py",
     "app/adapters/secondary/openrouter_catalog.py",
     "app/application/use_cases/mcp_servers.py",
     "app/application/use_cases/ai_models.py",

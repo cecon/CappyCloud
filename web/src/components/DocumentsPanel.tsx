@@ -20,8 +20,11 @@ interface Props {
 const SOURCE_LABELS: Record<string, string> = {
   url: 'URL',
   text: 'Texto',
+  markdown: 'Markdown',
+  txt: 'TXT',
   pdf: 'PDF',
   xlsx: 'Excel',
+  docx: 'Word',
 }
 
 function formatDate(iso: string | null): string {
@@ -100,7 +103,7 @@ export function DocumentsPanel({ token, repositoryId, repositoryName }: Props) {
           content: textBody,
         })
       } else {
-        if (!file) throw new Error('Selecione um ficheiro PDF ou XLSX')
+        if (!file) throw new Error('Selecione um arquivo de documentação')
         created = await uploadRepoDocument(
           token,
           repositoryId,
@@ -151,15 +154,15 @@ export function DocumentsPanel({ token, repositoryId, repositoryName }: Props) {
         </h3>
       </div>
       <p className={styles.panelDesc}>
-        Documentação de produto consultável pelo agente. Os chunks ficam disponíveis
-        para todos os utilizadores que conversem sobre este repositório.
+        Documentos consultáveis pelo agente e pelo MCP. Use esta área para importar
+        schema de banco, manuais, PDFs e planilhas ligados a este repositório.
       </p>
 
       {/* ── Lista ─────────────────────────────────────────────── */}
       {loading && <p className={styles.empty}>Carregando documentos…</p>}
       {error && <p className={styles.errorMsg}>{error}</p>}
       {!loading && docs.length === 0 && (
-        <p className={styles.empty}>Nenhum documento ainda. Adicione abaixo.</p>
+        <p className={styles.empty}>Nenhum documento ainda. Importe o Markdown do schema abaixo.</p>
       )}
 
       {docs.length > 0 && (
@@ -258,7 +261,7 @@ export function DocumentsPanel({ token, repositoryId, repositoryName }: Props) {
               resetForm()
             }}
           >
-            PDF / Excel
+            Arquivo
           </button>
         </div>
 
@@ -294,18 +297,18 @@ export function DocumentsPanel({ token, repositoryId, repositoryName }: Props) {
             <>
               <input
                 type="text"
-                placeholder="Título (opcional — usa o nome do ficheiro)"
+                placeholder="Título (opcional — usa o nome do arquivo)"
                 value={fileTitle}
                 onChange={(e) => setFileTitle(e.target.value)}
               />
               <input
                 type="file"
-                accept=".pdf,.xlsx,.xlsm"
+                accept=".md,.markdown,.txt,.pdf,.docx,.xlsx,.xlsm"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 required
               />
               <small style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.78rem' }}>
-                Formatos aceitos: PDF, XLSX, XLSM. Máx 25 MB.
+                Formatos aceitos: MD, Markdown, TXT, PDF, DOCX, XLSX e XLSM. Máx 25 MB.
               </small>
             </>
           )}

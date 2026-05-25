@@ -44,6 +44,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/admin/users', icon: 'group', label: 'Usuários' },
       { to: '/admin/sandboxes', icon: 'dns', label: 'Sandboxes' },
       { to: '/admin/repositories', icon: 'folder_managed', label: 'Repositórios' },
+      { to: '/mcp', icon: 'lan', label: 'MCP Server' },
       { to: '/skills', icon: 'menu_book', label: 'Skills (por repo)' },
       {
         to: '/admin/skills-global',
@@ -63,7 +64,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   '/runs': { title: 'Runs', subtitle: 'Execuções, eventos e estado das sessões' },
   '/analytics': { title: 'Analytics', subtitle: 'Uso, custo e saúde operacional' },
   '/skills': { title: 'Skills (por repo)', subtitle: 'Regras curtas vinculadas a repositórios' },
-  '/mcp': { title: 'MCPs', subtitle: 'Servidores MCP carregados pelo sandbox' },
+  '/mcp': { title: 'MCP Server', subtitle: 'Acesso externo controlado aos repositórios' },
   '/settings': {
     title: 'Configurações',
     subtitle: 'Conta e atalhos do ambiente',

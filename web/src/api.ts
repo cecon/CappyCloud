@@ -939,14 +939,23 @@ export interface RepositoryGraphNode {
   import_count: number
   imported_by_count: number
   isolated: boolean
+  source_extractor?: string
+  extractor_version?: string
+  attrs?: Record<string, unknown>
 }
 
 export interface RepositoryGraphEdge {
   id: string
   source: string
   target: string
+  target_external?: string
   type: 'contains' | 'imports' | string
   weight: number
+  evidence?: Record<string, unknown>
+  confidence?: string
+  source_extractor?: string
+  extractor_version?: string
+  attrs?: Record<string, unknown>
 }
 
 export interface RepositoryGraphFinding {
@@ -957,6 +966,8 @@ export interface RepositoryGraphFinding {
   detail: string
   node_id: string
   path: string
+  source?: string
+  level?: string
 }
 
 export interface RepositoryGraphFile {
@@ -975,6 +986,8 @@ export interface RepositoryGraphFile {
   entrypoint: boolean
   unreferenced: boolean
   symbols: string[]
+  source_extractor?: string
+  extractor_version?: string
 }
 
 export interface RepositoryGraphSymbol {
@@ -988,6 +1001,9 @@ export interface RepositoryGraphSymbol {
   container: string
   element?: string
   handler?: string
+  source_extractor?: string
+  extractor_version?: string
+  attrs?: Record<string, unknown>
 }
 
 export interface RepositoryGraphSemanticNode {
@@ -997,6 +1013,9 @@ export interface RepositoryGraphSemanticNode {
   path: string
   line: number
   detail: string
+  source_extractor?: string
+  extractor_version?: string
+  attrs?: Record<string, unknown>
 }
 
 export interface RepositoryGraph {
@@ -1012,6 +1031,30 @@ export interface RepositoryGraph {
   semantic_nodes: RepositoryGraphSemanticNode[]
   semantic_edges: RepositoryGraphEdge[]
   findings: RepositoryGraphFinding[]
+}
+
+export interface GraphMaterializationJob {
+  job_id: string
+  status: 'materializing' | string
+  commit_sha?: string
+}
+
+export interface GraphReconciliationJob {
+  job_id: string
+  status: 'reconciling' | string
+  commit_sha?: string
+}
+
+export interface GraphReconciliationSummary {
+  run_id?: string
+  repo_id?: string
+  commit_sha: string
+  created_at?: string | null
+  summary: Record<string, unknown> | null
+  unresolved_total?: number
+  unresolved?: Array<Record<string, unknown>>
+  limit?: number
+  offset?: number
 }
 
 export interface RepositoryCreate {
@@ -1044,14 +1087,69 @@ export async function fetchRepositoryGraph(
   token: string,
   repoId: string,
   maxFiles = 1200,
+  options: { materialized?: boolean; commit_sha?: string } = {},
 ): Promise<RepositoryGraph> {
-  const res = await apiFetch(
-    `/api/repositories/${repoId}/graph?max_files=${encodeURIComponent(String(maxFiles))}`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  )
+  const params = new URLSearchParams({ max_files: String(maxFiles) })
+  if (options.materialized) params.set('materialized', 'true')
+  if (options.commit_sha) params.set('commit_sha', options.commit_sha)
+  const res = await apiFetch(`/api/repositories/${repoId}/graph?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(formatApiErrorPayload(err) || 'Falha ao carregar grafo do repositório')
+  }
+  return res.json()
+}
+
+export async function materializeRepositoryGraph(
+  token: string,
+  repoId: string,
+  maxFiles = 1200,
+): Promise<GraphMaterializationJob> {
+  const params = new URLSearchParams({ max_files: String(maxFiles) })
+  const res = await apiFetch(`/api/repositories/${repoId}/graph/materialize?${params}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao enfileirar materialização do graph')
+  }
+  return res.json()
+}
+
+export async function reconcileRepositoryGraph(
+  token: string,
+  repoId: string,
+  body: { commit_sha?: string; mode?: 'all' | 'strict-only' | 'no-llm'; llm_model?: string | null } = {},
+): Promise<GraphReconciliationJob> {
+  const res = await apiFetch(`/api/repositories/${repoId}/graph/reconcile`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao enfileirar reconciliação do graph')
+  }
+  return res.json()
+}
+
+export async function fetchGraphReconciliationSummary(
+  token: string,
+  repoId: string,
+  commitSha?: string,
+): Promise<GraphReconciliationSummary> {
+  const params = new URLSearchParams()
+  if (commitSha) params.set('commit_sha', commitSha)
+  const suffix = params.toString() ? `?${params}` : ''
+  const res = await apiFetch(`/api/repositories/${repoId}/graph/reconciliation-summary${suffix}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao carregar resumo de reconciliação')
   }
   return res.json()
 }
@@ -1503,7 +1601,7 @@ export async function importSkillFromUrl(
 
 // ── Documents (RAG por repositório) ──────────────────────────────────────────
 
-export type DocumentSourceType = 'pdf' | 'xlsx' | 'url' | 'text'
+export type DocumentSourceType = 'pdf' | 'xlsx' | 'url' | 'text' | 'markdown' | 'txt' | 'docx'
 
 export interface RepoDocument {
   id: string
@@ -1593,12 +1691,122 @@ export async function reindexRepoDocument(
   return res.json()
 }
 
+export async function reimportRepoDocumentGraph(
+  token: string,
+  repoId: string,
+  docId: string,
+): Promise<GraphMaterializationJob> {
+  const res = await apiFetch(`/api/repositories/${repoId}/documents/${docId}/reimport-graph`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao reimportar schema no graph')
+  }
+  return res.json()
+}
+
 export async function deleteRepoDocument(token: string, docId: string): Promise<void> {
   const res = await apiFetch(`/api/documents/${docId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) throw new Error('Falha ao remover documento')
+}
+
+// ── User · Repository MCP Servers ───────────────────────────────────────────
+
+export interface UserMcpServer {
+  id: string
+  user_id: string
+  repository_id: string
+  name: string
+  token_preview: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+  last_used_at: string | null
+}
+
+export interface UserMcpServerSecret extends UserMcpServer {
+  token: string
+}
+
+export interface UserMcpServerPayload {
+  name: string
+  repository_id: string
+  enabled: boolean
+}
+
+export async function fetchUserMcpServers(token: string): Promise<UserMcpServer[]> {
+  const res = await apiFetch('/api/mcp-servers', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao listar MCP servers')
+  }
+  return res.json()
+}
+
+export async function createUserMcpServer(
+  token: string,
+  data: UserMcpServerPayload,
+): Promise<UserMcpServerSecret> {
+  const res = await apiFetch('/api/mcp-servers', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao criar MCP server')
+  }
+  return res.json()
+}
+
+export async function updateUserMcpServer(
+  token: string,
+  serverId: string,
+  data: UserMcpServerPayload,
+): Promise<UserMcpServer> {
+  const res = await apiFetch(`/api/mcp-servers/${serverId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar MCP server')
+  }
+  return res.json()
+}
+
+export async function rotateUserMcpServerToken(
+  token: string,
+  serverId: string,
+): Promise<UserMcpServerSecret> {
+  const res = await apiFetch(`/api/mcp-servers/${serverId}/rotate-token`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao rotacionar token MCP')
+  }
+  return res.json()
+}
+
+export async function deleteUserMcpServer(token: string, serverId: string): Promise<void> {
+  const res = await apiFetch(`/api/mcp-servers/${serverId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao remover MCP server')
+  }
 }
 
 // ── Admin · MCP Servers (por sandbox) ────────────────────────────────────────
@@ -2036,9 +2244,32 @@ export interface AdminAiProvider {
   id: string
   name: string
   base_url: string
+  api_format: 'chat_completions' | 'responses'
   active: boolean
   last_synced_at: string | null
   models_count: number
+}
+
+export interface AdminProviderCreate {
+  name: string
+  base_url: string
+  api_format?: 'chat_completions' | 'responses'
+  api_key?: string
+  model_id?: string
+  display_name?: string
+  capabilities?: string[]
+  context_window?: number
+  active?: boolean
+  is_default_text?: boolean
+  is_default_embedding?: boolean
+}
+
+export interface AdminProviderPatch {
+  name?: string
+  base_url?: string
+  api_format?: 'chat_completions' | 'responses'
+  api_key?: string
+  active?: boolean
 }
 
 export async function fetchAdminProviders(token: string): Promise<AdminAiProvider[]> {
@@ -2046,6 +2277,45 @@ export async function fetchAdminProviders(token: string): Promise<AdminAiProvide
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) return []
+  return res.json()
+}
+
+export async function createAdminProvider(
+  token: string,
+  payload: AdminProviderCreate,
+): Promise<AdminAiProvider> {
+  const res = await apiFetch('/api/admin/providers', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao cadastrar provider')
+  }
+  return res.json()
+}
+
+export async function patchAdminProvider(
+  token: string,
+  providerId: string,
+  payload: AdminProviderPatch,
+): Promise<AdminAiProvider> {
+  const res = await apiFetch(`/api/admin/providers/${providerId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar provider')
+  }
   return res.json()
 }
 
@@ -2068,6 +2338,7 @@ export interface AdminModelsFilter {
   provider_id?: string
   tier?: ModelTier
   only_active?: boolean
+  include_inactive_providers?: boolean
 }
 
 export async function fetchAdminModels(
@@ -2078,6 +2349,7 @@ export async function fetchAdminModels(
   if (filter.provider_id) params.set('provider_id', filter.provider_id)
   if (filter.tier) params.set('tier', filter.tier)
   if (filter.only_active) params.set('only_active', 'true')
+  if (filter.include_inactive_providers) params.set('include_inactive_providers', 'true')
   const qs = params.toString()
   const url = qs ? `/api/admin/models?${qs}` : '/api/admin/models'
   const res = await apiFetch(url, {
@@ -2090,6 +2362,9 @@ export async function fetchAdminModels(
 export interface AdminModelPatch {
   active?: boolean
   tier?: ModelTier
+  capabilities?: string[]
+  is_default_text?: boolean
+  is_default_embedding?: boolean
 }
 
 export async function patchAdminModel(

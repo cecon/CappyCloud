@@ -13,6 +13,9 @@ const {
 const { buildFileImports, buildModules, readTrackedFiles } = require('./imports')
 const { extractReferenceSymbols, extractSymbols } = require('./symbols')
 const { extractSemanticGraph } = require('./semantic')
+const { extractRoslynGraph } = require('./roslyn')
+const { extractSqlGraph } = require('./sql')
+const { EXTRACTOR_VERSION } = require('./version')
 
 function mergeSymbolMaps(primary, secondary) {
   const merged = new Map(primary)
@@ -169,7 +172,7 @@ function isolatedFindings(nodes) {
     }))
 }
 
-function graphForRepo(slug, query) {
+async function graphForRepo(slug, query) {
   const repoPath = safeRepoPath(slug)
   const maxFiles = Math.max(50, Math.min(Number(query.get('max_files') || 1200), 5000))
   const files = readTrackedFiles(repoPath, maxFiles)
@@ -185,6 +188,8 @@ function graphForRepo(slug, query) {
   const baseSymbolsByFile = mergeSymbolMaps(codeSymbols.symbolsByFile, referenceSymbols.symbolsByFile)
   const baseSymbols = [...codeSymbols.allSymbols, ...referenceSymbols.allSymbols]
   const semanticGraph = extractSemanticGraph(repoPath, codeFiles, uiDefinitionFiles, filesSet, baseSymbolsByFile, baseSymbols)
+  const roslynGraph = await extractRoslynGraph(repoPath, files)
+  const sqlGraph = await extractSqlGraph(repoPath, files)
   const symbolsByFile = mergeSymbolMaps(baseSymbolsByFile, semanticGraph.symbolsByFile)
   const allSymbols = [...baseSymbols, ...semanticGraph.uiSymbols]
   const refsByFile = referenceTargets(referenceSymbols.symbolsByFile)
@@ -202,7 +207,7 @@ function graphForRepo(slug, query) {
     ...Array.from(modules.values()).sort((a, b) => a.label.localeCompare(b.label)),
   ]
   markNodeConnectivity(nodes, edgeRows)
-  const findings = fileFindings(fileRows)
+  const findings = [...fileFindings(fileRows), ...roslynGraph.findings, ...sqlGraph.findings]
   const isolatedFiles = fileRows.filter((file) => file.isolated).length
   const entrypoints = fileRows.filter((file) => file.entrypoint).length
   const unreferencedFiles = fileRows.filter((file) => file.unreferenced).length
@@ -210,17 +215,18 @@ function graphForRepo(slug, query) {
     slug,
     repo_path: repoPath,
     generated_at: new Date().toISOString(),
+    extractor_version: EXTRACTOR_VERSION,
     stats: {
       files: files.length,
       code_files: graphFiles.length,
       modules: modules.size,
       links: importGraph.fileEdges.length,
       isolated: isolatedFiles,
-      symbols: allSymbols.length,
+      symbols: allSymbols.length + roslynGraph.nodes.length + sqlGraph.nodes.length,
       entrypoints,
       unreferenced_files: unreferencedFiles,
       ui_actions: semanticGraph.uiSymbols.length,
-      flows: semanticGraph.semanticEdges.length,
+      flows: semanticGraph.semanticEdges.length + roslynGraph.edges.length + sqlGraph.edges.length,
     },
     nodes,
     edges: [
@@ -238,8 +244,8 @@ function graphForRepo(slug, query) {
     files: fileRows.sort((a, b) => a.path.localeCompare(b.path)),
     symbols: selectResponseSymbols(allSymbols, semanticGraph.semanticEdges),
     file_edges: [...importGraph.fileEdges, ...referenceFileEdges(refsByFile)],
-    semantic_nodes: semanticGraph.semanticNodes,
-    semantic_edges: semanticGraph.semanticEdges,
+    semantic_nodes: [...semanticGraph.semanticNodes, ...roslynGraph.nodes, ...sqlGraph.nodes],
+    semantic_edges: [...semanticGraph.semanticEdges, ...roslynGraph.edges, ...sqlGraph.edges],
     findings,
   }
 }

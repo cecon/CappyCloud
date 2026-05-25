@@ -27,8 +27,17 @@ from app.adapters.secondary.persistence.sqlalchemy_repo_env_repo import (
 from app.adapters.secondary.persistence.sqlalchemy_repository_repo import (
     SQLAlchemyRepositoryRepository,
 )
+from app.adapters.secondary.persistence.sqlalchemy_user_access_repo import (
+    SQLAlchemyUserRepositoryAccessRepository,
+)
+from app.adapters.secondary.persistence.sqlalchemy_user_mcp_repo import (
+    SQLAlchemyUserMcpServerRepository,
+)
 from app.adapters.secondary.persistence.sqlalchemy_user_repo import (
     SQLAlchemyUserRepository,
+)
+from app.adapters.secondary.repository_mcp_tool_gateway import (
+    SQLAlchemyRepositoryMcpToolGateway,
 )
 from app.application.use_cases.ai_models import ListAiModels
 from app.application.use_cases.auth import ChangePassword, GetCurrentUser, LoginUser, RegisterUser
@@ -45,7 +54,7 @@ from app.application.use_cases.repo_environments import (
 )
 from app.domain.entities import User, UserRole
 from app.ports.agent import AgentPort
-from app.ports.mcp_repository import McpServerRepository
+from app.ports.mcp_repository import McpServerRepository, UserMcpServerRepository
 from app.ports.repositories import (
     AiModelCapabilityLookup,
     AttachmentRepository,
@@ -55,8 +64,9 @@ from app.ports.repositories import (
     RepositoryRepository,
     UserRepository,
 )
+from app.ports.repository_mcp import RepositoryMcpToolGateway
 from app.ports.services import AttachmentStorage, ModelCatalogService, PasswordService, TokenService
-from app.ports.user_access import AiModelAccessPolicy
+from app.ports.user_access import AiModelAccessPolicy, UserRepositoryAccessRepository
 
 from . import deps_attachments as _attach_deps
 from .deps_base import get_conv_repo, get_db_session  # re-export
@@ -103,10 +113,28 @@ def get_ai_model_access_policy(
     return SQLAlchemyAiModelAccessPolicy(session)
 
 
+def get_user_repository_access_repo(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> UserRepositoryAccessRepository:
+    return SQLAlchemyUserRepositoryAccessRepository(session)
+
+
 def get_mcp_repo(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> McpServerRepository:
     return SQLAlchemyMcpRepository(session)
+
+
+def get_user_mcp_repo(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> UserMcpServerRepository:
+    return SQLAlchemyUserMcpServerRepository(session)
+
+
+def get_repository_mcp_tool_gateway(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> RepositoryMcpToolGateway:
+    return SQLAlchemyRepositoryMcpToolGateway(session)
 
 
 # ---------------------------------------------------------------------------

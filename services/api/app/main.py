@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import logging
+import re
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.adapters.primary.http import admin_ai_catalog as admin_ai_catalog_router
+from app.adapters.primary.http import admin_mcp_telemetry as admin_mcp_telemetry_router
 from app.adapters.primary.http import admin_sandbox_globals as admin_sandbox_globals_router
 from app.adapters.primary.http import admin_sandbox_mcps as admin_sandbox_mcps_router
 from app.adapters.primary.http import admin_sandboxes as admin_sandboxes_router
@@ -27,13 +30,16 @@ from app.adapters.primary.http import conversations as conv_router
 from app.adapters.primary.http import documents as documents_router
 from app.adapters.primary.http import environments as env_router
 from app.adapters.primary.http import git_providers as git_providers_router
+from app.adapters.primary.http import mcp_oauth as mcp_oauth_router
 from app.adapters.primary.http import repo_graph as repo_graph_router
 from app.adapters.primary.http import repositories_admin as repos_admin_router
+from app.adapters.primary.http import repository_mcp as repository_mcp_router
 from app.adapters.primary.http import routines as routines_router
 from app.adapters.primary.http import sandboxes as sandboxes_router
 from app.adapters.primary.http import skills as skills_router
 from app.adapters.primary.http import skills_search as skills_search_router
 from app.adapters.primary.http import tasks as tasks_router
+from app.adapters.primary.http import user_mcp_servers as user_mcp_servers_router
 from app.adapters.primary.http import webhooks as webhooks_router
 from app.adapters.primary.http import workspaces as workspaces_router
 from app.infrastructure.config import cors_origins_list, get_settings
@@ -43,6 +49,8 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+log = logging.getLogger(__name__)
+_MCP_TOKEN_RE = re.compile(r"cappy_mcp_[A-Za-z0-9_-]+")
 
 
 @asynccontextmanager
@@ -63,11 +71,19 @@ async def lifespan(app: FastAPI):
     await agent.on_startup()
     app.state.agent = agent
 
+    from app.adapters.secondary.mcp_telemetry_recorder import prune_mcp_invocations
     from app.infrastructure.sandbox_watchdog import SandboxWatchdog
 
     scheduler = AsyncIOScheduler()
     watchdog = SandboxWatchdog(async_session_factory)
     scheduler.add_job(watchdog.run_once, "interval", seconds=10, id="sandbox_watchdog")
+    scheduler.add_job(
+        prune_mcp_invocations,
+        "interval",
+        days=1,
+        id="mcp_telemetry_prune",
+        kwargs={"retention_days": settings.mcp_telemetry_retention_days},
+    )
     scheduler.start()
     app.state.scheduler = scheduler
 
@@ -79,6 +95,38 @@ async def lifespan(app: FastAPI):
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+
+
+def _is_mcp_diagnostic_path(path: str) -> bool:
+    return (
+        path.startswith("/api/mcp")
+        or path.startswith("/mcp")
+        or path.startswith("/.well-known/oauth")
+        or path.startswith("/.well-known/openid-configuration")
+    )
+
+
+def _sanitize_mcp_path(path: str) -> str:
+    return _MCP_TOKEN_RE.sub("cappy_mcp_***", path)
+
+
+@app.middleware("http")
+async def log_unmapped_mcp_routes(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    response = await call_next(request)
+    if response.status_code in {404, 405} and _is_mcp_diagnostic_path(request.url.path):
+        query_keys = ",".join(sorted(request.query_params.keys())) or "-"
+        log.info(
+            "MCP route miss status=%s method=%s path=%s query_keys=%s ua=%s",
+            response.status_code,
+            request.method,
+            _sanitize_mcp_path(request.url.path),
+            query_keys,
+            request.headers.get("user-agent", ""),
+        )
+    return response
 
 
 def _pt_validation_msg(err: dict[str, Any]) -> str:
@@ -135,6 +183,7 @@ app.add_middleware(
 
 app.include_router(auth_router.router, prefix="/api")
 app.include_router(admin_users_router.router, prefix="/api")
+app.include_router(admin_mcp_telemetry_router.router, prefix="/api")
 app.include_router(admin_sandboxes_router.router, prefix="/api")
 app.include_router(admin_user_access_router.router, prefix="/api")
 app.include_router(admin_ai_catalog_router.router, prefix="/api")
@@ -153,6 +202,8 @@ app.include_router(git_providers_router.router, prefix="/api")
 app.include_router(ai_models_router.router, prefix="/api")
 app.include_router(repos_admin_router.router, prefix="/api")
 app.include_router(repo_graph_router.router, prefix="/api")
+app.include_router(user_mcp_servers_router.router, prefix="/api")
+app.include_router(repository_mcp_router.router, prefix="/api")
 app.include_router(documents_router.router, prefix="/api")
 app.include_router(skills_router.router, prefix="/api")
 app.include_router(skills_search_router.router, prefix="/api")
@@ -160,6 +211,7 @@ app.include_router(admin_sandbox_mcps_router.router, prefix="/api")
 app.include_router(admin_sandbox_globals_router.global_skills_router, prefix="/api")
 app.include_router(admin_sandbox_globals_router.skills_router, prefix="/api")
 app.include_router(admin_sandbox_globals_router.agents_router, prefix="/api")
+app.include_router(mcp_oauth_router.router)
 
 
 @app.get("/health")

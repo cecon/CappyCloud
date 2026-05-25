@@ -100,6 +100,7 @@ async def test_starts_stream_with_flush_comment(
     assert first.startswith(b": stream-open")
     assert b'"type": "status"' in second
     assert "Conexão com o agente aberta.".encode() in second
+    assert b'"stage"' not in second
 
 
 async def test_sends_heartbeat_while_waiting_for_agent_chunk(

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities import UserRole
 from app.infrastructure.orm_models_access import UserAiModelAccess
-from app.infrastructure.orm_models_platform import AiModel
+from app.infrastructure.orm_models_platform import AiModel, AiProvider
 from app.ports.user_access import AiModelAccessPolicy
 
 
@@ -45,7 +45,9 @@ class SQLAlchemyAiModelAccessPolicy(AiModelAccessPolicy):
     async def _find_active_text_model(self, requested_model_id: str | None) -> AiModel | None:
         stmt = (
             select(AiModel)
+            .join(AiProvider)
             .where(AiModel.active.is_(True))
+            .where(AiProvider.active.is_(True))
             .where(text("ai_models.capabilities ? 'text'"))
         )
         if requested_model_id:

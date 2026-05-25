@@ -68,8 +68,10 @@ class EnvironmentManager:
     ) -> SessionLease:
         """Return (or create) a SandboxRecord for the conversation.
 
-        session_server.js is idempotent: if session_root already exists it
-        returns 200 immediately, so we call create on every request.
+        Sessões quentes são reutilizadas sem chamar ``POST /sessions`` de novo.
+        Recriar a worktree em toda mensagem é idempotente, mas caro e causa
+        ruído visual de boot. Quando o registro antigo não tinha dados completos,
+        salvamos o upgrade e fazemos uma única revalidação.
         """
         record = await self._store.get(user_id, chat_id)
         if record:
@@ -86,7 +88,9 @@ class EnvironmentManager:
                 updated = True
             if updated:
                 await self._store.save(record)
-            await self._ensure_session(record)
+                await self._ensure_session(record)
+            else:
+                await self._probe_session_server(record)
             return SessionLease(record=record, created=False)
 
         return SessionLease(
@@ -147,6 +151,33 @@ class EnvironmentManager:
             raise RuntimeError(
                 f"session_server returned {resp.status_code}: {resp.text}"
             )
+
+    async def _probe_session_server(self, record: SandboxRecord) -> None:
+        """Confirma sessão/worktrees sem recriá-los quando já estão prontos."""
+        host = record.grpc_host or self._default_host
+        base = self._session_base(host, self._default_session_port)
+        session_id = record.chat_id.replace("-", "")[:12]
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    f"{base}/sessions/{session_id}/status",
+                    params={
+                        "session_root": record.session_root,
+                        "repos": json.dumps(record.repos),
+                    },
+                )
+        except httpx.HTTPError as exc:
+            raise RuntimeError(
+                f"Cannot reach sandbox session server at {base}. "
+                "Check if cappycloud-sandbox is running."
+            ) from exc
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"session_server status returned {resp.status_code}: {resp.text}"
+            )
+        data = resp.json()
+        if not data.get("ready"):
+            await self._ensure_session(record)
 
     async def _create_session(
         self,

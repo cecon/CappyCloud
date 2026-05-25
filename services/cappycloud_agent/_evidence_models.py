@@ -27,6 +27,7 @@ class _DocHit:
     title: str
     url: str
     summary: str
+    source: str = "confluence"
 
 
 @dataclass(frozen=True)

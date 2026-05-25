@@ -1,0 +1,111 @@
+.loading {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+}
+
+.emptyState {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  gap: 0.5rem;
+  padding: 2rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+  color: var(--cc-on-surface);
+  text-align: center;
+}
+
+.serverCard {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background:
+    linear-gradient(180deg, rgba(25, 27, 31, 0.96), rgba(15, 16, 18, 0.98)),
+    var(--cc-surface-low);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.24);
+  padding: 1rem;
+}
+
+.connectionPanel {
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  background: rgba(15, 18, 24, 0.72);
+  padding: 1rem;
+}
+
+.cardTitle {
+  min-width: 0;
+}
+
+.cardTitle h3 {
+  max-width: min(38vw, 320px);
+  margin: 0;
+  overflow: hidden;
+  color: var(--cc-on-surface);
+  font-size: 1rem;
+  font-weight: 760;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.endpointBox {
+  min-width: 0;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.17);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.22);
+}
+
+.endpointCode {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(0, 0, 0, 0.28);
+  color: #dbeafe;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.endpointCode {
+  flex: 1;
+}
+
+.tokenRevealBox {
+  min-width: 0;
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.tokenRevealCode {
+  min-width: 0;
+  max-height: 132px;
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(0, 0, 0, 0.3);
+  color: #dbeafe;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+@media (max-width: 720px) {
+  .cardTitle h3 {
+    max-width: 58vw;
+  }
+
+  .endpointBox :global(.mantine-Group-root) {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .endpointCode,
+  .tokenRevealCode {
+    width: 100%;
+  }
+}

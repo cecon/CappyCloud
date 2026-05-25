@@ -39,6 +39,9 @@ message ChatRequest {
   string session_id         = 5;
   string request_id         = 6; // Client-generated UUID for distributed tracing
   repeated Attachment attachments = 7; // Vision input (only used when model supports it)
+  optional string provider_base_url   = 8; // Per-request OpenAI-compatible provider base URL
+  optional string provider_api_key    = 9; // Per-request provider key (internal gRPC only)
+  optional string provider_api_format = 10; // chat_completions | responses
 }
 
 message UserInput {
