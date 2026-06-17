@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+
+if [ "${CAPPYCLOUD_SKIP_CI_HOOK:-}" = "1" ]; then
+  echo "CAPPYCLOUD_SKIP_CI_HOOK=1 set; skipping local CI hook."
+  exit 0
+fi
+
+if command -v py >/dev/null 2>&1; then
+  exec py -3 scripts/check_ci_before_push.py
+fi
+
+if command -v python >/dev/null 2>&1; then
+  exec python scripts/check_ci_before_push.py
+fi
+
+if command -v python3 >/dev/null 2>&1; then
+  exec python3 scripts/check_ci_before_push.py
+fi
+
+echo "Python not found. Install Python or set CAPPYCLOUD_SKIP_CI_HOOK=1 for an emergency push." >&2
+exit 1
