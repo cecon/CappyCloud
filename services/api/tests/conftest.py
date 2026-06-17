@@ -117,6 +117,13 @@ class InMemoryConversationRepository(ConversationRepository):
             reverse=True,
         )
 
+    async def list_all(self) -> list[Conversation]:
+        return sorted(
+            self._store.values(),
+            key=lambda c: c.updated_at,
+            reverse=True,
+        )
+
     async def get(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> Conversation | None:
         conv = self._store.get(conversation_id)
         if conv and conv.user_id == user_id:
@@ -249,7 +256,13 @@ class FakeAgent(AgentPort):
         triggered_by: str = "system",
         trigger_payload: Any = None,
         base_branch: str = "",
+        repos: list[dict] | None = None,
+        session_root: str = "",
+        sandbox_id: str = "",
+        override_model: str | None = None,
     ) -> str:
+        del prompt, env_slug, conversation_id, triggered_by, trigger_payload
+        del base_branch, repos, session_root, sandbox_id, override_model
         return str(uuid.uuid4())
 
     async def on_startup(self) -> None:

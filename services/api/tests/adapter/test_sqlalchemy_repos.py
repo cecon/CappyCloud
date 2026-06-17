@@ -249,6 +249,14 @@ class TestConversationRepositoryContract:
         assert all(c.user_id == uid for c in result)
         assert len(result) >= 1
 
+    async def test_list_all(self, conv_repo_impl: ConversationRepository) -> None:
+        uid = uuid.uuid4()
+        other = uuid.uuid4()
+        await conv_repo_impl.save(Conversation(id=uuid.uuid4(), user_id=uid, title="A"))
+        await conv_repo_impl.save(Conversation(id=uuid.uuid4(), user_id=other, title="B"))
+        result = await conv_repo_impl.list_all()
+        assert {uid, other}.issubset({c.user_id for c in result})
+
     async def test_update_title(self, conv_repo_impl: ConversationRepository) -> None:
         uid = uuid.uuid4()
         conv = Conversation(id=uuid.uuid4(), user_id=uid, title="Original")

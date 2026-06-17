@@ -258,8 +258,273 @@ export type RepoSelection = {
   base_branch?: string | null
 }
 
+// ── Agentic Delivery ────────────────────────────────────────────────────────
+
+export type AgenticCycleStatus =
+  | 'Draft'
+  | 'Ready'
+  | 'Running'
+  | 'Review'
+  | 'Rework'
+  | 'Approved'
+  | 'Rejected'
+  | 'Cancelled'
+  | 'Failed'
+
+export interface AgenticEvidenceSourceInput {
+  source_type: 'repository' | 'attachment' | 'external_doc' | 'prior_decision' | 'operational_signal'
+  title: string
+  scope_note?: string
+  repository_id?: string | null
+  source_url?: string | null
+}
+
+export interface AgenticCycleCreatePayload {
+  conversation_id?: string | null
+  repository_ids: string[]
+  domain_key?: string | null
+  title: string
+  business_goal: string
+  scope_boundary: string
+  expected_outputs: string[]
+  acceptance_expectations: string[]
+  evidence_sources?: AgenticEvidenceSourceInput[]
+}
+
+export interface AgenticCycleCreated {
+  id: string
+  status: AgenticCycleStatus
+  required_gates: string[]
+  created_at: string
+}
+
+export interface AgenticPrepareResponse {
+  cycle_id: string
+  status: AgenticCycleStatus
+  work_package_id: string
+  missing_inputs: string[]
+  required_gates: string[]
+}
+
+export interface AgenticRunResponse {
+  cycle_id: string
+  status: AgenticCycleStatus
+  agent_task_id: string | null
+}
+
+export interface AgenticEvidenceLink {
+  id?: string | null
+  evidence_source_id: string | null
+  claim_summary: string
+  support_status: 'supported' | 'unsupported' | 'contradicted' | 'stale'
+}
+
+export interface AgenticEvidenceLinkPayload {
+  evidence_source_id?: string | null
+  claim_summary: string
+  support_status: 'supported' | 'unsupported' | 'contradicted' | 'stale'
+}
+
+export interface AgenticOutput {
+  id: string
+  output_type: string
+  title: string
+  validation_status: string
+  unsupported_claims_count: number
+  evidence_links: AgenticEvidenceLink[]
+}
+
+export interface AgenticReviewGate {
+  id: string
+  gate_type: 'product' | 'architecture' | 'quality' | 'compliance'
+  status: 'pending' | 'approved' | 'rejected' | 'blocked'
+  required: boolean
+}
+
+export interface AgenticReviewPackage {
+  cycle: { id: string; status: AgenticCycleStatus; title: string }
+  work_package: { id: string; version: number; review_criteria: string[] } | null
+  outputs: AgenticOutput[]
+  gates: AgenticReviewGate[]
+  outputs_next_cursor: string | null
+  decisions_next_cursor: string | null
+}
+
+export interface AgenticKnowledgeItem {
+  id: string
+  repository_id: string
+  domain_key: string | null
+  knowledge_type: string
+  title: string
+  needs_review: boolean
+}
+
+export interface AgenticKnowledgeSearchResponse {
+  items: AgenticKnowledgeItem[]
+  next_cursor: string | null
+}
+
+export interface SensitiveSurfacePayload {
+  repository_id?: string | null
+  domain_key?: string | null
+  name: string
+  description: string
+  match_rules: { path_prefixes?: string[]; keywords?: string[] }
+  active: boolean
+}
+
+export interface SensitiveSurface extends SensitiveSurfacePayload {
+  id: string
+}
+
+export interface CycleMetric {
+  metric_name: string
+  metric_value: number | null
+  metric_text?: string | null
+  metric_unit: string
+  source: string
+}
+
+async function readJsonOrThrow<T>(res: Response, fallback: string): Promise<T> {
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || fallback)
+  }
+  return (await res.json()) as T
+}
+
+export async function createAgenticCycle(
+  token: string,
+  payload: AgenticCycleCreatePayload,
+): Promise<AgenticCycleCreated> {
+  const res = await apiFetch('/api/agentic-cycles', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return readJsonOrThrow(res, 'Falha ao criar ciclo agentic delivery')
+}
+
+export async function prepareAgenticCycle(
+  token: string,
+  cycleId: string,
+): Promise<AgenticPrepareResponse> {
+  const res = await apiFetch(`/api/agentic-cycles/${cycleId}/prepare`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return readJsonOrThrow(res, 'Falha ao preparar pacote de trabalho')
+}
+
+export async function runAgenticCycle(token: string, cycleId: string): Promise<AgenticRunResponse> {
+  const res = await apiFetch(`/api/agentic-cycles/${cycleId}/run`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  })
+  return readJsonOrThrow(res, 'Falha ao iniciar execução do agente')
+}
+
+export async function fetchAgenticReviewPackage(
+  token: string,
+  cycleId: string,
+): Promise<AgenticReviewPackage> {
+  const res = await apiFetch(`/api/agentic-cycles/${cycleId}/review`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return readJsonOrThrow(res, 'Falha ao carregar pacote de revisão')
+}
+
+export async function recordAgenticReviewDecision(
+  token: string,
+  cycleId: string,
+  payload: {
+    agent_output_id?: string | null
+    review_gate_id?: string | null
+    decision: 'approve' | 'reject' | 'request_rework' | 'comment'
+    rationale: string
+  },
+): Promise<{ id: string; cycle_id: string; decision: string; cycle_status: AgenticCycleStatus }> {
+  const res = await apiFetch(`/api/agentic-cycles/${cycleId}/review-decisions`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return readJsonOrThrow(res, 'Falha ao registrar decisão')
+}
+
+export async function linkAgenticOutputEvidence(
+  token: string,
+  cycleId: string,
+  outputId: string,
+  payload: AgenticEvidenceLinkPayload,
+): Promise<AgenticEvidenceLink> {
+  const res = await apiFetch(`/api/agentic-cycles/${cycleId}/outputs/${outputId}/evidence-links`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return readJsonOrThrow(res, 'Falha ao vincular evidência')
+}
+
+export async function searchAgenticKnowledge(
+  token: string,
+  payload: { repository_ids: string[]; domain_key?: string | null; query: string; limit?: number },
+): Promise<AgenticKnowledgeSearchResponse> {
+  const res = await apiFetch('/api/agentic-cycles/knowledge/search', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return readJsonOrThrow(res, 'Falha ao buscar conhecimento reutilizável')
+}
+
+export async function saveSensitiveSurface(
+  token: string,
+  surfaceId: string,
+  payload: SensitiveSurfacePayload,
+): Promise<SensitiveSurface> {
+  const res = await apiFetch(`/api/agentic-cycles/sensitive-surfaces/${surfaceId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return readJsonOrThrow(res, 'Falha ao salvar superfície sensível')
+}
+
+export async function authorizeAgenticExternalAction(
+  token: string,
+  cycleId: string,
+  payload: {
+    action_type: 'push' | 'pull_request' | 'deployment' | 'network_call' | 'container_change' | 'other'
+    repository_id?: string | null
+    domain_key?: string | null
+    requested_payload?: Record<string, unknown>
+    rationale: string
+  },
+): Promise<{ id: string; cycle_id: string; execution_status: string }> {
+  const res = await apiFetch(`/api/agentic-cycles/${cycleId}/external-actions/authorize`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return readJsonOrThrow(res, 'Falha ao autorizar ação externa')
+}
+
+export async function fetchAgenticMetrics(
+  token: string,
+  cycleId: string,
+): Promise<{ cycle_id: string; metrics: CycleMetric[]; next_cursor: string | null }> {
+  const res = await apiFetch(`/api/agentic-cycles/${cycleId}/metrics`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  return readJsonOrThrow(res, 'Falha ao carregar métricas')
+}
+
 export type Conversation = {
   id: string
+  user_id?: string | null
+  user_email?: string | null
   title: string
   created_at: string
   updated_at: string
@@ -330,8 +595,14 @@ export interface StreamHandlers {
   signal?: AbortSignal
 }
 
-export async function fetchConversations(token: string): Promise<Conversation[]> {
-  const res = await apiFetch('/api/conversations', {
+export async function fetchConversations(
+  token: string,
+  options: { scope?: 'own' | 'all' } = {},
+): Promise<Conversation[]> {
+  const params = new URLSearchParams()
+  if (options.scope) params.set('scope', options.scope)
+  const suffix = params.toString() ? `?${params.toString()}` : ''
+  const res = await apiFetch(`/api/conversations${suffix}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) throw new Error('Não foi possível carregar conversas')

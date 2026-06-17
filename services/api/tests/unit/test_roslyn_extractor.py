@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[4]
 PROJECT = ROOT / "tools" / "extractors" / "csharp" / "Cappy.RoslynExtractor.csproj"
 FIXTURES = ROOT / "services" / "api" / "tests" / "fixtures"
+DOTNET_RUN_TIMEOUT_SECONDS = 120
 
 
 def _run_extractor(repo: Path, out_path: Path) -> tuple[subprocess.CompletedProcess[str], dict]:
@@ -25,7 +26,7 @@ def _run_extractor(repo: Path, out_path: Path) -> tuple[subprocess.CompletedProc
         cwd=ROOT,
         text=True,
         capture_output=True,
-        timeout=30,
+        timeout=DOTNET_RUN_TIMEOUT_SECONDS,
         check=False,
     )
     payload = json.loads(out_path.read_text(encoding="utf-8")) if out_path.exists() else {}

@@ -1,0 +1,27 @@
+diff --git a/src/tools/FileReadTool/FileReadTool.ts b/src/tools/FileReadTool/FileReadTool.ts
+index a3c9607..a3c1bf0 100644
+--- a/src/tools/FileReadTool/FileReadTool.ts
++++ b/src/tools/FileReadTool/FileReadTool.ts
+@@ -416,6 +416,10 @@ export const FileReadTool = buildTool({
+   },
+   renderToolUseErrorMessage,
+-  async validateInput({ file_path, pages }, toolUseContext: ToolUseContext) {
++  async validateInput({ file_path, pages }, toolUseContext: ToolUseContext) {
++    if (typeof pages === 'string' && pages.trim() === '') {
++      pages = undefined
++    }
++
+     // Validate pages parameter (pure string parsing, no I/O)
+     if (pages !== undefined) {
+       const parsed = parsePDFPageRange(pages)
+@@ -499,6 +503,10 @@ export const FileReadTool = buildTool({
+     _canUseTool?,
+     parentMessage?,
+   ) {
++    if (typeof pages === 'string' && pages.trim() === '') {
++      pages = undefined
++    }
++
+     const { readFileState, fileReadingLimits } = context
+ 
+     const defaults = getDefaultFileReadingLimits()

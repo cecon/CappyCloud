@@ -1,0 +1,115 @@
+.page {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+}
+
+.header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.header p {
+  margin: 6px 0 0;
+  color: #94a3b8;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.surfaceIndicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(250, 204, 21, 0.28);
+  border-radius: 6px;
+  background: rgba(250, 204, 21, 0.12);
+  color: #fef08a;
+  font-size: 13px;
+  min-height: 30px;
+  padding: 0 10px;
+}
+
+.eyebrow {
+  color: #67e8f9;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 6px;
+  background: #111827;
+  color: #f8fafc;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.icon {
+  font-family: 'Material Symbols Outlined';
+  font-size: 18px;
+}
+
+.message,
+.error {
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.message {
+  background: rgba(22, 163, 74, 0.16);
+  color: #bbf7d0;
+}
+
+.error {
+  background: rgba(185, 28, 28, 0.18);
+  color: #fecaca;
+}
+
+@media (max-width: 720px) {
+  .page {
+    padding: 14px;
+  }
+
+  .header {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .headerActions {
+    justify-content: flex-start;
+  }
+}

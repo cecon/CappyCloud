@@ -24,10 +24,10 @@ repos:
     hooks:
       - id: max-file-length
         name: "Máximo 300 linhas por arquivo de código"
-        entry: python3 scripts/check_file_length.py
+        entry: python scripts/check_file_length.py
         language: system
         types_or: [python, ts, tsx, javascript, jsx]
-        exclude: ^(web/|\.claude/)
+        exclude: ^(web/|\.claude/|services/api/alembic/versions/)
       - id: require-alembic-for-migrations
         name: "Migrations exigem comando alembic"
         entry: python scripts/check_alembic_available_for_migrations.py

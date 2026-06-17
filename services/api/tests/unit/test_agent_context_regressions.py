@@ -64,6 +64,32 @@ def test_response_rules_treat_grep_as_candidate_not_evidence() -> None:
     assert "Não adicione prefixos como `src/`" in section
 
 
+def test_agent_prompt_does_not_instruct_read_tool_for_file_evidence() -> None:
+    prompt = _agent_context.build_prompt_with_agent(
+        "qual a stack desse repo?",
+        skills=[],
+        sandbox_session_url="http://sandbox:8080",
+        repos=[
+            {
+                "slug": "Seller",
+                "worktree_path": "/repos/sessions/abc/Seller",
+                "confluence_url": "https://share.linx.com.br",
+                "confluence_space": "Postos",
+            }
+        ],
+    )
+
+    assert "sed -n" in prompt
+    for forbidden in (
+        "Grep/Read",
+        "Grep e Read",
+        "Bash/Grep/Read",
+        "`Read`",
+        "'Read...'",
+    ):
+        assert forbidden not in prompt
+
+
 def test_build_prompt_injects_repo_architect_agent_before_skills() -> None:
     prompt = _agent_context.build_prompt_with_agent(
         "Como funciona o fiscal?",

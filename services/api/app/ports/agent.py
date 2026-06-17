@@ -41,6 +41,10 @@ class AgentPort(ABC):
         conversation_id: str | None = None,
         triggered_by: str = "system",
         trigger_payload: dict | None = None,
+        repos: list[dict] | None = None,
+        session_root: str = "",
+        sandbox_id: str = "",
+        override_model: str | None = None,
     ) -> str | None:
         """Dispatch an agent task and return the task_id.
 
@@ -52,6 +56,10 @@ class AgentPort(ABC):
             conversation_id: Optional conversation to associate the task with.
             triggered_by: Source of the trigger (user/github/gitlab/routine/schedule).
             trigger_payload: Additional metadata about the trigger.
+            repos: Optional authorized repository metadata for worktree provisioning.
+            session_root: Optional sandbox session root for worktree paths.
+            sandbox_id: Optional sandbox identifier for MCP and agent profile selection.
+            override_model: Optional concrete model selected for this task.
         """
 
     @abstractmethod

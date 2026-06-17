@@ -202,6 +202,7 @@ class Conversation:
     github_repo_slug: str | None = None
     ci_status: str = "unknown"  # unknown | pending | running | passed | failed
     ci_url: str | None = None
+    user_email: str | None = None
 
 
 @dataclass

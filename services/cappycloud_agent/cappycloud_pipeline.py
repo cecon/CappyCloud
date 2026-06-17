@@ -142,6 +142,7 @@ class Pipeline:
 
         conversation_id = str(body.get("conversation_id") or "")
         repos = body.get("repos") or []
+        cycle_context = body.get("cycle_context") or None
         session_root = str(body.get("session_root") or "")
         sandbox_id = str(body.get("sandbox_id") or "")
         cursor = body.get("cursor")
@@ -195,6 +196,7 @@ class Pipeline:
             session_root=session_root,
             worktree_top_level=None,
             agent_profiles=agent_profiles,
+            cycle_context=cycle_context,
         )
         prompt = inject_repo_context(prompt, repos, session_root)
 

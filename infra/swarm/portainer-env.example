@@ -1,0 +1,22 @@
+# Portainer stack variables for CappyCloud
+# Cole os valores reais no painel do Portainer. Nao versionar este arquivo.
+CAPPYCLOUD_REGISTRY=iaservicecontainerdev.azurecr.io
+CAPPYCLOUD_IMAGE_TAG=82b91ff-202606151007
+CAPPYCLOUD_HOST=cappy.cappyfy.com
+POSTGRES_USER=cappy
+POSTGRES_DB=cappycloud
+POSTGRES_PASSWORD=<valor do portainer.env temporario>
+JWT_SECRET=<valor do portainer.env temporario>
+ENCRYPTION_KEY=<valor do portainer.env temporario>
+INTERNAL_API_TOKEN=<valor do portainer.env temporario>
+OPENROUTER_API_KEY=<opcional; deixe vazio se o provider ativo vem do banco, ex. Azure>
+OPENROUTER_MODEL=<valor do portainer.env temporario>
+SANDBOX_GRPC_PORT=50051
+SANDBOX_IDLE_TIMEOUT=1800
+CAPPYCLOUD_AUTO_PUSH_SESSION_BRANCH=false
+CAPPYCLOUD_BACKUP_RETENTION_DAYS=14
+CAPPYCLOUD_BACKUP_INTERVAL_SECONDS=86400
+CONFLUENCE_AUTHORIZATION=<opcional, valor do portainer.env temporario se usado>
+CONFLUENCE_BASE_URL=<opcional>
+CONFLUENCE_MAIN_MENU_URL=<opcional>
+DEVOPS_TOKEN=<opcional, valor do portainer.env temporario se usado>

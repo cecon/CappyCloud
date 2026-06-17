@@ -8,7 +8,9 @@
 #   1. Repo principal fica em /repos/<slug>
 #   2. Cria worktree em <worktree_path> na branch cappy/<slug>/<session_id>
 #   3. Branch é criada a partir de <base_branch> (ou da default detectada)
-#   4. Idempotente: se o worktree já existe, reutiliza
+#   4. Por padrão, mantém a branch apenas local. Push automático só se
+#      CAPPYCLOUD_AUTO_PUSH_SESSION_BRANCH=true.
+#   5. Idempotente: se o worktree já existe, reutiliza
 #
 # Tokens de autenticação herdados do ambiente do container:
 #   DEVOPS_TOKEN  → Azure DevOps
@@ -26,6 +28,7 @@ MAIN_REPO="/repos/${ENV_SLUG}"
 
 DEVOPS_TOKEN="${DEVOPS_TOKEN:-}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+AUTO_PUSH_SESSION_BRANCH="${CAPPYCLOUD_AUTO_PUSH_SESSION_BRANCH:-false}"
 
 echo "[session_start] slug=${ENV_SLUG}  session=${SESSION_ID}  worktree=${WORKTREE_PATH}  base=${BASE_BRANCH:-auto}  branch=${BRANCH_NAME}"
 
@@ -159,6 +162,14 @@ _fetch_base_branch() {
 
 # ── Helper: push não-fatal ────────────────────────────────────
 _push_session_branch() {
+    case "$(echo "$AUTO_PUSH_SESSION_BRANCH" | tr '[:upper:]' '[:lower:]')" in
+        1|true|yes|on) ;;
+        *)
+            echo "[session_start] Push automático desativado — branch ${2} permanece local."
+            return 0
+            ;;
+    esac
+
     local repo_dir="$1"
     local branch="$2"
     local remote_url

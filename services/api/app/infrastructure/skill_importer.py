@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Any, cast
 from urllib.parse import urlparse
 
 import httpx
@@ -41,7 +42,7 @@ _MAIN_SELECTORS: list[tuple[str, str]] = [
 
 def _find_first(soup: BeautifulSoup | Tag, attr: str, value: str) -> Tag | None:
     """Encontra o primeiro Tag com determinado atributo, sem rebentar com mypy."""
-    matches = soup.find_all(attrs={attr: value})
+    matches = cast(Any, soup).find_all(attrs={attr: value})
     for el in matches:
         if isinstance(el, Tag):
             return el

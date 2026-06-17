@@ -59,6 +59,19 @@ class TestListConversations:
         assert len(result) == 1
         assert result[0].title == "Chat A"
 
+    async def test_admin_scope_returns_all_conversations(
+        self, conv_repo: InMemoryConversationRepository
+    ) -> None:
+        uid_a = uuid.uuid4()
+        uid_b = uuid.uuid4()
+        create = CreateConversation(conv_repo)
+        await create.execute(uid_a, "Chat A")
+        await create.execute(uid_b, "Chat B")
+
+        result = await ListConversations(conv_repo).execute(uid_a, include_all=True)
+
+        assert {c.title for c in result} == {"Chat A", "Chat B"}
+
 
 class TestCreateConversation:
     async def test_creates_with_given_title(

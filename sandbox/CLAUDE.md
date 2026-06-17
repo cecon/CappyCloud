@@ -15,8 +15,8 @@ não fazem parte do escopo da conversa.
   candidatos; não são evidência suficiente para afirmar regra de negócio,
   procedimento, SQL, campo de tabela ou configuração.
 - Antes de recomendar procedimento ou citar arquivo como prova, leia o trecho
-  exato com `Read`/comando equivalente. Cite somente arquivos/linhas realmente
-  abertos na conversa.
+  exato via Bash (`sed -n`, `nl -ba`, `cat` ou equivalente). Cite somente
+  arquivos/linhas realmente abertos na conversa.
 - Para SQL, flags, parâmetros e configurações, confirme nomes reais em
   migrations, mappings, XML/Glade, seeds ou consultas existentes. Se o schema
   não estiver comprovado, marque a consulta como template e peça o DDL/log.

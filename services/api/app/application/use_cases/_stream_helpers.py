@@ -103,6 +103,7 @@ def build_pipeline_body(
     cursor: int | None,
     override_model: str | None,
     attachments_payload: list[dict] | None,
+    cycle_context: dict | None = None,
 ) -> dict:
     """Monta o dict que vai para o pipeline do agente."""
     body: dict = {
@@ -119,6 +120,8 @@ def build_pipeline_body(
     # Não serializável para JSON, por isso fica fora de qualquer log.
     if attachments_payload:
         body["attachments_payload"] = attachments_payload
+    if cycle_context:
+        body["cycle_context"] = cycle_context
     return body
 
 

@@ -1,0 +1,239 @@
+# CappyCloud - Portainer / Docker Swarm stack
+#
+# Expected Portainer environment variables:
+#   CAPPYCLOUD_REGISTRY=iaservicecontainerdev.azurecr.io
+#   CAPPYCLOUD_IMAGE_TAG=<build tag>
+#   CAPPYCLOUD_HOST=<public hostname>
+#   POSTGRES_PASSWORD=<strong password>
+#   JWT_SECRET=<strong secret>
+#   ENCRYPTION_KEY=<32-byte hex or Fernet key>
+#   INTERNAL_API_TOKEN=<strong shared internal token>
+#
+# Optional:
+#   OPENROUTER_API_KEY=<fallback provider key when no DB provider key is selected>
+#   OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
+#   CORS_ORIGINS=https://<public hostname>
+#   CAPPYCLOUD_BACKUP_RETENTION_DAYS=14
+#   CAPPYCLOUD_BACKUP_INTERVAL_SECONDS=86400
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cappy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-cappycloud}
+    volumes:
+      - cappycloud_postgres_data:/var/lib/postgresql/data
+    networks:
+      - cappycloud_internal
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cappy} -d ${POSTGRES_DB:-cappycloud}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - cappycloud_redis_data:/data
+    networks:
+      - cappycloud_internal
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: on-failure
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  sandbox:
+    image: ${CAPPYCLOUD_REGISTRY:-registry.local}/cappycloud-sandbox:${CAPPYCLOUD_IMAGE_TAG:-latest}
+    environment:
+      CLAUDE_CODE_USE_OPENAI: "1"
+      OPENAI_BASE_URL: https://openrouter.ai/api/v1
+      # Runtime provider keys come from the DB and are sent per request.
+      # openclaude still requires a non-empty key at process boot.
+      OPENAI_API_KEY: ${OPENROUTER_API_KEY:-not-used-db-provider-configured}
+      OPENAI_MODEL: ${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
+      GRPC_HOST: "0.0.0.0"
+      GRPC_PORT: ${SANDBOX_GRPC_PORT:-50051}
+      SESSION_SERVER_PORT: "8080"
+      CAPPYCLOUD_AUTO_PUSH_SESSION_BRANCH: ${CAPPYCLOUD_AUTO_PUSH_SESSION_BRANCH:-false}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
+      API_HOST: api
+      API_PORT_INTERNAL: "8080"
+      DEVOPS_TOKEN: ${DEVOPS_TOKEN:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GIT_USER_EMAIL: ${GIT_USER_EMAIL:-agent@cappycloud.local}
+      GIT_USER_NAME: ${GIT_USER_NAME:-CappyCloud Agent}
+      CONFLUENCE_AUTHORIZATION: ${CONFLUENCE_AUTHORIZATION:-}
+      CONFLUENCE_BASIC_TOKEN: ${CONFLUENCE_BASIC_TOKEN:-}
+      CONFLUENCE_PAT: ${CONFLUENCE_PAT:-}
+      CONFLUENCE_EMAIL: ${CONFLUENCE_EMAIL:-}
+      CONFLUENCE_API_TOKEN: ${CONFLUENCE_API_TOKEN:-}
+      CONFLUENCE_BASE_URL: ${CONFLUENCE_BASE_URL:-}
+      CONFLUENCE_MAIN_MENU_URL: ${CONFLUENCE_MAIN_MENU_URL:-}
+    volumes:
+      - cappycloud_repos_data:/repos
+    networks:
+      cappycloud_internal:
+        aliases:
+          - cappycloud-sandbox
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  api:
+    image: ${CAPPYCLOUD_REGISTRY:-registry.local}/cappycloud-api:${CAPPYCLOUD_IMAGE_TAG:-latest}
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cappy}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-cappycloud}
+      PIPELINE_DATABASE_URL: postgresql://${POSTGRES_USER:-cappy}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-cappycloud}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://${CAPPYCLOUD_HOST:?CAPPYCLOUD_HOST is required}}
+      # Optional fallback only. The selected provider/key is resolved from DB.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
+      SANDBOX_HOST: cappycloud-sandbox
+      SANDBOX_GRPC_PORT: ${SANDBOX_GRPC_PORT:-50051}
+      SANDBOX_SESSION_PORT: "8080"
+      SANDBOX_IDLE_TIMEOUT: ${SANDBOX_IDLE_TIMEOUT:-1800}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      REDIS_URL: redis://redis:6379
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
+      ATTACHMENTS_DIR: /var/cappycloud/attachments
+      VISION_PROVIDER_API_KEY: ${VISION_PROVIDER_API_KEY:-}
+      VISION_PROVIDER_BASE_URL: ${VISION_PROVIDER_BASE_URL:-https://openrouter.ai/api/v1}
+      VISION_MODEL: ${VISION_MODEL:-openai/gpt-4o-mini}
+    volumes:
+      - cappycloud_attachments_data:/var/cappycloud/attachments
+    networks:
+      - cappycloud_internal
+      - traefik-public
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: on-failure
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=traefik-public
+        - "traefik.http.routers.cappycloud-api.rule=Host(`${CAPPYCLOUD_HOST:?CAPPYCLOUD_HOST is required}`) && (PathPrefix(`/api`) || PathPrefix(`/.well-known`) || PathPrefix(`/mcp`) || PathPrefix(`/docs`) || PathPrefix(`/openapi.json`) || PathPrefix(`/health`))"
+        - traefik.http.routers.cappycloud-api.entrypoints=websecure
+        - traefik.http.routers.cappycloud-api.tls=true
+        - traefik.http.routers.cappycloud-api.tls.certresolver=letsencrypt
+        - traefik.http.routers.cappycloud-api.priority=100
+        - traefik.http.services.cappycloud-api.loadbalancer.server.port=8080
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5).read()\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  web:
+    image: ${CAPPYCLOUD_REGISTRY:-registry.local}/cappycloud-web:${CAPPYCLOUD_IMAGE_TAG:-latest}
+    networks:
+      - cappycloud_internal
+      - traefik-public
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: on-failure
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=traefik-public
+        - "traefik.http.routers.cappycloud-web.rule=Host(`${CAPPYCLOUD_HOST:?CAPPYCLOUD_HOST is required}`)"
+        - traefik.http.routers.cappycloud-web.entrypoints=websecure
+        - traefik.http.routers.cappycloud-web.tls=true
+        - traefik.http.routers.cappycloud-web.tls.certresolver=letsencrypt
+        - traefik.http.routers.cappycloud-web.priority=1
+        - traefik.http.services.cappycloud-web.loadbalancer.server.port=80
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1/health >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  postgres-backup:
+    image: postgres:16-alpine
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER:-cappy}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGDATABASE: ${POSTGRES_DB:-cappycloud}
+      BACKUP_RETENTION_DAYS: ${CAPPYCLOUD_BACKUP_RETENTION_DAYS:-14}
+      BACKUP_INTERVAL_SECONDS: ${CAPPYCLOUD_BACKUP_INTERVAL_SECONDS:-86400}
+    command:
+      - sh
+      - -ec
+      - |
+        mkdir -p /backups
+        while true; do
+          until pg_isready -h "$$PGHOST" -p "$$PGPORT" -U "$$PGUSER" -d "$$PGDATABASE"; do
+            sleep 5
+          done
+          ts="$$(date -u +%Y%m%dT%H%M%SZ)"
+          pg_dump -h "$$PGHOST" -p "$$PGPORT" -U "$$PGUSER" -d "$$PGDATABASE" -Fc -f "/backups/cappycloud_$${ts}.dump"
+          find /backups -type f -name 'cappycloud_*.dump' -mtime +"$${BACKUP_RETENTION_DAYS}" -delete
+          sleep "$${BACKUP_INTERVAL_SECONDS}"
+        done
+    volumes:
+      - cappycloud_postgres_backups:/backups
+    networks:
+      - cappycloud_internal
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: on-failure
+
+networks:
+  cappycloud_internal:
+    name: cappycloud_internal
+    driver: overlay
+    attachable: true
+  traefik-public:
+    external: true
+
+volumes:
+  cappycloud_postgres_data:
+    name: cappycloud_postgres_data
+  cappycloud_redis_data:
+    name: cappycloud_redis_data
+  cappycloud_repos_data:
+    name: cappycloud_repos_data
+  cappycloud_attachments_data:
+    name: cappycloud_attachments_data
+  cappycloud_postgres_backups:
+    name: cappycloud_postgres_backups

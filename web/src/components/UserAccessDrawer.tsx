@@ -48,12 +48,21 @@ type Pair<T> = {
 
 const EMPTY = <T,>(): Pair<T> => ({ available: null, allowed: new Set(), busy: new Set() })
 
+function countVisibleAllowed<T extends { id: string }>(pair: Pair<T>): number {
+  if (pair.available === null) return 0
+  return pair.available.reduce((total, item) => total + (pair.allowed.has(item.id) ? 1 : 0), 0)
+}
+
 export function UserAccessDrawer({ user, onClose }: Props) {
   const [sandboxes, setSandboxes] = useState<Pair<Sandbox>>(EMPTY())
   const [repos, setRepos] = useState<Pair<Repository>>(EMPTY())
   const [models, setModels] = useState<Pair<AiModel>>(EMPTY())
   const [bulkBusy, setBulkBusy] = useState<ModelTier | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const visibleAllowedModels = countVisibleAllowed(models)
+  const visibleModels = models.available?.length ?? 0
+  const hiddenAllowedModels =
+    models.available === null ? 0 : Math.max(0, models.allowed.size - visibleAllowedModels)
 
   useEffect(() => {
     if (!user) return
@@ -222,7 +231,10 @@ export function UserAccessDrawer({ user, onClose }: Props) {
               <Stack gap="sm">
                 <Group justify="space-between">
                   <Text size="sm" c="dimmed">
-                    {models.allowed.size} de {models.available?.length ?? 0} modelos liberados.
+                    {visibleAllowedModels} de {visibleModels} modelos ativos liberados.
+                    {hiddenAllowedModels > 0
+                      ? ` ${hiddenAllowedModels} vínculo(s) inativo(s) oculto(s).`
+                      : ''}
                   </Text>
                   <Group gap="xs">
                     <Button

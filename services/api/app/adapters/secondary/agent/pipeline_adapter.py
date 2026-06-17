@@ -40,6 +40,10 @@ class PipelineAdapter(AgentPort):
         conversation_id: str | None = None,
         triggered_by: str = "system",
         trigger_payload: dict | None = None,
+        repos: list[dict] | None = None,
+        session_root: str = "",
+        sandbox_id: str = "",
+        override_model: str | None = None,
     ) -> str | None:
         """Dispatch a task via the TaskDispatcher and return task_id."""
         dispatcher = self._pipeline._dispatcher
@@ -50,6 +54,10 @@ class PipelineAdapter(AgentPort):
             conversation_id=conversation_id,
             triggered_by=triggered_by,
             trigger_payload=trigger_payload or {},
+            repos=repos or [],
+            session_root=session_root,
+            sandbox_id=sandbox_id,
+            override_model=override_model,
         )
         return result if isinstance(result, str) else None
 

@@ -33,10 +33,16 @@ def _rest_base() -> str:
 
 def _headers() -> dict[str, str]:
     headers = {"Accept": "application/json", "User-Agent": f"{SERVER_NAME}/{SERVER_VERSION}"}
+    explicit = os.getenv("CONFLUENCE_AUTHORIZATION", "").strip()
+    basic_token = os.getenv("CONFLUENCE_BASIC_TOKEN", "").strip()
     pat = os.getenv("CONFLUENCE_PAT", "").strip()
     email = os.getenv("CONFLUENCE_EMAIL", "").strip()
     token = os.getenv("CONFLUENCE_API_TOKEN", "").strip()
-    if pat:
+    if explicit:
+        headers["Authorization"] = explicit
+    elif basic_token:
+        headers["Authorization"] = f"Basic {basic_token}"
+    elif pat:
         headers["Authorization"] = f"Bearer {pat}"
     elif email and token:
         raw = base64.b64encode(f"{email}:{token}".encode()).decode("ascii")

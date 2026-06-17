@@ -17,7 +17,9 @@ class ListConversations:
     def __init__(self, conversations: ConversationRepository) -> None:
         self._conversations = conversations
 
-    async def execute(self, user_id: uuid.UUID) -> list[Conversation]:
+    async def execute(self, user_id: uuid.UUID, include_all: bool = False) -> list[Conversation]:
+        if include_all:
+            return await self._conversations.list_all()
         return await self._conversations.list_by_user(user_id)
 
 
