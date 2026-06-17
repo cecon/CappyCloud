@@ -393,8 +393,6 @@ class SendMessageBody(BaseModel):
     attachment_ids: list[uuid.UUID] | None = None
 
 
-# ── Re-export schemas de Skills (definidos em ``schemas_agents``) ───────────
-from app.schemas_agentic_delivery import *  # noqa: E402, F403
 from app.schemas_agents import (  # noqa: E402, F401
     SkillCreate,
     SkillImportFromUrlBody,

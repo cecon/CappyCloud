@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from app.adapters.primary.http.deps import get_agentic_delivery_repo
+from app.adapters.primary.http.deps_agentic_delivery import get_agentic_delivery_repo
 from app.domain.agentic_delivery import (
     AgenticPermissionValue,
     GateStatus,

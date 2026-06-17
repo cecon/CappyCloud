@@ -46,6 +46,10 @@ Thumbs.db
 .codex-artifacts/
 outputs/
 
+# Locally installed Codex UI helper skills; project-owned skills stay versioned.
+.agents/skills/ui-styling/
+.agents/skills/ui-ux-pro-max/
+
 # Local extractor build outputs
 tools/extractors/csharp/bin/
 tools/extractors/csharp/obj/

@@ -7,21 +7,18 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.adapters.primary.http.deps import (
-    get_authenticated_user,
+from app.adapters.primary.http.deps import get_authenticated_user
+from app.adapters.primary.http.deps_agentic_delivery import (
     get_authorize_external_action_uc,
     get_create_agentic_cycle_uc,
     get_cycle_metrics_uc,
     get_link_agentic_output_evidence_uc,
-    get_manage_agentic_permissions_uc,
-    get_manage_sensitive_surfaces_uc,
     get_prepare_agentic_cycle_uc,
     get_record_review_decision_uc,
     get_review_package_uc,
     get_run_agentic_cycle_uc,
     get_search_agentic_knowledge_uc,
     get_transition_agentic_cycle_uc,
-    require_role,
 )
 from app.application.use_cases.agentic_delivery_actions import AuthorizeExternalAction
 from app.application.use_cases.agentic_delivery_knowledge import SearchReusableKnowledge
@@ -34,8 +31,6 @@ from app.application.use_cases.agentic_delivery_prepare import (
 from app.application.use_cases.agentic_delivery_review import (
     GetReviewPackage,
     LinkAgentOutputEvidence,
-    ManageAgenticDeliveryPermissions,
-    ManageSensitiveSurfaces,
     RecordReviewDecision,
     TransitionAgenticDeliveryCycle,
 )
@@ -47,10 +42,8 @@ from app.domain.agentic_delivery import (
     InvalidTransitionError,
     ReviewDecisionValue,
 )
-from app.domain.entities import User, UserRole
+from app.domain.entities import User
 from app.schemas_agentic_delivery import (
-    AgenticDeliveryPermissionRequest,
-    AgenticDeliveryPermissionResponse,
     CreateCycleRequest,
     CycleCreatedResponse,
     EvidenceLinkOut,
@@ -66,9 +59,6 @@ from app.schemas_agentic_delivery import (
     ReviewPackageResponse,
     RunCycleRequest,
     RunCycleResponse,
-    SensitiveSurfaceListResponse,
-    SensitiveSurfaceOut,
-    SensitiveSurfaceRequest,
     TransitionCycleRequest,
     TransitionCycleResponse,
 )
@@ -271,34 +261,6 @@ async def search_knowledge(
     return KnowledgeSearchResponse(**result)
 
 
-@router.put("/sensitive-surfaces/{surface_id}", response_model=SensitiveSurfaceOut)
-async def save_sensitive_surface(
-    surface_id: uuid.UUID,
-    body: SensitiveSurfaceRequest,
-    current: Annotated[User, Depends(get_authenticated_user)],
-    uc: Annotated[ManageSensitiveSurfaces, Depends(get_manage_sensitive_surfaces_uc)],
-) -> SensitiveSurfaceOut:
-    try:
-        row = await uc.save(surface_id, body.model_dump(), current)
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return SensitiveSurfaceOut(**row)
-
-
-@router.get("/sensitive-surfaces", response_model=SensitiveSurfaceListResponse)
-async def list_sensitive_surfaces(
-    uc: Annotated[ManageSensitiveSurfaces, Depends(get_manage_sensitive_surfaces_uc)],
-    _current: Annotated[User, Depends(get_authenticated_user)],
-    repository_id: Annotated[uuid.UUID | None, Query()] = None,
-    domain_key: Annotated[str | None, Query()] = None,
-    limit: Annotated[int, Query(ge=1, le=100)] = 50,
-    cursor: Annotated[str | None, Query()] = None,
-) -> SensitiveSurfaceListResponse:
-    return SensitiveSurfaceListResponse(**await uc.list(repository_id, domain_key, limit, cursor))
-
-
 @router.post(
     "/{cycle_id}/external-actions/authorize",
     response_model=ExternalActionAuthorizationResponse,
@@ -334,24 +296,3 @@ async def get_metrics(
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     return MetricsResponse(**result)
-
-
-admin_router = APIRouter(prefix="/admin/agentic-delivery", tags=["admin-agentic-delivery"])
-
-
-@admin_router.put(
-    "/permissions/{permission_id}",
-    response_model=AgenticDeliveryPermissionResponse,
-    dependencies=[Depends(require_role(UserRole.ADMIN))],
-)
-async def upsert_permission(
-    permission_id: uuid.UUID,
-    body: AgenticDeliveryPermissionRequest,
-    current: Annotated[User, Depends(get_authenticated_user)],
-    uc: Annotated[ManageAgenticDeliveryPermissions, Depends(get_manage_agentic_permissions_uc)],
-) -> AgenticDeliveryPermissionResponse:
-    try:
-        row = await uc.upsert(permission_id, current.id, body.model_dump())
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return AgenticDeliveryPermissionResponse(**row)
