@@ -65,6 +65,7 @@ message ServerMessage {
     ActionRequired action_required = 4;
     FinalResponse  done            = 5;
     ErrorResponse  error           = 6;
+    RequestPayloadDiagnostic payload_diagnostic = 8;
   }
 }
 
@@ -106,4 +107,18 @@ message FinalResponse {
 message ErrorResponse {
   string message = 1;
   string code    = 2;
+}
+
+message PayloadSizeCategory {
+  string key         = 1;
+  string label       = 2;
+  int64  size_bytes  = 3;
+  double percentage  = 4;
+}
+
+message RequestPayloadDiagnostic {
+  int64 total_size_bytes = 1;
+  repeated PayloadSizeCategory categories = 2;
+  string source       = 3;
+  string generated_at = 4;
 }

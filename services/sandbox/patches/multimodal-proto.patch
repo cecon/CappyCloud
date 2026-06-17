@@ -1,5 +1,5 @@
 diff --git a/src/proto/openclaude.proto b/src/proto/openclaude.proto
-index 07d39c9..3baaf9f 100644
+index 07d39c9..c81dfa0 100644
 --- a/src/proto/openclaude.proto
 +++ b/src/proto/openclaude.proto
 @@ -25,12 +25,23 @@ message ClientMessage {
@@ -26,3 +26,32 @@ index 07d39c9..3baaf9f 100644
  }
  
  message UserInput {
+@@ -54,6 +65,7 @@ message ServerMessage {
+     ActionRequired action_required = 4;// Agent requires human intervention
+     FinalResponse done = 5;            // Generation successfully completed
+     ErrorResponse error = 6;           // A critical error occurred
++    RequestPayloadDiagnostic payload_diagnostic = 8; // Safe request payload size breakdown
+   }
+ }
+ 
+@@ -95,6 +107,20 @@ message FinalResponse {
+   int32 completion_tokens = 3;
+ }
+ 
++message PayloadSizeCategory {
++  string key = 1;
++  string label = 2;
++  int64 size_bytes = 3;
++  double percentage = 4;
++}
++
++message RequestPayloadDiagnostic {
++  int64 total_size_bytes = 1;
++  repeated PayloadSizeCategory categories = 2;
++  string source = 3;
++  string generated_at = 4;
++}
++
+ message ErrorResponse {
+   string message = 1;
+   string code = 2;

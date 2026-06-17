@@ -95,15 +95,11 @@ RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 
 # ── Clone and build openclaude from source ────────────────────
-ARG OPENCLAUDE_REF=f71e7692373a61d28c82fc3fadff3feaa4071ede
+ARG OPENCLAUDE_REF=66ed9b61dcefea4bd58d1c24011cf32015b0fb29
 COPY services/sandbox/patches/grep-tool-n-alias.patch /tmp/grep-tool-n-alias.patch
 COPY services/sandbox/patches/auto-approve-tools.patch /tmp/auto-approve-tools.patch
 COPY services/sandbox/patches/multimodal-proto.patch /tmp/multimodal-proto.patch
 COPY services/sandbox/patches/multimodal-grpc-handler.patch /tmp/multimodal-grpc-handler.patch
-COPY services/sandbox/patches/mcp-grpc-integration.patch /tmp/mcp-grpc-integration.patch
-COPY services/sandbox/patches/worktree-tool-guard.patch /tmp/worktree-tool-guard.patch
-COPY services/sandbox/patches/numeric-parameter-grep-guard.patch /tmp/numeric-parameter-grep-guard.patch
-COPY services/sandbox/patches/numeric-parameter-grep-wrapper.patch /tmp/numeric-parameter-grep-wrapper.patch
 COPY services/sandbox/patches/read-empty-pages.patch /tmp/read-empty-pages.patch
 RUN sed -i 's/\r$//' /tmp/*.patch
 WORKDIR /openclaude
@@ -115,17 +111,11 @@ RUN git init . \
     && git apply /tmp/auto-approve-tools.patch \
     && git apply /tmp/multimodal-proto.patch \
     && git apply /tmp/multimodal-grpc-handler.patch \
-    && git apply /tmp/mcp-grpc-integration.patch \
-    && git apply /tmp/worktree-tool-guard.patch \
-    && git apply /tmp/numeric-parameter-grep-guard.patch \
-    && git apply /tmp/numeric-parameter-grep-wrapper.patch \
     && git apply /tmp/read-empty-pages.patch \
     && sed -i 's/^detectStubLeaks()$/setImmediate(() => detectStubLeaks())/' src/entrypoints/sdk/index.ts \
     && rm -f /tmp/grep-tool-n-alias.patch /tmp/auto-approve-tools.patch \
             /tmp/multimodal-proto.patch /tmp/multimodal-grpc-handler.patch \
-            /tmp/mcp-grpc-integration.patch /tmp/worktree-tool-guard.patch \
-            /tmp/numeric-parameter-grep-guard.patch /tmp/read-empty-pages.patch \
-            /tmp/numeric-parameter-grep-wrapper.patch \
+            /tmp/read-empty-pages.patch \
     && bun install \
     && bun run build
 

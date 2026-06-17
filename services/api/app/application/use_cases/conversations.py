@@ -14,6 +14,7 @@ from app.application.use_cases._conversation_crud import (
     ListMessages,
 )
 from app.application.use_cases._conversation_titles import DEFAULT_TITLE, TITLE_MAX_LEN
+from app.application.use_cases._payload_diagnostics import sanitize_payload_diagnostics
 from app.application.use_cases._stream_helpers import (
     build_pipeline_body,
     compute_cost,
@@ -209,11 +210,12 @@ class StreamMessage:
         accumulated_text: list[str] = []
         accumulated_error: list[str] = []
         usage: dict = {}
+        latest_payload_diagnostics: dict[str, object] | None = None
         assistant_saved = False
         gen = self._agent.pipe(content, model_id, messages_payload, pipeline_body)
 
         async def save_assistant_once() -> None:
-            nonlocal assistant_saved
+            nonlocal assistant_saved, latest_payload_diagnostics
             if assistant_saved:
                 return
             assistant_saved = True
@@ -230,6 +232,7 @@ class StreamMessage:
                         prompt_tokens=int(usage.get("prompt_tokens") or 0),
                         completion_tokens=int(usage.get("completion_tokens") or 0),
                         cost_usd=cost_usd,
+                        payload_diagnostics=latest_payload_diagnostics,
                     )
                 )
             elif accumulated_error:
@@ -239,6 +242,7 @@ class StreamMessage:
                         conversation_id=conversation_id,
                         role="assistant",
                         content="**Erro:** " + " ".join(accumulated_error),
+                        payload_diagnostics=latest_payload_diagnostics,
                     )
                 )
 
@@ -265,6 +269,7 @@ class StreamMessage:
                 break
             line = chunk.strip()
             save_before_yield = False
+            output_chunk = chunk
             if line.startswith("data: "):
                 try:
                     evt = json.loads(line[6:])
@@ -273,6 +278,17 @@ class StreamMessage:
                         accumulated_text.append(evt.get("content", ""))
                     elif evt_type == "error":
                         accumulated_error.append(evt.get("message", ""))
+                    elif evt_type == "payload_diagnostic":
+                        diagnostics = sanitize_payload_diagnostics(evt.get("diagnostics"))
+                        if diagnostics is None:
+                            continue
+                        latest_payload_diagnostics = diagnostics
+                        output_chunk = _sse_payload(
+                            {
+                                "type": "payload_diagnostic",
+                                "diagnostics": diagnostics,
+                            }
+                        ).decode("utf-8")
                     elif evt_type == "done":
                         # O TaskRunner enriquece o evento done com tokens/modelo
                         # para que possamos persistir o uso na mensagem assistant.
@@ -286,7 +302,7 @@ class StreamMessage:
                     pass
             if save_before_yield:
                 await save_assistant_once()
-            yield chunk.encode("utf-8")
+            yield output_chunk.encode("utf-8")
 
         await save_assistant_once()
 

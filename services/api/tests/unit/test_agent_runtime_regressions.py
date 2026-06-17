@@ -184,6 +184,80 @@ def test_provider_api_error_text_chunk_becomes_error_event() -> None:
     assert "user_should_not_leak" not in data["message"]
 
 
+def test_payload_diagnostic_event_normalizes_and_strips_unsafe_fields() -> None:
+    msg = types.SimpleNamespace(
+        payload_diagnostic=types.SimpleNamespace(
+            total_size_bytes=999,
+            source="sk-live-secret",
+            generated_at="/repos/private/file.py",
+            categories=[
+                types.SimpleNamespace(
+                    key="/repos/private/file.py",
+                    label="sk-live-secret",
+                    size_bytes=25,
+                    percentage=100,
+                ),
+                types.SimpleNamespace(
+                    key="attachments",
+                    label="/repos/private/image.png",
+                    size_bytes=75,
+                    percentage=100,
+                ),
+            ],
+        )
+    )
+
+    event = _grpc_event_handlers.payload_diagnostic_event(msg)
+
+    assert event is not None
+    event_type, data = event
+    assert event_type == "payload_diagnostic"
+    diagnostics = data["diagnostics"]
+    assert diagnostics["total_size_bytes"] == 100
+    assert diagnostics["source"] == "openclaude"
+    assert diagnostics["generated_at"] == ""
+    assert diagnostics["categories"] == [
+        {"key": "attachments", "label": "Anexos", "size_bytes": 75, "percentage": 75.0},
+        {"key": "other", "label": "Outros", "size_bytes": 25, "percentage": 25.0},
+    ]
+    assert "sk-live-secret" not in str(data)
+    assert "/repos/private" not in str(data)
+
+
+def test_malformed_payload_diagnostic_event_is_ignored() -> None:
+    msg = types.SimpleNamespace(
+        payload_diagnostic=types.SimpleNamespace(
+            total_size_bytes=-1,
+            source="openclaude",
+            generated_at="2026-06-17T15:20:00Z",
+            categories=[],
+        )
+    )
+
+    assert _grpc_event_handlers.payload_diagnostic_event(msg) is None
+
+
+def test_tool_result_event_preserves_stdout_and_error_flag() -> None:
+    msg = types.SimpleNamespace(
+        tool_result=types.SimpleNamespace(
+            tool_name="Bash",
+            output=b"stdout preservado",
+            is_error=True,
+            tool_use_id="toolu_1",
+        )
+    )
+
+    event_type, data = _grpc_event_handlers.tool_result_event(msg)
+
+    assert event_type == "tool_result"
+    assert data == {
+        "name": "Bash",
+        "output": b"stdout preservado",
+        "is_error": True,
+        "id": "toolu_1",
+    }
+
+
 def test_clean_assistant_text_removes_tool_chatter_before_final_answer() -> None:
     raw = (
         'Search repository for "1556".Open regra_nf.py.Read relevant lines.'

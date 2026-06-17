@@ -16,9 +16,8 @@
 # ──────────────────────────────────────────────────────────────
 set -euo pipefail
 
-: "${OPENAI_API_KEY:?OPENAI_API_KEY is required}"
-
 OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}"
+OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 OPENAI_MODEL="${OPENAI_MODEL:-anthropic/claude-3.5-sonnet}"
 CLAUDE_CODE_USE_OPENAI="${CLAUDE_CODE_USE_OPENAI:-1}"
 GRPC_HOST="${GRPC_HOST:-0.0.0.0}"

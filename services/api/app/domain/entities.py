@@ -206,6 +206,22 @@ class Conversation:
 
 
 @dataclass
+class PayloadSizeCategory:
+    key: str
+    label: str
+    size_bytes: int
+    percentage: float = 0.0
+
+
+@dataclass
+class PayloadSizeBreakdown:
+    total_size_bytes: int
+    categories: list[PayloadSizeCategory] = field(default_factory=list)
+    source: str = ""
+    generated_at: str = ""
+
+
+@dataclass
 class Message:
     id: uuid.UUID
     conversation_id: uuid.UUID
@@ -216,6 +232,7 @@ class Message:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     cost_usd: float = 0.0
+    payload_diagnostics: dict[str, object] | None = None
 
 
 @dataclass

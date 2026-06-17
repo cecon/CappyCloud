@@ -542,6 +542,21 @@ export type ChatMessage = {
   prompt_tokens?: number
   completion_tokens?: number
   cost_usd?: number
+  payload_diagnostics?: PayloadSizeBreakdown | null
+}
+
+export type PayloadSizeCategory = {
+  key: string
+  label: string
+  size_bytes: number
+  percentage?: number | null
+}
+
+export type PayloadSizeBreakdown = {
+  total_size_bytes: number
+  categories: PayloadSizeCategory[]
+  source?: string | null
+  generated_at?: string | null
 }
 
 export interface ConversationUsage {
@@ -590,9 +605,83 @@ export interface StreamHandlers {
   onActionRequired(action: ActionRequiredEvent): void
   onStatus(status: StatusEvent): void
   onError(message: string): void
+  onPayloadDiagnostic?(diagnostics: PayloadSizeBreakdown): void
   /** Acumulador final de tokens/modelo enviado quando o agente termina o turno. */
   onDone?(usage: DoneEvent): void
   signal?: AbortSignal
+}
+
+const PAYLOAD_CATEGORY_LABELS: Record<string, string> = {
+  user_message: 'Mensagem do usuario',
+  conversation_history: 'Historico da conversa',
+  repository_context: 'Contexto do repositorio',
+  attachments: 'Anexos',
+  tool_results: 'Resultados de ferramentas',
+  tool_schemas: 'Ferramentas',
+  mcp_tool_schemas: 'Ferramentas MCP',
+  runtime_context: 'Contexto de runtime',
+  other: 'Outros',
+}
+
+function parsePayloadDiagnostics(value: unknown): PayloadSizeBreakdown | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Record<string, unknown>
+  const rawCategories = Array.isArray(raw.categories) ? raw.categories : []
+  const categoriesByKey = new Map<string, PayloadSizeCategory>()
+
+  for (const item of rawCategories) {
+    if (!item || typeof item !== 'object') continue
+    const record = item as Record<string, unknown>
+    const key = typeof record.key === 'string' && record.key in PAYLOAD_CATEGORY_LABELS
+      ? record.key
+      : 'other'
+    const size = safeByteCount(record.size_bytes)
+    if (size <= 0) continue
+    const current = categoriesByKey.get(key)
+    if (current) {
+      current.size_bytes += size
+    } else {
+      categoriesByKey.set(key, {
+        key,
+        label: PAYLOAD_CATEGORY_LABELS[key],
+        size_bytes: size,
+        percentage: 0,
+      })
+    }
+  }
+
+  const categories = [...categoriesByKey.values()].sort((a, b) => b.size_bytes - a.size_bytes)
+  const total = categories.length
+    ? categories.reduce((sum, category) => sum + category.size_bytes, 0)
+    : safeByteCount(raw.total_size_bytes)
+  if (total <= 0) return null
+  for (const category of categories) {
+    category.percentage = Math.round((category.size_bytes / total) * 1000) / 10
+  }
+
+  return {
+    total_size_bytes: total,
+    categories,
+    source: safeDiagnosticSource(raw.source),
+    generated_at: safeDiagnosticText(raw.generated_at),
+  }
+}
+
+function safeByteCount(value: unknown): number {
+  const numeric = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0
+}
+
+function safeDiagnosticSource(value: unknown): string {
+  const source = typeof value === 'string' ? value.trim().toLowerCase() : 'openclaude'
+  return source === 'openclaude' || source === 'cappycloud' || source === 'agent'
+    ? source
+    : 'openclaude'
+}
+
+function safeDiagnosticText(value: unknown): string {
+  const text = typeof value === 'string' ? value.trim() : ''
+  return /^[A-Za-z0-9_.:+-]{1,64}$/.test(text) ? text : ''
 }
 
 export async function fetchConversations(
@@ -722,6 +811,13 @@ export async function streamAssistantReply(
               mode: mode === 'initializing' || mode === 'resuming' ? mode : undefined,
               state: evt.state === 'active' || evt.state === 'done' ? evt.state : undefined,
             })
+            break
+          }
+          case 'payload_diagnostic': {
+            const diagnostics = parsePayloadDiagnostics(evt.diagnostics)
+            if (diagnostics) {
+              eventHandlers.onPayloadDiagnostic?.(diagnostics)
+            }
             break
           }
           case 'error':

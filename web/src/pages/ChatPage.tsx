@@ -34,6 +34,7 @@ import {
   type ConversationDiff,
   type ConversationUsage,
   type DoneEvent,
+  type PayloadSizeBreakdown,
   type StatusEvent,
   type Workspace,
 } from '../api'
@@ -1045,6 +1046,7 @@ export function ChatPage() {
       [userMsg.id]: { content: userMsg.content, steps: [], elapsedMs: 0 },
     }))
     setMessages([userMsg])
+    let latestPayloadDiagnostics: PayloadSizeBreakdown | null = null
 
     try {
       const uploadedAttachmentIds = await uploadPendingAttachments(c.id)
@@ -1086,6 +1088,10 @@ export function ChatPage() {
             )
           )
         },
+        onPayloadDiagnostic(diagnostics) {
+          setStreamActivityAt(Date.now())
+          latestPayloadDiagnostics = diagnostics
+        },
         onError(message) {
           setStreamActivityAt(Date.now())
           setMessages((m) => [
@@ -1095,6 +1101,7 @@ export function ChatPage() {
               role: 'assistant',
               content: `**Erro:** ${message}`,
               created_at: new Date().toISOString(),
+              payload_diagnostics: latestPayloadDiagnostics,
             },
           ])
         },
@@ -1134,6 +1141,7 @@ export function ChatPage() {
             role: 'assistant',
             content: `**Erro:** ${e instanceof Error ? e.message : String(e)}`,
             created_at: new Date().toISOString(),
+            payload_diagnostics: latestPayloadDiagnostics,
           },
         ])
       }
@@ -1195,6 +1203,7 @@ export function ChatPage() {
       [userMsg.id]: { content: userMsg.content, steps: [], elapsedMs: 0 },
     }))
     setMessages((m) => [...m, userMsg])
+    let latestPayloadDiagnostics: PayloadSizeBreakdown | null = null
 
     // Renomeia título se ainda for o default — bate com o backend.
     setConversations((prev) =>
@@ -1247,6 +1256,10 @@ export function ChatPage() {
             )
           )
         },
+        onPayloadDiagnostic(diagnostics) {
+          setStreamActivityAt(Date.now())
+          latestPayloadDiagnostics = diagnostics
+        },
         onError(message) {
           setStreamActivityAt(Date.now())
           setMessages((m) => [
@@ -1256,6 +1269,7 @@ export function ChatPage() {
               role: 'assistant',
               content: `**Erro:** ${message}`,
               created_at: new Date().toISOString(),
+              payload_diagnostics: latestPayloadDiagnostics,
             },
           ])
         },
@@ -1293,6 +1307,7 @@ export function ChatPage() {
             role: 'assistant',
             content: `**Erro:** ${e instanceof Error ? e.message : String(e)}`,
             created_at: new Date().toISOString(),
+            payload_diagnostics: latestPayloadDiagnostics,
           },
         ])
       }
@@ -2150,6 +2165,7 @@ function ActiveChat({
                     promptTokens={m.prompt_tokens ?? 0}
                     completionTokens={m.completion_tokens ?? 0}
                     costUsd={m.cost_usd ?? 0}
+                    payloadDiagnostics={m.payload_diagnostics ?? null}
                   />
                   {activityTraceFor(m)?.steps.length ? (
                     <ThinkingStream
@@ -2488,6 +2504,7 @@ function PaperMessage({
   promptTokens,
   completionTokens,
   costUsd,
+  payloadDiagnostics,
 }: {
   role: string
   content: string
@@ -2496,6 +2513,7 @@ function PaperMessage({
   promptTokens?: number
   completionTokens?: number
   costUsd?: number
+  payloadDiagnostics?: PayloadSizeBreakdown | null
 }) {
   const isUser = role === 'user'
   const totalTokens = (promptTokens ?? 0) + (completionTokens ?? 0)
@@ -2539,6 +2557,9 @@ function PaperMessage({
           {streaming && <span className={styles.streamingCursor} aria-hidden />}
         </div>
       )}
+      {!isUser && payloadDiagnostics && (
+        <PayloadDiagnosticSummary diagnostics={payloadDiagnostics} />
+      )}
       {showCopy && <CopyMessageButton content={content} />}
       {hasUsage && (
         <div className={styles.messageUsageFooter}>
@@ -2553,6 +2574,73 @@ function PaperMessage({
       )}
     </div>
   )
+}
+
+function PayloadDiagnosticSummary({ diagnostics }: { diagnostics: PayloadSizeBreakdown }) {
+  const [expanded, setExpanded] = useState(false)
+  const categories = diagnostics.categories ?? []
+  const topCategories = categories.slice(0, 3)
+  return (
+    <div className={styles.payloadDiagnostic}>
+      <button
+        type="button"
+        className={styles.payloadDiagnosticToggle}
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        aria-label="Alternar detalhes do payload"
+      >
+        <span className={`${styles.icon} ${styles.payloadDiagnosticIcon}`} aria-hidden="true">
+          data_object
+        </span>
+        <span className={styles.payloadDiagnosticTitle}>Pedido</span>
+        <strong className={styles.payloadDiagnosticTotal}>
+          {formatByteSize(diagnostics.total_size_bytes)}
+        </strong>
+        {topCategories.length > 0 && (
+          <span className={styles.payloadDiagnosticChips}>
+            {topCategories.map((category) => (
+              <span className={styles.payloadDiagnosticChip} key={category.key}>
+                {category.label} {formatByteSize(category.size_bytes)}
+              </span>
+            ))}
+          </span>
+        )}
+        {categories.length > 0 && (
+          <span className={`${styles.icon} ${styles.payloadDiagnosticChevron}`} aria-hidden="true">
+            {expanded ? 'expand_less' : 'expand_more'}
+          </span>
+        )}
+      </button>
+      {expanded && categories.length > 0 && (
+        <div className={styles.payloadDiagnosticDetails}>
+          {categories.map((category) => (
+            <div className={styles.payloadDiagnosticRow} key={category.key}>
+              <span className={styles.payloadDiagnosticLabel}>{category.label}</span>
+              <span className={styles.payloadDiagnosticBar} aria-hidden="true">
+                <span
+                  className={styles.payloadDiagnosticBarFill}
+                  style={{ width: `${Math.min(100, Math.max(0, category.percentage ?? 0))}%` }}
+                />
+              </span>
+              <span className={styles.payloadDiagnosticValue}>
+                {formatByteSize(category.size_bytes)}
+                {category.percentage != null ? ` · ${category.percentage.toFixed(1)}%` : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function formatByteSize(value: number): string {
+  const bytes = Math.max(0, Math.round(value || 0))
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb.toFixed(kb >= 10 ? 0 : 1)} KB`
+  const mb = kb / 1024
+  return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`
 }
 
 /** Botão de copiar conteúdo da resposta do agente. Feedback visual por 1.6s. */

@@ -180,6 +180,9 @@ class GrpcSession:
                 elif event_type in ("tool_start", "tool_result"):
                     out_q.put((event_type, data))
 
+                elif event_type == "payload_diagnostic":
+                    out_q.put((event_type, data))
+
                 elif event_type == "action_required":
                     # Pause — caller must call send_input() to continue
                     out_q.put(("action", data))
@@ -244,6 +247,11 @@ class GrpcSession:
                     out, pending = handlers.action_required_event(msg)
                     self.pending_action = pending
                     await self._out_queue.put(out)
+
+                elif event == "payload_diagnostic":
+                    out = handlers.payload_diagnostic_event(msg)
+                    if out:
+                        await self._out_queue.put(out)
 
                 elif event == "done":
                     received_done = True
