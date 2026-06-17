@@ -101,3 +101,13 @@ custo > benefício.
 - **Guides (feedforward)**: ruff + mypy rodam no CI e no pre-commit.
 - **Sensors (feedback)**: pytest-cov com `--cov-fail-under=80` como gate no CI.
 - CI vermelho = PR bloqueado. Corrigir antes de fazer merge.
+- Antes de subir branch de PR, habilite o hook versionado:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+O hook `pre-push` roda `scripts/check_ci_before_push.py`, que espelha os
+workflows de PR: pre-commit, API CI (`ruff`, `ruff format --check`, `mypy`,
+`pytest`) e Frontend CI (`npm ci --prefer-offline || npm install`, `npm run lint`). Para push emergencial, use
+`CAPPYCLOUD_SKIP_CI_HOOK=1`, mas registre a justificativa no PR.
