@@ -41,5 +41,14 @@ Thumbs.db
 *.log
 .cache/
 
+# Local agent/runtime artifacts
+.claude/worktrees/
+.codex-artifacts/
+outputs/
+
+# Local extractor build outputs
+tools/extractors/csharp/bin/
+tools/extractors/csharp/obj/
+
 # uv-managed local lock (dev venv) — runtime usa requirements.txt
 services/api/uv.lock
