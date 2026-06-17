@@ -182,6 +182,10 @@ class ConversationRepository(ABC):
         """Return all conversations for a user, newest first."""
 
     @abstractmethod
+    async def list_all(self) -> list[Conversation]:
+        """Return all conversations, newest first."""
+
+    @abstractmethod
     async def get(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> Conversation | None:
         """Return conversation owned by user, or None if not found / not owned."""
 

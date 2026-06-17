@@ -42,6 +42,26 @@ podem aparecer em:
 Nao assuma que existe `skills-registry.json`: o contrato atual e o contexto de
 runtime definem quais skills devem entrar na resposta.
 
+## Spec Kit
+
+Para features, mudancas de arquitetura ou alteracoes com impacto em API,
+frontend, agente, sandbox ou banco, use o fluxo Spec Kit antes de implementar.
+O estado do Spec Kit fica em `.specify/`, as specs ficam em `specs/`, e a
+constituicao do projeto fica em `.specify/memory/constitution.md`.
+
+Fluxo padrao:
+
+1. `$speckit-specify` para transformar a necessidade em especificacao.
+2. `$speckit-clarify` quando houver lacunas funcionais relevantes.
+3. `$speckit-plan` para plano tecnico e checagem contra a constituicao.
+4. `$speckit-tasks` para quebrar em tarefas executaveis.
+5. `$speckit-analyze` antes de implementar quando houver artefatos complexos.
+6. `$speckit-implement` para executar as tarefas aprovadas.
+
+Bugs pequenos, perguntas tecnicas e ajustes operacionais urgentes podem seguir
+o fluxo direto, mas a resposta deve registrar a evidencia no codigo ou na
+documentacao do repo.
+
 ## Fontes externas
 
 Quando a tarefa exigir Confluence, Linx Share ou outra documentacao externa, use
@@ -68,3 +88,7 @@ frontend quando a mudanca tocar `web/`.
 
 Nao inclua artefatos temporarios, backups locais, dumps de webview ou arquivos
 grandes que nao sejam parte intencional do produto.
+
+<!-- SPECKIT START -->
+Current Spec Kit plan: [specs/001-agentic-delivery-factory/plan.md](specs/001-agentic-delivery-factory/plan.md)
+<!-- SPECKIT END -->

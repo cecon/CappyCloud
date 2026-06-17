@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities import Conversation as ConvEntity
 from app.infrastructure.orm_models import Conversation as ConvORM
+from app.infrastructure.orm_models import User as UserORM
 from app.ports.repositories import ConversationRepository
 
 
@@ -23,6 +24,14 @@ class SQLAlchemyConversationRepository(ConversationRepository):
             select(ConvORM).where(ConvORM.user_id == user_id).order_by(ConvORM.updated_at.desc())
         )
         return [self._to_entity(row) for row in result.scalars().all()]
+
+    async def list_all(self) -> list[ConvEntity]:
+        result = await self._session.execute(
+            select(ConvORM, UserORM.email)
+            .outerjoin(UserORM, UserORM.id == ConvORM.user_id)
+            .order_by(ConvORM.updated_at.desc())
+        )
+        return [self._to_entity(row, user_email=email) for row, email in result.all()]
 
     async def get(self, conversation_id: uuid.UUID, user_id: uuid.UUID) -> ConvEntity | None:
         result = await self._session.execute(
@@ -57,7 +66,7 @@ class SQLAlchemyConversationRepository(ConversationRepository):
         return self._to_entity(orm)
 
     @staticmethod
-    def _to_entity(row: ConvORM) -> ConvEntity:
+    def _to_entity(row: ConvORM, user_email: str | None = None) -> ConvEntity:
         return ConvEntity(
             id=row.id,
             user_id=row.user_id,
@@ -78,4 +87,5 @@ class SQLAlchemyConversationRepository(ConversationRepository):
             github_repo_slug=row.github_repo_slug,
             ci_status=row.ci_status,
             ci_url=row.ci_url,
+            user_email=user_email,
         )

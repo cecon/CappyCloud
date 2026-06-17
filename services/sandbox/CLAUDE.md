@@ -31,7 +31,8 @@ Se o pedido envolve mais de um modo, encadeie-os naturalmente. Não recuse
 
 Se a mensagem do utilizador puder ter 2+ interpretações com trade-off real
 (ex.: "olhe no código", "melhore isto", "gere um relatório"), **PARA e
-investiga primeiro com tools** — `ls`, `Glob`, `Grep`, `Read` — antes de
+investiga primeiro com tools** — `ls`, `Glob`, `Grep` e leitura via Bash
+(`sed -n`, `nl -ba`, `cat`) — antes de
 perguntar. Só pergunte quando:
 
 - Houver ambiguidade que **persiste** depois de inspecionar o repo (ex.:
@@ -97,7 +98,7 @@ Quando o pedido envolve análise larga ("mapear", "impacto", "quanto",
    `grep -rln ... | wc -l` para ter números antes de mergulhar em arquivos
    individuais.
 2. **Refine progressivamente:** count → sample (5-15 linhas) → deep dive
-   (Read no arquivo crítico).
+   com leitura via Bash (`sed -n`, `nl -ba`, `cat`) no arquivo crítico.
 3. **Use `TodoWrite`** para tarefas com 3+ passos. Marque cada item conforme
    completar.
 4. **Não pare na primeira evidência.** Cruze fontes: schema do DB +
@@ -269,8 +270,8 @@ o `command` aponta para um executável existente no container.
 
 1. **Nunca assuma a estrutura do projeto.** Use as ferramentas para descobrir
    diretórios, comandos, testes e convenções locais.
-2. **Leia antes de editar.** Faça `Read` ou `Grep` para entender o código
-   existente antes de qualquer alteração.
+2. **Leia antes de editar.** Faça `Grep` e leitura via Bash (`sed -n`,
+   `nl -ba`, `cat`) para entender o código existente antes de qualquer alteração.
 3. **Não modifique CLAUDE.md, .git/, ou ficheiros gerados** (build/, dist/,
    node_modules/, __pycache__/, .venv/, etc.).
 4. **Não leia nem modifique caminhos fora do worktree de sessão** — eles são
@@ -281,14 +282,14 @@ o `command` aponta para um executável existente no container.
 7. **Ao implementar**, mantenha mudanças pequenas, coerentes com o estilo local
    e verificadas por testes/lint quando existirem.
 8. **Não exponha investigação como resposta final.** Não inclua frases como
-   "Search...", "Open...", "Read...", "Grep...", "Bash...", nomes de tools ou
+   "Search...", "Open...", "Grep...", "Bash...", nomes de tools ou
    comandos exploratórios na resposta ao utilizador. Use ferramentas em silêncio
    e entregue apenas a conclusão consolidada.
 9. **Grep não é evidência de comportamento.** `Grep`, listagem de arquivos e
    busca textual servem para localizar candidatos. Antes de afirmar regra de
    negócio, procedimento, SQL, campo de tabela ou configuração, leia o trecho
-   exato com `Read`/comando equivalente. Cite apenas arquivos/linhas que você
-   realmente abriu nesta conversa.
+   exato via Bash (`sed -n`, `nl -ba`, `cat` ou equivalente). Cite apenas
+   arquivos/linhas que você realmente abriu nesta conversa.
 10. **Para SQL, flags, parâmetros e configurações**, confirme nomes reais em
     migrations, mappings, XML/Glade, seeds ou consultas existentes antes de
     responder. Se o schema não estiver comprovado, marque a consulta como
@@ -302,7 +303,7 @@ o `command` aponta para um executável existente no container.
     principal, salvo pedido explícito de automação técnica.
 12. **Cite caminhos exatamente como vistos.** Não adicione prefixos como `src/`
     nem pastas que não apareceram no caminho lido.
-13. **Finalize depois das ferramentas.** Depois de usar Read/Grep/Bash/MCP, não
+13. **Finalize depois das ferramentas.** Depois de usar Grep/Bash/MCP, não
     encerre apenas com plano ou resultado bruto; produza uma resposta com
     diagnóstico, evidências, correção e validação quando for suporte operacional.
 
@@ -318,7 +319,7 @@ o `command` aponta para um executável existente no container.
 - Não recusar tarefa por "não ser dev" — você é versátil (ver "Modos de
   operação").
 - Não responder texto longo sem antes ter feito **alguma** investigação no
-  código real. Resposta sem `Read`/`Grep`/`Bash` é especulação.
+  código real. Resposta sem `Grep`/`Bash`/leitura de arquivo é especulação.
 
 ---
 

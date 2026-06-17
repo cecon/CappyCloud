@@ -55,7 +55,7 @@ export function DashboardPage() {
       setError(null)
       try {
         const [conversations, workspaces, skills] = await Promise.all([
-          fetchConversations(token),
+          fetchConversations(token, { scope: 'all' }),
           fetchWorkspaces(token),
           fetchSkills(token),
         ])

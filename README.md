@@ -32,6 +32,7 @@ O CappyCloud transforma esse ciclo em uma experiencia unica: abrir uma conversa,
 - **OpenRouter com precos atualizados**: modelos cadastrados no ambiente podem ser sincronizados com a API publica do OpenRouter; o custo usa tokens reais e tabela de preco atual.
 - **Sandbox isolado do host**: o agente roda dentro do container `cappycloud-sandbox`, com API FastAPI, PostgreSQL e Redis coordenando sessoes e historico.
 - **Evidencia tecnica**: o fluxo foi desenhado para respostas que citam codigo, arquivos, linhas, documentos e URLs reais quando disponiveis.
+- **Agentic Delivery Factory**: ciclos auditaveis para preparar pacotes de trabalho, executar agentes em modo review-only, exigir gates e bloquear acoes externas ate autorizacao explicita por dominio.
 
 ---
 
@@ -189,6 +190,16 @@ Em vez de depender de uma skill global que tenta servir para tudo, cada reposito
 - formato esperado de resposta.
 
 Quando uma conversa seleciona um repositorio, suas skills ativas sao carregadas no prompt do agente.
+
+---
+
+## Documentacao Principal
+
+- [Arquitetura](docs/ARCHITECTURE.md): limites entre API, agente, sandbox, web e persistencia.
+- [Regras de agentes e CI](docs/AGENT_RULES.md): gates obrigatorios, comandos de qualidade e padroes de implementacao.
+- [Contexto de runtime do agente](docs/how-to/agent-runtime-context.md): repositorios transitorios, skills, MCPs, modelos dinamicos e custo real.
+- [Agentic Delivery Factory](docs/how-to/agentic-delivery-factory.md): runbook da feature de ciclos agenticos com gates, isolamento de dominio e autorizacao externa.
+- [Spec Kit](docs/how-to/spec-kit.md): fluxo usado para especificar, planejar, quebrar tarefas, analisar e implementar mudancas maiores.
 
 ---
 

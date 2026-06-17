@@ -285,6 +285,22 @@ from app.infrastructure.orm_models_access import (  # noqa: F401, E402
 from app.infrastructure.orm_models_agent import (  # noqa: F401, E402
     Skill,
 )
+from app.infrastructure.orm_models_agentic_delivery import (  # noqa: F401, E402
+    AgenticDeliveryCycle,
+    AgenticDeliveryPermission,
+    AgentOutput,
+    AgentOutputEvidenceLink,
+    CycleMetric,
+    EvidenceSource,
+    ExternalActionAuthorization,
+    KnowledgeReuseRelationship,
+    LifecycleTransition,
+    ReusableKnowledgeItem,
+    ReviewDecision,
+    ReviewGate,
+    SensitiveSurface,
+    StructuredWorkPackage,
+)
 from app.infrastructure.orm_models_execution import (  # noqa: F401, E402
     AgentEvent,
     AgentTask,

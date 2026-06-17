@@ -1,6 +1,8 @@
 'use strict'
 // Read-only HTTP proxy for a configured Confluence-compatible documentation site.
 
+const { requestHeaders } = require('./confluence_auth')
+
 const BASE_URL = (process.env.CONFLUENCE_BASE_URL || '').replace(/\/$/, '')
 const MAIN_MENU_URL = process.env.CONFLUENCE_MAIN_MENU_URL || ''
 const MAX_TEXT_CHARS = 18000
@@ -93,10 +95,16 @@ async function fetchJson(url, params = {}) {
     }
   }
   const resp = await fetch(full, {
-    headers: { Accept: 'application/json' },
+    headers: requestHeaders('application/json'),
     signal: AbortSignal.timeout(CONFLUENCE_TIMEOUT_MS),
   })
   const text = await resp.text()
+  if (resp.status === 401) {
+    throw new Error('Confluence retornou 401. Verifique token/PAT.')
+  }
+  if (resp.status === 403) {
+    throw new Error('Confluence retornou 403. Credencial sem permissão para esta página/space.')
+  }
   if (resp.status >= 400) {
     throw new Error(`Confluence HTTP ${resp.status}: ${text.slice(0, 300)}`)
   }
@@ -111,10 +119,16 @@ async function fetchText(url, params = {}) {
     }
   }
   const resp = await fetch(full, {
-    headers: { Accept: 'text/html,application/xhtml+xml' },
+    headers: requestHeaders('text/html,application/xhtml+xml'),
     signal: AbortSignal.timeout(CONFLUENCE_TIMEOUT_MS),
   })
   const text = await resp.text()
+  if (resp.status === 401) {
+    throw new Error('Confluence retornou 401. Verifique token/PAT.')
+  }
+  if (resp.status === 403) {
+    throw new Error('Confluence retornou 403. Credencial sem permissão para esta página/space.')
+  }
   if (resp.status >= 400) {
     throw new Error(`Confluence HTTP ${resp.status}: ${text.slice(0, 300)}`)
   }

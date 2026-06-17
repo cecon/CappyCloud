@@ -5,6 +5,8 @@ Exposes read-only tools for Confluence pages using Atlassian REST APIs.
 Configuration is provided by environment variables:
 
   CONFLUENCE_BASE_URL       e.g. https://company.atlassian.net/wiki
+  CONFLUENCE_AUTHORIZATION  Full Authorization header value, if already issued
+  CONFLUENCE_BASIC_TOKEN    Pre-encoded Basic auth token
   CONFLUENCE_EMAIL          Atlassian account email for API token auth
   CONFLUENCE_API_TOKEN      Atlassian API token
   CONFLUENCE_PAT            Optional bearer token/PAT alternative
@@ -25,7 +27,6 @@ from confluence_mcp_lib import (
     confluence_get_page,
     confluence_search,
 )
-
 
 _stdio_mode = "jsonl"
 
@@ -85,7 +86,10 @@ def _error(request_id: Any, code: int, message: str) -> dict[str, Any]:
 TOOLS = [
     {
         "name": "confluence_search",
-        "description": "Busca páginas no Confluence usando CQL text search. Use para localizar documentação interna antes de responder.",
+        "description": (
+            "Busca páginas no Confluence usando CQL text search. "
+            "Use para localizar documentação interna antes de responder."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -94,7 +98,9 @@ TOOLS = [
                 "labels": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Rótulos opcionais; a busca retorna páginas com qualquer um deles.",
+                    "description": (
+                        "Rótulos opcionais; a busca retorna páginas com qualquer um deles."
+                    ),
                 },
                 "limit": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5},
             },
@@ -103,7 +109,9 @@ TOOLS = [
     },
     {
         "name": "confluence_get_page",
-        "description": "Lê uma página do Confluence por page_id ou URL e retorna texto limpo com metadados.",
+        "description": (
+            "Lê uma página do Confluence por page_id ou URL e retorna texto limpo com metadados."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -114,7 +122,9 @@ TOOLS = [
     },
     {
         "name": "confluence_get_main_menu",
-        "description": "Lê a página principal/menu do Confluence configurada em CONFLUENCE_MAIN_MENU_URL.",
+        "description": (
+            "Lê a página principal/menu do Confluence configurada em CONFLUENCE_MAIN_MENU_URL."
+        ),
         "inputSchema": {"type": "object", "properties": {}},
     },
 ]
@@ -162,7 +172,7 @@ def handle(message: dict[str, Any]) -> dict[str, Any] | None:
             return _error(request_id, -32601, f"Tool desconhecida: {name}")
         try:
             return _result(request_id, _tool_response(HANDLERS[name](arguments)))
-        except Exception as exc:  # noqa: BLE001 - MCP deve devolver erro amigável
+        except Exception as exc:
             return _result(
                 request_id,
                 {
@@ -182,7 +192,7 @@ def main() -> int:
             response = handle(message)
             if response is not None:
                 _write_message(response)
-        except Exception:  # noqa: BLE001
+        except Exception:
             traceback.print_exc(file=sys.stderr)
             return 1
 

@@ -61,6 +61,26 @@ def render_repo_agents(agent_profiles: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def render_agentic_cycle_context(cycle_context: dict | None) -> str:
+    if not cycle_context:
+        return ""
+    repository_ids = cycle_context.get("repository_ids") or []
+    lines = [
+        "## Contexto do ciclo Agentic Delivery",
+        f"- Ciclo: `{cycle_context.get('cycle_id') or ''}`",
+        f"- Pacote de trabalho: `{cycle_context.get('work_package_id') or ''}`",
+        f"- Versão do pacote: `{cycle_context.get('work_package_version') or ''}`",
+        f"- Domínio: `{cycle_context.get('domain_key') or 'não informado'}`",
+        f"- Repositórios autorizados: {', '.join(f'`{r}`' for r in repository_ids)}",
+        "",
+        "Trate esta execução como review-only. Não faça push, deploy, merge, "
+        "alteração irreversível ou chamada externa que mude estado. Produza "
+        "evidências para afirmações importantes; quando faltar fonte, marque a "
+        "afirmação como não suportada em vez de inferir.",
+    ]
+    return "\n".join(lines)
+
+
 def render_session_tools(
     sandbox_session_url: str, repos: list[dict] | None = None
 ) -> str:
@@ -153,8 +173,9 @@ def render_session_tools(
             "`/confluence/search` correspondente ao repositório da sessão."
         )
         lines.append(
-            "Cruze o que vier da documentação externa com Grep/Read no repositório. "
-            "Ao usar documentação, cite o título e a URL retornados. Nunca cite título, "
+            "Cruze o que vier da documentação externa com Grep e leitura via Bash "
+            "(`sed -n`, `nl -ba`, `cat` ou equivalente) no repositório. Ao usar "
+            "documentação, cite o título e a URL retornados. Nunca cite título, "
             "pageId ou conteúdo de fonte externa sem ter visto isso em resultado real "
             "nesta conversa."
         )
@@ -187,7 +208,7 @@ def render_response_rules() -> str:
         "Responda diretamente ao utilizador. A resposta final deve começar pelo diagnóstico, "
         "não pelo plano de investigação. Não inclua plano interno, checklist de investigação, "
         "nomes de ferramentas chamadas ou anotações como 'Search...', 'Find...', 'Open...', "
-        "'Read...', 'Grep...' ou 'Bash...' na resposta final.\n\n"
+        "'Grep...' ou 'Bash...' na resposta final.\n\n"
         "Enquanto estiver investigando, não escreva mensagens narrativas como 'vou verificar', "
         "'agora vou abrir' ou 'já tenho evidências'. Use as ferramentas silenciosamente e só "
         "produza texto quando tiver a resposta consolidada. Depois de chamar ferramentas, "
@@ -196,11 +217,12 @@ def render_response_rules() -> str:
         "`Grep`, listagem de arquivos e busca textual servem para localizar candidatos; "
         "não são evidência suficiente para afirmar regra de negócio, procedimento, SQL, "
         "campo de tabela ou configuração. Antes de recomendar um procedimento ou citar um "
-        "arquivo como prova, leia o trecho exato com `Read`/comando equivalente e baseie a "
-        "resposta somente em arquivos, linhas, schema ou documentação realmente abertos nesta "
-        "conversa. Trechos de `documento importado` exibidos na seção de evidências "
-        "automáticas já são documentação aberta; não reabra esses arquivos via `Read` "
-        "quando o bloco importado já trouxer tabela, coluna, PK ou flag necessária. "
+        "arquivo como prova, leia o trecho exato via Bash (`sed -n`, `nl -ba`, `cat` "
+        "ou equivalente) e baseie a resposta somente em arquivos, linhas, schema ou "
+        "documentação realmente abertos nesta conversa. Trechos de `documento importado` "
+        "exibidos na seção de evidências automáticas já são documentação aberta; não "
+        "reabra esses arquivos via ferramenta de leitura quando o bloco importado já "
+        "trouxer tabela, coluna, PK ou flag necessária. "
         "Para perguntas de SQL/schema, um bloco importado `#### dbo.<tabela>` conta "
         "como schema comprovado; não substitua essa evidência por uma entidade do código "
         "se o próprio documento diferenciar cadastro legado/fiscal e camada SaaS. "

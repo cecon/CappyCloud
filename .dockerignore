@@ -5,5 +5,9 @@
 **/__pycache__
 **/.venv
 **/_openclaude_src
+**/coverage
+**/*.log
+.env*
+Dockerfile*
 .agents
 .claude

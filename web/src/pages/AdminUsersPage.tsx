@@ -36,7 +36,7 @@ import {
   updateAdminUserRole,
   type UserRole,
 } from '../api'
-import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
+import { ActionsCell, ActionsHeader } from '../components/TableActions'
 import { UserAccessDrawer } from '../components/UserAccessDrawer'
 import { isPlausibleEmail } from '../validation'
 
@@ -175,7 +175,7 @@ export function AdminUsersPage() {
                 <Table.Tr>
                   <Table.Th>Email</Table.Th>
                   <Table.Th style={{ width: 110 }}>Papel</Table.Th>
-                  <ActionsHeader width={112} />
+                  <ActionsHeader width={180} />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -213,14 +213,18 @@ export function AdminUsersPage() {
                         </Badge>
                       </Table.Td>
                       <ActionsCell>
-                        <RowActionIcon
-                          label={u.role === 'admin' ? 'ADMIN tem acesso total' : 'Gerir acessos'}
+                        <Button
+                          aria-label={u.role === 'admin' ? 'ADMIN tem acesso total' : 'Gerir acessos'}
+                          title={u.role === 'admin' ? 'ADMIN tem acesso total' : 'Gerir acessos'}
+                          size="xs"
+                          variant="light"
                           color="blue"
+                          leftSection={<IconKey size={14} />}
                           onClick={() => setAccessTarget(u)}
                           disabled={u.role === 'admin'}
                         >
-                          <IconKey size={16} />
-                        </RowActionIcon>
+                          {u.role === 'admin' ? 'Acesso total' : 'Acessos'}
+                        </Button>
                         <Menu shadow="md" position="bottom-end">
                           <Menu.Target>
                             <ActionIcon

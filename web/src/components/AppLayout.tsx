@@ -33,6 +33,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/', icon: 'dashboard', label: 'Dashboard' },
       { to: '/chat', icon: 'chat_bubble', label: 'Chat' },
       { to: '/runs', icon: 'history', label: 'Runs' },
+      { to: '/agentic-delivery', icon: 'account_tree', label: 'Agentic Delivery' },
       { to: '/analytics', icon: 'analytics', label: 'Analytics' },
     ],
   },
@@ -63,6 +64,10 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   '/chat': { title: 'Chat', subtitle: 'Agente com worktree isolado e contexto do projeto' },
   '/runs': { title: 'Runs', subtitle: 'Execuções, eventos e estado das sessões' },
   '/analytics': { title: 'Analytics', subtitle: 'Uso, custo e saúde operacional' },
+  '/agentic-delivery': {
+    title: 'Agentic Delivery',
+    subtitle: 'Ciclos com gates, evidência e autorização externa',
+  },
   '/skills': { title: 'Skills (por repo)', subtitle: 'Regras curtas vinculadas a repositórios' },
   '/mcp': { title: 'MCP Server', subtitle: 'Acesso externo controlado aos repositórios' },
   '/settings': {

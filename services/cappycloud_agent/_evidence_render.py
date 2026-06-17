@@ -120,8 +120,9 @@ def _render_section(
         "informar Confluence sem resultados, mencione essa ausência de evidência direta "
         "na resposta final; não diga apenas que o utilizador deve consultar documentação "
         "oficial. Se a amostra for insuficiente, continue investigando com Confluence, "
-        "Grep e Read antes da resposta final. Não cite itens abaixo como conclusão sem "
-        "validar o conteúdo relevante.",
+        "Grep e leitura via Bash (`sed -n`, `nl -ba`, `cat` ou equivalente) antes da "
+        "resposta final. Não cite itens abaixo como conclusão sem validar o conteúdo "
+        "relevante.",
     ]
     if docs:
         has_repo_docs = any(hit.source == "repository_document" for hit in docs)
@@ -145,8 +146,9 @@ def _render_section(
                 "já contam como conteúdo aberto do documento. Para schema "
                 "importado, blocos `#### dbo.<tabela>` abaixo são evidência "
                 "direta de tabela, PK, coluna e flag; se eles responderem à "
-                "pergunta, responda sem abrir arquivos com Grep/Read. Não tente provar a "
-                "existência do arquivo no worktree com Grep/Read e não responda "
+                "pergunta, responda sem abrir arquivos com Grep ou comandos de leitura. "
+                "Não tente provar a existência do arquivo no worktree com Grep ou "
+                "comandos de leitura e não responda "
                 "que o documento não foi localizado se esta seção trouxe trechos "
                 "dele. Se um trecho importado apontar uma tabela provável, mas "
                 "não trouxer as colunas ou flags necessárias, consulte novamente "

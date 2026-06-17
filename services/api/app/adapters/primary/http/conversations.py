@@ -45,12 +45,16 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 async def list_conversations(
     current: Annotated[User, Depends(get_authenticated_user)],
     uc: Annotated[ListConversations, Depends(get_list_convs_uc)],
+    scope: str = Query(default="own", pattern="^(own|all)$"),
 ) -> list[ConversationOut]:
-    """Lista conversas do utilizador."""
-    convs = await uc.execute(current.id)
+    """Lista conversas do utilizador; ADMIN pode pedir ``scope=all``."""
+    include_all = current.role is UserRole.ADMIN and scope == "all"
+    convs = await uc.execute(current.id, include_all=include_all)
     return [
         ConversationOut(
             id=c.id,
+            user_id=c.user_id if include_all else None,
+            user_email=c.user_email if include_all else None,
             title=c.title,
             created_at=c.created_at,
             updated_at=c.updated_at,

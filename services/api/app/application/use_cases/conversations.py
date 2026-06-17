@@ -91,6 +91,7 @@ class StreamMessage:
         cursor: int | None = None,
         override_model: str | None = None,
         attachment_ids: list[uuid.UUID] | None = None,
+        cycle_context: dict | None = None,
     ) -> AsyncGenerator[bytes]:
         conv = await self._conversations.get(conversation_id, user_id)
         if not conv:
@@ -132,7 +133,7 @@ class StreamMessage:
 
         await self._ensure_repo_ids(conv)
         pipeline_body = await self._build_pipeline_body(
-            conv, user_id, cursor, effective_model, attachments_payload
+            conv, user_id, cursor, effective_model, attachments_payload, cycle_context
         )
 
         return self._stream_chunks(
@@ -190,10 +191,11 @@ class StreamMessage:
         cursor: int | None,
         override_model: str | None = None,
         attachments_payload: list[dict] | None = None,
+        cycle_context: dict | None = None,
     ) -> dict:
         enriched = await enrich_repos_for_pipeline(self._repositories, conv.repos)
         return build_pipeline_body(
-            conv, enriched, user_id, cursor, override_model, attachments_payload
+            conv, enriched, user_id, cursor, override_model, attachments_payload, cycle_context
         )
 
     async def _stream_chunks(

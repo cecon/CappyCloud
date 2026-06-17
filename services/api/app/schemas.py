@@ -215,6 +215,8 @@ class ConversationOut(BaseModel):
     """Metadados da conversa."""
 
     id: uuid.UUID
+    user_id: uuid.UUID | None = None
+    user_email: str | None = None
     title: str
     created_at: datetime
     updated_at: datetime
@@ -392,6 +394,7 @@ class SendMessageBody(BaseModel):
 
 
 # ── Re-export schemas de Skills (definidos em ``schemas_agents``) ───────────
+from app.schemas_agentic_delivery import *  # noqa: E402, F403
 from app.schemas_agents import (  # noqa: E402, F401
     SkillCreate,
     SkillImportFromUrlBody,

@@ -38,6 +38,7 @@ export function RecentSessions({
   }, [conversations, filter, statusFor])
 
   const panelClass = [styles.panel, className].filter(Boolean).join(' ')
+  const showUser = conversations.some((conversation) => !!conversation.user_email)
 
   return (
     <section className={panelClass} aria-labelledby="recent-sessions-title">
@@ -90,6 +91,19 @@ export function RecentSessions({
                     {conversation.title}
                   </span>
                   <div className={styles.itemMeta}>
+                    {showUser ? (
+                      <>
+                        <span
+                          className={styles.metaTruncate}
+                          title={conversation.user_email ?? conversation.user_id ?? 'Usuário'}
+                        >
+                          {conversation.user_email ?? conversation.user_id ?? 'Usuário'}
+                        </span>
+                        <span className={styles.metaSep} aria-hidden>
+                          ·
+                        </span>
+                      </>
+                    ) : null}
                     <span className={styles.metaTruncate} title="Fluxo de desenvolvimento">
                       Fluxo de desenvolvimento
                     </span>

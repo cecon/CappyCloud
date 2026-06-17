@@ -104,6 +104,7 @@ COPY services/sandbox/patches/mcp-grpc-integration.patch /tmp/mcp-grpc-integrati
 COPY services/sandbox/patches/worktree-tool-guard.patch /tmp/worktree-tool-guard.patch
 COPY services/sandbox/patches/numeric-parameter-grep-guard.patch /tmp/numeric-parameter-grep-guard.patch
 COPY services/sandbox/patches/numeric-parameter-grep-wrapper.patch /tmp/numeric-parameter-grep-wrapper.patch
+COPY services/sandbox/patches/read-empty-pages.patch /tmp/read-empty-pages.patch
 RUN sed -i 's/\r$//' /tmp/*.patch
 WORKDIR /openclaude
 RUN git init . \
@@ -118,11 +119,12 @@ RUN git init . \
     && git apply /tmp/worktree-tool-guard.patch \
     && git apply /tmp/numeric-parameter-grep-guard.patch \
     && git apply /tmp/numeric-parameter-grep-wrapper.patch \
+    && git apply /tmp/read-empty-pages.patch \
     && sed -i 's/^detectStubLeaks()$/setImmediate(() => detectStubLeaks())/' src/entrypoints/sdk/index.ts \
     && rm -f /tmp/grep-tool-n-alias.patch /tmp/auto-approve-tools.patch \
             /tmp/multimodal-proto.patch /tmp/multimodal-grpc-handler.patch \
             /tmp/mcp-grpc-integration.patch /tmp/worktree-tool-guard.patch \
-            /tmp/numeric-parameter-grep-guard.patch \
+            /tmp/numeric-parameter-grep-guard.patch /tmp/read-empty-pages.patch \
             /tmp/numeric-parameter-grep-wrapper.patch \
     && bun install \
     && bun run build
@@ -163,7 +165,10 @@ RUN mkdir -p /repos
 WORKDIR /repos
 
 # ── Agent instructions injected into every workspace ──────────
-COPY services/sandbox/CLAUDE.md /app/CLAUDE.md
+# Keep the production image aligned with docker-compose.yml, where these
+# shared sandbox instructions and skills are mounted from the repository root.
+COPY sandbox/CLAUDE.md /app/CLAUDE.md
+COPY sandbox/skills /app/sandbox/skills
 
 # ── Entrypoints e scripts ─────────────────────────────────────
 COPY services/sandbox/env_init.sh /env_init.sh
@@ -171,6 +176,7 @@ COPY services/sandbox/session_start.sh /session_start.sh
 COPY services/sandbox/session_server.js /session_server.js
 COPY services/sandbox/git_handlers.js /git_handlers.js
 COPY services/sandbox/mcp_handler.js /mcp_handler.js
+COPY services/sandbox/confluence_auth.js /confluence_auth.js
 COPY services/sandbox/confluence_handler.js /confluence_handler.js
 COPY services/sandbox/repo_handlers.js /repo_handlers.js
 COPY services/sandbox/repo_graph /repo_graph
