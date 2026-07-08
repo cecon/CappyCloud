@@ -7,7 +7,8 @@
 # Fluxo:
 #   1. Repo principal fica em /repos/<slug>
 #   2. Cria worktree em <worktree_path> na branch cappy/<slug>/<session_id>
-#   3. Branch é criada a partir de <base_branch> (ou da default detectada)
+#   3. Branch é criada a partir de <base_branch>, commit SHA de baseline
+#      limpo, ou da default detectada
 #   4. Por padrão, mantém a branch apenas local. Push automático só se
 #      CAPPYCLOUD_AUTO_PUSH_SESSION_BRANCH=true.
 #   5. Idempotente: se o worktree já existe, reutiliza
@@ -190,7 +191,8 @@ _create_worktree() {
     local branch_name="$3"
     local base_branch="$4"
 
-    # Resolve a branch base: usa a fornecida ou detecta a default
+    # Resolve a base: usa a branch fornecida, um commit SHA derivado de
+    # baseline limpo, ou detecta a default.
     local resolved_base="${base_branch:-}"
 
     if [ -n "$resolved_base" ]; then

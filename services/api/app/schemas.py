@@ -9,7 +9,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
 
 from app.domain.entities import ContainerStatus, SandboxRuntime, UserRole
-from app.domain.value_objects import validate_email, validate_password
+from app.domain.value_objects import validate_email, validate_password, validate_permission_mode
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{1,62}[a-z0-9]$")
 
@@ -46,6 +46,19 @@ class UserOut(BaseModel):
     must_change_password: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class UserPreferencesOut(BaseModel):
+    default_permission_mode: str
+
+
+class UserPreferencesUpdate(BaseModel):
+    default_permission_mode: str | None = Field(default=None, max_length=32)
+
+    @field_validator("default_permission_mode")
+    @classmethod
+    def default_permission_mode_valid(cls, v: str | None) -> str | None:
+        return validate_permission_mode(v) if v is not None else None
 
 
 class PasswordChangeBody(BaseModel):
@@ -190,4 +203,8 @@ from app.schemas_platform import (  # noqa: E402, F401
     GitProviderOut,
     RepositoryCreate,
     RepositoryOut,
+)
+from app.schemas_user_workspaces import (  # noqa: E402, F401
+    UserWorkspaceEnsureBody,
+    UserWorkspaceOut,
 )

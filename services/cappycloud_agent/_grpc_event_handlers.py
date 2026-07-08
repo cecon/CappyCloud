@@ -11,7 +11,12 @@ import logging
 import re
 from typing import Any
 
-from ._grpc_helpers import PendingAction, build_done_empty_error, parse_choices
+from ._grpc_helpers import (
+    PendingAction,
+    build_done_empty_error,
+    parse_choices,
+    permission_warning_status_from_text,
+)
 from ._grpc_helpers import provider_api_error_message
 
 log = logging.getLogger(__name__)
@@ -29,10 +34,14 @@ SAFE_PAYLOAD_CATEGORY_LABELS = {
 }
 
 _SAFE_DIAGNOSTIC_TEXT = re.compile(r"^[A-Za-z0-9_.:+-]{1,64}$")
+_SAFE_MODEL_ID = re.compile(r"^[A-Za-z0-9_.:/@+-]{1,256}$")
 
 
 def text_chunk_event(msg: Any) -> tuple[str, dict]:
     text = str(msg.text_chunk.text or "")
+    permission_warning = permission_warning_status_from_text(text)
+    if permission_warning:
+        return ("status", permission_warning)
     provider_error = provider_api_error_message(text)
     if provider_error:
         return ("error", {"message": provider_error})
@@ -50,11 +59,14 @@ def tool_start_event(msg: Any, session_id: str) -> tuple[str, dict]:
 
 def tool_result_event(msg: Any) -> tuple[str, dict]:
     tr = msg.tool_result
+    output = tr.output
+    if isinstance(output, bytes | bytearray):
+        output = bytes(output).decode("utf-8", errors="replace")
     return (
         "tool_result",
         {
             "name": tr.tool_name,
-            "output": tr.output,
+            "output": output,
             "is_error": tr.is_error,
             "id": tr.tool_use_id,
         },
@@ -144,21 +156,34 @@ def done_event(
                 model=model, session_id=session_id, working_directory=wd
             ),
         )
+    final_model = _safe_model_id(
+        getattr(done, "model_used", "")
+        or getattr(done, "final_model", "")
+        or getattr(done, "provider_model", "")
+        or model
+    )
+    fallback_reason = _safe_fallback_reason(
+        getattr(done, "fallback_reason", "") or getattr(done, "fallback", "")
+    )
     log.info(
         "[%s] Done model=%s in=%d out=%d",
         session_id,
-        model,
+        final_model,
         done.prompt_tokens,
         done.completion_tokens,
     )
-    return (
-        "done",
-        {
-            "prompt_tokens": int(done.prompt_tokens),
-            "completion_tokens": int(done.completion_tokens),
-            "model_used": model,
-        },
-    )
+    payload: dict[str, Any] = {
+        "prompt_tokens": int(done.prompt_tokens),
+        "completion_tokens": int(done.completion_tokens),
+        "model_used": final_model,
+    }
+    if final_model != model:
+        payload["fallback"] = {
+            "selected_model": model,
+            "final_model": final_model,
+            "reason": fallback_reason or "runtime_model_changed",
+        }
+    return ("done", payload)
 
 
 def final_text_fallback_event(
@@ -201,4 +226,18 @@ def _safe_generated_at(value: Any) -> str:
     generated_at = str(value or "").strip()
     if _SAFE_DIAGNOSTIC_TEXT.fullmatch(generated_at):
         return generated_at
+    return ""
+
+
+def _safe_model_id(value: Any) -> str:
+    model_id = str(value or "").strip()
+    if _SAFE_MODEL_ID.fullmatch(model_id):
+        return model_id
+    return ""
+
+
+def _safe_fallback_reason(value: Any) -> str:
+    reason = str(value or "").strip().lower().replace(" ", "_")
+    if _SAFE_DIAGNOSTIC_TEXT.fullmatch(reason):
+        return reason
     return ""

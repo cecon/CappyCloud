@@ -6,6 +6,7 @@ import logging
 
 from ._evidence_prefetch import inject_evidence_prefetch
 from ._grpc_session import GrpcSession
+from ._grpc_helpers import sanitize_permission_mode
 from ._pipeline_helpers import (
     build_prompt_with_worktree_context,
     resolve_model_provider_runtime_config,
@@ -26,15 +27,17 @@ async def launch_runner(
     task_id: str,
     prompt: str,
     conversation_id: str | None,
+    user_id: str | None = None,
     repos: list | None = None,
     session_root: str = "",
     sandbox_id: str = "",
     override_model: str | None = None,
+    permission_mode: str = "request_permissions",
     sandbox_session_url: str = "",
     attachments: list[dict] | None = None,
 ) -> None:
     """Cria sessão, inicia gRPC e registra o runner ativo."""
-    user_id = conversation_id or "system"
+    user_id = user_id or conversation_id or "system"
     chat_id = conversation_id or task_id
 
     try:
@@ -94,6 +97,7 @@ async def launch_runner(
     )
 
     effective_model = override_model or dispatcher._model
+    resolved_permission_mode = sanitize_permission_mode(permission_mode)
     provider_config = await resolve_model_provider_runtime_config(
         dispatcher._db_url,
         effective_model,
@@ -107,6 +111,7 @@ async def launch_runner(
         provider_base_url=provider_config.base_url if provider_config else "",
         provider_api_key=provider_config.api_key if provider_config else "",
         provider_api_format=provider_config.api_format if provider_config else "",
+        permission_mode=resolved_permission_mode,
     )
 
     if emit_session_progress:
@@ -158,6 +163,19 @@ async def _emit_session_ready(
         "initializing",
     )
     if repos:
+        reused = [
+            str(repo.get("slug") or repo.get("alias") or "?")
+            for repo in repos
+            if repo.get("source_workspace_path")
+        ]
+        if reused:
+            await insert_status_event(
+                dispatcher._pool,
+                task_id,
+                f"Workspace persistente reutilizado: {', '.join(reused)}.",
+                "repository",
+                "initializing",
+            )
         repo_slugs = ", ".join(
             str(repo.get("slug") or repo.get("alias") or "?") for repo in repos
         )

@@ -88,6 +88,10 @@ class TaskRunner:
     def pending_action(self) -> PendingAction | None:
         return self._session.pending_action
 
+    @property
+    def conversation_id(self) -> str | None:
+        return self._conversation_id
+
     async def close(self) -> None:
         if self._task:
             self._task.cancel()
@@ -172,7 +176,10 @@ class TaskRunner:
                     await self._update_task(status="paused")
                     # Aguarda resposta — o stream interno já está pausado
                     # TaskDispatcher chama send_input() quando o utilizador responder
-                    await self._wait_for_resume()
+                    prompt_id = (
+                        data.prompt_id if isinstance(data, PendingAction) else None
+                    )
+                    await self._wait_for_resume(prompt_id)
                     await self._update_task(status="running")
 
                 elif event_type in ("done",):
@@ -195,9 +202,14 @@ class TaskRunner:
             await self._update_task(status="error", completed_at=_now())
             await self._persist_final_message()
 
-    async def _wait_for_resume(self) -> None:
+    async def _wait_for_resume(self, prompt_id: str | None) -> None:
         """Espera até a sessão deixar de estar em pending_action."""
-        while self._session.pending_action is not None:
+        while True:
+            pending = self._session.pending_action
+            if pending is None:
+                return
+            if prompt_id is not None and pending.prompt_id != prompt_id:
+                return
             await asyncio.sleep(0.5)
 
     # ── DB helpers ────────────────────────────────────────────────

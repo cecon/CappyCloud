@@ -18,6 +18,7 @@ def stream_task_events(
     database_url: str,
     task_id: str,
     cursor: int | None,
+    stop_when_caught_up: bool = False,
 ) -> Generator[str, None, None]:
     out_q: queue.Queue = queue.Queue()
 
@@ -54,6 +55,8 @@ def stream_task_events(
                 ) and not rows:
                     break
                 if not rows:
+                    if stop_when_caught_up:
+                        break
                     await asyncio.sleep(0.5)
         except Exception as exc:  # noqa: BLE001 - stream precisa fechar com erro visível
             out_q.put(

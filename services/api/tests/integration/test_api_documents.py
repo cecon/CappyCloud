@@ -20,21 +20,14 @@ class TestRepositoryDocumentsApi:
     ) -> None:
         repo = _repo()
         fake_session = _DocumentsDbSession(repo)
-        enqueued: list[uuid.UUID] = []
-
         async def fake_ingest(session, document, **kwargs):  # type: ignore[no-untyped-def]
             document.status = "indexed"
             document.chunks_count = 1
             document.checksum = "checksum"
             document.indexed_at = datetime.now(UTC)
 
-        async def fake_enqueue(session, *, repo, document, **kwargs):  # type: ignore[no-untyped-def]
-            enqueued.append(document.id)
-            return uuid.uuid4()
-
         app.dependency_overrides[get_db_session] = lambda: fake_session
         monkeypatch.setattr(documents_router, "ingest_document", fake_ingest)
-        monkeypatch.setattr(documents_router, "enqueue_doc_import_for_document", fake_enqueue)
 
         markdown = b"""# Banco de Dados `Edu_CBE_2`
 
@@ -67,7 +60,6 @@ class TestRepositoryDocumentsApi:
             assert body["title"] == "Schema Edu_CBE_2"
             assert body["status"] == "indexed"
             assert body["chunks_count"] == 1
-            assert enqueued == [uuid.UUID(body["id"])]
 
             listed = await client.get(
                 f"/api/repositories/{repo.id}/documents",

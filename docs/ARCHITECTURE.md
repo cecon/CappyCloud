@@ -87,6 +87,7 @@ sessões e worktrees.
 Usuário envia mensagem
        ↓
   Pipeline (cappycloud_pipeline.py)
+       ↓  resolve modelo e permission_mode da conversa
        ↓  garante sandbox acessível e sessão criada
   EnvironmentManager (_environment_manager.py)
        ↓  HTTP interno para session_server
@@ -107,6 +108,28 @@ Usuário envia mensagem
 | `EnvironmentManager` | `_environment_manager.py` | Cria/reusa sessões no sandbox e garante worktrees por conversa |
 | `GrpcSession` | `_grpc_session.py` | Stream gRPC persistente; pausa em `ActionRequired`, retoma com `send_input()` |
 | `SessionStore` | `_session_store.py` | Estado das sessões em Redis (TTL) + PostgreSQL (histórico) |
+
+### Contrato de modo de permissões
+
+O modo de permissões é configuração da conversa, não variável global do
+sandbox. `Conversation.permission_mode` usa os valores
+`request_permissions`, `accept_edits`, `plan`, `auto` ou
+`bypass_permissions`.
+
+Fluxo:
+
+1. A UI envia `permission_mode` em
+   `POST /api/conversations/{id}/messages/stream`.
+2. `StreamMessage` valida o valor no domínio, persiste na conversa e coloca o
+   modo resolvido no corpo enviado ao `AgentPort`.
+3. `cappycloud_pipeline.py` sanitiza fallback para `request_permissions`.
+4. `_grpc_session.py` envia `permission_mode` em cada `ChatRequest`.
+5. O patch gRPC do OpenClaude aplica o modo por request, depois dos guardrails
+   de worktree do CappyCloud.
+
+`auto` e `bypass_permissions` só ignoram prompts de permissão do OpenClaude.
+Autorização de repositório, isolamento do sandbox, guardas de path/worktree,
+redação de segredos e gates explícitos de ações externas continuam ativos.
 
 ### Ferramentas do sandbox
 
@@ -135,7 +158,7 @@ quando o usuário responde via `send_input()`.
 | PostgreSQL | Usuários, conversas, sessões de agente |
 | Redis | Cache de sessões com TTL |
 | Docker | Sandboxes que hospedam openclaude, session_server e worktrees |
-| OpenRouter | Gateway LLM (modelo configurável via `OPENROUTER_MODEL`) |
+| OpenRouter | Gateway LLM (modelo dinâmico por conversa, com `.env` apenas como fallback) |
 | openclaude gRPC | Servidor de agente dentro do container (porta 50051) |
 
 ## Comandos

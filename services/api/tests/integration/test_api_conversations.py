@@ -89,6 +89,7 @@ class TestConversationEndpoints:
         )
         assert r.status_code == 201
         assert r.json()["title"] == "Meu chat"
+        assert r.json()["permission_mode"] == "request_permissions"
 
     async def test_list_messages_not_found(
         self, client: AsyncClient, auth_headers: dict[str, str]
@@ -112,6 +113,46 @@ class TestConversationEndpoints:
         assert r.status_code == 200
         assert "text/event-stream" in r.headers["content-type"]
         assert len(r.content) > 0
+
+    async def test_stream_message_accepts_and_persists_permission_mode(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        conv_r = await client.post(
+            "/api/conversations",
+            json={"title": "Permission chat"},
+            headers=auth_headers,
+        )
+        conv_id = conv_r.json()["id"]
+
+        stream_r = await client.post(
+            f"/api/conversations/{conv_id}/messages/stream",
+            json={"content": "Olá agente", "permission_mode": "auto"},
+            headers=auth_headers,
+        )
+        list_r = await client.get("/api/conversations", headers=auth_headers)
+
+        assert stream_r.status_code == 200
+        conversations = list_r.json()
+        assert conversations[0]["id"] == conv_id
+        assert conversations[0]["permission_mode"] == "auto"
+
+    async def test_stream_message_rejects_unknown_permission_mode(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        conv_r = await client.post(
+            "/api/conversations",
+            json={"title": "Invalid permission chat"},
+            headers=auth_headers,
+        )
+        conv_id = conv_r.json()["id"]
+
+        r = await client.post(
+            f"/api/conversations/{conv_id}/messages/stream",
+            json={"content": "Olá agente", "permission_mode": "dangerously_free"},
+            headers=auth_headers,
+        )
+
+        assert r.status_code == 422
 
     async def test_message_history_returns_assistant_payload_diagnostics(
         self, client: AsyncClient, auth_headers: dict[str, str]

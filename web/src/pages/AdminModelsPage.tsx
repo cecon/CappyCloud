@@ -202,6 +202,10 @@ export function AdminModelsPage() {
       <Stack gap="lg">
         <Stack gap={4}>
           <Title order={2}>Modelos LLM</Title>
+          <Text c="dimmed" size="xs">
+            O chat usa apenas modelos ativos no catalogo autorizado; preco e capabilities vem do
+            provider sincronizado ou do ajuste administrativo explicito.
+          </Text>
           <Text c="dimmed" size="sm">
             Catálogo sincronizado a partir dos providers ativos. Tier é derivado do preço, mas
             pode ser ajustado manualmente. Modelos desativados não aparecem para utilizadores.
@@ -273,6 +277,7 @@ export function AdminModelsPage() {
                   <Table.Th style={{ width: 140 }}>Tier</Table.Th>
                   <Table.Th style={{ width: 110 }}>In $/1M</Table.Th>
                   <Table.Th style={{ width: 110 }}>Out $/1M</Table.Th>
+                  <Table.Th style={{ width: 120 }}>Catalogo</Table.Th>
                   <Table.Th style={{ width: 90 }}>Ativo</Table.Th>
                 </Table.Tr>
               </Table.Thead>
@@ -360,6 +365,15 @@ export function AdminModelsPage() {
                       </Table.Td>
                       <Table.Td>
                         <Text size="sm">{formatPrice(m.output_cost_per_1m_usd)}</Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Badge
+                          size="xs"
+                          variant="light"
+                          color={prov?.active && m.active ? 'green' : 'gray'}
+                        >
+                          {prov?.active && m.active ? 'autorizado' : 'indisponivel'}
+                        </Badge>
                       </Table.Td>
                       <Table.Td>
                         <Switch

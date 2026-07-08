@@ -12,6 +12,15 @@ import grpc.aio
 
 log = logging.getLogger(__name__)
 
+DEFAULT_PERMISSION_MODE = "request_permissions"
+PERMISSION_MODES = {
+    DEFAULT_PERMISSION_MODE,
+    "accept_edits",
+    "plan",
+    "auto",
+    "bypass_permissions",
+}
+
 
 @dataclass
 class PendingAction:
@@ -20,13 +29,13 @@ class PendingAction:
     prompt_id: str
     question: str
     action_type: (
-        int  # 0 = CONFIRM_COMMAND (yes/no), 1 = REQUEST_INFORMATION (free text)
+        int  # 1 = CONFIRM_COMMAND (yes/no), 2 = REQUEST_INFORMATION (free text)
     )
     choices: list[str] | None = None
 
     @property
     def is_confirmation(self) -> bool:
-        return self.action_type == 0
+        return self.action_type == 1
 
 
 def parse_choices(question: str) -> list[str] | None:
@@ -36,6 +45,34 @@ def parse_choices(question: str) -> list[str] | None:
         return None
     parts = [c.strip() for c in re.split(r"/|,|\|", m.group(1)) if c.strip()]
     return parts if len(parts) > 1 else None
+
+
+def sanitize_permission_mode(value: object | None) -> str:
+    """Return a supported request-scoped permission mode."""
+    mode = str(value or "").strip()
+    if mode in PERMISSION_MODES:
+        return mode
+    return DEFAULT_PERMISSION_MODE
+
+
+def permission_warning_status_from_text(text: object) -> dict | None:
+    """Detect OpenClaude's startup permission warning without leaking raw logs."""
+    value = str(text or "").lower()
+    if "classifier" not in value:
+        return None
+    if "permissive" not in value and "permission" not in value:
+        return None
+    if "skip" not in value and "bypass" not in value:
+        return None
+    return {
+        "message": "OpenClaude confirmou aviso de permissões permissivas.",
+        "metadata": {
+            "permission_warning": {
+                "runtime_confirmed": True,
+                "source": "openclaude_startup_alert",
+            }
+        },
+    }
 
 
 async def connect_with_retry(

@@ -1,18 +1,23 @@
-# ──────────────────────────────────────────────────────────────
 # CappyCloud Sandbox Image
 #
 # Sandbox permanente configurado como VM de desenvolvimento:
 #   - git, GitHub CLI (gh), Azure CLI (az) + azure-devops extension
 #   - openclaude gRPC headless server
-#   - session_server.js: HTTP server que gerencia worktrees por sessão
+#   - session_server.js: HTTP server que gerencia worktrees por sessao
 #
-# /repos é montado como volume Docker (dados persistem entre restarts).
-# Cada conversa ganha um git worktree em /repos/<slug>/sessions/<id>/
-# criado via HTTP POST /sessions no session_server.
-# ──────────────────────────────────────────────────────────────
+# /repos e montado como volume Docker (dados persistem entre restarts).
+
+FROM golang:1.25-bookworm AS github-mcp-builder
+
+ARG GITHUB_MCP_REF=v1.4.0
+WORKDIR /src
+RUN git clone --depth=1 --branch "${GITHUB_MCP_REF}" \
+        https://github.com/github/github-mcp-server.git . \
+    && CGO_ENABLED=0 go build -o /out/github-mcp-server ./cmd/github-mcp-server
+
 FROM node:20-slim
 
-# ── System dependencies ───────────────────────────────────────
+# System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         curl \
@@ -32,18 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libcairo2 \
     && rm -rf /var/lib/apt/lists/*
 
-# ── .NET 8 SDK para build/runtime do extractor Roslyn C# ─────
-RUN curl -fsSL https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb \
-        -o /tmp/packages-microsoft-prod.deb \
-    && dpkg -i /tmp/packages-microsoft-prod.deb \
-    && rm /tmp/packages-microsoft-prod.deb \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends dotnet-sdk-8.0 \
-    && rm -rf /var/lib/apt/lists/*
-
-# ── Python libs para geração de artefactos (relatórios, diagramas) ──
-# Instalados system-wide (--break-system-packages é seguro neste container
-# isolado e elimina a fricção de venv para cada task do agente).
+# Python libs para geracao de artefatos (relatorios, diagramas).
 RUN pip3 install --no-cache-dir --break-system-packages \
         python-docx==1.1.2 \
         openpyxl==3.1.5 \
@@ -61,9 +55,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
         libcst==1.8.6 \
         basedpyright==1.39.4
 
-# ── Semantic code tooling (on-demand LSP/AST helpers) ─────────
-# Estes binários ficam disponíveis para o agente e para MCPs configurados pelo
-# utilizador, mas nenhum language server fica residente por padrão.
+# Semantic code tooling (on-demand LSP/AST helpers).
 RUN npm install -g \
         typescript@6.0.3 \
         typescript-language-server@5.2.0 \
@@ -74,7 +66,7 @@ RUN npm install -g \
     && npm cache clean --force
 ENV NODE_PATH="/usr/local/lib/node_modules"
 
-# ── GitHub CLI (gh) ───────────────────────────────────────────
+# GitHub CLI (gh)
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
         | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
     && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
@@ -83,21 +75,18 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get update && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Azure CLI + azure-devops extension ───────────────────────
-# Usa o script oficial da Microsoft para garantir versão recente compatível
-# com a extensão azure-devops (o pacote Debian nativo é antigo demais).
+# Azure CLI + azure-devops extension
 RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash \
     && az extension add --name azure-devops \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Install Bun (required to build openclaude) ───────────────
+# Install Bun (required to build openclaude)
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 
-# ── Clone and build openclaude from source ────────────────────
-ARG OPENCLAUDE_REF=66ed9b61dcefea4bd58d1c24011cf32015b0fb29
+# Clone and build openclaude from source
+ARG OPENCLAUDE_REF=1b7e55058cca57f2f83d7e229441631794286c1a
 COPY services/sandbox/patches/grep-tool-n-alias.patch /tmp/grep-tool-n-alias.patch
-COPY services/sandbox/patches/auto-approve-tools.patch /tmp/auto-approve-tools.patch
 COPY services/sandbox/patches/multimodal-proto.patch /tmp/multimodal-proto.patch
 COPY services/sandbox/patches/multimodal-grpc-handler.patch /tmp/multimodal-grpc-handler.patch
 COPY services/sandbox/patches/read-empty-pages.patch /tmp/read-empty-pages.patch
@@ -108,37 +97,25 @@ RUN git init . \
     && git fetch --depth=1 origin "${OPENCLAUDE_REF}" \
     && git checkout FETCH_HEAD \
     && git apply /tmp/grep-tool-n-alias.patch \
-    && git apply /tmp/auto-approve-tools.patch \
     && git apply /tmp/multimodal-proto.patch \
-    && git apply /tmp/multimodal-grpc-handler.patch \
+    && git apply --reject /tmp/multimodal-grpc-handler.patch || true \
     && git apply /tmp/read-empty-pages.patch \
+    && perl -0pi -e "s/if \\(toolUseID\\) \\{\\n                toolNameById\\.set\\(toolUseID, tool\\.name\\)\\n              \\}\\n              \\/\\/ Notify client of the tool call first/if (toolUseID) {\\n                toolNameById.set(toolUseID, tool.name)\\n              }\\n              const worktreeGuardMessage = cappycloudValidateToolScope(tool.name, input, grpcAllowedWorktree)\\n              if (worktreeGuardMessage) {\\n                console.warn('[grpc] worktree guard denied')\\n                return {\\n                  behavior: 'deny' as const,\\n                  message: worktreeGuardMessage,\\n                  decisionReason: {\\n                    type: 'other' as const,\\n                    reason: worktreeGuardMessage,\\n                  },\\n                }\\n              }\\n              \\/\\/ Notify client of the tool call first/" src/grpc/server.ts \
+    && perl -0pi -e "s/call\\.write\\(\\{\\n                tool_start:/call.write({\\n                request_id: currentRequestId,\\n                tool_start:/g; s/call\\.write\\(\\{\\n                action_required:/call.write({\\n                request_id: currentRequestId,\\n                action_required:/g; s/call\\.write\\(\\{\\n                  text_chunk:/call.write({\\n                  request_id: currentRequestId,\\n                  text_chunk:/g; s/call\\.write\\(\\{\\n                      tool_result:/call.write({\\n                      request_id: currentRequestId,\\n                      tool_result:/g; s/call\\.write\\(\\{\\n              done:/call.write({\\n              request_id: currentRequestId,\\n              done:/g; s/call\\.write\\(\\{\\n          error:/call.write({\\n          request_id: currentRequestId,\\n          error:/g" src/grpc/server.ts \
+    && perl -0pi -e "s/\\n\\n              \\/\\/ Ask user for permission/\\n\\n              const permissionDecision = cappycloudPermissionDecision(grpcPermissionMode, tool.name)\\n              if (permissionDecision) {\\n                if (permissionDecision.behavior === 'allow') {\\n                  return { behavior: 'allow' as const }\\n                }\\n                const permissionMessage = permissionDecision.message ?? 'Tool blocked by session permission mode.'\\n                console.warn('[grpc] permission denied')\\n                return {\\n                  behavior: 'deny' as const,\\n                  message: permissionMessage,\\n                  decisionReason: {\\n                    type: 'other' as const,\\n                    reason: permissionMessage,\\n                  },\\n                }\\n              }\\n\\n              \\/\\/ Ask user for permission/" src/grpc/server.ts \
+    && perl -0pi -e "s/const generator = engine\\.submitMessage\\(req\\.message\\)/let promptInput: any = req.message\\n          if (Array.isArray(req.attachments) \\&\\& req.attachments.length > 0) {\\n            const imageBlocks = req.attachments.map((att: any) => ({\\n              type: 'image',\\n              source: {\\n                type: 'base64',\\n                media_type: att.mime_type,\\n                data: Buffer.from(att.data).toString('base64'),\\n              },\\n            }))\\n            promptInput = [...imageBlocks, { type: 'text', text: req.message }]\\n          }\\n          const generator = engine.submitMessage(promptInput)/" src/grpc/server.ts \
+    && perl -0pi -e "s/output: outputStr,/output: Buffer.from(outputStr, 'utf8'),/g; s/\\n            \\/\\/ Save messages for multi-turn context in subsequent requests\\n            previousMessages = \\[\\.\\.\\.engine\\.getMessages\\(\\)\\]\\n\\n            \\/\\/ Persist to session store for cross-stream resumption\\n            if \\(sessionId\\) \\{\\n              if \\(!this\\.sessions\\.has\\(sessionId\\) \\&\\& this\\.sessions\\.size >= MAX_SESSIONS\\) \\{\\n                \\/\\/ Evict oldest session \\(Map preserves insertion order\\)\\n                this\\.sessions\\.delete\\(this\\.sessions\\.keys\\(\\)\\.next\\(\\)\\.value\\)\\n              \\}\\n              this\\.sessions\\.set\\(sessionId, previousMessages\\)\\n            \\}/\\n            \\/\\/ Do not persist OpenClaude messages across streams. CappyCloud sends authorized history./" src/grpc/server.ts \
+    && perl -0pi -e "s/function cappycloudPermissionDecision/function cappycloudGrpcString(value: unknown): string {\\n  return Buffer.from(String(value ?? ''), 'utf8').toString('utf8')\\n}\\n\\nfunction cappycloudPermissionDecision/" src/grpc/server.ts \
+    && perl -0pi -e "s/tool_name: tool\\.name,/tool_name: cappycloudGrpcString(tool.name),/g; s/arguments_json: JSON\\.stringify\\(input\\),/arguments_json: cappycloudGrpcString(JSON.stringify(input)),/g; s/tool_use_id: toolUseID/tool_use_id: cappycloudGrpcString(toolUseID)/g; s/prompt_id: promptId,/prompt_id: cappycloudGrpcString(promptId),/g; s/question,/question: cappycloudGrpcString(question),/g; s/text: msg\\.event\\.delta\\.text/text: cappycloudGrpcString(msg.event.delta.text)/g; s/tool_name: toolNameById\\.get\\(block\\.tool_use_id\\) \\?\\? block\\.tool_use_id,/tool_name: cappycloudGrpcString(toolNameById.get(block.tool_use_id) ?? block.tool_use_id),/g; s/tool_use_id: block\\.tool_use_id,/tool_use_id: cappycloudGrpcString(block.tool_use_id),/g; s/full_text: fullText,/full_text: cappycloudGrpcString(fullText),/g; s/message: err\\.message \\|\\| \"Internal server error\",/message: cappycloudGrpcString(err.message || \"Internal server error\"),/g" src/grpc/server.ts \
+    && perl -0pi -e "s/type: 'CONFIRM_COMMAND'/type: 1/g; s/if \(reply\.toLowerCase\(\) === 'yes' \|\| reply\.toLowerCase\(\) === 'y'\) \{/if (['yes', 'y', 'sim', 's'].includes(reply.toLowerCase().trim())) {/g" src/grpc/server.ts \
     && sed -i 's/^detectStubLeaks()$/setImmediate(() => detectStubLeaks())/' src/entrypoints/sdk/index.ts \
-    && rm -f /tmp/grep-tool-n-alias.patch /tmp/auto-approve-tools.patch \
+    && rm -f /tmp/grep-tool-n-alias.patch \
             /tmp/multimodal-proto.patch /tmp/multimodal-grpc-handler.patch \
             /tmp/read-empty-pages.patch \
     && bun install \
     && bun run build
 
-# ── C# repository graph extractor (Roslyn) ───────────────────
-COPY tools/extractors/csharp /tmp/cappy-roslyn-extractor-src
-RUN dotnet publish /tmp/cappy-roslyn-extractor-src/Cappy.RoslynExtractor.csproj \
-        -c Release \
-        -o /opt/cappy-roslyn-extractor \
-        --no-self-contained \
-    && ln -sf /opt/cappy-roslyn-extractor/cappy-roslyn-extractor \
-        /usr/local/bin/cappy-roslyn-extractor \
-    && chmod +x /opt/cappy-roslyn-extractor/cappy-roslyn-extractor \
-    && rm -rf /tmp/cappy-roslyn-extractor-src
-
-# ── SQL repository graph extractor (sqlglot) ─────────────────
-COPY tools/extractors/sql /tmp/cappy-sql-extractor-src
-RUN pip3 install --no-cache-dir --break-system-packages /tmp/cappy-sql-extractor-src \
-    && rm -rf /tmp/cappy-sql-extractor-src
-
-# ── signoz-mcp-server (binário Go, modo stdio) ────────────────
-# Detecta a arquitetura em runtime para suportar amd64 e arm64.
-# Extrai para /tmp e move o binário para evitar problemas com paths internos
-# do tarball. command = /usr/local/bin/signoz-mcp-server
+# signoz-mcp-server (binario Go, modo stdio)
 RUN ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') \
     && mkdir /tmp/signoz-extract \
     && curl -fsSL \
@@ -148,19 +125,19 @@ RUN ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') \
        | head -1 | xargs -I{} install -m 755 {} /usr/local/bin/signoz-mcp-server \
     && rm -rf /tmp/signoz-extract
 
-# ── /repos layout (volume montado em runtime) ─────────────────
-# O volume repos_data é montado aqui. RUN mkdir garante que o
-# diretório existe na imagem para o caso de inicialização sem volume.
+# GitHub MCP server, official Go binary in stdio mode.
+COPY --from=github-mcp-builder /out/github-mcp-server /usr/local/bin/github-mcp-server
+COPY services/sandbox/github_mcp_server_wrapper.sh /usr/local/bin/github-mcp-server-wrapper
+RUN chmod +x /usr/local/bin/github-mcp-server /usr/local/bin/github-mcp-server-wrapper
+
 RUN mkdir -p /repos
 WORKDIR /repos
 
-# ── Agent instructions injected into every workspace ──────────
-# Keep the production image aligned with docker-compose.yml, where these
-# shared sandbox instructions and skills are mounted from the repository root.
+# Agent instructions injected into every workspace.
 COPY sandbox/CLAUDE.md /app/CLAUDE.md
 COPY sandbox/skills /app/sandbox/skills
 
-# ── Entrypoints e scripts ─────────────────────────────────────
+# Entrypoints e scripts
 COPY services/sandbox/env_init.sh /env_init.sh
 COPY services/sandbox/session_start.sh /session_start.sh
 COPY services/sandbox/session_server.js /session_server.js
@@ -169,8 +146,6 @@ COPY services/sandbox/mcp_handler.js /mcp_handler.js
 COPY services/sandbox/confluence_auth.js /confluence_auth.js
 COPY services/sandbox/confluence_handler.js /confluence_handler.js
 COPY services/sandbox/repo_handlers.js /repo_handlers.js
-COPY services/sandbox/repo_graph /repo_graph
-COPY services/sandbox/repo_graph_handlers.js /repo_graph_handlers.js
 COPY services/sandbox/task_handler.js /task_handler.js
 COPY services/sandbox/worktree_handlers.js /worktree_handlers.js
 COPY services/sandbox/confluence_mcp_lib.py /usr/local/bin/confluence_mcp_lib.py

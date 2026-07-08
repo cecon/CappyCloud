@@ -127,8 +127,8 @@ class TestUserMcpServersApi:
                 "id": 2,
                 "method": "tools/call",
                 "params": {
-                    "name": "smart_codebase_graph",
-                    "arguments": {"materialized": True, "apiKey": "secret"},
+                    "name": "smart_codebase_search",
+                    "arguments": {"query": "foo", "apiKey": "secret"},
                 },
             },
             headers={
@@ -146,12 +146,11 @@ class TestUserMcpServersApi:
         assert row.trace_id == trace_id
         assert row.user_id == user_id
         assert row.repo_id == repository.id
-        assert row.tool_name == "repository_graph"
-        assert row.materialized is True
+        assert row.tool_name == "repository_search"
         assert row.caller_user_agent == "Claude"
         assert row.caller_session_id == "claude-session"
         assert row.arguments_sanitized["apiKey"] == "<redacted>"
-        assert row.metadata["requested_tool_name"] == "smart_codebase_graph"
+        assert row.metadata["requested_tool_name"] == "smart_codebase_search"
 
     async def test_logs_unmapped_mcp_routes_without_token_values(
         self,

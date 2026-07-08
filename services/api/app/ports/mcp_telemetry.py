@@ -22,7 +22,6 @@ class McpToolInvocationRecord:
     error_summary: str | None = None
     response_bytes: int | None = None
     response_hash: str | None = None
-    materialized: bool | None = None
     caller_user_agent: str | None = None
     caller_session_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)

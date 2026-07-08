@@ -5,7 +5,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.domain.value_objects import DEFAULT_PERMISSION_MODE, validate_permission_mode
 
 
 class RepoSelection(BaseModel):
@@ -21,6 +23,7 @@ class ConversationCreate(BaseModel):
 
     title: str | None = Field(default="Nova conversa", max_length=512)
     sandbox_id: uuid.UUID | None = None
+    model_id: str | None = Field(default=None, max_length=256)
     repos: list[RepoSelection] = Field(default_factory=list)
 
 
@@ -37,6 +40,7 @@ class ConversationOut(BaseModel):
     ai_model_id: uuid.UUID | None = None
     repos: list[dict] = Field(default_factory=list)
     session_root: str | None = None
+    permission_mode: str = DEFAULT_PERMISSION_MODE
     worktree_exists: bool = False
     lines_added: int = 0
     lines_removed: int = 0
@@ -90,3 +94,12 @@ class SendMessageBody(BaseModel):
     content: str = Field(min_length=1, max_length=1_000_000)
     model_id: str | None = Field(default=None, max_length=256)
     attachment_ids: list[uuid.UUID] | None = None
+    permission_mode: str | None = Field(default=None, max_length=32)
+    action_reply: bool = False
+
+    @field_validator("permission_mode")
+    @classmethod
+    def permission_mode_valid(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return validate_permission_mode(v)

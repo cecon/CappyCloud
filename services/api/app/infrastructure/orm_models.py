@@ -141,6 +141,12 @@ class Conversation(Base):
     repos: Mapped[list] = mapped_column(JSONBType, nullable=False, server_default="[]")
     # Diretório raiz da sessão no volume: /repos/sessions/<short_id>/
     session_root: Mapped[str | None] = mapped_column(Text, nullable=True)
+    permission_mode: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        server_default="request_permissions",
+        default="request_permissions",
+    )
     # Worktree state
     worktree_exists: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     lines_added: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -311,11 +317,6 @@ from app.infrastructure.orm_models_execution import (  # noqa: F401, E402
     Routine,
     RoutineRun,
 )
-from app.infrastructure.orm_models_graph import (  # noqa: F401, E402
-    GraphEdge,
-    GraphNode,
-    GraphReconciliationRun,
-)
 from app.infrastructure.orm_models_mcp import (  # noqa: F401, E402
     McpServer,
     McpToolInvocation,
@@ -331,4 +332,10 @@ from app.infrastructure.orm_models_platform import (  # noqa: F401, E402
 )
 from app.infrastructure.orm_models_sandbox_globals import (  # noqa: F401, E402
     GlobalSkill as GlobalSkillORM,
+)
+from app.infrastructure.orm_models_user_preferences import (  # noqa: F401, E402
+    UserPreferences as UserPreferencesORM,
+)
+from app.infrastructure.orm_models_user_workspaces import (  # noqa: F401, E402
+    UserRepositoryWorkspace as UserRepositoryWorkspaceORM,
 )

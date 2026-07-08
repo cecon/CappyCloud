@@ -33,9 +33,16 @@ from app.adapters.secondary.persistence.sqlalchemy_user_access_repo import (
 from app.adapters.secondary.persistence.sqlalchemy_user_mcp_repo import (
     SQLAlchemyUserMcpServerRepository,
 )
+from app.adapters.secondary.persistence.sqlalchemy_user_preferences_repo import (
+    SQLAlchemyUserPreferencesRepository,
+)
+from app.adapters.secondary.persistence.sqlalchemy_user_workspace_repo import (
+    SQLAlchemyUserRepositoryWorkspaceRepository,
+)
 from app.adapters.secondary.persistence.sqlalchemy_user_repo import (
     SQLAlchemyUserRepository,
 )
+from app.adapters.secondary.sandbox_user_workspace_client import SandboxUserWorkspaceClient
 from app.adapters.secondary.repository_mcp_tool_gateway import (
     SQLAlchemyRepositoryMcpToolGateway,
 )
@@ -46,6 +53,12 @@ from app.application.use_cases.conversations import (
     ListConversations,
     ListMessages,
     StreamMessage,
+)
+from app.application.use_cases.user_preferences import GetUserPreferences, UpdateUserPreferences
+from app.application.use_cases.user_workspaces import (
+    DeleteUserRepositoryWorkspace,
+    EnsureUserRepositoryWorkspace,
+    ListUserRepositoryWorkspaces,
 )
 from app.application.use_cases.repo_environments import (
     CreateRepoEnvironment,
@@ -67,6 +80,8 @@ from app.ports.repositories import (
 from app.ports.repository_mcp import RepositoryMcpToolGateway
 from app.ports.services import AttachmentStorage, ModelCatalogService, PasswordService, TokenService
 from app.ports.user_access import AiModelAccessPolicy, UserRepositoryAccessRepository
+from app.ports.user_preferences import UserPreferencesRepository
+from app.ports.user_workspaces import UserRepositoryWorkspaceRepository
 
 from . import deps_attachments as _attach_deps
 from .deps_base import get_conv_repo, get_db_session  # re-export
@@ -87,6 +102,18 @@ def get_user_repo(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> UserRepository:
     return SQLAlchemyUserRepository(session)
+
+
+def get_user_preferences_repo(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> UserPreferencesRepository:
+    return SQLAlchemyUserPreferencesRepository(session)
+
+
+def get_user_workspace_repo(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> UserRepositoryWorkspaceRepository:
+    return SQLAlchemyUserRepositoryWorkspaceRepository(session)
 
 
 def get_msg_repo(
@@ -165,6 +192,10 @@ def get_agent(request: Request) -> AgentPort:
     return request.app.state.agent  # type: ignore[no-any-return]
 
 
+def get_sandbox_workspace_gateway() -> SandboxUserWorkspaceClient:
+    return SandboxUserWorkspaceClient()
+
+
 # ---------------------------------------------------------------------------
 # Use case dependencies
 # ---------------------------------------------------------------------------
@@ -197,6 +228,40 @@ def get_change_password_uc(
     passwords: Annotated[PasswordService, Depends(get_password_service)],
 ) -> ChangePassword:
     return ChangePassword(users, passwords)
+
+
+def get_user_preferences_uc(
+    preferences: Annotated[UserPreferencesRepository, Depends(get_user_preferences_repo)],
+) -> GetUserPreferences:
+    return GetUserPreferences(preferences)
+
+
+def get_update_user_preferences_uc(
+    preferences: Annotated[UserPreferencesRepository, Depends(get_user_preferences_repo)],
+) -> UpdateUserPreferences:
+    return UpdateUserPreferences(preferences)
+
+
+def get_ensure_user_workspace_uc(
+    workspaces: Annotated[UserRepositoryWorkspaceRepository, Depends(get_user_workspace_repo)],
+    repos: Annotated[RepositoryRepository, Depends(get_repository_repo)],
+    access: Annotated[UserRepositoryAccessRepository, Depends(get_user_repository_access_repo)],
+    sandbox: Annotated[SandboxUserWorkspaceClient, Depends(get_sandbox_workspace_gateway)],
+) -> EnsureUserRepositoryWorkspace:
+    return EnsureUserRepositoryWorkspace(workspaces, repos, access, sandbox)
+
+
+def get_list_user_workspaces_uc(
+    workspaces: Annotated[UserRepositoryWorkspaceRepository, Depends(get_user_workspace_repo)],
+) -> ListUserRepositoryWorkspaces:
+    return ListUserRepositoryWorkspaces(workspaces)
+
+
+def get_delete_user_workspace_uc(
+    workspaces: Annotated[UserRepositoryWorkspaceRepository, Depends(get_user_workspace_repo)],
+    sandbox: Annotated[SandboxUserWorkspaceClient, Depends(get_sandbox_workspace_gateway)],
+) -> DeleteUserRepositoryWorkspace:
+    return DeleteUserRepositoryWorkspace(workspaces, sandbox)
 
 
 def get_list_ai_models_uc(
@@ -302,6 +367,10 @@ def get_stream_msg_uc(
     storage: Annotated[AttachmentStorage, Depends(_attach_deps.get_attachment_storage)],
     model_caps: Annotated[AiModelCapabilityLookup, Depends(_attach_deps.get_ai_model_caps)],
     model_access: Annotated[AiModelAccessPolicy, Depends(get_ai_model_access_policy)],
+    user_workspaces: Annotated[
+        EnsureUserRepositoryWorkspace,
+        Depends(get_ensure_user_workspace_uc),
+    ],
 ) -> StreamMessage:
     return StreamMessage(
         convs,
@@ -312,6 +381,7 @@ def get_stream_msg_uc(
         attachment_storage=storage,
         model_caps=model_caps,
         model_access=model_access,
+        user_workspaces=user_workspaces,
     )
 
 

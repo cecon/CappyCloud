@@ -40,6 +40,20 @@ próprio:
 /repos/sessions/<session_id>/<repo-alias>/
 ```
 
+A partir da spec `006-persistent-user-workspaces`, o sandbox tambem pode manter
+um baseline persistente por usuario, repositorio, sandbox e branch base em:
+
+```text
+/repos/users/<user>/<sandbox>/<repo>/<branch>/
+```
+
+Esse baseline e preparado pelo endpoint interno `/user-workspaces/ensure`. Ele
+serve como fonte limpa para novas sessoes, mas nao substitui o worktree de
+conversa. Quando `source_workspace_path` e enviado no payload de `/sessions`, o
+`session_server` valida que o baseline esta dentro de `/repos/users/`, existe e
+esta limpo; em seguida cria o worktree da conversa dentro de `/repos/sessions/`
+a partir do commit desse baseline.
+
 A API não usa Docker socket para manipular worktrees. Ela conversa com o
 `session_server` do sandbox por HTTP interno e com o agente por gRPC.
 
@@ -52,13 +66,14 @@ A API não usa Docker socket para manipular worktrees. Ela conversa com o
 3. O sandbox materializa worktrees por conversa e por repositório.
 4. Operações Git/worktree passam pelo `session_server`, não pela API.
 5. O agente deve operar no worktree da sessão, não no clone principal.
-6. Sessões podem ser descartadas por TTL sem apagar histórico da conversa.
-7. MCPs, skills e modelo são contexto de execução e podem variar por usuário ou
+6. O baseline persistente por usuario nao deve receber edicoes de conversas.
+7. Sessões podem ser descartadas por TTL sem apagar histórico da conversa.
+8. MCPs, skills e modelo são contexto de execução e podem variar por usuário ou
    conversa.
-8. Regras específicas de produto, cliente ou repositório devem viver em skills,
+9. Regras específicas de produto, cliente ou repositório devem viver em skills,
    documentação externa configurada ou dados do banco. Não devem entrar no
    prompt global, no prefetch ou no sandbox como conhecimento rígido.
-9. Fontes documentais externas devem ser configuráveis por ambiente; defaults
+10. Fontes documentais externas devem ser configuráveis por ambiente; defaults
    de compatibilidade não podem ser tratados como regra de produto.
 
 ---
@@ -68,6 +83,8 @@ A API não usa Docker socket para manipular worktrees. Ela conversa com o
 ### Positivas
 
 - Conversas ficam isoladas sem clonar o repositório inteiro a cada mensagem.
+- Conversas repetidas do mesmo usuario podem reaproveitar baseline preparado sem
+  compartilhar arquivos nao commitados com outros usuarios.
 - O runtime suporta múltiplos repositórios por conversa.
 - A API fica desacoplada do filesystem interno do sandbox.
 - É possível reconstruir sessão de forma idempotente quando o volume ou worktree

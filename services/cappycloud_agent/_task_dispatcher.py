@@ -61,12 +61,14 @@ class TaskDispatcher:
         self,
         prompt: str,
         conversation_id: str | None = None,
+        user_id: str | None = None,
         triggered_by: str = "user",
         trigger_payload: dict | None = None,
         repos: list | None = None,
         session_root: str = "",
         sandbox_id: str = "",
         override_model: str | None = None,
+        permission_mode: str = "request_permissions",
         sandbox_session_url: str = "",
         attachments: list[dict] | None = None,
     ) -> str:
@@ -91,10 +93,12 @@ class TaskDispatcher:
                 task_id,
                 prompt,
                 conversation_id,
+                user_id=user_id,
                 repos=repos or [],
                 session_root=session_root,
                 sandbox_id=sandbox_id,
                 override_model=override_model,
+                permission_mode=permission_mode,
                 sandbox_session_url=sandbox_session_url,
                 attachments=attachments,
             ),
@@ -110,7 +114,7 @@ class TaskDispatcher:
     def get_runner_for_conversation(self, conversation_id: str) -> TaskRunner | None:
         """Retorna o runner activo da conversa (status running ou paused)."""
         for _task_id, runner in self._runners.items():
-            if runner.is_alive():
+            if runner.is_alive() and runner.conversation_id == conversation_id:
                 return runner
         return None
 
@@ -184,10 +188,12 @@ class TaskDispatcher:
         task_id: str,
         prompt: str,
         conversation_id: str | None,
+        user_id: str | None = None,
         repos: list | None = None,
         session_root: str = "",
         sandbox_id: str = "",
         override_model: str | None = None,
+        permission_mode: str = "request_permissions",
         sandbox_session_url: str = "",
         attachments: list[dict] | None = None,
     ) -> None:
@@ -197,10 +203,12 @@ class TaskDispatcher:
             task_id,
             prompt,
             conversation_id,
+            user_id=user_id,
             repos=repos,
             session_root=session_root,
             sandbox_id=sandbox_id,
             override_model=override_model,
+            permission_mode=permission_mode,
             sandbox_session_url=sandbox_session_url,
             attachments=attachments,
         )

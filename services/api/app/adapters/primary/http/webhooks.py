@@ -7,10 +7,9 @@ import logging
 import os
 import uuid
 from typing import Annotated
-from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.primary.http._webhook_github import (
@@ -21,7 +20,6 @@ from app.adapters.primary.http._webhook_gitlab import (
     build_gitlab_prompt,
 )
 from app.adapters.primary.http.deps import get_db_session
-from app.infrastructure.orm_models import Repository, SandboxSyncQueue
 
 log = logging.getLogger(__name__)
 
@@ -65,63 +63,6 @@ async def find_env_slug(db: AsyncSession, clone_url: str) -> str | None:
     )
     r = row.fetchone()
     return r.slug if r else None
-
-
-async def enqueue_graph_materialization_for_push(
-    db: AsyncSession,
-    *,
-    ref: str,
-    clone_url: str,
-    commit_sha: str,
-) -> None:
-    """Queue graph materialization when a tracked repo receives a default-branch push."""
-    branch = _branch_from_ref(ref)
-    if not branch or not commit_sha:
-        return
-    repo = await _find_tracked_repository(db, clone_url)
-    default_branch = (repo.default_branch if repo else "").strip()
-    if not repo or not repo.sandbox_id or branch.lower() != default_branch.lower():
-        return
-    db.add(
-        SandboxSyncQueue(
-            id=uuid.uuid4(),
-            sandbox_id=repo.sandbox_id,
-            operation="materialize_repo_graph",
-            payload={
-                "repo_id": str(repo.id),
-                "slug": repo.slug,
-                "commit_sha": commit_sha,
-                "max_files": 1200,
-            },
-            priority=4,
-        )
-    )
-    await db.commit()
-
-
-async def _find_tracked_repository(db: AsyncSession, clone_url: str) -> Repository | None:
-    clean = _normalise_git_url(clone_url)
-    rows = await db.execute(select(Repository).where(Repository.active.is_(True)))
-    for repo in rows.scalars():
-        if _normalise_git_url(repo.clone_url) == clean:
-            return repo
-    return None
-
-
-def _normalise_git_url(raw: str) -> str:
-    value = (raw or "").strip().rstrip("/").removesuffix(".git")
-    if value.startswith("git@"):
-        host, _, path = value[4:].partition(":")
-        return f"{host}/{path}".lower()
-    parsed = urlsplit(value)
-    if parsed.netloc:
-        return f"{parsed.netloc}{parsed.path}".lower().strip("/")
-    return value.lower()
-
-
-def _branch_from_ref(ref: str) -> str:
-    value = (ref or "").strip()
-    return value.removeprefix("refs/heads/") if value.startswith("refs/heads/") else value
 
 
 async def dispatch_task(
@@ -191,13 +132,6 @@ async def github_webhook(
     clone_url = repo.get("clone_url") or repo.get("git_url") or repo.get("ssh_url") or ""
 
     cicd_event_id = await insert_cicd_event(db, "github", event_type, repo_slug, payload)
-    if event_type == "push":
-        await enqueue_graph_materialization_for_push(
-            db,
-            ref=str(payload.get("ref") or ""),
-            clone_url=clone_url,
-            commit_sha=str(payload.get("after") or ""),
-        )
     return await handle_github_event(
         request, db, event_type, repo_slug, clone_url, payload, cicd_event_id
     )
@@ -232,13 +166,6 @@ async def gitlab_webhook(
     repo_slug = project.get("path_with_namespace") or project.get("name", "")
 
     cicd_event_id = await insert_cicd_event(db, "gitlab", event_type, repo_slug, payload)
-    if "Push Hook" in event_type or event_type == "push":
-        await enqueue_graph_materialization_for_push(
-            db,
-            ref=str(payload.get("ref") or ""),
-            clone_url=clone_url,
-            commit_sha=str(payload.get("checkout_sha") or payload.get("after") or ""),
-        )
     prompt = build_gitlab_prompt(event_type, payload)
     if not prompt:
         return {"status": "ignored", "event": event_type}

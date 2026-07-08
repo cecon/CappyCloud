@@ -38,6 +38,24 @@ function resolveSafeFileInWorktree(worktreeRaw, relPath) {
   return full
 }
 
+async function resolveBaseRef(worktreePath, baseBranch) {
+  const candidates = [
+    `refs/remotes/origin/${baseBranch}`,
+    `origin/${baseBranch}`,
+    baseBranch,
+  ]
+  for (const candidate of candidates) {
+    try {
+      await execFileAsync('git', ['-C', worktreePath, 'rev-parse', '--verify', candidate], {
+        timeout: 30_000,
+        maxBuffer: 1024 * 1024,
+      })
+      return candidate
+    } catch {}
+  }
+  return baseBranch
+}
+
 /**
  * Tenta tratar POST /worktree/*. Retorna true se tratou.
  * @param {import('http').IncomingMessage} req
@@ -129,9 +147,10 @@ async function tryHandle(req, res, { json, readBody }) {
       const body = await readBody(req)
       const baseBranch = (body.base_branch || 'main').trim()
       const wt = resolveSafeWorktree(body.worktree_path)
+      const baseRef = await resolveBaseRef(wt, baseBranch)
       const { stdout } = await execFileAsync(
         'git',
-        ['-C', wt, 'diff', `${baseBranch}..HEAD`],
+        ['-C', wt, 'diff', `${baseRef}..HEAD`],
         { timeout: 120_000, maxBuffer: 50 * 1024 * 1024 },
       )
       const diffText = ((stdout || '') + '').toString()

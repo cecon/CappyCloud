@@ -34,7 +34,6 @@ from app.adapters.primary.http import documents as documents_router
 from app.adapters.primary.http import environments as env_router
 from app.adapters.primary.http import git_providers as git_providers_router
 from app.adapters.primary.http import mcp_oauth as mcp_oauth_router
-from app.adapters.primary.http import repo_graph as repo_graph_router
 from app.adapters.primary.http import repositories_admin as repos_admin_router
 from app.adapters.primary.http import repository_mcp as repository_mcp_router
 from app.adapters.primary.http import routines as routines_router
@@ -42,6 +41,8 @@ from app.adapters.primary.http import sandboxes as sandboxes_router
 from app.adapters.primary.http import skills as skills_router
 from app.adapters.primary.http import skills_search as skills_search_router
 from app.adapters.primary.http import tasks as tasks_router
+from app.adapters.primary.http import user_preferences as user_preferences_router
+from app.adapters.primary.http import user_workspaces as user_workspaces_router
 from app.adapters.primary.http import user_mcp_servers as user_mcp_servers_router
 from app.adapters.primary.http import webhooks as webhooks_router
 from app.adapters.primary.http import workspaces as workspaces_router
@@ -207,7 +208,8 @@ app.include_router(workspaces_router.router, prefix="/api")
 app.include_router(git_providers_router.router, prefix="/api")
 app.include_router(ai_models_router.router, prefix="/api")
 app.include_router(repos_admin_router.router, prefix="/api")
-app.include_router(repo_graph_router.router, prefix="/api")
+app.include_router(user_preferences_router.router, prefix="/api")
+app.include_router(user_workspaces_router.router, prefix="/api")
 app.include_router(user_mcp_servers_router.router, prefix="/api")
 app.include_router(repository_mcp_router.router, prefix="/api")
 app.include_router(documents_router.router, prefix="/api")

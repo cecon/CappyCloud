@@ -9,7 +9,7 @@ import {
 import type { Repository, UserMcpServer } from '../api'
 import styles from '../pages/mcp-server.module.css'
 
-const TOOL_LABELS = ['read', 'search', 'grep', 'graph', 'skills', 'confluence']
+const TOOL_LABELS = ['read', 'search', 'grep', 'skills', 'confluence']
 
 type Props = {
   server: UserMcpServer

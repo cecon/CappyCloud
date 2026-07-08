@@ -38,6 +38,7 @@ from ._signoz_context import (
     has_enabled_signoz_mcp,
 )
 from ._task_dispatcher import TaskDispatcher
+from ._grpc_helpers import sanitize_permission_mode
 
 log = logging.getLogger(__name__)
 
@@ -141,15 +142,38 @@ class Pipeline:
         )
 
         conversation_id = str(body.get("conversation_id") or "")
+        user_id = str(body.get("user_id") or "")
         repos = body.get("repos") or []
         cycle_context = body.get("cycle_context") or None
         session_root = str(body.get("session_root") or "")
         sandbox_id = str(body.get("sandbox_id") or "")
+        permission_mode = sanitize_permission_mode(body.get("permission_mode"))
         cursor = body.get("cursor")
         try:
             cursor = int(cursor) if cursor is not None else None
         except (TypeError, ValueError):
             cursor = None
+
+        action_reply = bool(body.get("action_reply"))
+        if action_reply:
+            task_id = self._run(
+                self._dispatcher.get_active_task_id(conversation_id or "__none__"),
+                timeout=10,
+            )
+            runner = self._dispatcher.get_runner(task_id) if task_id else None
+            if task_id and runner and runner.is_alive() and runner.pending_action:
+                self._run(self._dispatcher.send_input(task_id, user_message), timeout=10)
+                yield from self._stream_events(task_id, cursor)
+                return
+            if task_id:
+                yield from self._stream_events(
+                    task_id,
+                    cursor,
+                    stop_when_caught_up=True,
+                )
+                return
+            yield sse({"type": "done", "model_used": None})
+            return
 
         repo_ids: list[str] = [r["repo_id"] for r in repos if r.get("repo_id")]
 
@@ -246,9 +270,11 @@ class Pipeline:
 
         dispatch_kwargs = {
             "repos": repos,
+            "user_id": user_id,
             "session_root": session_root,
             "sandbox_id": sandbox_id,
             "override_model": override_model,
+            "permission_mode": permission_mode,
             "sandbox_session_url": sandbox_session_url,
             "attachments": attachments_payload,
         }
@@ -307,7 +333,13 @@ class Pipeline:
 
         yield from self._stream_events(task_id, cursor)
 
-    def _stream_events(self, task_id: str, cursor: int | None) -> Generator[str]:
+    def _stream_events(
+        self,
+        task_id: str,
+        cursor: int | None,
+        *,
+        stop_when_caught_up: bool = False,
+    ) -> Generator[str]:
         if self._loop is None:
             return
         yield from stream_task_events(
@@ -315,6 +347,7 @@ class Pipeline:
             database_url=self.valves.DATABASE_URL,
             task_id=task_id,
             cursor=cursor,
+            stop_when_caught_up=stop_when_caught_up,
         )
 
     async def _gc_loop(self) -> None:

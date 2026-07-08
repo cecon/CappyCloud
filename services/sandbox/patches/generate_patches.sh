@@ -51,33 +51,5 @@ NODEEOF
 node -e "$NODE_PATCH"
 git diff src/tools/GrepTool/GrepTool.ts
 
-# ── Patch 2: auto-approve-tools ──────────────────────────────────────
-# Insere verificação OPENCLAUDE_AUTO_APPROVE antes de pedir permissão ao user.
-NODE_PATCH2=$(cat <<'NODEEOF2'
-const fs = require('fs');
-const file = 'src/grpc/server.ts';
-let c = fs.readFileSync(file, 'utf8');
-
-const needle = '              // Ask user for permission';
-const insert = [
-  '              // Auto-approve mode: skip prompting the client and allow immediately.',
-  '              // Enabled by env var OPENCLAUDE_AUTO_APPROVE=1 (set by CappyCloud sandbox).',
-  "              if (process.env.OPENCLAUDE_AUTO_APPROVE === '1') {",
-  "                return { behavior: 'allow' }",
-  '              }',
-  '',
-  '',
-].join('\n');
-
-if (!c.includes('OPENCLAUDE_AUTO_APPROVE')) {
-  if (!c.includes(needle)) { console.error('server.ts needle not found'); process.exit(1); }
-  c = c.replace(needle, insert + needle);
-}
-
-fs.writeFileSync(file, c);
-console.log('auto-approve patch applied');
-NODEEOF2
-)
-
-node -e "$NODE_PATCH2"
-git diff src/grpc/server.ts
+# Request-scoped permission modes live in multimodal-grpc-handler.patch.
+# Do not regenerate the old process-wide auto-approval patch here.

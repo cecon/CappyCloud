@@ -15,10 +15,12 @@ import uuid
 
 import pytest
 from app.application.use_cases._stream_helpers import (
+    build_pipeline_body,
     enrich_repos_for_pipeline,
     ensure_repo_ids,
 )
 from app.domain.entities import Conversation, Repository
+from app.domain.value_objects import PermissionMode
 
 from tests.conftest import InMemoryConversationRepository, InMemoryRepositoryRepository
 
@@ -388,3 +390,46 @@ async def test_ensure_repo_ids_multi_repo_continues_past_empty_slug() -> None:
 
     assert "repo_id" not in conv.repos[0]
     assert conv.repos[1]["repo_id"] == str(repo_b.id)
+
+
+# ── build_pipeline_body ───────────────────────────────────────────────────
+
+
+async def test_build_pipeline_body_includes_conversation_permission_mode() -> None:
+    conv = Conversation(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        title="t",
+        permission_mode=PermissionMode.AUTO.value,
+    )
+
+    body = build_pipeline_body(
+        conv,
+        enriched_repos=[],
+        user_id=conv.user_id,
+        cursor=None,
+        override_model=None,
+        attachments_payload=None,
+    )
+
+    assert body["permission_mode"] == PermissionMode.AUTO.value
+
+
+async def test_build_pipeline_body_defaults_legacy_permission_mode() -> None:
+    conv = Conversation(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        title="t",
+        permission_mode="legacy-unknown",
+    )
+
+    body = build_pipeline_body(
+        conv,
+        enriched_repos=[],
+        user_id=conv.user_id,
+        cursor=None,
+        override_model=None,
+        attachments_payload=None,
+    )
+
+    assert body["permission_mode"] == PermissionMode.REQUEST_PERMISSIONS.value

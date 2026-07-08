@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import types
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -149,6 +150,47 @@ def test_stream_task_events_keeps_connection_alive_on_empty_queue(monkeypatch) -
         raise AssertionError("stream_task_events deveria encerrar ao receber sentinel None")
 
 
+def test_stream_task_events_preserves_order_until_sentinel(monkeypatch) -> None:
+    ordered_items = [
+        ("status", {"message": "Preparando"}, 1),
+        ("tool_start", {"name": "Bash", "input": "{}", "id": "toolu_1"}, 2),
+        ("done", {"prompt_tokens": 1, "completion_tokens": 2}, 3),
+        None,
+    ]
+
+    class FakeQueue:
+        def get(self, timeout: int):
+            del timeout
+            return ordered_items.pop(0)
+
+        def put(self, item) -> None:
+            pass
+
+    def fake_run_coroutine_threadsafe(coro, loop):
+        del loop
+        coro.close()
+        return None
+
+    monkeypatch.setattr(_pipeline_event_stream.queue, "Queue", FakeQueue)
+    monkeypatch.setattr(
+        _pipeline_event_stream.asyncio,
+        "run_coroutine_threadsafe",
+        fake_run_coroutine_threadsafe,
+    )
+
+    gen = _pipeline_event_stream.stream_task_events(
+        loop=asyncio.new_event_loop(),
+        database_url="postgresql://db",
+        task_id=str(uuid.uuid4()),
+        cursor=None,
+    )
+
+    payloads = [json.loads(next(gen)[6:]) for _ in range(3)]
+
+    assert [payload["type"] for payload in payloads] == ["status", "tool_start", "done"]
+    assert [payload["cursor"] for payload in payloads] == [1, 2, 3]
+
+
 def test_done_full_text_becomes_text_event_when_chunks_are_missing() -> None:
     msg = types.SimpleNamespace(
         done=types.SimpleNamespace(
@@ -255,6 +297,57 @@ def test_tool_result_event_preserves_stdout_and_error_flag() -> None:
         "output": b"stdout preservado",
         "is_error": True,
         "id": "toolu_1",
+    }
+
+
+def test_tool_error_remains_visible_after_text_event() -> None:
+    text_msg = types.SimpleNamespace(text_chunk=types.SimpleNamespace(text="Investigando...\n"))
+    tool_msg = types.SimpleNamespace(
+        tool_result=types.SimpleNamespace(
+            tool_name="Bash",
+            output=b"comando falhou",
+            is_error=True,
+            tool_use_id="toolu_error",
+        )
+    )
+
+    assert _grpc_event_handlers.text_chunk_event(text_msg) == (
+        "text",
+        {"content": "Investigando...\n"},
+    )
+    event_type, data = _grpc_event_handlers.tool_result_event(tool_msg)
+
+    assert event_type == "tool_result"
+    assert data["id"] == "toolu_error"
+    assert data["is_error"] is True
+    assert data["output"] == b"comando falhou"
+
+
+def test_done_event_reports_sanitized_runtime_fallback() -> None:
+    msg = types.SimpleNamespace(
+        done=types.SimpleNamespace(
+            full_text="",
+            prompt_tokens=10,
+            completion_tokens=5,
+            model_used="openrouter/fallback:free",
+            fallback_reason="rate limit",
+        )
+    )
+
+    event_type, data = _grpc_event_handlers.done_event(
+        msg,
+        session_id="session",
+        model="openrouter/selected",
+        wd="/workspace",
+        streamed_text=True,
+    )
+
+    assert event_type == "done"
+    assert data["model_used"] == "openrouter/fallback:free"
+    assert data["fallback"] == {
+        "selected_model": "openrouter/selected",
+        "final_model": "openrouter/fallback:free",
+        "reason": "rate_limit",
     }
 
 

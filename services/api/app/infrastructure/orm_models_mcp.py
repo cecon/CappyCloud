@@ -128,7 +128,6 @@ class McpToolInvocation(Base):
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     response_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     response_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    materialized: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     caller_user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
     caller_session_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     meta: Mapped[dict] = mapped_column("metadata", JSONBType, nullable=False, server_default="{}")

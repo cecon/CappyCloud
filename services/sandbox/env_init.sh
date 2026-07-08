@@ -23,7 +23,6 @@ CLAUDE_CODE_USE_OPENAI="${CLAUDE_CODE_USE_OPENAI:-1}"
 GRPC_HOST="${GRPC_HOST:-0.0.0.0}"
 GRPC_PORT="${GRPC_PORT:-50051}"
 SESSION_SERVER_PORT="${SESSION_SERVER_PORT:-8080}"
-OPENCLAUDE_AUTO_APPROVE="${OPENCLAUDE_AUTO_APPROVE:-1}"
 WORKSPACE_REPOS="${WORKSPACE_REPOS:-}"
 WORKSPACE_BRANCH="${WORKSPACE_BRANCH:-main}"
 DEVOPS_TOKEN="${DEVOPS_TOKEN:-}"
@@ -284,9 +283,13 @@ if (c.includes(importNeedle) && !c.includes("from '../cost-tracker.js'")) {
   c = c.replace(importNeedle, importNeedle + "\nimport { getModelUsage } from '../cost-tracker.js'");
 }
 const needle = "          const req = clientMessage.request\n          sessionId = req.session_id || ''";
+const v017Needle = "          const req = clientMessage.request\n          currentRequestId = req.request_id || ''\n          sessionId = req.session_id || ''";
 const replacement = "          const req = clientMessage.request\n          const requestedModel = String(req.model || '').trim()\n          const requestedProviderBaseUrl = String(req.provider_base_url || '').trim().replace(/\\/+$/, '')\n          const requestedProviderApiKey = String(req.provider_api_key || '').trim()\n          const requestedProviderApiFormat = String(req.provider_api_format || '').trim()\n          const previousOpenAIModel = process.env.OPENAI_MODEL\n          const previousOpenAIBaseUrl = process.env.OPENAI_BASE_URL\n          const previousOpenAIApiKey = process.env.OPENAI_API_KEY\n          const previousOpenAIApiFormat = process.env.OPENAI_API_FORMAT\n          if (requestedModel) {\n            // CappyCloud dynamic model override: OpenAI shim fallback paths read OPENAI_MODEL.\n            process.env.OPENAI_MODEL = requestedModel\n            console.log(`[grpc] dynamic model override: ${requestedModel}`)\n          }\n          if (requestedProviderBaseUrl && requestedProviderApiKey) {\n            // CappyCloud provider override: route this request to the selected provider without logging secrets.\n            process.env.OPENAI_BASE_URL = requestedProviderBaseUrl\n            process.env.OPENAI_API_KEY = requestedProviderApiKey\n            if (requestedProviderApiFormat === 'responses' || requestedProviderApiFormat === 'chat_completions') {\n              process.env.OPENAI_API_FORMAT = requestedProviderApiFormat\n            }\n            console.log(`[grpc] provider override: ${requestedProviderBaseUrl} format=${process.env.OPENAI_API_FORMAT || 'chat_completions'}`)\n          }\n          sessionId = req.session_id || ''";
+const v017Replacement = "          const req = clientMessage.request\n          const requestedModel = String(req.model || '').trim()\n          const requestedProviderBaseUrl = String(req.provider_base_url || '').trim().replace(/\\/+$/, '')\n          const requestedProviderApiKey = String(req.provider_api_key || '').trim()\n          const requestedProviderApiFormat = String(req.provider_api_format || '').trim()\n          const previousOpenAIModel = process.env.OPENAI_MODEL\n          const previousOpenAIBaseUrl = process.env.OPENAI_BASE_URL\n          const previousOpenAIApiKey = process.env.OPENAI_API_KEY\n          const previousOpenAIApiFormat = process.env.OPENAI_API_FORMAT\n          if (requestedModel) {\n            // CappyCloud dynamic model override: OpenAI shim fallback paths read OPENAI_MODEL.\n            process.env.OPENAI_MODEL = requestedModel\n            console.log(`[grpc] dynamic model override: ${requestedModel}`)\n          }\n          if (requestedProviderBaseUrl && requestedProviderApiKey) {\n            // CappyCloud provider override: route this request to the selected provider without logging secrets.\n            process.env.OPENAI_BASE_URL = requestedProviderBaseUrl\n            process.env.OPENAI_API_KEY = requestedProviderApiKey\n            if (requestedProviderApiFormat === 'responses' || requestedProviderApiFormat === 'chat_completions') {\n              process.env.OPENAI_API_FORMAT = requestedProviderApiFormat\n            }\n            console.log(`[grpc] provider override: ${requestedProviderBaseUrl} format=${process.env.OPENAI_API_FORMAT || 'chat_completions'}`)\n          }\n          currentRequestId = req.request_id || ''\n          sessionId = req.session_id || ''";
 if (c.includes(needle)) {
   c = c.replace(needle, replacement);
+} else if (c.includes(v017Needle)) {
+  c = c.replace(v017Needle, v017Replacement);
 } else if (!c.includes('CappyCloud dynamic model override')) {
   console.log('[env_init] gRPC dynamic model patch: needle not found, skipping.');
   process.exit(0);
@@ -349,7 +352,6 @@ export OPENAI_API_KEY="${OPENAI_API_KEY}"
 export OPENAI_MODEL="${OPENAI_MODEL}"
 export GRPC_HOST="${GRPC_HOST}"
 export GRPC_PORT="${GRPC_PORT}"
-export OPENCLAUDE_AUTO_APPROVE="${OPENCLAUDE_AUTO_APPROVE}"
 export DEVOPS_TOKEN="${DEVOPS_TOKEN:-}"
 export GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 

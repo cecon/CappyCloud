@@ -42,6 +42,7 @@ message ChatRequest {
   optional string provider_base_url   = 8; // Per-request OpenAI-compatible provider base URL
   optional string provider_api_key    = 9; // Per-request provider key (internal gRPC only)
   optional string provider_api_format = 10; // chat_completions | responses
+  optional string permission_mode     = 11; // request_permissions | accept_edits | plan | auto | bypass_permissions
 }
 
 message UserInput {

@@ -1,5 +1,5 @@
 diff --git a/src/grpc/server.ts b/src/grpc/server.ts
-index b707490..f2335d8 100644
+index 11e6c66..42ae6dd 100644
 --- a/src/grpc/server.ts
 +++ b/src/grpc/server.ts
 @@ -1,5 +1,6 @@
@@ -17,7 +17,7 @@ index b707490..f2335d8 100644
  
  const PROTO_PATH = path.resolve(import.meta.dirname, '../proto/openclaude.proto')
  
-@@ -24,6 +26,325 @@ const openclaudeProto = protoDescriptor.openclaude.v1
+@@ -24,6 +26,367 @@ const openclaudeProto = protoDescriptor.openclaude.v1
  
  const MAX_SESSIONS = 1000
  
@@ -34,6 +34,49 @@ index b707490..f2335d8 100644
 +])
 +
 +const CAPPYCLOUD_COMMAND_GUARDED_TOOLS = new Set(['Bash', 'Monitor'])
++
++const CAPPYCLOUD_PERMISSION_MODES = new Set([
++  'request_permissions',
++  'accept_edits',
++  'plan',
++  'auto',
++  'bypass_permissions',
++])
++
++const CAPPYCLOUD_EDIT_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit', 'MultiEdit'])
++const CAPPYCLOUD_MUTATING_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit', 'MultiEdit', 'Bash'])
++
++type CappycloudPermissionDecision = {
++  behavior: 'allow' | 'deny'
++  message?: string
++}
++
++function cappycloudPermissionMode(value: unknown): string {
++  if (typeof value !== 'string') {
++    return 'request_permissions'
++  }
++  const mode = value.trim()
++  return CAPPYCLOUD_PERMISSION_MODES.has(mode) ? mode : 'request_permissions'
++}
++
++function cappycloudPermissionDecision(mode: string, toolName: string): CappycloudPermissionDecision | null {
++  if (mode === 'request_permissions') {
++    return null
++  }
++  if (mode === 'accept_edits') {
++    return CAPPYCLOUD_EDIT_TOOLS.has(toolName) ? { behavior: 'allow' } : null
++  }
++  if (mode === 'plan') {
++    if (!CAPPYCLOUD_MUTATING_TOOLS.has(toolName)) {
++      return null
++    }
++    return {
++      behavior: 'deny',
++      message: 'Tool blocked: permission mode "plan" allows planning and read-only inspection only. Switch the session permission mode before editing files or running commands.',
++    }
++  }
++  return { behavior: 'allow' }
++}
 +
 +const CAPPYCLOUD_PATH_INPUT_KEYS = [
 +  'file_path',
@@ -339,11 +382,40 @@ index b707490..f2335d8 100644
 +  }
 +}
 +
-+
  export class GrpcServer {
    private server: grpc.Server
    private sessions: Map<string, any[]> = new Map()
-@@ -86,11 +407,44 @@ export class GrpcServer {
+@@ -61,12 +424,15 @@ export class GrpcServer {
+     let previousMessages: any[] = []
+     let sessionId = ''
+     let interrupted = false
++    let currentRequestId = ''
+ 
+     call.on('data', async (clientMessage) => {
+       try {
+         if (clientMessage.request) {
+           if (engine) {
++            currentRequestId = clientMessage.request?.request_id || currentRequestId || ''
+             call.write({
++              request_id: currentRequestId,
+               error: {
+                 message: 'A request is already in progress on this stream',
+                 code: 'ALREADY_EXISTS'
+@@ -76,21 +442,56 @@ export class GrpcServer {
+           }
+           interrupted = false
+           const req = clientMessage.request
++          currentRequestId = req.request_id || ''
+           sessionId = req.session_id || ''
+           previousMessages = []
+ 
+-          // Load previous messages from session store (cross-stream persistence)
+-          if (sessionId && this.sessions.has(sessionId)) {
+-            previousMessages = [...this.sessions.get(sessionId)!]
+-          }
++          // CappyCloud owns visible conversation history. OpenClaude's in-memory
++          // cross-stream cache stays disabled so a resumed gRPC session cannot
++          // replay stale messages from another browser-visible conversation.
  
            const toolNameById = new Map<string, string>()
  
@@ -366,12 +438,14 @@ index b707490..f2335d8 100644
 +            grpcToolsByName.set(tool.name, tool)
 +          }
 +          const grpcAllowedWorktree = path.resolve(req.working_directory || process.cwd())
++          const grpcPermissionMode = cappycloudPermissionMode(req.permission_mode)
 +          const grpcNumericParameterMode = /Regra obrigat.ria para par.metro num.rico|par.metro[^\n]{0,80}\b\d{1,12}\b/i.test(String(req.message || ''))
 +          if (grpcNumericParameterMode) {
 +            console.log('[grpc] numeric parameter mode enabled')
 +          }
 +
 +          call.write({
++            request_id: currentRequestId,
 +            payload_diagnostic: cappycloudPayloadDiagnostic(
 +              req,
 +              previousMessages,
@@ -392,7 +466,7 @@ index b707490..f2335d8 100644
              // Register OpenClaude's built-in agents (general-purpose,
              // statusline-setup, optional code-guide). Without this the Agent
              // tool throws "Agent type 'general-purpose' not found" the moment
-@@ -102,6 +456,18 @@ export class GrpcServer {
+@@ -102,19 +503,49 @@ export class GrpcServer {
                if (toolUseID) {
                  toolNameById.set(toolUseID, tool.name)
                }
@@ -410,8 +484,39 @@ index b707490..f2335d8 100644
 +              }
                // Notify client of the tool call first
                call.write({
++                request_id: currentRequestId,
                  tool_start: {
-@@ -150,7 +516,24 @@ export class GrpcServer {
+                  tool_name: tool.name,
+                  arguments_json: JSON.stringify(input),
+                  tool_use_id: toolUseID
+                 }
+               })
++              const permissionDecision = cappycloudPermissionDecision(grpcPermissionMode, tool.name)
++              if (permissionDecision) {
++                if (permissionDecision.behavior === 'allow') {
++                  return { behavior: 'allow' as const }
++                }
++                const permissionMessage = permissionDecision.message ?? 'Tool blocked by session permission mode.'
++                console.warn(`[grpc] ${permissionMessage}`)
++                return {
++                  behavior: 'deny' as const,
++                  message: permissionMessage,
++                  decisionReason: {
++                    type: 'other' as const,
++                    reason: permissionMessage,
++                  },
++                }
++              }
+ 
+               // Ask user for permission
+               const promptId = randomUUID()
+               const question = `Approve ${tool.name}?`
+               call.write({
++                request_id: currentRequestId,
+                action_required: {
+                  prompt_id: promptId,
+                  question,
+@@ -144,12 +575,30 @@ export class GrpcServer {
            let promptTokens = 0
            let completionTokens = 0
  
@@ -419,7 +524,7 @@ index b707490..f2335d8 100644
 +          // Multimodal input: when client passes attachments, build a
 +          // ContentBlockParam[] (image + text blocks). The QueryEngine accepts
 +          // this shape natively and forwards it to the provider SDK. Models
-+          // that do not support vision will produce a 4xx upstream — caller
++          // that do not support vision will produce a 4xx upstream; caller
 +          // should validate model capability BEFORE sending attachments.
 +          let promptInput: any = req.message
 +          if (Array.isArray(req.attachments) && req.attachments.length > 0) {
@@ -437,3 +542,49 @@ index b707490..f2335d8 100644
  
            for await (const msg of generator) {
              if (msg.type === 'stream_event') {
+               if (msg.event.type === 'content_block_delta' && msg.event.delta.type === 'text_delta') {
+                 call.write({
++                  request_id: currentRequestId,
+                  text_chunk: {
+                    text: msg.event.delta.text
+                  }
+@@ -169,6 +618,7 @@ export class GrpcServer {
+                       outputStr = block.content.map(c => c.type === 'text' ? c.text : '').join('\n')
+                     }
+                     call.write({
++                      request_id: currentRequestId,
+                      tool_result: {
+                        tool_name: toolNameById.get(block.tool_use_id) ?? block.tool_use_id,
+                        tool_use_id: block.tool_use_id,
+@@ -192,19 +642,12 @@ export class GrpcServer {
+           }
+ 
+           if (!interrupted) {
+-            // Save messages for multi-turn context in subsequent requests
+-            previousMessages = [...engine.getMessages()]
+-
+-            // Persist to session store for cross-stream resumption
+-            if (sessionId) {
+-              if (!this.sessions.has(sessionId) && this.sessions.size >= MAX_SESSIONS) {
+-                // Evict oldest session (Map preserves insertion order)
+-                this.sessions.delete(this.sessions.keys().next().value)
+-              }
+-              this.sessions.set(sessionId, previousMessages)
+-            }
++            // Do not persist OpenClaude messages across streams. The CappyCloud
++            // API sends authorized history on each request and remains the
++            // source of truth for resume, permission mode, usage and cost.
+ 
+             call.write({
++              request_id: currentRequestId,
+              done: {
+                full_text: fullText,
+                 prompt_tokens: promptTokens,
+@@ -232,6 +675,7 @@ export class GrpcServer {
+       } catch (err: any) {
+         console.error('Error processing stream')
+         call.write({
++          request_id: currentRequestId,
+          error: {
+            message: err.message || "Internal server error",
+            code: "INTERNAL"

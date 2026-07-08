@@ -37,6 +37,7 @@ class CreateConversation:
         user_id: uuid.UUID,
         title: str | None = None,
         sandbox_id: uuid.UUID | None = None,
+        ai_model_id: uuid.UUID | None = None,
         repos: list[dict] | None = None,
     ) -> Conversation:
         conv_id = uuid.uuid4()
@@ -68,6 +69,7 @@ class CreateConversation:
             user_id=user_id,
             title=title or DEFAULT_TITLE,
             sandbox_id=sandbox_id,
+            ai_model_id=ai_model_id,
             repos=resolved_repos,
             session_root=f"/repos/sessions/{short_id}",
         )

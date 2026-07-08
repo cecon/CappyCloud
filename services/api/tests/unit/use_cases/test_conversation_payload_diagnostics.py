@@ -108,6 +108,53 @@ async def test_payload_diagnostic_event_is_sanitized_emitted_and_persisted(
     assert b"/repos/private" not in b"".join(chunks)
 
 
+async def test_done_model_usage_cost_and_payload_diagnostic_are_persisted_together(
+    conv_repo: InMemoryConversationRepository,
+    msg_repo: InMemoryMessageRepository,
+    user_id: uuid.UUID,
+) -> None:
+    msg_repo.set_pricing("openrouter/test", input_cost=2.0, output_cost=8.0)
+    conv = await CreateConversation(conv_repo).execute(user_id, "Chat")
+    stream = await StreamMessage(
+        conv_repo,
+        msg_repo,
+        _EventAgent(
+            [
+                {
+                    "type": "payload_diagnostic",
+                    "diagnostics": {
+                        "total_size_bytes": 10,
+                        "categories": [{"key": "runtime_context", "size_bytes": 10}],
+                    },
+                },
+                {"type": "text", "content": "Resposta"},
+                {
+                    "type": "done",
+                    "model_used": "openrouter/test",
+                    "prompt_tokens": 1000,
+                    "completion_tokens": 500,
+                },
+            ]
+        ),
+    ).execute(conv.id, user_id, "Olá agente")
+
+    chunks = [c async for c in stream]
+    payloads = _json_payloads(chunks)
+    done = next(p for p in payloads if p["type"] == "done")
+    saved = await msg_repo.list_by_conversation(conv.id)
+    assistant = next(m for m in saved if m.role == "assistant")
+
+    assert done["model_used"] == "openrouter/test"
+    assert done["prompt_tokens"] == 1000
+    assert done["completion_tokens"] == 500
+    assert assistant.model_used == "openrouter/test"
+    assert assistant.prompt_tokens == 1000
+    assert assistant.completion_tokens == 500
+    assert assistant.cost_usd == 0.006
+    assert assistant.payload_diagnostics is not None
+    assert assistant.payload_diagnostics["categories"][0]["key"] == "runtime_context"
+
+
 async def test_absent_payload_diagnostic_keeps_message_without_metadata(
     conv_repo: InMemoryConversationRepository,
     msg_repo: InMemoryMessageRepository,

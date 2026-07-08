@@ -155,6 +155,11 @@ export function SandboxSkillsPanel({ sandbox, canManage = true }: Props) {
             ? 'Carregando...'
             : `${items.length} skill${items.length === 1 ? '' : 's'} · ~/.claude/skills/<name>/SKILL.md`}
         </Text>
+        {items !== null && (
+          <Text size="xs" c="dimmed" ff="monospace">
+            skill://sandbox/{sandbox.id}/&lt;name&gt;
+          </Text>
+        )}
         {canManage && (
           <Button size="xs" onClick={openCreate}>
             + Nova skill

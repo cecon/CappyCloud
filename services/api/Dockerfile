@@ -12,14 +12,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY services/api/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY tools/extractors/doc_import /tmp/cappy-doc-import-extractor-src
-RUN pip install --no-cache-dir /tmp/cappy-doc-import-extractor-src \
-    && rm -rf /tmp/cappy-doc-import-extractor-src
-
-COPY tools/extractors/llm_reconciliation /tmp/cappy-llm-reconciliation-src
-RUN pip install --no-cache-dir /tmp/cappy-llm-reconciliation-src \
-    && rm -rf /tmp/cappy-llm-reconciliation-src
-
 COPY proto/openclaude.proto /proto/openclaude.proto
 RUN python -m grpc_tools.protoc \
     -I/proto \
