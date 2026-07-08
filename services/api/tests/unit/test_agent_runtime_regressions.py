@@ -294,7 +294,7 @@ def test_tool_result_event_preserves_stdout_and_error_flag() -> None:
     assert event_type == "tool_result"
     assert data == {
         "name": "Bash",
-        "output": b"stdout preservado",
+        "output": "stdout preservado",
         "is_error": True,
         "id": "toolu_1",
     }
@@ -320,7 +320,7 @@ def test_tool_error_remains_visible_after_text_event() -> None:
     assert event_type == "tool_result"
     assert data["id"] == "toolu_error"
     assert data["is_error"] is True
-    assert data["output"] == b"comando falhou"
+    assert data["output"] == "comando falhou"
 
 
 def test_done_event_reports_sanitized_runtime_fallback() -> None:

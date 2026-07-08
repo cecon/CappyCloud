@@ -129,7 +129,7 @@ class TestProcessPending:
 class TestExecute:
     async def test_unknown_operation_raises(self, watchdog: SandboxWatchdog) -> None:
         sandbox = _make_sandbox()
-        with pytest.raises(ValueError, match="operação desconhecida"):
+        with pytest.raises(ValueError, match="unknown operation"):
             await watchdog._execute(sandbox, "do_nothing", {})
 
     async def test_reconfigure_model_is_noop(self, watchdog: SandboxWatchdog) -> None:
