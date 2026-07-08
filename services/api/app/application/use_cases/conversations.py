@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from typing import cast
 
 from app.application.use_cases import _attachments_helpers as _att
 from app.application.use_cases._conversation_crud import (
@@ -198,7 +199,10 @@ class StreamMessage:
         user_role: UserRole,
         model_id: str | None,
     ) -> uuid.UUID | None:
-        resolver = getattr(self._model_access, "resolve_model_uuid_for_user", None)
+        resolver = cast(
+            Callable[[uuid.UUID, UserRole, str | None], Awaitable[uuid.UUID | None]] | None,
+            getattr(self._model_access, "resolve_model_uuid_for_user", None),
+        )
         if resolver is None:
             return None
         return await resolver(user_id, user_role, model_id)
