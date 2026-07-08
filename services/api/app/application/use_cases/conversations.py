@@ -22,8 +22,12 @@ from app.application.use_cases._stream_helpers import (
     ensure_repo_ids,
     inject_diff_comments,
 )
-from app.domain.entities import Conversation, Message, UserRole
-from app.domain.entities import User
+from app.application.use_cases.user_workspaces import (
+    EnsureUserRepositoryWorkspace,
+    UserWorkspaceAccessDeniedError,
+    UserWorkspaceNotFoundError,
+)
+from app.domain.entities import Conversation, Message, User, UserRole
 from app.domain.value_objects import validate_permission_mode
 from app.ports.agent import AgentPort
 from app.ports.repositories import (
@@ -35,11 +39,6 @@ from app.ports.repositories import (
 )
 from app.ports.services import AttachmentStorage
 from app.ports.user_access import AiModelAccessPolicy
-from app.application.use_cases.user_workspaces import (
-    EnsureUserRepositoryWorkspace,
-    UserWorkspaceAccessDeniedError,
-    UserWorkspaceNotFoundError,
-)
 
 __all__ = [
     "CreateConversation",
@@ -118,9 +117,7 @@ class StreamMessage:
         attachments_payload: list[dict] | None = None
         injected_prompt = await inject_diff_comments(conversation_id, content)
         effective_model = await self._resolve_model(user_id, user_role, override_model)
-        resolved_model_uuid = await self._resolve_model_uuid(
-            user_id, user_role, effective_model
-        )
+        resolved_model_uuid = await self._resolve_model_uuid(user_id, user_role, effective_model)
         if resolved_model_uuid and conv.ai_model_id != resolved_model_uuid:
             conv.ai_model_id = resolved_model_uuid
             should_update_conversation = True
@@ -275,7 +272,9 @@ class StreamMessage:
                     repository_id=uuid.UUID(str(repo_id_raw)),
                     base_branch=str(next_repo.get("base_branch") or "main"),
                 )
-            except (UserWorkspaceAccessDeniedError, UserWorkspaceNotFoundError):
+            except UserWorkspaceAccessDeniedError:
+                raise
+            except UserWorkspaceNotFoundError:
                 raise
             except RuntimeError:
                 enriched.append(next_repo)

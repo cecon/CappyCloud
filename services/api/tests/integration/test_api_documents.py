@@ -20,6 +20,7 @@ class TestRepositoryDocumentsApi:
     ) -> None:
         repo = _repo()
         fake_session = _DocumentsDbSession(repo)
+
         async def fake_ingest(session, document, **kwargs):  # type: ignore[no-untyped-def]
             document.status = "indexed"
             document.chunks_count = 1

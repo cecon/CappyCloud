@@ -41,9 +41,9 @@ from app.adapters.primary.http import sandboxes as sandboxes_router
 from app.adapters.primary.http import skills as skills_router
 from app.adapters.primary.http import skills_search as skills_search_router
 from app.adapters.primary.http import tasks as tasks_router
+from app.adapters.primary.http import user_mcp_servers as user_mcp_servers_router
 from app.adapters.primary.http import user_preferences as user_preferences_router
 from app.adapters.primary.http import user_workspaces as user_workspaces_router
-from app.adapters.primary.http import user_mcp_servers as user_mcp_servers_router
 from app.adapters.primary.http import webhooks as webhooks_router
 from app.adapters.primary.http import workspaces as workspaces_router
 from app.infrastructure.config import cors_origins_list, get_settings

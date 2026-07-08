@@ -202,6 +202,7 @@ def _truncate_string(value: str) -> str:
 def _telemetry_json_bytes(response: dict[str, Any]) -> bytes:
     return json.dumps(response, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
 
+
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)

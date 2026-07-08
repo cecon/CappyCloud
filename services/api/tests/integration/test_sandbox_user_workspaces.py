@@ -7,7 +7,6 @@ import uuid
 
 import pytest
 
-
 pytestmark = pytest.mark.skipif(
     os.getenv("RUN_SANDBOX_INTEGRATION") != "1",
     reason="requires running cappycloud-sandbox container",
@@ -49,8 +48,8 @@ def test_user_workspace_ensure_is_idempotent_and_repairs_dirty_baseline() -> Non
     ensure = (
         "curl -s -X POST http://localhost:8080/user-workspaces/ensure "
         "-H 'Content-Type: application/json' "
-        f"-d '{{\"slug\":\"{slug}\",\"base_branch\":\"master\","
-        f"\"workspace_path\":\"{workspace}\",\"clone_url\":\"\"}}'"
+        f'-d \'{{"slug":"{slug}","base_branch":"master",'
+        f'"workspace_path":"{workspace}","clone_url":""}}\''
     )
     first = _sandbox(ensure)
     assert '"status":"ready"' in first

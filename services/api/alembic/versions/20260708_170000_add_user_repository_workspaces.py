@@ -5,6 +5,7 @@ Revises: 8ec592ec36ff
 Create Date: 2026-07-08 17:00:00.000000
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -32,8 +33,12 @@ def upgrade() -> None:
         sa.Column("health_message", sa.Text(), server_default="", nullable=False),
         sa.Column("last_prepared_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["repository_id"], ["repositories.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["sandbox_id"], ["sandboxes.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
@@ -81,10 +86,18 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_index(op.f("ix_user_repository_workspaces_user_id"), table_name="user_repository_workspaces")
-    op.drop_index(op.f("ix_user_repository_workspaces_status"), table_name="user_repository_workspaces")
-    op.drop_index(op.f("ix_user_repository_workspaces_sandbox_key"), table_name="user_repository_workspaces")
-    op.drop_index(op.f("ix_user_repository_workspaces_sandbox_id"), table_name="user_repository_workspaces")
+    op.drop_index(
+        op.f("ix_user_repository_workspaces_user_id"), table_name="user_repository_workspaces"
+    )
+    op.drop_index(
+        op.f("ix_user_repository_workspaces_status"), table_name="user_repository_workspaces"
+    )
+    op.drop_index(
+        op.f("ix_user_repository_workspaces_sandbox_key"), table_name="user_repository_workspaces"
+    )
+    op.drop_index(
+        op.f("ix_user_repository_workspaces_sandbox_id"), table_name="user_repository_workspaces"
+    )
     op.drop_index(
         op.f("ix_user_repository_workspaces_repository_id"),
         table_name="user_repository_workspaces",

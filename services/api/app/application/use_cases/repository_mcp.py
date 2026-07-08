@@ -55,7 +55,9 @@ CANONICAL_TOOLS: list[dict[str, Any]] = [
     {
         "name": "repository_read_file",
         "title": "SmartCodeBase: ler arquivo",
-        "description": "SmartCodeBase: le um arquivo por caminho relativo no repositorio autorizado.",
+        "description": (
+            "SmartCodeBase: le um arquivo por caminho relativo no repositorio autorizado."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {"path": {"type": "string"}},

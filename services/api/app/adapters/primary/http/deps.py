@@ -36,16 +36,16 @@ from app.adapters.secondary.persistence.sqlalchemy_user_mcp_repo import (
 from app.adapters.secondary.persistence.sqlalchemy_user_preferences_repo import (
     SQLAlchemyUserPreferencesRepository,
 )
-from app.adapters.secondary.persistence.sqlalchemy_user_workspace_repo import (
-    SQLAlchemyUserRepositoryWorkspaceRepository,
-)
 from app.adapters.secondary.persistence.sqlalchemy_user_repo import (
     SQLAlchemyUserRepository,
 )
-from app.adapters.secondary.sandbox_user_workspace_client import SandboxUserWorkspaceClient
+from app.adapters.secondary.persistence.sqlalchemy_user_workspace_repo import (
+    SQLAlchemyUserRepositoryWorkspaceRepository,
+)
 from app.adapters.secondary.repository_mcp_tool_gateway import (
     SQLAlchemyRepositoryMcpToolGateway,
 )
+from app.adapters.secondary.sandbox_user_workspace_client import SandboxUserWorkspaceClient
 from app.application.use_cases.ai_models import ListAiModels
 from app.application.use_cases.auth import ChangePassword, GetCurrentUser, LoginUser, RegisterUser
 from app.application.use_cases.conversations import (
@@ -54,16 +54,16 @@ from app.application.use_cases.conversations import (
     ListMessages,
     StreamMessage,
 )
+from app.application.use_cases.repo_environments import (
+    CreateRepoEnvironment,
+    DeleteRepoEnvironment,
+    ListRepoEnvironments,
+)
 from app.application.use_cases.user_preferences import GetUserPreferences, UpdateUserPreferences
 from app.application.use_cases.user_workspaces import (
     DeleteUserRepositoryWorkspace,
     EnsureUserRepositoryWorkspace,
     ListUserRepositoryWorkspaces,
-)
-from app.application.use_cases.repo_environments import (
-    CreateRepoEnvironment,
-    DeleteRepoEnvironment,
-    ListRepoEnvironments,
 )
 from app.domain.entities import User, UserRole
 from app.ports.agent import AgentPort

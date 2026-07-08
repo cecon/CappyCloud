@@ -28,26 +28,26 @@ from app.adapters.primary.http.deps import (
     get_conv_repo,
     get_delete_user_workspace_uc,
     get_ensure_user_workspace_uc,
+    get_list_user_workspaces_uc,
     get_mcp_repo,
     get_msg_repo,
     get_password_service,
     get_repository_mcp_tool_gateway,
     get_repository_repo,
     get_sandbox_workspace_gateway,
-    get_list_user_workspaces_uc,
     get_token_service,
     get_user_mcp_repo,
     get_user_repo,
     get_user_repository_access_repo,
     get_user_workspace_repo,
 )
+from app.adapters.primary.http.repository_mcp import get_mcp_telemetry_recorder
+from app.application.use_cases.admin_user_access import ModelsByTierLookup
 from app.application.use_cases.user_workspaces import (
     DeleteUserRepositoryWorkspace,
     EnsureUserRepositoryWorkspace,
     ListUserRepositoryWorkspaces,
 )
-from app.adapters.primary.http.repository_mcp import get_mcp_telemetry_recorder
-from app.application.use_cases.admin_user_access import ModelsByTierLookup
 from app.domain.entities import ContainerStatus, ModelTier, SandboxRuntime, User, UserRole
 from app.main import app
 from app.ports.repository_mcp import RepositoryMcpToolGateway
@@ -60,6 +60,7 @@ from tests.conftest import (
     FakeAgent,
     FakePasswordService,
     FakeSandboxBootstrap,
+    FakeSandboxWorkspaceGateway,
     FakeTokenService,
     InMemoryConversationRepository,
     InMemoryMcpRepository,
@@ -69,7 +70,6 @@ from tests.conftest import (
     InMemorySandboxRepository,
     InMemorySandboxSkillRepository,
     InMemoryUserAiModelAccessRepository,
-    FakeSandboxWorkspaceGateway,
     InMemoryUserMcpServerRepository,
     InMemoryUserRepository,
     InMemoryUserRepositoryAccessRepository,
@@ -265,19 +265,17 @@ async def client(
     app.dependency_overrides[get_ai_model_access_repo] = lambda: ai_model_access_repo
     app.dependency_overrides[get_user_workspace_repo] = lambda: user_workspace_repo
     app.dependency_overrides[get_sandbox_workspace_gateway] = lambda: sandbox_workspace_gateway
-    app.dependency_overrides[get_ensure_user_workspace_uc] = lambda: (
-        EnsureUserRepositoryWorkspace(
-            user_workspace_repo,
-            repository_repo,
-            repository_access_repo,
-            sandbox_workspace_gateway,
-        )
+    app.dependency_overrides[get_ensure_user_workspace_uc] = lambda: EnsureUserRepositoryWorkspace(
+        user_workspace_repo,
+        repository_repo,
+        repository_access_repo,
+        sandbox_workspace_gateway,
     )
-    app.dependency_overrides[get_list_user_workspaces_uc] = lambda: (
-        ListUserRepositoryWorkspaces(user_workspace_repo)
+    app.dependency_overrides[get_list_user_workspaces_uc] = lambda: ListUserRepositoryWorkspaces(
+        user_workspace_repo
     )
-    app.dependency_overrides[get_delete_user_workspace_uc] = lambda: (
-        DeleteUserRepositoryWorkspace(user_workspace_repo, sandbox_workspace_gateway)
+    app.dependency_overrides[get_delete_user_workspace_uc] = lambda: DeleteUserRepositoryWorkspace(
+        user_workspace_repo, sandbox_workspace_gateway
     )
     app.dependency_overrides[get_models_by_tier_lookup] = lambda: models_by_tier_lookup
 

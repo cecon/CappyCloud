@@ -61,8 +61,6 @@ async def test_sandbox_gateway_maps_delete_response(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
     client = SandboxUserWorkspaceClient("http://sandbox")
 
-    result = await client.delete_user_workspace(
-        workspace_path="/repos/users/u/default/repo/main"
-    )
+    result = await client.delete_user_workspace(workspace_path="/repos/users/u/default/repo/main")
 
     assert result.deleted is True

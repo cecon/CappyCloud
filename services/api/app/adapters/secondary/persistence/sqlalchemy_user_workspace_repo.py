@@ -49,9 +49,7 @@ class SQLAlchemyUserRepositoryWorkspaceRepository(UserRepositoryWorkspaceReposit
         )
         return [self._to_entity(row) for row in result.scalars().all()]
 
-    async def save(
-        self, workspace: UserRepositoryWorkspaceEntity
-    ) -> UserRepositoryWorkspaceEntity:
+    async def save(self, workspace: UserRepositoryWorkspaceEntity) -> UserRepositoryWorkspaceEntity:
         row = await self._session.get(UserRepositoryWorkspaceORM, workspace.id)
         status = validate_user_workspace_status(workspace.status)
         if row is None:

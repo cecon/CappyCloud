@@ -18,12 +18,12 @@ from app.adapters.primary.http.deps import (
     get_list_msgs_uc,
     get_stream_msg_uc,
 )
+from app.adapters.secondary.persistence.sqlalchemy_ai_model_access_policy import (
+    SQLAlchemyAiModelAccessPolicy,
+)
 from app.adapters.secondary.persistence.sqlalchemy_user_access_repo import (
     SQLAlchemyUserRepositoryAccessRepository,
     SQLAlchemyUserSandboxAccessRepository,
-)
-from app.adapters.secondary.persistence.sqlalchemy_ai_model_access_policy import (
-    SQLAlchemyAiModelAccessPolicy,
 )
 from app.application.use_cases.conversations import (
     CreateConversation,
