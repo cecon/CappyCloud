@@ -38,6 +38,19 @@ async def validate_and_inject_worktree(
     chamador deve abortar o dispatch.
     """
     slugs = [str(r.get("slug") or r.get("alias") or "?") for r in repos]
+    if working_directory.startswith("/repos/users/"):
+        await update_task_status(pool, task_id, "error")
+        await insert_error_event(
+            pool,
+            task_id,
+            build_worktree_missing_error(
+                repo_slugs=slugs,
+                working_directory=working_directory,
+                detail="working_directory points to a persistent user baseline",
+            ),
+        )
+        return None
+
     try:
         top_level = await fetch_worktree_top_levels(
             sandbox_session_url, repos, session_root

@@ -21,10 +21,13 @@ import {
   fetchConversations,
   fetchConversationUsage,
   fetchMessages,
+  fetchUserPreferences,
   fetchWorkspaces,
+  DEFAULT_PERMISSION_MODE,
   getToken,
   setToken,
   streamAssistantReply,
+  updateUserPreferences,
   uploadAttachment,
   errorToUserMessage,
   type ActionRequiredEvent,
@@ -34,6 +37,8 @@ import {
   type ConversationDiff,
   type ConversationUsage,
   type DoneEvent,
+  type PayloadSizeBreakdown,
+  type PermissionMode,
   type StatusEvent,
   type Workspace,
 } from '../api'
@@ -86,6 +91,57 @@ const STICKY_SCROLL_THRESHOLD_PX = 96
 const CHAT_PREFS_KEY = 'cappycloud.chat.preferences.v1'
 const CHAT_CONVERSATIONS_COLLAPSED_KEY = 'cappycloud.chat.conversationsCollapsed'
 const CONVERSATION_PAGE_SIZE = 6
+
+type PermissionModeOption = {
+  value: PermissionMode
+  label: string
+  icon: string
+}
+
+const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
+  { value: 'request_permissions', label: 'Solicitar permissões', icon: 'lock' },
+  { value: 'accept_edits', label: 'Aceitar edições', icon: 'edit_note' },
+  { value: 'plan', label: 'Modo de planejamento', icon: 'rule' },
+  { value: 'auto', label: 'Modo automático', icon: 'bolt' },
+  { value: 'bypass_permissions', label: 'Ignorar permissões', icon: 'warning' },
+]
+
+const PERMISSION_MODE_VALUES = new Set<PermissionMode>(
+  PERMISSION_MODE_OPTIONS.map((option) => option.value),
+)
+
+function normalizePermissionMode(value: unknown): PermissionMode {
+  return typeof value === 'string' && PERMISSION_MODE_VALUES.has(value as PermissionMode)
+    ? (value as PermissionMode)
+    : DEFAULT_PERMISSION_MODE
+}
+
+function permissionModeOption(mode: PermissionMode): PermissionModeOption {
+  return PERMISSION_MODE_OPTIONS.find((option) => option.value === mode) ?? PERMISSION_MODE_OPTIONS[0]
+}
+
+function fallbackReasonLabel(reason?: string): string {
+  const normalized = (reason || '').replace(/[_-]+/g, ' ').trim()
+  return normalized || 'runtime model changed'
+}
+
+function permissionModeWarning(mode: PermissionMode, runtimeConfirmed: boolean) {
+  if (mode === 'accept_edits') {
+    return {
+      severity: 'caution' as const,
+      icon: 'edit_note',
+      text: runtimeConfirmed ? 'Edições autoaprovadas · runtime confirmado' : 'Edições autoaprovadas',
+    }
+  }
+  if (mode === 'auto' || mode === 'bypass_permissions') {
+    return {
+      severity: 'high' as const,
+      icon: 'warning',
+      text: runtimeConfirmed ? 'Permissões permissivas · runtime confirmado' : 'Permissões permissivas',
+    }
+  }
+  return null
+}
 
 type RepoChatPreference = {
   branch?: string
@@ -403,6 +459,7 @@ function appendToolStartToThoughts(
   prev: ThoughtStep[],
   tool: { id: string; name: string; input: string },
 ): ThoughtStep[] {
+  if (!tool.id || !tool.name) return prev
   if (prev.some((s) => s.kind === 'tool' && s.id === tool.id)) return prev
   return [
     ...prev,
@@ -420,9 +477,23 @@ function applyToolResultToThoughts(
   prev: ThoughtStep[],
   result: { id: string; output: string; is_error: boolean },
 ): ThoughtStep[] {
+  if (!result.id) return prev
   return prev.map((step) =>
     step.kind === 'tool' && step.id === result.id
       ? { ...step, output: result.output, isError: result.is_error, done: true }
+      : step,
+  )
+}
+
+function finishPendingThoughtTools(prev: ThoughtStep[], isError = false): ThoughtStep[] {
+  return prev.map((step) =>
+    step.kind === 'tool' && !step.done
+      ? {
+          ...step,
+          done: true,
+          isError: isError || step.isError,
+          output: step.output ?? '',
+        }
       : step,
   )
 }
@@ -463,6 +534,10 @@ export function ChatPage() {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [userDefaultPermissionMode, setUserDefaultPermissionMode] =
+    useState<PermissionMode>(DEFAULT_PERMISSION_MODE)
+  const [permissionMode, setPermissionModeState] = useState<PermissionMode>(DEFAULT_PERMISSION_MODE)
+  const [permissionWarningRuntimeConfirmed, setPermissionWarningRuntimeConfirmed] = useState(false)
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [selectedSlug, setSelectedSlug] = useState<string>('')
@@ -496,6 +571,29 @@ export function ChatPage() {
   const conversationsToggleIcon = conversationsCollapsed
     ? 'keyboard_double_arrow_right'
     : 'keyboard_double_arrow_left'
+
+  const setPermissionMode = useCallback(
+    (mode: PermissionMode) => {
+      if (streaming) return
+      setPermissionModeState(mode)
+      setUserDefaultPermissionMode(mode)
+      setPermissionWarningRuntimeConfirmed(false)
+      updateUserPreferences(token, { default_permission_mode: mode })
+        .then((prefs) =>
+          setUserDefaultPermissionMode(normalizePermissionMode(prefs.default_permission_mode)),
+        )
+        .catch(() => {})
+      if (!activeId) return
+      setConversations((prev) =>
+        prev.map((conversation) =>
+          conversation.id === activeId
+            ? { ...conversation, permission_mode: mode }
+            : conversation,
+        ),
+      )
+    },
+    [activeId, streaming, token],
+  )
 
   // Anexos pendentes de envio (uploads em curso, concluídos ou falhados).
   // Apenas itens `kind === 'uploaded'` viajam no payload do streamAssistantReply.
@@ -709,6 +807,7 @@ export function ChatPage() {
   const chatPrefsRef = useRef<ChatPreferenceState>(readChatPrefs())
   /** Comprimento do `accumulated` text já aplicado à timeline thoughtSteps. */
   const lastTextOffsetRef = useRef(0)
+  const lastStreamCursorRef = useRef<number | null>(null)
 
   // Tick do contador de tempo decorrido enquanto o stream está activo.
   useEffect(() => {
@@ -734,30 +833,44 @@ export function ChatPage() {
     setVisibleConversationCount(CONVERSATION_PAGE_SIZE)
   }, [conversationSearch])
 
+  const activeConversationPermissionMode = useMemo(() => {
+    const activeConversation = activeId
+      ? conversations.find((conversation) => conversation.id === activeId)
+      : null
+    return activeConversation
+      ? normalizePermissionMode(activeConversation.permission_mode)
+      : userDefaultPermissionMode
+  }, [activeId, conversations, userDefaultPermissionMode])
+
   useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
-        e.preventDefault()
-        handleNewChat()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+    setPermissionModeState(activeConversationPermissionMode)
+    setPermissionWarningRuntimeConfirmed(false)
+  }, [activeId, activeConversationPermissionMode])
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        const [convsResult, wsList, modelsList] = await Promise.allSettled([
+        const [convsResult, wsList, modelsList, userPrefsResult] = await Promise.allSettled([
           fetchConversations(token),
           fetchWorkspaces(token),
           fetchAiModels(token),
+          fetchUserPreferences(token),
         ])
         if (cancelled) return
 
         const prefs = chatPrefsRef.current
         let preferredSlug = prefs.lastRepoSlug || ''
+
+        if (userPrefsResult.status === 'fulfilled') {
+          const mode = normalizePermissionMode(userPrefsResult.value.default_permission_mode)
+          setUserDefaultPermissionMode(mode)
+          setPermissionModeState(mode)
+        } else if (userPrefsResult.reason instanceof AuthError) {
+          setToken(null)
+          window.location.href = '/login'
+          return
+        }
 
         if (wsList.status === 'fulfilled') {
           setWorkspaces(wsList.value)
@@ -962,7 +1075,7 @@ export function ChatPage() {
     setSidePanel((p) => p === 'files' ? 'none' : 'files')
   }
 
-  function handleNewChat() {
+  const handleNewChat = useCallback(() => {
     setTrayItems([])
     setIsDragOver(false)
     setActiveId(null)
@@ -971,8 +1084,21 @@ export function ChatPage() {
     setMessagesLoading(false)
     setSessionProgressAnchor(null)
     setStreamActivityAt(null)
+    setPermissionModeState(userDefaultPermissionMode)
+    setPermissionWarningRuntimeConfirmed(false)
     setTimeout(() => inputRef.current?.focus(), 50)
-  }
+  }, [userDefaultPermissionMode])
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
+        e.preventDefault()
+        handleNewChat()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [handleNewChat])
 
   /** Seleciona uma conversa histórica sem deixar o streaming atual contaminar a UI. */
   function handleSelectConversation(conversationId: string) {
@@ -988,12 +1114,14 @@ export function ChatPage() {
     setActivityTraces({})
     setInput('')
     setSidePanel('none')
+    setPermissionWarningRuntimeConfirmed(false)
     setActiveId(conversationId)
     closeMobile()
   }
 
   /** Cria conversa e envia a mensagem inicial de uma vez */
   async function handleNewChatWithMessage(text: string) {
+    const selectedPermissionMode = permissionMode
     const sendableAttachments = trayItems.filter(isSendableTrayItem)
     const userText = text.trim() || (sendableAttachments.length ? IMAGE_ONLY_PROMPT : '')
     if (!userText) return
@@ -1008,12 +1136,12 @@ export function ChatPage() {
     const repos = selectedSlug
       ? [{ slug: selectedSlug, base_branch: selectedBranch || null }]
       : []
-    const c = await createConversation(token, repos)
+    const c = await createConversation(token, repos, modelForRequest || null)
     // Update otimista do título — o backend renomeia "Nova conversa" para o
     // início da primeira mensagem (mesma lógica de _TITLE_MAX_LEN=80).
     const previewTitle =
       userText.length > 80 ? userText.slice(0, 80) + '…' : userText
-    const cWithTitle = { ...c, title: previewTitle }
+    const cWithTitle = { ...c, title: previewTitle, permission_mode: selectedPermissionMode }
     optimisticConversationIdRef.current = c.id
     setConversations((prev) => [cWithTitle, ...prev])
     setActiveId(c.id)
@@ -1029,6 +1157,7 @@ export function ChatPage() {
     setStreamElapsedMs(0)
     setPendingAction(null)
     setSessionProgress(createSessionProgress('initializing'))
+    setPermissionWarningRuntimeConfirmed(false)
 
     const ctrl = new AbortController()
     abortControllerRef.current = ctrl
@@ -1045,64 +1174,100 @@ export function ChatPage() {
       [userMsg.id]: { content: userMsg.content, steps: [], elapsedMs: 0 },
     }))
     setMessages([userMsg])
+    let latestPayloadDiagnostics: PayloadSizeBreakdown | null = null
 
     try {
       const uploadedAttachmentIds = await uploadPendingAttachments(c.id)
-      await streamAssistantReply(token, c.id, userText, {
-        onText(accumulated) {
-          setStreamActivityAt(Date.now())
-          const delta = accumulated.slice(lastTextOffsetRef.current)
-          lastTextOffsetRef.current = accumulated.length
-          if (delta) {
-            setThoughtSteps((prev) => appendTextToThoughts(prev, delta))
+      await streamAssistantReply(
+        token,
+        c.id,
+        userText,
+        {
+          onCursor(cursor) { lastStreamCursorRef.current = cursor },
+          onText(accumulated) {
+            setStreamActivityAt(Date.now())
+            const delta = accumulated.slice(lastTextOffsetRef.current)
+            lastTextOffsetRef.current = accumulated.length
+            if (delta) {
+              setThoughtSteps((prev) => appendTextToThoughts(prev, delta))
+              setActivityTraces((prev) =>
+                updateActivityTrace(prev, userMsg, (steps) => appendTextToThoughts(steps, delta)),
+              )
+            }
+          },
+          onToolStart(tool) {
+            setStreamActivityAt(Date.now())
+            setThoughtSteps((prev) => appendToolStartToThoughts(prev, tool))
             setActivityTraces((prev) =>
-              updateActivityTrace(prev, userMsg, (steps) => appendTextToThoughts(steps, delta)),
+              updateActivityTrace(prev, userMsg, (steps) => appendToolStartToThoughts(steps, tool)),
             )
-          }
-        },
-        onToolStart(tool) {
-          setStreamActivityAt(Date.now())
-          setThoughtSteps((prev) => appendToolStartToThoughts(prev, tool))
-          setActivityTraces((prev) =>
-            updateActivityTrace(prev, userMsg, (steps) => appendToolStartToThoughts(steps, tool)),
-          )
-        },
-        onToolResult(result) {
-          setStreamActivityAt(Date.now())
-          setThoughtSteps((prev) => applyToolResultToThoughts(prev, result))
-          setActivityTraces((prev) =>
-            updateActivityTrace(prev, userMsg, (steps) => applyToolResultToThoughts(steps, result)),
-          )
-        },
-        onActionRequired(action) { setStreamActivityAt(Date.now()); setPendingAction(action) },
-        onStatus(status) {
-          setStreamActivityAt(Date.now())
-          if (!status.stage) return
-          const statusWithMode = { ...status, mode: status.mode ?? 'initializing' }
-          setSessionProgress((prev) =>
-            reduceSessionProgress(
-              prev.length ? prev : createSessionProgress(statusWithMode.mode),
-              statusWithMode,
+          },
+          onToolResult(result) {
+            setStreamActivityAt(Date.now())
+            setThoughtSteps((prev) => applyToolResultToThoughts(prev, result))
+            setActivityTraces((prev) =>
+              updateActivityTrace(prev, userMsg, (steps) => applyToolResultToThoughts(steps, result)),
             )
-          )
+          },
+          onActionRequired(action) {
+            setStreamActivityAt(Date.now())
+            setPendingAction(action)
+            abortControllerRef.current?.abort()
+          },
+          onStatus(status) {
+            setStreamActivityAt(Date.now())
+            if (status.metadata?.permission_warning?.runtime_confirmed) {
+              setPermissionWarningRuntimeConfirmed(true)
+            }
+            if (!status.stage) return
+            const statusWithMode = { ...status, mode: status.mode ?? 'initializing' }
+            setSessionProgress((prev) =>
+              reduceSessionProgress(
+                prev.length ? prev : createSessionProgress(statusWithMode.mode),
+                statusWithMode,
+              )
+            )
+          },
+          onPayloadDiagnostic(diagnostics) {
+            setStreamActivityAt(Date.now())
+            latestPayloadDiagnostics = diagnostics
+          },
+          onError(message) {
+            setStreamActivityAt(Date.now())
+            setThoughtSteps((prev) => finishPendingThoughtTools(prev, true))
+            setActivityTraces((prev) =>
+              updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps, true)),
+            )
+            setMessages((m) => [
+              ...m,
+              {
+                id: randomId(),
+                role: 'assistant',
+                content: `**Erro:** ${message}`,
+                created_at: new Date().toISOString(),
+                payload_diagnostics: latestPayloadDiagnostics,
+              },
+            ])
+          },
+          onDone(usage) {
+            setStreamActivityAt(Date.now())
+            setLiveUsage(usage)
+            setThoughtSteps((prev) => finishPendingThoughtTools(prev))
+            setActivityTraces((prev) =>
+              updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps)),
+            )
+          },
+          signal: ctrl.signal,
         },
-        onError(message) {
-          setStreamActivityAt(Date.now())
-          setMessages((m) => [
-            ...m,
-            {
-              id: randomId(),
-              role: 'assistant',
-              content: `**Erro:** ${message}`,
-              created_at: new Date().toISOString(),
-            },
-          ])
-        },
-        onDone(usage) { setStreamActivityAt(Date.now()); setLiveUsage(usage) },
-        signal: ctrl.signal,
-      }, modelForRequest || null, uploadedAttachmentIds.length ? uploadedAttachmentIds : null)
+        modelForRequest || null,
+        uploadedAttachmentIds.length ? uploadedAttachmentIds : null,
+        selectedPermissionMode,
+        null,
+        false,
+      )
       setStreamStartedAt(null)
       setStreamActivityAt(null)
+      setThoughtSteps((prev) => finishPendingThoughtTools(prev))
       setActivityTraces((prev) => ({
         ...prev,
         [userMsg.id]: {
@@ -1134,6 +1299,7 @@ export function ChatPage() {
             role: 'assistant',
             content: `**Erro:** ${e instanceof Error ? e.message : String(e)}`,
             created_at: new Date().toISOString(),
+            payload_diagnostics: latestPayloadDiagnostics,
           },
         ])
       }
@@ -1141,13 +1307,16 @@ export function ChatPage() {
       setStreaming(false)
       setStreamStartedAt(null)
       setStreamActivityAt(null)
+      setThoughtSteps((prev) => finishPendingThoughtTools(prev))
       abortControllerRef.current = null
       fetchConversationDiff(token, c.id).then((d) => setDiffStats(d.stats)).catch(() => {})
     }
   }
 
-  async function handleSend(textOverride?: string) {
-    if (!activeId || streaming) return
+  async function handleSend(textOverride?: string, options?: { resumeAction?: boolean }) {
+    const isActionResume = Boolean(options?.resumeAction && pendingAction && textOverride?.trim())
+    if (!activeId || (streaming && !isActionResume)) return
+    const selectedPermissionMode = permissionMode
 
     // Bloqueia envio enquanto houver uploads em curso para não perder o
     // anexo no meio do streaming. Failed items podem ficar — o utilizador
@@ -1169,16 +1338,26 @@ export function ChatPage() {
       .filter((it): it is Extract<TrayItem, { kind: 'uploaded' }> => it.kind === 'uploaded')
       .map((it) => it.attachment.id)
 
+    const resumeCursor = isActionResume ? lastStreamCursorRef.current : null
+    if (!isActionResume) {
+      lastStreamCursorRef.current = null
+    }
+    abortControllerRef.current?.abort()
     if (!textOverride) setInput('')
     setStreaming(true)
-    setThoughtSteps([])
+    if (!isActionResume) {
+      setThoughtSteps([])
+    }
     lastTextOffsetRef.current = 0
     const startedAt = Date.now()
     setStreamStartedAt(startedAt)
     setStreamActivityAt(startedAt)
     setStreamElapsedMs(0)
     setPendingAction(null)
-    setSessionProgress([])
+    if (!isActionResume) {
+      setSessionProgress([])
+    }
+    setPermissionWarningRuntimeConfirmed(false)
 
     const ctrl = new AbortController()
     abortControllerRef.current = ctrl
@@ -1189,90 +1368,142 @@ export function ChatPage() {
       content: text,
       created_at: new Date().toISOString(),
     }
-    setSessionProgressAnchor({ id: userMsg.id, content: userMsg.content })
-    setActivityTraces((prev) => ({
-      ...prev,
-      [userMsg.id]: { content: userMsg.content, steps: [], elapsedMs: 0 },
-    }))
-    setMessages((m) => [...m, userMsg])
+    if (!isActionResume) {
+      setSessionProgressAnchor({ id: userMsg.id, content: userMsg.content })
+      setActivityTraces((prev) => ({
+        ...prev,
+        [userMsg.id]: { content: userMsg.content, steps: [], elapsedMs: 0 },
+      }))
+      setMessages((m) => [...m, userMsg])
+    }
+    let latestPayloadDiagnostics: PayloadSizeBreakdown | null = null
 
     // Renomeia título se ainda for o default — bate com o backend.
-    setConversations((prev) =>
+    if (!isActionResume) {
+      setConversations((prev) =>
       prev.map((c) => {
         if (c.id !== activeId) return c
         if (c.title && c.title !== 'Nova conversa') return c
         const previewTitle = text.length > 80 ? text.slice(0, 80) + '…' : text
-        return { ...c, title: previewTitle }
+        return { ...c, title: previewTitle, permission_mode: selectedPermissionMode }
       }),
-    )
+      )
+    }
 
     try {
-      const pendingAttachmentIds = await uploadPendingAttachments(activeId)
-      const attachmentIds = [...uploadedAttachmentIds, ...pendingAttachmentIds]
-      await streamAssistantReply(token, activeId, text, {
-        onText(accumulated) {
-          setStreamActivityAt(Date.now())
-          const delta = accumulated.slice(lastTextOffsetRef.current)
-          lastTextOffsetRef.current = accumulated.length
-          if (delta) {
-            setThoughtSteps((prev) => appendTextToThoughts(prev, delta))
-            setActivityTraces((prev) =>
-              updateActivityTrace(prev, userMsg, (steps) => appendTextToThoughts(steps, delta)),
+      const pendingAttachmentIds = isActionResume ? [] : await uploadPendingAttachments(activeId)
+      const attachmentIds = isActionResume ? [] : [...uploadedAttachmentIds, ...pendingAttachmentIds]
+      await streamAssistantReply(
+        token,
+        activeId,
+        text,
+        {
+          onCursor(cursor) { lastStreamCursorRef.current = cursor },
+          onText(accumulated) {
+            setStreamActivityAt(Date.now())
+            const delta = accumulated.slice(lastTextOffsetRef.current)
+            lastTextOffsetRef.current = accumulated.length
+            if (delta) {
+              setThoughtSteps((prev) => appendTextToThoughts(prev, delta))
+              if (!isActionResume) {
+                setActivityTraces((prev) =>
+                  updateActivityTrace(prev, userMsg, (steps) => appendTextToThoughts(steps, delta)),
+                )
+              }
+            }
+          },
+          onToolStart(tool) {
+            setStreamActivityAt(Date.now())
+            setThoughtSteps((prev) => appendToolStartToThoughts(prev, tool))
+            if (!isActionResume) {
+              setActivityTraces((prev) =>
+                updateActivityTrace(prev, userMsg, (steps) => appendToolStartToThoughts(steps, tool)),
+              )
+            }
+          },
+          onToolResult(result) {
+            setStreamActivityAt(Date.now())
+            setThoughtSteps((prev) => applyToolResultToThoughts(prev, result))
+            if (!isActionResume) {
+              setActivityTraces((prev) =>
+                updateActivityTrace(prev, userMsg, (steps) => applyToolResultToThoughts(steps, result)),
+              )
+            }
+          },
+          onActionRequired(action) {
+            setStreamActivityAt(Date.now())
+            setPendingAction(action)
+            abortControllerRef.current?.abort()
+          },
+          onStatus(status) {
+            setStreamActivityAt(Date.now())
+            if (status.metadata?.permission_warning?.runtime_confirmed) {
+              setPermissionWarningRuntimeConfirmed(true)
+            }
+            if (!status.stage) return
+            const statusWithMode = { ...status, mode: status.mode ?? 'initializing' }
+            setSessionProgress((prev) =>
+              reduceSessionProgress(
+                prev.length ? prev : createSessionProgress(statusWithMode.mode),
+                statusWithMode,
+              )
             )
-          }
+          },
+          onPayloadDiagnostic(diagnostics) {
+            setStreamActivityAt(Date.now())
+            latestPayloadDiagnostics = diagnostics
+          },
+          onError(message) {
+            setStreamActivityAt(Date.now())
+            setThoughtSteps((prev) => finishPendingThoughtTools(prev, true))
+            if (!isActionResume) {
+              setActivityTraces((prev) =>
+                updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps, true)),
+              )
+            }
+            setMessages((m) => [
+              ...m,
+              {
+                id: randomId(),
+                role: 'assistant',
+                content: `**Erro:** ${message}`,
+                created_at: new Date().toISOString(),
+                payload_diagnostics: latestPayloadDiagnostics,
+              },
+            ])
+          },
+          onDone(usage) {
+            setStreamActivityAt(Date.now())
+            setLiveUsage(usage)
+            setThoughtSteps((prev) => finishPendingThoughtTools(prev))
+            if (!isActionResume) {
+              setActivityTraces((prev) =>
+                updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps)),
+              )
+            }
+          },
+          signal: ctrl.signal,
         },
-        onToolStart(tool) {
-          setStreamActivityAt(Date.now())
-          setThoughtSteps((prev) => appendToolStartToThoughts(prev, tool))
-          setActivityTraces((prev) =>
-            updateActivityTrace(prev, userMsg, (steps) => appendToolStartToThoughts(steps, tool)),
-          )
-        },
-        onToolResult(result) {
-          setStreamActivityAt(Date.now())
-          setThoughtSteps((prev) => applyToolResultToThoughts(prev, result))
-          setActivityTraces((prev) =>
-            updateActivityTrace(prev, userMsg, (steps) => applyToolResultToThoughts(steps, result)),
-          )
-        },
-        onActionRequired(action) { setStreamActivityAt(Date.now()); setPendingAction(action) },
-        onStatus(status) {
-          setStreamActivityAt(Date.now())
-          if (!status.stage) return
-          const statusWithMode = { ...status, mode: status.mode ?? 'initializing' }
-          setSessionProgress((prev) =>
-            reduceSessionProgress(
-              prev.length ? prev : createSessionProgress(statusWithMode.mode),
-              statusWithMode,
-            )
-          )
-        },
-        onError(message) {
-          setStreamActivityAt(Date.now())
-          setMessages((m) => [
-            ...m,
-            {
-              id: randomId(),
-              role: 'assistant',
-              content: `**Erro:** ${message}`,
-              created_at: new Date().toISOString(),
-            },
-          ])
-        },
-        onDone(usage) { setStreamActivityAt(Date.now()); setLiveUsage(usage) },
-        signal: ctrl.signal,
-      }, modelForRequest || null, attachmentIds.length ? attachmentIds : null)
+        modelForRequest || null,
+        attachmentIds.length ? attachmentIds : null,
+        selectedPermissionMode,
+        resumeCursor,
+        isActionResume,
+      )
       setStreamStartedAt(null)
       setStreamActivityAt(null)
-      setActivityTraces((prev) => ({
-        ...prev,
-        [userMsg.id]: {
-          ...(prev[userMsg.id] ?? { content: userMsg.content, steps: [], elapsedMs: 0 }),
-          content: userMsg.content,
-          elapsedMs: Date.now() - startedAt,
-        },
-      }))
-      clearTrayLocal()
+      setThoughtSteps((prev) => finishPendingThoughtTools(prev))
+      if (!isActionResume) {
+        setActivityTraces((prev) => ({
+          ...prev,
+          [userMsg.id]: {
+            ...(prev[userMsg.id] ?? { content: userMsg.content, steps: [], elapsedMs: 0 }),
+            content: userMsg.content,
+            elapsedMs: Date.now() - startedAt,
+          },
+        }))
+        clearTrayLocal()
+      }
       const [msgs, totals] = await Promise.all([
         fetchMessages(token, activeId),
         fetchConversationUsage(token, activeId),
@@ -1293,6 +1524,7 @@ export function ChatPage() {
             role: 'assistant',
             content: `**Erro:** ${e instanceof Error ? e.message : String(e)}`,
             created_at: new Date().toISOString(),
+            payload_diagnostics: latestPayloadDiagnostics,
           },
         ])
       }
@@ -1300,12 +1532,13 @@ export function ChatPage() {
       setStreaming(false)
       setStreamStartedAt(null)
       setStreamActivityAt(null)
+      setThoughtSteps((prev) => finishPendingThoughtTools(prev))
       abortControllerRef.current = null
       if (activeId) fetchConversationDiff(token, activeId).then((d) => setDiffStats(d.stats)).catch(() => {})
     }
   }
 
-  function handleActionReply(reply: string) { handleSend(reply) }
+  function handleActionReply(reply: string) { void handleSend(reply, { resumeAction: true }) }
 
   const activeConv = conversations.find((c) => c.id === activeId)
   const activeEnvSlug = activeConv?.repos?.[0]?.slug ?? null
@@ -1491,6 +1724,9 @@ export function ChatPage() {
             models={sortedModels}
             selectedModelId={selectedModelId}
             setSelectedModelId={setSelectedModelId}
+            permissionMode={permissionMode}
+            setPermissionMode={setPermissionMode}
+            permissionWarningRuntimeConfirmed={permissionWarningRuntimeConfirmed}
             token={token}
             trayItems={trayItems}
             onPickFiles={handleFileSelection}
@@ -1541,6 +1777,9 @@ export function ChatPage() {
               models={sortedModels}
               selectedModelId={selectedModelId}
               setSelectedModelId={setSelectedModelId}
+              permissionMode={permissionMode}
+              setPermissionMode={setPermissionMode}
+              permissionWarningRuntimeConfirmed={permissionWarningRuntimeConfirmed}
               convUsage={convUsage}
               liveUsage={liveUsage}
               trayItems={trayItems}
@@ -1561,6 +1800,60 @@ export function ChatPage() {
 /* ────────────────────────────────────────────────────────────────
    Empty State — command bar premium centralizada
    ──────────────────────────────────────────────────────────────── */
+function PermissionModeControl({
+  value,
+  onChange,
+  disabled,
+  runtimeConfirmed,
+  compact = false,
+}: {
+  value: PermissionMode
+  onChange: (mode: PermissionMode) => void
+  disabled: boolean
+  runtimeConfirmed: boolean
+  compact?: boolean
+}) {
+  const option = permissionModeOption(value)
+  const warning = permissionModeWarning(value, runtimeConfirmed)
+  const warningClass = warning
+    ? `${styles.permissionModeWarning} ${
+        warning.severity === 'high'
+          ? styles.permissionModeWarningHigh
+          : styles.permissionModeWarningCaution
+      }`
+    : ''
+
+  return (
+    <div className={`${styles.permissionModeControl} ${compact ? styles.permissionModeControlCompact : ''}`}>
+      <div
+        className={`${styles.permissionModePill} ${disabled ? styles.permissionModePillDisabled : ''}`}
+        title={disabled ? `${option.label} · bloqueado durante execução` : 'Modo de permissões'}
+      >
+        <span className={`${styles.icon} ${styles.permissionModeIcon}`}>{option.icon}</span>
+        <span className={styles.permissionModeLabel}>{option.label}</span>
+        <span className={`${styles.icon} ${styles.permissionModeChevron}`}>expand_more</span>
+        <select
+          className={styles.permissionModeSelect}
+          value={value}
+          onChange={(event) => onChange(normalizePermissionMode(event.currentTarget.value))}
+          disabled={disabled}
+          aria-label="Modo de permissões"
+        >
+          {PERMISSION_MODE_OPTIONS.map((mode) => (
+            <option key={mode.value} value={mode.value}>{mode.label}</option>
+          ))}
+        </select>
+      </div>
+      {warning && (
+        <div className={warningClass} role="status">
+          <span className={`${styles.icon} ${styles.permissionModeWarningIcon}`}>{warning.icon}</span>
+          <span>{warning.text}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface EmptyStateProps {
   input: string
   setInput: (v: string) => void
@@ -1575,6 +1868,9 @@ interface EmptyStateProps {
   models: AiModel[]
   selectedModelId: string
   setSelectedModelId: (id: string) => void
+  permissionMode: PermissionMode
+  setPermissionMode: (mode: PermissionMode) => void
+  permissionWarningRuntimeConfirmed: boolean
   token: string
   trayItems: TrayItem[]
   onPickFiles: (files: FileList | null | undefined) => void
@@ -1590,6 +1886,7 @@ function EmptyState({
   workspaces, selectedSlug, setSelectedSlug,
   selectedBranch, setSelectedBranch,
   models, selectedModelId, setSelectedModelId, token,
+  permissionMode, setPermissionMode, permissionWarningRuntimeConfirmed,
   trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
 }: EmptyStateProps) {
   const [branches, setBranches] = useState<string[]>([])
@@ -1801,6 +2098,12 @@ function EmptyState({
                     />
                   </div>
                 )}
+                <PermissionModeControl
+                  value={permissionMode}
+                  onChange={setPermissionMode}
+                  disabled={streaming}
+                  runtimeConfirmed={permissionWarningRuntimeConfirmed}
+                />
               </div>
 
               <div className={styles.commandToolbarRight}>
@@ -1909,6 +2212,9 @@ interface ActiveChatProps {
   models: AiModel[]
   selectedModelId: string
   setSelectedModelId: (id: string) => void
+  permissionMode: PermissionMode
+  setPermissionMode: (mode: PermissionMode) => void
+  permissionWarningRuntimeConfirmed: boolean
   convUsage: ConversationUsage
   liveUsage: DoneEvent | null
   // Anexos
@@ -1930,6 +2236,7 @@ function ActiveChat({
   activeTitle: _activeTitle,
   token, conversationId, sidePanel, diff, diffLoading, onOpenDiff, onToggleFiles,
   models, selectedModelId, setSelectedModelId,
+  permissionMode, setPermissionMode, permissionWarningRuntimeConfirmed,
   convUsage, liveUsage,
   trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
 }: ActiveChatProps) {
@@ -2150,6 +2457,7 @@ function ActiveChat({
                     promptTokens={m.prompt_tokens ?? 0}
                     completionTokens={m.completion_tokens ?? 0}
                     costUsd={m.cost_usd ?? 0}
+                    payloadDiagnostics={m.payload_diagnostics ?? null}
                   />
                   {activityTraceFor(m)?.steps.length ? (
                     <ThinkingStream
@@ -2345,6 +2653,13 @@ function ActiveChat({
               />
             </div>
           )}
+          <PermissionModeControl
+            value={permissionMode}
+            onChange={setPermissionMode}
+            disabled={streaming}
+            runtimeConfirmed={permissionWarningRuntimeConfirmed}
+            compact
+          />
           {(convUsage.total_prompt_tokens > 0 || convUsage.total_completion_tokens > 0) && (
             <div
               className={styles.chatContextPill}
@@ -2367,6 +2682,21 @@ function ActiveChat({
               <span className={`${styles.icon} ${styles.chatContextIcon}`}>bolt</span>
               <span className={styles.chatContextText}>
                 +{liveUsage.prompt_tokens + liveUsage.completion_tokens} tok agora
+              </span>
+            </div>
+          )}
+          {liveUsage?.fallback && (
+            <div
+              className={`${styles.chatContextPill} ${styles.chatContextPillNotice}`}
+              style={{ marginLeft: '0.35rem' }}
+              title={`Selecionado: ${liveUsage.fallback.selected_model} | final: ${liveUsage.fallback.final_model}`}
+            >
+              <span className={`${styles.icon} ${styles.chatContextIcon}`}>swap_horiz</span>
+              <span className={styles.chatContextText}>
+                final {liveUsage.fallback.final_model}
+              </span>
+              <span className={styles.chatContextReason}>
+                {fallbackReasonLabel(liveUsage.fallback.reason)}
               </span>
             </div>
           )}
@@ -2488,6 +2818,7 @@ function PaperMessage({
   promptTokens,
   completionTokens,
   costUsd,
+  payloadDiagnostics,
 }: {
   role: string
   content: string
@@ -2496,6 +2827,7 @@ function PaperMessage({
   promptTokens?: number
   completionTokens?: number
   costUsd?: number
+  payloadDiagnostics?: PayloadSizeBreakdown | null
 }) {
   const isUser = role === 'user'
   const totalTokens = (promptTokens ?? 0) + (completionTokens ?? 0)
@@ -2539,6 +2871,9 @@ function PaperMessage({
           {streaming && <span className={styles.streamingCursor} aria-hidden />}
         </div>
       )}
+      {!isUser && payloadDiagnostics && (
+        <PayloadDiagnosticSummary diagnostics={payloadDiagnostics} />
+      )}
       {showCopy && <CopyMessageButton content={content} />}
       {hasUsage && (
         <div className={styles.messageUsageFooter}>
@@ -2553,6 +2888,73 @@ function PaperMessage({
       )}
     </div>
   )
+}
+
+function PayloadDiagnosticSummary({ diagnostics }: { diagnostics: PayloadSizeBreakdown }) {
+  const [expanded, setExpanded] = useState(false)
+  const categories = diagnostics.categories ?? []
+  const topCategories = categories.slice(0, 3)
+  return (
+    <div className={styles.payloadDiagnostic}>
+      <button
+        type="button"
+        className={styles.payloadDiagnosticToggle}
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        aria-label="Alternar detalhes do payload"
+      >
+        <span className={`${styles.icon} ${styles.payloadDiagnosticIcon}`} aria-hidden="true">
+          data_object
+        </span>
+        <span className={styles.payloadDiagnosticTitle}>Pedido</span>
+        <strong className={styles.payloadDiagnosticTotal}>
+          {formatByteSize(diagnostics.total_size_bytes)}
+        </strong>
+        {topCategories.length > 0 && (
+          <span className={styles.payloadDiagnosticChips}>
+            {topCategories.map((category) => (
+              <span className={styles.payloadDiagnosticChip} key={category.key}>
+                {category.label} {formatByteSize(category.size_bytes)}
+              </span>
+            ))}
+          </span>
+        )}
+        {categories.length > 0 && (
+          <span className={`${styles.icon} ${styles.payloadDiagnosticChevron}`} aria-hidden="true">
+            {expanded ? 'expand_less' : 'expand_more'}
+          </span>
+        )}
+      </button>
+      {expanded && categories.length > 0 && (
+        <div className={styles.payloadDiagnosticDetails}>
+          {categories.map((category) => (
+            <div className={styles.payloadDiagnosticRow} key={category.key}>
+              <span className={styles.payloadDiagnosticLabel}>{category.label}</span>
+              <span className={styles.payloadDiagnosticBar} aria-hidden="true">
+                <span
+                  className={styles.payloadDiagnosticBarFill}
+                  style={{ width: `${Math.min(100, Math.max(0, category.percentage ?? 0))}%` }}
+                />
+              </span>
+              <span className={styles.payloadDiagnosticValue}>
+                {formatByteSize(category.size_bytes)}
+                {category.percentage != null ? ` · ${category.percentage.toFixed(1)}%` : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function formatByteSize(value: number): string {
+  const bytes = Math.max(0, Math.round(value || 0))
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb.toFixed(kb >= 10 ? 0 : 1)} KB`
+  const mb = kb / 1024
+  return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`
 }
 
 /** Botão de copiar conteúdo da resposta do agente. Feedback visual por 1.6s. */

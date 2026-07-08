@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import null, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities import Message as MsgEntity
@@ -28,16 +28,20 @@ class SQLAlchemyMessageRepository(MessageRepository):
         return [self._to_entity(row) for row in result.scalars().all()]
 
     async def save(self, message: MsgEntity) -> MsgEntity:
-        orm = MsgORM(
-            id=message.id,
-            conversation_id=message.conversation_id,
-            role=message.role,
-            content=message.content,
-            model_used=message.model_used,
-            prompt_tokens=message.prompt_tokens,
-            completion_tokens=message.completion_tokens,
-            cost_usd=message.cost_usd,
+        values = {
+            "id": message.id,
+            "conversation_id": message.conversation_id,
+            "role": message.role,
+            "content": message.content,
+            "model_used": message.model_used,
+            "prompt_tokens": message.prompt_tokens,
+            "completion_tokens": message.completion_tokens,
+            "cost_usd": message.cost_usd,
+        }
+        values["payload_diagnostics"] = (
+            message.payload_diagnostics if message.payload_diagnostics is not None else null()
         )
+        orm = MsgORM(**values)
         self._session.add(orm)
         await self._session.commit()
         await self._session.refresh(orm)
@@ -75,4 +79,5 @@ class SQLAlchemyMessageRepository(MessageRepository):
             prompt_tokens=row.prompt_tokens or 0,
             completion_tokens=row.completion_tokens or 0,
             cost_usd=float(row.cost_usd or 0),
+            payload_diagnostics=row.payload_diagnostics,
         )

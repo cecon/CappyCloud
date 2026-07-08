@@ -37,7 +37,6 @@ class SQLAlchemyMcpTelemetryRepository(McpTelemetryRepository):
                 duration_ms=record.duration_ms,
                 response_bytes=record.response_bytes,
                 response_hash=record.response_hash,
-                materialized=record.materialized,
                 caller_user_agent=record.caller_user_agent,
                 caller_session_id=record.caller_session_id,
                 meta=record.metadata,
@@ -104,7 +103,6 @@ class SQLAlchemyMcpTelemetryRepository(McpTelemetryRepository):
         }
 
     async def _by_tool(self, conditions: list[Any]) -> list[dict[str, Any]]:
-        materialized_value = case((McpToolInvocation.materialized.is_(True), 1.0), else_=0.0)
         rows = await self._session.execute(
             select(
                 McpToolInvocation.tool_name,
@@ -113,7 +111,6 @@ class SQLAlchemyMcpTelemetryRepository(McpTelemetryRepository):
                 func.percentile_cont(0.5).within_group(McpToolInvocation.duration_ms),
                 func.percentile_cont(0.95).within_group(McpToolInvocation.duration_ms),
                 func.avg(McpToolInvocation.response_bytes),
-                func.avg(materialized_value).filter(McpToolInvocation.materialized.is_not(None)),
             )
             .where(*conditions)
             .group_by(McpToolInvocation.tool_name)
@@ -127,11 +124,8 @@ class SQLAlchemyMcpTelemetryRepository(McpTelemetryRepository):
                 "p50_ms": int(p50 or 0),
                 "p95_ms": int(p95 or 0),
                 "avg_response_bytes": int(avg_bytes or 0),
-                "materialized_ratio": float(materialized_ratio)
-                if materialized_ratio is not None
-                else None,
             }
-            for tool_name, count, errors, p50, p95, avg_bytes, materialized_ratio in rows.all()
+            for tool_name, count, errors, p50, p95, avg_bytes in rows.all()
         ]
 
     async def _by_repo(self, conditions: list[Any]) -> list[dict[str, Any]]:

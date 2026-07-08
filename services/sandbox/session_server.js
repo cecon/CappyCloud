@@ -29,7 +29,6 @@ const gitHandlers = require('./git_handlers')
 const mcpHandler = require('./mcp_handler')
 const confluenceHandler = require('./confluence_handler')
 const repoHandlers = require('./repo_handlers')
-const repoGraphHandlers = require('./repo_graph_handlers')
 const taskHandler = require('./task_handler')
 const worktreeHandlers = require('./worktree_handlers')
 
@@ -95,6 +94,88 @@ async function createWorktree({ slug, alias, base_branch, branch_name, worktree_
     throw new Error(`worktree não foi criado em ${worktree_path}`)
   }
   return (stdout + stderr).trim()
+}
+
+function assertSafeSessionPath(candidate) {
+  const resolved = path.resolve(candidate || '')
+  if (!resolved.startsWith('/repos/sessions/')) {
+    throw new Error('session worktree_path must be under /repos/sessions/')
+  }
+  return resolved
+}
+
+function assertSafeUserWorkspacePath(candidate) {
+  const resolved = path.resolve(candidate || '')
+  if (!resolved.startsWith('/repos/users/')) {
+    throw new Error('workspace_path must be under /repos/users/')
+  }
+  return resolved
+}
+
+function worktreeExists(worktreePath) {
+  return fs.existsSync(path.join(worktreePath, '.git'))
+}
+
+async function isGitClean(worktreePath) {
+  const { stdout } = await execFileAsync('git', ['-C', worktreePath, 'status', '--porcelain'], {
+    timeout: 30_000,
+  })
+  return stdout.trim() === ''
+}
+
+async function cleanUserWorkspace(worktreePath) {
+  await execFileAsync('git', ['-C', worktreePath, 'reset', '--hard'], { timeout: 30_000 })
+  await execFileAsync('git', ['-C', worktreePath, 'clean', '-fd'], { timeout: 30_000 })
+}
+
+async function sourceWorkspaceCommit(sourcePath) {
+  const resolved = assertSafeUserWorkspacePath(sourcePath)
+  if (!worktreeExists(resolved)) {
+    throw new Error(`source_workspace_path missing: ${resolved}`)
+  }
+  if (!(await isGitClean(resolved))) {
+    await cleanUserWorkspace(resolved)
+  }
+  const { stdout } = await execFileAsync('git', ['-C', resolved, 'rev-parse', 'HEAD'], {
+    timeout: 30_000,
+  })
+  return stdout.trim()
+}
+
+async function ensureUserWorkspace({ slug, base_branch, workspace_path, clone_url = '' }) {
+  if (!slug) throw new Error('slug is required')
+  const workspacePath = assertSafeUserWorkspacePath(workspace_path)
+  const branch = base_branch || 'main'
+  const suffix = workspacePath.split('/').slice(-4).join('-')
+  const branchName = `cappy/user-baselines/${slug}/${suffix}`
+  let action = 'created'
+  if (worktreeExists(workspacePath)) {
+    action = 'reused'
+    if (!(await isGitClean(workspacePath))) {
+      await cleanUserWorkspace(workspacePath)
+      action = 'repaired'
+    }
+  } else {
+    if (fs.existsSync(workspacePath)) {
+      await execFileAsync('rm', ['-rf', workspacePath], { timeout: 30_000 })
+      action = 'repaired'
+    }
+    await createWorktree({
+      slug,
+      alias: slug,
+      base_branch: branch,
+      branch_name: branchName,
+      worktree_path: workspacePath,
+      clone_url,
+    })
+  }
+  return {
+    workspace_path: workspacePath,
+    status: 'ready',
+    action,
+    dirty: false,
+    message: action,
+  }
 }
 
 // ── Remove session_root e prune worktrees ─────────────────────
@@ -188,13 +269,16 @@ const server = http.createServer(async (req, res) => {
       for (const repo of repos) {
         const { slug, alias, base_branch: rb, branch_name, clone_url: rc } = repo
         if (!slug || !alias) continue
-        const wt_path = path.join(session_root, alias)
+        const wt_path = assertSafeSessionPath(path.join(session_root, alias))
         const resolved_branch = branch_name || `cappy/${slug}/${session_id}-${alias}`
         try {
+          const sourceCommit = repo.source_workspace_path
+            ? await sourceWorkspaceCommit(repo.source_workspace_path)
+            : ''
           const out = await createWorktree({
             slug,
             alias,
-            base_branch: rb || 'main',
+            base_branch: sourceCommit || rb || 'main',
             branch_name: resolved_branch,
             worktree_path: wt_path,
             clone_url: rc || '',
@@ -229,6 +313,48 @@ const server = http.createServer(async (req, res) => {
       })
     }
 
+    if (req.method === 'POST' && pathname === '/user-workspaces/ensure') {
+      const body = await readBody(req)
+      try {
+        const result = await ensureUserWorkspace(body)
+        console.log(`[session_server] user workspace ${result.action}: ${result.workspace_path}`)
+        return json(res, 200, result)
+      } catch (err) {
+        console.error(`[session_server] user workspace ensure failed: ${err.message}`)
+        return json(res, 500, { error: err.message })
+      }
+    }
+
+    if (req.method === 'GET' && pathname === '/user-workspaces/status') {
+      const workspace_path = url.searchParams.get('workspace_path') || ''
+      try {
+        const workspacePath = assertSafeUserWorkspacePath(workspace_path)
+        const exists = worktreeExists(workspacePath)
+        const dirty = exists ? !(await isGitClean(workspacePath)) : false
+        return json(res, 200, {
+          workspace_path: workspacePath,
+          exists,
+          dirty,
+          status: exists ? (dirty ? 'dirty' : 'ready') : 'missing',
+        })
+      } catch (err) {
+        return json(res, 400, { error: err.message })
+      }
+    }
+
+    if (req.method === 'DELETE' && pathname === '/user-workspaces') {
+      const workspace_path = url.searchParams.get('workspace_path') || ''
+      try {
+        const workspacePath = assertSafeUserWorkspacePath(workspace_path)
+        if (fs.existsSync(workspacePath)) {
+          await execFileAsync('rm', ['-rf', workspacePath], { timeout: 30_000 })
+        }
+        return json(res, 200, { deleted: true })
+      } catch (err) {
+        return json(res, 400, { error: err.message })
+      }
+    }
+
     // DELETE /sessions/:id — remove sessão
     const deleteMatch = pathname.match(/^\/sessions\/([^/]+)$/)
     if (req.method === 'DELETE' && deleteMatch) {
@@ -240,10 +366,6 @@ const server = http.createServer(async (req, res) => {
       await destroySession({ session_root, repos })
       console.log(`[session_server] removed session ${session_id}`)
       return json(res, 200, { deleted: true, session_id })
-    }
-
-    if (await repoGraphHandlers.tryHandle(req, res, { json })) {
-      return
     }
 
     // /repos/clone (POST) e /repos/:slug (DELETE)

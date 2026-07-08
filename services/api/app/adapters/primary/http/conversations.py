@@ -18,6 +18,9 @@ from app.adapters.primary.http.deps import (
     get_list_msgs_uc,
     get_stream_msg_uc,
 )
+from app.adapters.secondary.persistence.sqlalchemy_ai_model_access_policy import (
+    SQLAlchemyAiModelAccessPolicy,
+)
 from app.adapters.secondary.persistence.sqlalchemy_user_access_repo import (
     SQLAlchemyUserRepositoryAccessRepository,
     SQLAlchemyUserSandboxAccessRepository,
@@ -30,11 +33,13 @@ from app.application.use_cases.conversations import (
 )
 from app.domain.entities import User, UserRole
 from app.infrastructure.orm_models import Repository
+from app.infrastructure.orm_models_platform import AiModel
 from app.schemas import (
     ConversationCreate,
     ConversationOut,
     ConversationUsage,
     MessageOut,
+    PayloadSizeBreakdownOut,
     SendMessageBody,
 )
 
@@ -59,8 +64,10 @@ async def list_conversations(
             created_at=c.created_at,
             updated_at=c.updated_at,
             sandbox_id=c.sandbox_id,
+            ai_model_id=c.ai_model_id,
             repos=c.repos,
             session_root=c.session_root,
+            permission_mode=c.permission_mode,
         )
         for c in convs
     ]
@@ -113,11 +120,35 @@ async def create_conversation(
                         detail=f"Sem acesso aos repositórios: {names}.",
                     )
 
+    ai_model_id: uuid.UUID | None = None
+    if b.model_id:
+        try:
+            resolved_model_id = await SQLAlchemyAiModelAccessPolicy(session).resolve_model_for_user(
+                current.id,
+                current.role,
+                b.model_id,
+            )
+        except PermissionError as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        ai_model_id = (
+            await session.execute(
+                select(AiModel.id)
+                .where(AiModel.model_id == resolved_model_id, AiModel.active.is_(True))
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if ai_model_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Modelo LLM indisponível ou desativado globalmente.",
+            )
+
     repos_dicts = [r.model_dump() for r in b.repos] if b.repos else []
     conv = await uc.execute(
         current.id,
         title=b.title,
         sandbox_id=b.sandbox_id,
+        ai_model_id=ai_model_id,
         repos=repos_dicts,
     )
     return ConversationOut(
@@ -126,8 +157,10 @@ async def create_conversation(
         created_at=conv.created_at,
         updated_at=conv.updated_at,
         sandbox_id=conv.sandbox_id,
+        ai_model_id=conv.ai_model_id,
         repos=conv.repos,
         session_root=conv.session_root,
+        permission_mode=conv.permission_mode,
     )
 
 
@@ -173,6 +206,11 @@ async def list_messages(
             prompt_tokens=m.prompt_tokens,
             completion_tokens=m.completion_tokens,
             cost_usd=float(m.cost_usd),
+            payload_diagnostics=(
+                PayloadSizeBreakdownOut.model_validate(m.payload_diagnostics)
+                if m.payload_diagnostics
+                else None
+            ),
         )
         for m in msgs
     ]
@@ -203,6 +241,8 @@ async def stream_message(
             cursor=cursor,
             override_model=body.model_id,
             attachment_ids=body.attachment_ids,
+            permission_mode=body.permission_mode,
+            action_reply=body.action_reply,
         )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

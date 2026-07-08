@@ -6,6 +6,7 @@ import io
 import json
 import tarfile
 import uuid
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -19,6 +20,16 @@ from app.adapters.secondary.sandbox_runtime.docker_compose import CONTAINER_PREF
 from app.domain.entities import Sandbox, SandboxAgent, SandboxRuntime, SandboxSkill
 from app.ports.sandbox_bootstrap import BootstrapFailureError
 from docker.errors import APIError, NotFound
+
+OPENCLAUDE_V017_SHA = "1b7e55058cca57f2f83d7e229441631794286c1a"
+
+
+def test_sandbox_dockerfile_pins_openclaude_v017_sha() -> None:
+    dockerfile = Path(__file__).resolve().parents[4] / "services" / "sandbox" / "Dockerfile"
+
+    content = dockerfile.read_text(encoding="utf-8")
+
+    assert f"ARG OPENCLAUDE_REF={OPENCLAUDE_V017_SHA}" in content
 
 
 def _sandbox(name: str = "alpha") -> Sandbox:

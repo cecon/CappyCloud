@@ -18,7 +18,7 @@ export function ActionRequiredCard({ action, onReply }: Props) {
     onReply(reply)
   }
 
-  const isConfirm = action.action_type === 0
+  const isConfirm = action.action_type === 1
   const hasChoices = !isConfirm && action.choices && action.choices.length > 0
 
   return (

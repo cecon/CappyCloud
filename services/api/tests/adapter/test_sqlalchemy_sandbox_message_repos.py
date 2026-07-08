@@ -164,3 +164,32 @@ class TestMessageRepositoryContract:
         )
         result = await msg_repo_impl.list_by_conversation(cid_a)
         assert all(m.conversation_id == cid_a for m in result)
+
+    async def test_payload_diagnostics_round_trip(self, msg_repo_impl: MessageRepository) -> None:
+        conv_id = uuid.uuid4()
+        diagnostics = {
+            "total_size_bytes": 128,
+            "source": "openclaude",
+            "generated_at": "2026-06-17T15:20:00Z",
+            "categories": [
+                {
+                    "key": "attachments",
+                    "label": "Anexos",
+                    "size_bytes": 128,
+                    "percentage": 100.0,
+                }
+            ],
+        }
+        await msg_repo_impl.save(
+            Message(
+                id=uuid.uuid4(),
+                conversation_id=conv_id,
+                role="assistant",
+                content="Resposta",
+                payload_diagnostics=diagnostics,
+            )
+        )
+
+        result = await msg_repo_impl.list_by_conversation(conv_id)
+
+        assert result[0].payload_diagnostics == diagnostics

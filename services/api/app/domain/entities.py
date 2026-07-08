@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from app.domain.value_objects import DEFAULT_PERMISSION_MODE
+
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
@@ -51,6 +53,29 @@ class User:
     @property
     def is_admin(self) -> bool:
         return self.role is UserRole.ADMIN
+
+
+@dataclass
+class UserPreferences:
+    user_id: uuid.UUID
+    default_permission_mode: str = DEFAULT_PERMISSION_MODE
+
+
+@dataclass
+class UserRepositoryWorkspace:
+    id: uuid.UUID
+    user_id: uuid.UUID
+    repository_id: uuid.UUID
+    sandbox_id: uuid.UUID | None
+    sandbox_key: str
+    base_branch: str
+    workspace_path: str
+    status: str
+    health_message: str = ""
+    last_prepared_at: datetime | None = None
+    last_used_at: datetime | None = None
+    created_at: datetime = field(default_factory=_utcnow)
+    updated_at: datetime = field(default_factory=_utcnow)
 
 
 @dataclass
@@ -191,6 +216,7 @@ class Conversation:
     ai_model_id: uuid.UUID | None = None
     repos: list[dict] = field(default_factory=list)
     session_root: str | None = None
+    permission_mode: str = DEFAULT_PERMISSION_MODE
     worktree_exists: bool = False
     lines_added: int = 0
     lines_removed: int = 0
@@ -206,6 +232,22 @@ class Conversation:
 
 
 @dataclass
+class PayloadSizeCategory:
+    key: str
+    label: str
+    size_bytes: int
+    percentage: float = 0.0
+
+
+@dataclass
+class PayloadSizeBreakdown:
+    total_size_bytes: int
+    categories: list[PayloadSizeCategory] = field(default_factory=list)
+    source: str = ""
+    generated_at: str = ""
+
+
+@dataclass
 class Message:
     id: uuid.UUID
     conversation_id: uuid.UUID
@@ -216,6 +258,7 @@ class Message:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     cost_usd: float = 0.0
+    payload_diagnostics: dict[str, object] | None = None
 
 
 @dataclass

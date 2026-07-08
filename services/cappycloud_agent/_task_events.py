@@ -64,6 +64,12 @@ async def insert_error_event(
     await insert_event(pool, task_id, "error", {"message": message})
 
 
+async def insert_payload_diagnostic_event(
+    pool: asyncpg.Pool | None, task_id: str, diagnostics: dict
+) -> None:
+    await insert_event(pool, task_id, "payload_diagnostic", {"diagnostics": diagnostics})
+
+
 async def insert_status_event(
     pool: asyncpg.Pool | None,
     task_id: str,

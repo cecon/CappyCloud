@@ -41,18 +41,17 @@ class _FakeTelemetryRepo(McpTelemetryRepository):
             },
             "by_tool": [
                 {
-                    "tool_name": "repository_graph",
+                    "tool_name": "repository_search",
                     "invocations": 2,
                     "error_count": 1,
                     "p50_ms": 10,
                     "p95_ms": 20,
                     "avg_response_bytes": 100,
-                    "materialized_ratio": 0.5,
                 }
             ],
             "by_repo": [],
-            "tools_never_used": sorted(registered_tool_names - {"repository_graph"}),
-            "top_errors": [{"tool_name": "repository_graph", "error_summary": "boom", "count": 1}],
+            "tools_never_used": sorted(registered_tool_names - {"repository_search"}),
+            "top_errors": [{"tool_name": "repository_search", "error_summary": "boom", "count": 1}],
         }
 
     async def prune_before(self, cutoff: datetime) -> int:
@@ -89,7 +88,7 @@ class TestAdminMcpTelemetry:
             params={
                 "from": now.isoformat(),
                 "to": (now + timedelta(hours=1)).isoformat(),
-                "tool_name": "repository_graph",
+                "tool_name": "repository_search",
             },
             headers=admin_headers,
         )
@@ -97,10 +96,10 @@ class TestAdminMcpTelemetry:
         assert response.status_code == 200
         body = response.json()
         assert body["totals"]["invocations"] == 2
-        assert body["by_tool"][0]["tool_name"] == "repository_graph"
-        assert "repository_graph" not in body["tools_never_used"]
+        assert body["by_tool"][0]["tool_name"] == "repository_search"
+        assert "repository_search" not in body["tools_never_used"]
         assert fake.filters is not None
-        assert fake.filters.tool_name == "repository_graph"
+        assert fake.filters.tool_name == "repository_search"
 
     async def test_summary_rejects_windows_over_90_days(
         self,

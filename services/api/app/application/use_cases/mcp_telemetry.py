@@ -118,7 +118,6 @@ async def call_tool_with_telemetry(
             duration_ms=duration_ms,
             response_bytes=response_bytes,
             response_hash=response_hash,
-            materialized=_materialized_flag(tool_name, arguments),
             caller_user_agent=caller_user_agent,
             caller_session_id=caller_session_id,
             metadata=metadata,
@@ -202,15 +201,6 @@ def _truncate_string(value: str) -> str:
 
 def _telemetry_json_bytes(response: dict[str, Any]) -> bytes:
     return json.dumps(response, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
-
-
-def _materialized_flag(tool_name: str, arguments: dict[str, Any]) -> bool | None:
-    if tool_name != "repository_graph":
-        return None
-    value = arguments.get("materialized")
-    if isinstance(value, bool):
-        return value
-    return str(value or "").strip().lower() in {"1", "true", "yes", "sim"}
 
 
 def _as_utc(value: datetime) -> datetime:

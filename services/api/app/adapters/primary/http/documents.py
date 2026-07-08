@@ -1,13 +1,4 @@
-"""Documents HTTP router — CRUD de documentos de referência por repositório.
-
-Endpoints:
-  POST   /repositories/{repo_id}/documents           cria por URL/texto (JSON)
-  POST   /repositories/{repo_id}/documents/upload    cria por upload (PDF/XLSX/MD/TXT/DOCX)
-  GET    /repositories/{repo_id}/documents           lista documentos do repo
-  GET    /documents/{doc_id}                         detalhe
-  POST   /documents/{doc_id}/reindex                 bumpa version + re-extrai
-  DELETE /documents/{doc_id}                         apaga doc + chunks (cascade)
-"""
+"""Reference document HTTP router for repositories."""
 
 from __future__ import annotations
 
@@ -20,9 +11,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
-from app.application.use_cases.repository_graph_doc_import import (
-    enqueue_doc_import_for_document,
-)
 from app.domain.entities import User, UserRole
 from app.infrastructure.document_ingester import IngesterError, ingest_document
 from app.infrastructure.orm_models import Document, Repository
@@ -32,7 +20,7 @@ from app.schemas import DocumentCreate, DocumentOut
 router = APIRouter(tags=["documents"])
 log = logging.getLogger(__name__)
 
-_UPLOAD_MAX_BYTES = 25 * 1024 * 1024  # 25 MB
+_UPLOAD_MAX_BYTES = 25 * 1024 * 1024
 _REUPLOAD_ONLY_TYPES = {"pdf", "xlsx", "markdown", "txt", "docx"}
 
 
@@ -50,7 +38,7 @@ def _source_type_from_filename(filename: str) -> str:
         return "docx"
     raise HTTPException(
         status_code=400,
-        detail="Extensão não suportada. Use .pdf, .xlsx, .xlsm, .md, .markdown, .txt ou .docx.",
+        detail="Extensao nao suportada. Use .pdf, .xlsx, .xlsm, .md, .markdown, .txt ou .docx.",
     )
 
 
@@ -61,7 +49,7 @@ async def _get_repo_or_404(
 ) -> Repository:
     repo = await session.get(Repository, repo_id)
     if not repo:
-        raise HTTPException(status_code=404, detail="Repositório não encontrado")
+        raise HTTPException(status_code=404, detail="Repositorio nao encontrado")
     if current.role is not UserRole.ADMIN:
         allowed = await session.scalar(
             select(UserRepositoryAccess.id)
@@ -70,7 +58,7 @@ async def _get_repo_or_404(
             .limit(1)
         )
         if allowed is None:
-            raise HTTPException(status_code=404, detail="Repositório não encontrado")
+            raise HTTPException(status_code=404, detail="Repositorio nao encontrado")
     return repo
 
 
@@ -81,7 +69,7 @@ async def _get_doc_or_404(
 ) -> Document:
     doc = await session.get(Document, doc_id)
     if not doc:
-        raise HTTPException(status_code=404, detail="Documento não encontrado")
+        raise HTTPException(status_code=404, detail="Documento nao encontrado")
     await _get_repo_or_404(session, current, doc.repository_id)
     return doc
 
@@ -98,7 +86,7 @@ async def list_documents(
         .where(Document.repository_id == repo_id)
         .order_by(Document.created_at.desc())
     )
-    return [DocumentOut.model_validate(d) for d in rows.scalars()]
+    return [DocumentOut.model_validate(document) for document in rows.scalars()]
 
 
 @router.post("/repositories/{repo_id}/documents", response_model=DocumentOut, status_code=201)
@@ -108,8 +96,7 @@ async def create_document(
     current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> DocumentOut:
-    """Cria um documento por URL ou texto colado e ingere de imediato."""
-    repo = await _get_repo_or_404(session, current, repo_id)
+    await _get_repo_or_404(session, current, repo_id)
     source_type = body.normalized_source_type()
     if source_type in {"pdf", "xlsx"}:
         raise HTTPException(
@@ -117,27 +104,25 @@ async def create_document(
             detail=f"Para {source_type}, use o endpoint /upload (multipart).",
         )
 
-    title = (body.title or body.source_uri or "Documento")[:512]
-    doc = Document(
+    document = Document(
         id=uuid.uuid4(),
         repository_id=repo_id,
         source_type=source_type,
         source_uri=body.source_uri or "",
-        title=title,
+        title=(body.title or body.source_uri or "Documento")[:512],
     )
-    session.add(doc)
+    session.add(document)
     await session.flush()
 
     try:
-        await ingest_document(session, doc, text_content=body.content)
+        await ingest_document(session, document, text_content=body.content)
     except IngesterError as exc:
-        await session.commit()  # persiste status='error' + error_message
+        await session.commit()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    await enqueue_doc_import_for_document(session, repo=repo, document=doc)
     await session.commit()
-    await session.refresh(doc)
-    return DocumentOut.model_validate(doc)
+    await session.refresh(document)
+    return DocumentOut.model_validate(document)
 
 
 @router.post(
@@ -151,11 +136,11 @@ async def upload_document(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     file: Annotated[
         UploadFile,
-        File(description="PDF, XLSX, Markdown, TXT ou DOCX (máx 25 MB)."),
+        File(description="PDF, XLSX, Markdown, TXT ou DOCX (max 25 MB)."),
     ],
     title: Annotated[str | None, Form()] = None,
 ) -> DocumentOut:
-    repo = await _get_repo_or_404(session, current, repo_id)
+    await _get_repo_or_404(session, current, repo_id)
     source_type = _source_type_from_filename(file.filename or "")
 
     blob = await file.read()
@@ -164,26 +149,25 @@ async def upload_document(
     if not blob:
         raise HTTPException(status_code=400, detail="Ficheiro vazio.")
 
-    doc = Document(
+    document = Document(
         id=uuid.uuid4(),
         repository_id=repo_id,
         source_type=source_type,
         source_uri=file.filename or "",
         title=(title or file.filename or "Documento")[:512],
     )
-    session.add(doc)
+    session.add(document)
     await session.flush()
 
     try:
-        await ingest_document(session, doc, raw_blob=blob)
+        await ingest_document(session, document, raw_blob=blob)
     except IngesterError as exc:
         await session.commit()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    await enqueue_doc_import_for_document(session, repo=repo, document=doc)
     await session.commit()
-    await session.refresh(doc)
-    return DocumentOut.model_validate(doc)
+    await session.refresh(document)
+    return DocumentOut.model_validate(document)
 
 
 @router.get("/documents/{doc_id}", response_model=DocumentOut)
@@ -192,8 +176,8 @@ async def get_document(
     current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> DocumentOut:
-    doc = await _get_doc_or_404(session, current, doc_id)
-    return DocumentOut.model_validate(doc)
+    document = await _get_doc_or_404(session, current, doc_id)
+    return DocumentOut.model_validate(document)
 
 
 @router.post("/documents/{doc_id}/reindex", response_model=DocumentOut)
@@ -202,31 +186,23 @@ async def reindex_document(
     current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> DocumentOut:
-    """Re-extrai fontes persistentes. Para uploads binários/textuais, faça novo upload.
-
-    Bumpa ``version`` e dispara nova extracção. Os chunks antigos são
-    removidos automaticamente (cascade do FK skills.document_id).
-    """
-    doc = await _get_doc_or_404(session, current, doc_id)
-    if doc.source_type in _REUPLOAD_ONLY_TYPES:
+    document = await _get_doc_or_404(session, current, doc_id)
+    if document.source_type in _REUPLOAD_ONLY_TYPES:
         raise HTTPException(
             status_code=400,
             detail="Reindex deste tipo de arquivo exige novo upload.",
         )
 
-    doc.version += 1
+    document.version += 1
     try:
-        await ingest_document(session, doc)
+        await ingest_document(session, document)
     except IngesterError as exc:
         await session.commit()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    repo = await session.get(Repository, doc.repository_id)
-    if repo:
-        await enqueue_doc_import_for_document(session, repo=repo, document=doc)
     await session.commit()
-    await session.refresh(doc)
-    return DocumentOut.model_validate(doc)
+    await session.refresh(document)
+    return DocumentOut.model_validate(document)
 
 
 @router.delete("/documents/{doc_id}", status_code=204)
@@ -235,30 +211,6 @@ async def delete_document(
     current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> None:
-    doc = await _get_doc_or_404(session, current, doc_id)
-    await session.delete(doc)
+    document = await _get_doc_or_404(session, current, doc_id)
+    await session.delete(document)
     await session.commit()
-
-
-@router.post(
-    "/repositories/{repo_id}/documents/{document_id}/reimport-graph",
-    status_code=202,
-)
-async def reimport_document_graph(
-    repo_id: uuid.UUID,
-    document_id: uuid.UUID,
-    current: Annotated[User, Depends(get_authenticated_user)],
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-) -> dict[str, str]:
-    repo = await _get_repo_or_404(session, current, repo_id)
-    doc = await session.get(Document, document_id)
-    if not doc or doc.repository_id != repo.id:
-        raise HTTPException(status_code=404, detail="Documento não encontrado")
-    job_id = await enqueue_doc_import_for_document(session, repo=repo, document=doc)
-    if job_id is None:
-        raise HTTPException(
-            status_code=409,
-            detail="Documento não está indexado, formato não suportado ou repositório sem sandbox.",
-        )
-    await session.commit()
-    return {"job_id": str(job_id), "status": "materializing"}

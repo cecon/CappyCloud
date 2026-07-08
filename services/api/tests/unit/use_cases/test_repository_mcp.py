@@ -89,10 +89,7 @@ class TestHandleRepositoryMcpRequest:
         names = {tool["name"] for tool in result["result"]["tools"]}
         assert "repository_search" in names
         assert "smart_codebase_search" in names
-        graph_tool = next(
-            tool for tool in result["result"]["tools"] if tool["name"] == "repository_graph"
-        )
-        assert "materialized" in graph_tool["inputSchema"]["properties"]
+        assert all("graph" not in name for name in names)
 
     async def test_calls_known_tool_as_text_payload(self) -> None:
         repo = InMemoryUserMcpServerRepository()

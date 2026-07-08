@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import types
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -149,6 +150,47 @@ def test_stream_task_events_keeps_connection_alive_on_empty_queue(monkeypatch) -
         raise AssertionError("stream_task_events deveria encerrar ao receber sentinel None")
 
 
+def test_stream_task_events_preserves_order_until_sentinel(monkeypatch) -> None:
+    ordered_items = [
+        ("status", {"message": "Preparando"}, 1),
+        ("tool_start", {"name": "Bash", "input": "{}", "id": "toolu_1"}, 2),
+        ("done", {"prompt_tokens": 1, "completion_tokens": 2}, 3),
+        None,
+    ]
+
+    class FakeQueue:
+        def get(self, timeout: int):
+            del timeout
+            return ordered_items.pop(0)
+
+        def put(self, item) -> None:
+            pass
+
+    def fake_run_coroutine_threadsafe(coro, loop):
+        del loop
+        coro.close()
+        return None
+
+    monkeypatch.setattr(_pipeline_event_stream.queue, "Queue", FakeQueue)
+    monkeypatch.setattr(
+        _pipeline_event_stream.asyncio,
+        "run_coroutine_threadsafe",
+        fake_run_coroutine_threadsafe,
+    )
+
+    gen = _pipeline_event_stream.stream_task_events(
+        loop=asyncio.new_event_loop(),
+        database_url="postgresql://db",
+        task_id=str(uuid.uuid4()),
+        cursor=None,
+    )
+
+    payloads = [json.loads(next(gen)[6:]) for _ in range(3)]
+
+    assert [payload["type"] for payload in payloads] == ["status", "tool_start", "done"]
+    assert [payload["cursor"] for payload in payloads] == [1, 2, 3]
+
+
 def test_done_full_text_becomes_text_event_when_chunks_are_missing() -> None:
     msg = types.SimpleNamespace(
         done=types.SimpleNamespace(
@@ -182,6 +224,131 @@ def test_provider_api_error_text_chunk_becomes_error_event() -> None:
     assert "deepseek/deepseek-v4-flash:free" in data["message"]
     assert "Crucible" in data["message"]
     assert "user_should_not_leak" not in data["message"]
+
+
+def test_payload_diagnostic_event_normalizes_and_strips_unsafe_fields() -> None:
+    msg = types.SimpleNamespace(
+        payload_diagnostic=types.SimpleNamespace(
+            total_size_bytes=999,
+            source="sk-live-secret",
+            generated_at="/repos/private/file.py",
+            categories=[
+                types.SimpleNamespace(
+                    key="/repos/private/file.py",
+                    label="sk-live-secret",
+                    size_bytes=25,
+                    percentage=100,
+                ),
+                types.SimpleNamespace(
+                    key="attachments",
+                    label="/repos/private/image.png",
+                    size_bytes=75,
+                    percentage=100,
+                ),
+            ],
+        )
+    )
+
+    event = _grpc_event_handlers.payload_diagnostic_event(msg)
+
+    assert event is not None
+    event_type, data = event
+    assert event_type == "payload_diagnostic"
+    diagnostics = data["diagnostics"]
+    assert diagnostics["total_size_bytes"] == 100
+    assert diagnostics["source"] == "openclaude"
+    assert diagnostics["generated_at"] == ""
+    assert diagnostics["categories"] == [
+        {"key": "attachments", "label": "Anexos", "size_bytes": 75, "percentage": 75.0},
+        {"key": "other", "label": "Outros", "size_bytes": 25, "percentage": 25.0},
+    ]
+    assert "sk-live-secret" not in str(data)
+    assert "/repos/private" not in str(data)
+
+
+def test_malformed_payload_diagnostic_event_is_ignored() -> None:
+    msg = types.SimpleNamespace(
+        payload_diagnostic=types.SimpleNamespace(
+            total_size_bytes=-1,
+            source="openclaude",
+            generated_at="2026-06-17T15:20:00Z",
+            categories=[],
+        )
+    )
+
+    assert _grpc_event_handlers.payload_diagnostic_event(msg) is None
+
+
+def test_tool_result_event_preserves_stdout_and_error_flag() -> None:
+    msg = types.SimpleNamespace(
+        tool_result=types.SimpleNamespace(
+            tool_name="Bash",
+            output=b"stdout preservado",
+            is_error=True,
+            tool_use_id="toolu_1",
+        )
+    )
+
+    event_type, data = _grpc_event_handlers.tool_result_event(msg)
+
+    assert event_type == "tool_result"
+    assert data == {
+        "name": "Bash",
+        "output": "stdout preservado",
+        "is_error": True,
+        "id": "toolu_1",
+    }
+
+
+def test_tool_error_remains_visible_after_text_event() -> None:
+    text_msg = types.SimpleNamespace(text_chunk=types.SimpleNamespace(text="Investigando...\n"))
+    tool_msg = types.SimpleNamespace(
+        tool_result=types.SimpleNamespace(
+            tool_name="Bash",
+            output=b"comando falhou",
+            is_error=True,
+            tool_use_id="toolu_error",
+        )
+    )
+
+    assert _grpc_event_handlers.text_chunk_event(text_msg) == (
+        "text",
+        {"content": "Investigando...\n"},
+    )
+    event_type, data = _grpc_event_handlers.tool_result_event(tool_msg)
+
+    assert event_type == "tool_result"
+    assert data["id"] == "toolu_error"
+    assert data["is_error"] is True
+    assert data["output"] == "comando falhou"
+
+
+def test_done_event_reports_sanitized_runtime_fallback() -> None:
+    msg = types.SimpleNamespace(
+        done=types.SimpleNamespace(
+            full_text="",
+            prompt_tokens=10,
+            completion_tokens=5,
+            model_used="openrouter/fallback:free",
+            fallback_reason="rate limit",
+        )
+    )
+
+    event_type, data = _grpc_event_handlers.done_event(
+        msg,
+        session_id="session",
+        model="openrouter/selected",
+        wd="/workspace",
+        streamed_text=True,
+    )
+
+    assert event_type == "done"
+    assert data["model_used"] == "openrouter/fallback:free"
+    assert data["fallback"] == {
+        "selected_model": "openrouter/selected",
+        "final_model": "openrouter/fallback:free",
+        "reason": "rate_limit",
+    }
 
 
 def test_clean_assistant_text_removes_tool_chatter_before_final_answer() -> None:

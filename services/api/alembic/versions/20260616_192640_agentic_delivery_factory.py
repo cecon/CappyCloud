@@ -35,6 +35,21 @@ def _timestamps() -> list[sa.Column]:
     ]
 
 
+_KNOWLEDGE_REUSE_INDEXES = {
+    "source_repository_id": "ix_agentic_reuse_source_repo_id",
+    "target_repository_id": "ix_agentic_reuse_target_repo_id",
+    "source_domain_key": "ix_agentic_reuse_source_domain",
+    "target_domain_key": "ix_agentic_reuse_target_domain",
+}
+
+_EXTERNAL_ACTION_AUTH_INDEXES = {
+    "cycle_id": "ix_agentic_ext_auth_cycle_id",
+    "authorized_by_user_id": "ix_agentic_ext_auth_authorized_by",
+    "repository_id": "ix_agentic_ext_auth_repository_id",
+    "domain_key": "ix_agentic_ext_auth_domain_key",
+}
+
+
 def upgrade() -> None:
     """Upgrade schema."""
     op.create_table(
@@ -337,7 +352,7 @@ def upgrade() -> None:
         "target_domain_key",
     ):
         op.create_index(
-            f"ix_agentic_delivery_knowledge_reuse_relationships_{col}",
+            _KNOWLEDGE_REUSE_INDEXES[col],
             "agentic_delivery_knowledge_reuse_relationships",
             [col],
         )
@@ -370,7 +385,7 @@ def upgrade() -> None:
     )
     for col in ("cycle_id", "authorized_by_user_id", "repository_id", "domain_key"):
         op.create_index(
-            f"ix_agentic_delivery_external_action_authorizations_{col}",
+            _EXTERNAL_ACTION_AUTH_INDEXES[col],
             "agentic_delivery_external_action_authorizations",
             [col],
         )
@@ -397,7 +412,7 @@ def downgrade() -> None:
     op.drop_table("agentic_delivery_metrics")
     for col in ("cycle_id", "authorized_by_user_id", "repository_id", "domain_key"):
         op.drop_index(
-            f"ix_agentic_delivery_external_action_authorizations_{col}",
+            _EXTERNAL_ACTION_AUTH_INDEXES[col],
             table_name="agentic_delivery_external_action_authorizations",
         )
     op.drop_table("agentic_delivery_external_action_authorizations")
@@ -408,7 +423,7 @@ def downgrade() -> None:
         "target_domain_key",
     ):
         op.drop_index(
-            f"ix_agentic_delivery_knowledge_reuse_relationships_{col}",
+            _KNOWLEDGE_REUSE_INDEXES[col],
             table_name="agentic_delivery_knowledge_reuse_relationships",
         )
     op.drop_table("agentic_delivery_knowledge_reuse_relationships")

@@ -1,7 +1,13 @@
 """Testes unitários para value objects do domínio."""
 
 import pytest
-from app.domain.value_objects import validate_email, validate_password
+from app.domain.value_objects import (
+    DEFAULT_PERMISSION_MODE,
+    PermissionMode,
+    validate_email,
+    validate_password,
+    validate_permission_mode,
+)
 
 
 class TestValidateEmail:
@@ -49,3 +55,19 @@ class TestValidatePassword:
     def test_long_password_accepted(self) -> None:
         pw = "a" * 128
         assert validate_password(pw) == pw
+
+
+class TestValidatePermissionMode:
+    def test_default_permission_mode_is_request_permissions(self) -> None:
+        assert PermissionMode.REQUEST_PERMISSIONS.value == DEFAULT_PERMISSION_MODE
+
+    @pytest.mark.parametrize("mode", [mode.value for mode in PermissionMode])
+    def test_accepts_supported_permission_modes(self, mode: str) -> None:
+        assert validate_permission_mode(mode) == mode
+
+    def test_omitted_permission_mode_uses_default(self) -> None:
+        assert validate_permission_mode(None) == PermissionMode.REQUEST_PERMISSIONS.value
+
+    def test_rejects_unknown_permission_mode(self) -> None:
+        with pytest.raises(ValueError, match="modo de permissão"):
+            validate_permission_mode("dangerously_free")

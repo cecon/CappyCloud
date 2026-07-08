@@ -42,6 +42,29 @@ class SQLAlchemyAiModelAccessPolicy(AiModelAccessPolicy):
             raise PermissionError("Sem acesso ao modelo LLM solicitado.")
         return model.model_id
 
+    async def resolve_model_uuid_for_user(
+        self,
+        user_id: uuid.UUID,
+        role: UserRole,
+        requested_model_id: str | None,
+    ) -> uuid.UUID:
+        model = await self._find_active_text_model(requested_model_id)
+        if model is None:
+            raise PermissionError("Modelo LLM indisponível ou desativado globalmente.")
+
+        if role is UserRole.ADMIN:
+            return model.id
+
+        allowed = await self._session.execute(
+            select(UserAiModelAccess.id).where(
+                UserAiModelAccess.user_id == user_id,
+                UserAiModelAccess.ai_model_id == model.id,
+            )
+        )
+        if allowed.scalar_one_or_none() is None:
+            raise PermissionError("Sem acesso ao modelo LLM solicitado.")
+        return model.id
+
     async def _find_active_text_model(self, requested_model_id: str | None) -> AiModel | None:
         stmt = (
             select(AiModel)

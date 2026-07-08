@@ -211,6 +211,7 @@ O openclaude carrega MCPs configurados pelo utilizador em
 
 | Nome | Binário | Notas |
 |------|---------|-------|
+| `github-mcp-server` | `/usr/local/bin/github-mcp-server-wrapper` | Acesso ao GitHub via MCP oficial em modo stdio. Requer `GITHUB_PERSONAL_ACCESS_TOKEN` ou `GITHUB_TOKEN` no env; não use `docker run`. |
 | `signoz-mcp-server` | `/usr/local/bin/signoz-mcp-server` | Observabilidade (métricas, traces, logs, alertas). Requer `SIGNOZ_URL` e `SIGNOZ_API_KEY` no env. |
 | `confluence-mcp-server` | `/usr/local/bin/confluence-mcp-server` | Consulta read-only ao Confluence via REST. Use apenas quando a sessão/repositório tiver URL de Confluence configurada. Credenciais opcionais: `CONFLUENCE_EMAIL` + `CONFLUENCE_API_TOKEN` ou `CONFLUENCE_PAT`. |
 
@@ -259,6 +260,7 @@ O openclaude carrega MCPs configurados pelo utilizador em
 
 | Nome | Binário | Notas |
 |------|---------|-------|
+| `github-mcp-server` | `/usr/local/bin/github-mcp-server-wrapper` | Acesso ao GitHub via MCP oficial em modo stdio. Requer `GITHUB_PERSONAL_ACCESS_TOKEN` ou `GITHUB_TOKEN` no env; não use `docker run`. |
 | `signoz-mcp-server` | `/usr/local/bin/signoz-mcp-server` | Observabilidade (métricas, traces, logs, alertas). Requer `SIGNOZ_URL` e `SIGNOZ_API_KEY` no env. |
 
 Se um MCP estiver configurado mas as ferramentas não aparecerem, verifique se

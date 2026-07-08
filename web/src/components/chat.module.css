@@ -774,6 +774,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .commandToolbarRight {
@@ -927,6 +929,114 @@
   cursor: pointer;
   width: 100%;
   height: 100%;
+}
+
+.permissionModeControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  margin-left: 0.25rem;
+  flex: 0 1 auto;
+}
+
+.permissionModeControlCompact {
+  margin-left: 0.35rem;
+}
+
+.permissionModePill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  min-height: 26px;
+  padding: 2px 7px;
+  border: 1px solid rgba(96, 165, 250, 0.16);
+  border-radius: 4px;
+  background: var(--cc-surface-high);
+  color: var(--cc-on-surface-variant);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.permissionModePill:hover {
+  background: var(--cc-surface-highest);
+  border-color: rgba(96, 165, 250, 0.28);
+  color: var(--cc-on-surface);
+}
+
+.permissionModePillDisabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.permissionModeIcon,
+.permissionModeChevron {
+  flex: 0 0 auto;
+  font-size: 0.82rem;
+  opacity: 0.68;
+}
+
+.permissionModeChevron {
+  font-size: 0.72rem;
+  opacity: 0.42;
+}
+
+.permissionModeLabel {
+  min-width: 0;
+  max-width: 9.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.6875rem;
+  font-weight: 650;
+  color: inherit;
+}
+
+.permissionModeSelect {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.permissionModeSelect:disabled {
+  cursor: not-allowed;
+}
+
+.permissionModeWarning {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  min-height: 24px;
+  max-width: 15rem;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.permissionModeWarningIcon {
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+}
+
+.permissionModeWarningCaution {
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24;
+}
+
+.permissionModeWarningHigh {
+  border: 1px solid rgba(248, 113, 113, 0.34);
+  background: rgba(248, 113, 113, 0.11);
+  color: #fecaca;
 }
 
 .contextPillAdd {
@@ -1088,6 +1198,130 @@
   max-width: 100%;
   background: var(--cc-surface-high);
   border: 1px solid rgba(72, 72, 75, 0.18);
+}
+
+.payloadDiagnostic {
+  margin-top: 0.75rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.06);
+  padding-top: 0.55rem;
+}
+
+.payloadDiagnosticToggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--cc-on-surface-variant);
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  text-align: left;
+}
+
+.payloadDiagnosticToggle:hover {
+  color: var(--cc-on-surface);
+}
+
+.payloadDiagnosticIcon {
+  flex: 0 0 auto;
+  color: #8bd3dd;
+  font-size: 1rem;
+}
+
+.payloadDiagnosticTitle {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 750;
+  color: var(--cc-on-surface);
+}
+
+.payloadDiagnosticTotal {
+  flex: 0 0 auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #b9f6ca;
+}
+
+.payloadDiagnosticChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.payloadDiagnosticChip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 14rem;
+  min-height: 22px;
+  padding: 0.16rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(139, 211, 221, 0.08);
+  border: 1px solid rgba(139, 211, 221, 0.14);
+  color: var(--cc-on-surface-variant);
+  font-size: 0.64rem;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.payloadDiagnosticChevron {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 1rem;
+  color: var(--cc-on-surface-variant);
+}
+
+.payloadDiagnosticDetails {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+}
+
+.payloadDiagnosticRow {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) minmax(6rem, 1.4fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  font-size: 0.68rem;
+}
+
+.payloadDiagnosticLabel {
+  min-width: 0;
+  color: var(--cc-on-surface);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.payloadDiagnosticBar {
+  height: 5px;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.payloadDiagnosticBarFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #8bd3dd, #b9f6ca);
+}
+
+.payloadDiagnosticValue {
+  justify-self: end;
+  color: var(--cc-on-surface-variant);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.64rem;
+  white-space: nowrap;
 }
 
 .messageUsageFooter {
@@ -1303,6 +1537,7 @@
   display: flex;
   align-items: center;
   gap: 2px;
+  flex-wrap: wrap;
   background: var(--cc-surface-low);
   border: 1px solid rgba(72, 72, 75, 0.08);
   border-top: 1px solid rgba(72, 72, 75, 0.06);
@@ -1326,6 +1561,16 @@
   background: var(--cc-surface-high);
 }
 
+.chatContextPillNotice {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(20, 184, 166, 0.08);
+  cursor: default;
+}
+
+.chatContextPillNotice:hover {
+  background: rgba(20, 184, 166, 0.12);
+}
+
 .chatContextIcon {
   font-size: 0.75rem;
   color: var(--cc-on-surface-variant);
@@ -1341,6 +1586,16 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 120px;
+}
+
+.chatContextReason {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: #67e8f9;
 }
 
 .chatContextChevron {
@@ -2330,6 +2585,38 @@
 
   .commandTextarea {
     font-size: 0.9rem;
+  }
+
+  .payloadDiagnosticToggle {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .payloadDiagnosticChips {
+    flex-basis: 100%;
+    padding-left: 1.45rem;
+  }
+
+  .payloadDiagnosticRow {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+
+  .payloadDiagnosticValue {
+    justify-self: start;
+  }
+
+  .permissionModeControl {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+
+  .permissionModeControlCompact {
+    flex-basis: auto;
+  }
+
+  .permissionModeWarning {
+    max-width: 100%;
   }
 }
 

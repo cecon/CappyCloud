@@ -80,7 +80,10 @@ class EnvironmentManager:
             # authoritative.  Old session records may have repos=[] or may lack
             # worktree_path; merge the fresh data so working_directory is correct.
             updated = False
-            if repos and not any(r.get("worktree_path") for r in record.repos):
+            if repos and (
+                not any(r.get("worktree_path") for r in record.repos)
+                or any(r.get("source_workspace_path") for r in repos)
+            ):
                 record.repos = list(repos)
                 updated = True
             if session_root and not record.session_root:

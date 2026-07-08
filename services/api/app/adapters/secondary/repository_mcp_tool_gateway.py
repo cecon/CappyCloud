@@ -10,15 +10,6 @@ import httpx
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.secondary.sandbox_repo_graph_provider import (
-    SandboxRepoGraphError,
-    SandboxRepositoryGraphProvider,
-)
-from app.application.use_cases.repository_graph_materialization import (
-    enqueue_graph_materialization,
-    load_materialized_repo_graph,
-    resolve_repo_graph_commit_sha,
-)
 from app.domain.entities import UserMcpServer
 from app.infrastructure.embeddings import embed_text
 from app.infrastructure.orm_models import Repository, Sandbox, Skill
@@ -47,8 +38,6 @@ class SQLAlchemyRepositoryMcpToolGateway(RepositoryMcpToolGateway):
             return await self._search(repo, sandbox, arguments, regex=False)
         if tool_name == "repository_grep":
             return await self._search(repo, sandbox, arguments, regex=True)
-        if tool_name == "repository_graph":
-            return await self._graph(repo, sandbox, arguments)
         if tool_name == "skills_search":
             return await self._skills_search(server.repository_id, arguments)
         if tool_name == "confluence_search":
@@ -118,47 +107,6 @@ class SQLAlchemyRepositoryMcpToolGateway(RepositoryMcpToolGateway):
             sandbox,
             f"/repos/{quote(repo.slug, safe='')}/search",
             {"q": query, "limit": limit, "regex": str(regex).lower()},
-        )
-
-    async def _graph(
-        self,
-        repo: Repository,
-        sandbox: Sandbox,
-        arguments: dict[str, Any],
-    ) -> dict[str, Any]:
-        max_files = max(50, min(int(arguments.get("max_files") or 1200), 5000))
-        materialized = _truthy(arguments.get("materialized"))
-        if materialized:
-            commit_sha = str(arguments.get("commit_sha") or "").strip()
-            provider = SandboxRepositoryGraphProvider()
-            if not commit_sha:
-                try:
-                    commit_sha = await resolve_repo_graph_commit_sha(
-                        provider=provider,
-                        repo=repo,
-                        sandbox=sandbox,
-                    )
-                except SandboxRepoGraphError as exc:
-                    raise RuntimeError(f"Falha ao resolver commit do graph: {exc}") from exc
-            graph = await load_materialized_repo_graph(
-                self._session,
-                repo=repo,
-                commit_sha=commit_sha,
-            )
-            if graph is not None:
-                return graph
-            job_id = await enqueue_graph_materialization(
-                self._session,
-                repo=repo,
-                commit_sha=commit_sha,
-                max_files=max_files,
-            )
-            await self._session.commit()
-            return {"job_id": str(job_id), "status": "materializing", "commit_sha": commit_sha}
-        return await self._sandbox_get(
-            sandbox,
-            f"/repos/{quote(repo.slug, safe='')}/graph",
-            {"max_files": max_files},
         )
 
     async def _skills_search(self, repo_id: uuid.UUID, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -265,9 +213,3 @@ def _skill_summary(skill: Skill) -> str:
     if skill.document_id is not None:
         return (skill.content or skill.summary or "")[:_DOCUMENT_SUMMARY_LIMIT]
     return (skill.summary or skill.content or "")[:_SKILL_SUMMARY_LIMIT]
-
-
-def _truthy(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    return str(value or "").strip().lower() in {"1", "true", "yes", "sim"}

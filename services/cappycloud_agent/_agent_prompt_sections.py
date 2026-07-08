@@ -1,4 +1,4 @@
-"""Prompt sections used by the CappyCloud agent context."""
+﻿"""Prompt sections used by the CappyCloud agent context."""
 
 from __future__ import annotations
 
@@ -231,6 +231,11 @@ def render_response_rules() -> str:
         "Quando consultar documentação externa, inclua uma seção curta de fontes consultadas "
         "com o título e a URL das páginas realmente usadas. Quando cruzar com código, inclua "
         "também a evidência do repositório com arquivo e símbolo/trecho relevante. "
+        "Não abra o diagnóstico com uma conclusão forte baseada em 'pelo código que consegui "
+        "abrir' ou formulação equivalente sem listar logo abaixo ao menos uma evidência "
+        "citável: arquivo e linha/símbolo, schema aberto, ou título e URL de documentação "
+        "externa realmente consultada. Se a evidência ainda for parcial, diga que a análise "
+        "é parcial e peça o log, fluxo executado, versão ou configuração que falta. "
         "Para casos de suporte operacional, prefira a estrutura: Diagnóstico, "
         "Evidências, Como corrigir, Como validar. Use como evidência documental "
         "apenas páginas cujo produto, módulo ou conteúdo trate diretamente do assunto "

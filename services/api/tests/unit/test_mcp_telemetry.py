@@ -115,12 +115,12 @@ async def test_call_tool_with_telemetry_records_success() -> None:
 
     result = await call_tool_with_telemetry(
         server=_server(),
-        tool_name="repository_graph",
-        arguments={"materialized": True, "token": "secret"},
+        tool_name="repository_search",
+        arguments={"query": "empresa", "token": "secret"},
         trace_id=trace_id,
         caller_user_agent="Claude",
         caller_session_id="session-1",
-        metadata={"requested_tool_name": "smart_codebase_graph"},
+        metadata={"requested_tool_name": "smart_codebase_search"},
         recorder=rows.append,
         call=lambda: _async_result({"ok": True}),
     )
@@ -130,29 +130,10 @@ async def test_call_tool_with_telemetry_records_success() -> None:
     row = rows[0]
     assert row.trace_id == trace_id
     assert row.status == "ok"
-    assert row.materialized is True
     assert row.arguments_sanitized["token"] == "<redacted>"
     assert row.response_bytes is not None and row.response_bytes > 0
     assert row.response_hash is not None and len(row.response_hash) == 64
-    assert row.metadata["requested_tool_name"] == "smart_codebase_graph"
-
-
-async def test_call_tool_with_telemetry_accepts_string_materialized_flag() -> None:
-    rows: list[McpToolInvocationRecord] = []
-
-    await call_tool_with_telemetry(
-        server=_server(),
-        tool_name="repository_graph",
-        arguments={"materialized": "yes"},
-        trace_id=uuid.uuid4(),
-        caller_user_agent=None,
-        caller_session_id=None,
-        metadata={},
-        recorder=rows.append,
-        call=lambda: _async_result({"ok": True}),
-    )
-
-    assert rows[0].materialized is True
+    assert row.metadata["requested_tool_name"] == "smart_codebase_search"
 
 
 async def test_call_tool_with_telemetry_records_and_reraises_errors() -> None:

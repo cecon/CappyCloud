@@ -258,6 +258,55 @@ export type RepoSelection = {
   base_branch?: string | null
 }
 
+export type PermissionMode =
+  | 'request_permissions'
+  | 'accept_edits'
+  | 'plan'
+  | 'auto'
+  | 'bypass_permissions'
+
+export const DEFAULT_PERMISSION_MODE: PermissionMode = 'request_permissions'
+
+export interface UserPreferences {
+  default_permission_mode: PermissionMode
+}
+
+function safePermissionMode(value: unknown): PermissionMode {
+  return value === 'accept_edits' ||
+    value === 'plan' ||
+    value === 'auto' ||
+    value === 'bypass_permissions' ||
+    value === 'request_permissions'
+    ? value
+    : DEFAULT_PERMISSION_MODE
+}
+
+export async function fetchUserPreferences(token: string): Promise<UserPreferences> {
+  const res = await apiFetch('/api/user/preferences', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error('Nao foi possivel carregar preferencias')
+  const data = (await res.json()) as { default_permission_mode?: unknown }
+  return { default_permission_mode: safePermissionMode(data.default_permission_mode) }
+}
+
+export async function updateUserPreferences(
+  token: string,
+  preferences: Partial<UserPreferences>,
+): Promise<UserPreferences> {
+  const res = await apiFetch('/api/user/preferences', {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(preferences),
+  })
+  if (!res.ok) throw new Error('Nao foi possivel salvar preferencias')
+  const data = (await res.json()) as { default_permission_mode?: unknown }
+  return { default_permission_mode: safePermissionMode(data.default_permission_mode) }
+}
+
 // ── Agentic Delivery ────────────────────────────────────────────────────────
 
 export type AgenticCycleStatus =
@@ -530,6 +579,7 @@ export type Conversation = {
   updated_at: string
   repos: RepoSelection[]
   session_root: string | null
+  permission_mode: PermissionMode
 }
 
 export type ChatMessage = {
@@ -542,6 +592,21 @@ export type ChatMessage = {
   prompt_tokens?: number
   completion_tokens?: number
   cost_usd?: number
+  payload_diagnostics?: PayloadSizeBreakdown | null
+}
+
+export type PayloadSizeCategory = {
+  key: string
+  label: string
+  size_bytes: number
+  percentage?: number | null
+}
+
+export type PayloadSizeBreakdown = {
+  total_size_bytes: number
+  categories: PayloadSizeCategory[]
+  source?: string | null
+  generated_at?: string | null
 }
 
 export interface ConversationUsage {
@@ -554,6 +619,11 @@ export interface DoneEvent {
   model_used: string | null
   prompt_tokens: number
   completion_tokens: number
+  fallback?: {
+    selected_model?: string
+    final_model?: string
+    reason?: string
+  } | null
 }
 
 export interface ToolStartEvent {
@@ -581,6 +651,12 @@ export interface StatusEvent {
   stage?: 'session' | 'repository' | 'ready' | 'agent'
   mode?: 'initializing' | 'resuming'
   state?: 'active' | 'done'
+  metadata?: {
+    permission_warning?: {
+      runtime_confirmed: boolean
+      source: 'openclaude_startup_alert'
+    }
+  }
 }
 
 export interface StreamHandlers {
@@ -590,9 +666,122 @@ export interface StreamHandlers {
   onActionRequired(action: ActionRequiredEvent): void
   onStatus(status: StatusEvent): void
   onError(message: string): void
+  onCursor?(cursor: number): void
+  onPayloadDiagnostic?(diagnostics: PayloadSizeBreakdown): void
   /** Acumulador final de tokens/modelo enviado quando o agente termina o turno. */
   onDone?(usage: DoneEvent): void
   signal?: AbortSignal
+}
+
+const PAYLOAD_CATEGORY_LABELS: Record<string, string> = {
+  user_message: 'Mensagem do usuario',
+  conversation_history: 'Historico da conversa',
+  repository_context: 'Contexto do repositorio',
+  attachments: 'Anexos',
+  tool_results: 'Resultados de ferramentas',
+  tool_schemas: 'Ferramentas',
+  mcp_tool_schemas: 'Ferramentas MCP',
+  runtime_context: 'Contexto de runtime',
+  other: 'Outros',
+}
+
+function parsePayloadDiagnostics(value: unknown): PayloadSizeBreakdown | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Record<string, unknown>
+  const rawCategories = Array.isArray(raw.categories) ? raw.categories : []
+  const categoriesByKey = new Map<string, PayloadSizeCategory>()
+
+  for (const item of rawCategories) {
+    if (!item || typeof item !== 'object') continue
+    const record = item as Record<string, unknown>
+    const key = typeof record.key === 'string' && record.key in PAYLOAD_CATEGORY_LABELS
+      ? record.key
+      : 'other'
+    const size = safeByteCount(record.size_bytes)
+    if (size <= 0) continue
+    const current = categoriesByKey.get(key)
+    if (current) {
+      current.size_bytes += size
+    } else {
+      categoriesByKey.set(key, {
+        key,
+        label: PAYLOAD_CATEGORY_LABELS[key],
+        size_bytes: size,
+        percentage: 0,
+      })
+    }
+  }
+
+  const categories = [...categoriesByKey.values()].sort((a, b) => b.size_bytes - a.size_bytes)
+  const total = categories.length
+    ? categories.reduce((sum, category) => sum + category.size_bytes, 0)
+    : safeByteCount(raw.total_size_bytes)
+  if (total <= 0) return null
+  for (const category of categories) {
+    category.percentage = Math.round((category.size_bytes / total) * 1000) / 10
+  }
+
+  return {
+    total_size_bytes: total,
+    categories,
+    source: safeDiagnosticSource(raw.source),
+    generated_at: safeDiagnosticText(raw.generated_at),
+  }
+}
+
+function safeByteCount(value: unknown): number {
+  const numeric = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0
+}
+
+function safeDiagnosticSource(value: unknown): string {
+  const source = typeof value === 'string' ? value.trim().toLowerCase() : 'openclaude'
+  return source === 'openclaude' || source === 'cappycloud' || source === 'agent'
+    ? source
+    : 'openclaude'
+}
+
+function safeDiagnosticText(value: unknown): string {
+  const text = typeof value === 'string' ? value.trim() : ''
+  return /^[A-Za-z0-9_.:+-]{1,64}$/.test(text) ? text : ''
+}
+
+function safePermissionWarningMetadata(value: unknown): StatusEvent['metadata'] | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const metadata = value as Record<string, unknown>
+  const warning = metadata.permission_warning
+  if (!warning || typeof warning !== 'object') return undefined
+  const warningRecord = warning as Record<string, unknown>
+  const runtimeConfirmed = warningRecord.runtime_confirmed === true
+  const source = warningRecord.source === 'openclaude_startup_alert'
+    ? 'openclaude_startup_alert'
+    : null
+  if (!runtimeConfirmed || source === null) return undefined
+  return {
+    permission_warning: {
+      runtime_confirmed: true,
+      source,
+    },
+  }
+}
+
+function parseFallbackNotice(value: unknown): DoneEvent['fallback'] {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const selectedModel = safeModelText(record.selected_model)
+  const finalModel = safeModelText(record.final_model)
+  const reason = safeDiagnosticText(record.reason)
+  if (!selectedModel || !finalModel || selectedModel === finalModel) return null
+  return {
+    selected_model: selectedModel,
+    final_model: finalModel,
+    reason: reason || 'runtime_model_changed',
+  }
+}
+
+function safeModelText(value: unknown): string {
+  const text = typeof value === 'string' ? value.trim() : ''
+  return /^[A-Za-z0-9_.:/@+-]{1,256}$/.test(text) ? text : ''
 }
 
 export async function fetchConversations(
@@ -612,8 +801,10 @@ export async function fetchConversations(
 export async function createConversation(
   token: string,
   repos: RepoSelection[] = [],
+  modelId?: string | null,
 ): Promise<Conversation> {
   const body: Record<string, unknown> = { repos }
+  if (modelId) body.model_id = modelId
   const res = await apiFetch('/api/conversations', {
     method: 'POST',
     headers: {
@@ -645,12 +836,18 @@ export async function streamAssistantReply(
   handlers: StreamHandlers,
   modelId?: string | null,
   attachmentIds?: string[] | null,
+  permissionMode?: PermissionMode | null,
+  cursor?: number | null,
+  actionReply = false,
 ): Promise<void> {
   const { signal, ...eventHandlers } = handlers
   const bodyPayload: Record<string, unknown> = { content }
   if (modelId) bodyPayload.model_id = modelId
   if (attachmentIds && attachmentIds.length > 0) bodyPayload.attachment_ids = attachmentIds
-  const res = await apiFetch(`/api/conversations/${conversationId}/messages/stream`, {
+  if (permissionMode) bodyPayload.permission_mode = permissionMode
+  if (actionReply) bodyPayload.action_reply = true
+  const qs = cursor != null ? `?cursor=${encodeURIComponent(String(cursor))}` : ''
+  const res = await apiFetch(`/api/conversations/${conversationId}/messages/stream${qs}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -682,6 +879,9 @@ export async function streamAssistantReply(
       if (!line.startsWith('data: ')) continue
       try {
         const evt = JSON.parse(line.slice(6)) as Record<string, unknown>
+        if (typeof evt.cursor === 'number') {
+          eventHandlers.onCursor?.(evt.cursor)
+        }
         switch (evt.type) {
           case 'text':
             accText += (evt.content as string) ?? ''
@@ -721,7 +921,15 @@ export async function streamAssistantReply(
                   : undefined,
               mode: mode === 'initializing' || mode === 'resuming' ? mode : undefined,
               state: evt.state === 'active' || evt.state === 'done' ? evt.state : undefined,
+              metadata: safePermissionWarningMetadata(evt.metadata),
             })
+            break
+          }
+          case 'payload_diagnostic': {
+            const diagnostics = parsePayloadDiagnostics(evt.diagnostics)
+            if (diagnostics) {
+              eventHandlers.onPayloadDiagnostic?.(diagnostics)
+            }
             break
           }
           case 'error':
@@ -732,6 +940,7 @@ export async function streamAssistantReply(
               model_used: (evt.model_used as string | null) ?? null,
               prompt_tokens: (evt.prompt_tokens as number) ?? 0,
               completion_tokens: (evt.completion_tokens as number) ?? 0,
+              fallback: parseFallbackNotice(evt.fallback),
             })
             sawDone = true
             break
@@ -1188,146 +1397,6 @@ export interface Repository {
   signoz_service_name?: string | null
 }
 
-export interface RepositoryGraphStats {
-  files: number
-  code_files?: number
-  modules: number
-  links: number
-  isolated: number
-  symbols?: number
-  entrypoints?: number
-  unreferenced_files?: number
-  ui_actions?: number
-  flows?: number
-}
-
-export interface RepositoryGraphNode {
-  id: string
-  label: string
-  type: 'repo' | 'module' | string
-  path: string
-  file_count: number
-  import_count: number
-  imported_by_count: number
-  isolated: boolean
-  source_extractor?: string
-  extractor_version?: string
-  attrs?: Record<string, unknown>
-}
-
-export interface RepositoryGraphEdge {
-  id: string
-  source: string
-  target: string
-  target_external?: string
-  type: 'contains' | 'imports' | string
-  weight: number
-  evidence?: Record<string, unknown>
-  confidence?: string
-  source_extractor?: string
-  extractor_version?: string
-  attrs?: Record<string, unknown>
-}
-
-export interface RepositoryGraphFinding {
-  id: string
-  type: string
-  severity: 'low' | 'medium' | 'high' | string
-  title: string
-  detail: string
-  node_id: string
-  path: string
-  source?: string
-  level?: string
-}
-
-export interface RepositoryGraphFile {
-  id: string
-  path: string
-  label: string
-  module: string
-  extension: string
-  line_count: number
-  symbol_count: number
-  imports: string[]
-  imported_by: string[]
-  import_count: number
-  imported_by_count: number
-  isolated: boolean
-  entrypoint: boolean
-  unreferenced: boolean
-  symbols: string[]
-  source_extractor?: string
-  extractor_version?: string
-}
-
-export interface RepositoryGraphSymbol {
-  id: string
-  name: string
-  kind: string
-  file_path: string
-  line: number
-  signature: string
-  exported: boolean
-  container: string
-  element?: string
-  handler?: string
-  source_extractor?: string
-  extractor_version?: string
-  attrs?: Record<string, unknown>
-}
-
-export interface RepositoryGraphSemanticNode {
-  id: string
-  label: string
-  type: string
-  path: string
-  line: number
-  detail: string
-  source_extractor?: string
-  extractor_version?: string
-  attrs?: Record<string, unknown>
-}
-
-export interface RepositoryGraph {
-  slug: string
-  repo_path: string
-  generated_at: string
-  stats: RepositoryGraphStats
-  nodes: RepositoryGraphNode[]
-  edges: RepositoryGraphEdge[]
-  files: RepositoryGraphFile[]
-  symbols: RepositoryGraphSymbol[]
-  file_edges: RepositoryGraphEdge[]
-  semantic_nodes: RepositoryGraphSemanticNode[]
-  semantic_edges: RepositoryGraphEdge[]
-  findings: RepositoryGraphFinding[]
-}
-
-export interface GraphMaterializationJob {
-  job_id: string
-  status: 'materializing' | string
-  commit_sha?: string
-}
-
-export interface GraphReconciliationJob {
-  job_id: string
-  status: 'reconciling' | string
-  commit_sha?: string
-}
-
-export interface GraphReconciliationSummary {
-  run_id?: string
-  repo_id?: string
-  commit_sha: string
-  created_at?: string | null
-  summary: Record<string, unknown> | null
-  unresolved_total?: number
-  unresolved?: Array<Record<string, unknown>>
-  limit?: number
-  offset?: number
-}
-
 export interface RepositoryCreate {
   slug: string
   name: string
@@ -1351,77 +1420,6 @@ export async function fetchRepositories(token: string): Promise<Repository[]> {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) return []
-  return res.json()
-}
-
-export async function fetchRepositoryGraph(
-  token: string,
-  repoId: string,
-  maxFiles = 1200,
-  options: { materialized?: boolean; commit_sha?: string } = {},
-): Promise<RepositoryGraph> {
-  const params = new URLSearchParams({ max_files: String(maxFiles) })
-  if (options.materialized) params.set('materialized', 'true')
-  if (options.commit_sha) params.set('commit_sha', options.commit_sha)
-  const res = await apiFetch(`/api/repositories/${repoId}/graph?${params}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(formatApiErrorPayload(err) || 'Falha ao carregar grafo do repositório')
-  }
-  return res.json()
-}
-
-export async function materializeRepositoryGraph(
-  token: string,
-  repoId: string,
-  maxFiles = 1200,
-): Promise<GraphMaterializationJob> {
-  const params = new URLSearchParams({ max_files: String(maxFiles) })
-  const res = await apiFetch(`/api/repositories/${repoId}/graph/materialize?${params}`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(formatApiErrorPayload(err) || 'Falha ao enfileirar materialização do graph')
-  }
-  return res.json()
-}
-
-export async function reconcileRepositoryGraph(
-  token: string,
-  repoId: string,
-  body: { commit_sha?: string; mode?: 'all' | 'strict-only' | 'no-llm'; llm_model?: string | null } = {},
-): Promise<GraphReconciliationJob> {
-  const res = await apiFetch(`/api/repositories/${repoId}/graph/reconcile`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(formatApiErrorPayload(err) || 'Falha ao enfileirar reconciliação do graph')
-  }
-  return res.json()
-}
-
-export async function fetchGraphReconciliationSummary(
-  token: string,
-  repoId: string,
-  commitSha?: string,
-): Promise<GraphReconciliationSummary> {
-  const params = new URLSearchParams()
-  if (commitSha) params.set('commit_sha', commitSha)
-  const suffix = params.toString() ? `?${params}` : ''
-  const res = await apiFetch(`/api/repositories/${repoId}/graph/reconciliation-summary${suffix}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(formatApiErrorPayload(err) || 'Falha ao carregar resumo de reconciliação')
-  }
   return res.json()
 }
 
@@ -1962,21 +1960,6 @@ export async function reindexRepoDocument(
   return res.json()
 }
 
-export async function reimportRepoDocumentGraph(
-  token: string,
-  repoId: string,
-  docId: string,
-): Promise<GraphMaterializationJob> {
-  const res = await apiFetch(`/api/repositories/${repoId}/documents/${docId}/reimport-graph`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(formatApiErrorPayload(err) || 'Falha ao reimportar schema no graph')
-  }
-  return res.json()
-}
 
 export async function deleteRepoDocument(token: string, docId: string): Promise<void> {
   const res = await apiFetch(`/api/documents/${docId}`, {

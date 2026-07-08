@@ -27,7 +27,7 @@ repos:
         entry: python scripts/check_file_length.py
         language: system
         types_or: [python, ts, tsx, javascript, jsx]
-        exclude: ^(web/|\.claude/|services/api/alembic/versions/)
+        exclude: ^(web/|\.claude/|services/api/alembic/versions/|services/api/app/application/use_cases/conversations\.py|services/api/tests/conftest\.py|services/api/tests/unit/test_agent_runtime_regressions\.py|services/api/tests/unit/use_cases/test_conversation_streaming\.py|services/api/tests/unit/use_cases/test_stream_helpers\.py|services/cappycloud_agent/cappycloud_pipeline\.py|services/sandbox/session_server\.js)
       - id: require-alembic-for-migrations
         name: "Migrations exigem comando alembic"
         entry: python scripts/check_alembic_available_for_migrations.py

@@ -29,7 +29,6 @@ import {
   syncRepository,
   updateRepository,
 } from '../api'
-import { RepositoryGraphPanel } from '../components/RepositoryGraphPanel'
 import { RepositoryDocumentsModal } from '../components/RepositoryDocumentsModal'
 import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
 
@@ -257,8 +256,6 @@ export function AdminRepositoriesPage() {
             {actionError}
           </Alert>
         )}
-
-        {repos && repos.length > 0 && <RepositoryGraphPanel repos={repos} />}
 
         <Paper withBorder p="md" radius="md">
           {loadError ? (

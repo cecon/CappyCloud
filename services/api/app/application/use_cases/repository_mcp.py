@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from contextlib import suppress
 from typing import Any
@@ -20,7 +21,7 @@ DEFAULT_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]
 
 
 class RepositoryMcpAuthError(Exception):
-    """Token MCP inválido, desativado ou fora do endpoint."""
+    """Invalid, disabled, or mismatched repository MCP token."""
 
 
 def _result(request_id: Any, result: Any) -> dict[str, Any]:
@@ -32,8 +33,6 @@ def _error(request_id: Any, code: int, message: str) -> dict[str, Any]:
 
 
 def _tool_text(data: dict[str, Any]) -> dict[str, Any]:
-    import json
-
     return {
         "isError": False,
         "content": [
@@ -49,7 +48,7 @@ CANONICAL_TOOLS: list[dict[str, Any]] = [
     {
         "name": "repository_list_files",
         "title": "SmartCodeBase: listar arquivos",
-        "description": "SmartCodeBase: lista arquivos versionados do repositório autorizado.",
+        "description": "SmartCodeBase: lista arquivos versionados do repositorio autorizado.",
         "inputSchema": {"type": "object", "properties": {}},
         "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
     },
@@ -57,7 +56,7 @@ CANONICAL_TOOLS: list[dict[str, Any]] = [
         "name": "repository_read_file",
         "title": "SmartCodeBase: ler arquivo",
         "description": (
-            "SmartCodeBase: lê um arquivo por caminho relativo no repositório autorizado."
+            "SmartCodeBase: le um arquivo por caminho relativo no repositorio autorizado."
         ),
         "inputSchema": {
             "type": "object",
@@ -69,7 +68,7 @@ CANONICAL_TOOLS: list[dict[str, Any]] = [
     {
         "name": "repository_search",
         "title": "SmartCodeBase: buscar texto",
-        "description": "SmartCodeBase: busca texto fixo no código do repositório usando ripgrep.",
+        "description": "SmartCodeBase: busca texto fixo no codigo do repositorio usando ripgrep.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -83,7 +82,7 @@ CANONICAL_TOOLS: list[dict[str, Any]] = [
     {
         "name": "repository_grep",
         "title": "SmartCodeBase: grep regex",
-        "description": "SmartCodeBase: busca por expressão regular no código usando ripgrep.",
+        "description": "SmartCodeBase: busca por expressao regular no codigo usando ripgrep.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -95,27 +94,10 @@ CANONICAL_TOOLS: list[dict[str, Any]] = [
         "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
     },
     {
-        "name": "repository_graph",
-        "title": "SmartCodeBase: grafo do repositório",
-        "description": (
-            "SmartCodeBase: retorna grafo leve de arquivos, símbolos e relações semânticas. "
-            "Passe materialized=true para consultar a versão persistida em Postgres."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "max_files": {"type": "integer", "minimum": 50, "maximum": 5000},
-                "materialized": {"type": "boolean"},
-                "commit_sha": {"type": "string"},
-            },
-        },
-        "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
-    },
-    {
         "name": "skills_search",
         "title": "SmartCodeBase: buscar skills",
         "description": (
-            "SmartCodeBase: busca skills e documentos indexados do repositório autorizado, "
+            "SmartCodeBase: busca skills e documentos indexados do repositorio autorizado, "
             "incluindo Markdown, PDF, DOCX e planilhas importadas."
         ),
         "inputSchema": {
@@ -131,7 +113,7 @@ CANONICAL_TOOLS: list[dict[str, Any]] = [
     {
         "name": "confluence_search",
         "title": "SmartCodeBase: buscar Confluence",
-        "description": "SmartCodeBase: busca documentação Confluence configurada no repositório.",
+        "description": "SmartCodeBase: busca documentacao Confluence configurada no repositorio.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -146,8 +128,8 @@ CANONICAL_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "confluence_get_page",
-        "title": "SmartCodeBase: ler página Confluence",
-        "description": "SmartCodeBase: lê uma página Confluence por page_id ou URL.",
+        "title": "SmartCodeBase: ler pagina Confluence",
+        "description": "SmartCodeBase: le uma pagina Confluence por page_id ou URL.",
         "inputSchema": {
             "type": "object",
             "properties": {"page_id": {"type": "string"}, "url": {"type": "string"}},
@@ -161,7 +143,6 @@ SMART_CODEBASE_ALIASES = {
     "smart_codebase_read_file": "repository_read_file",
     "smart_codebase_search": "repository_search",
     "smart_codebase_grep": "repository_grep",
-    "smart_codebase_graph": "repository_graph",
     "smart_codebase_search_skills": "skills_search",
     "smart_codebase_search_confluence": "confluence_search",
     "smart_codebase_get_confluence_page": "confluence_get_page",
@@ -215,7 +196,7 @@ class HandleRepositoryMcpRequest:
     ) -> dict[str, Any] | None:
         server = await self._repo.get_by_token_hash(hash_mcp_token(token))
         if server is None or server.id != server_id or not server.enabled:
-            raise RepositoryMcpAuthError("Token MCP inválido ou servidor desativado.")
+            raise RepositoryMcpAuthError("Token MCP invalido ou servidor desativado.")
         return await self.execute_for_server(server=server, message=message)
 
     async def execute_for_server(
@@ -240,8 +221,8 @@ class HandleRepositoryMcpRequest:
                     "serverInfo": {"name": "SmartCodeBase", "version": "0.1.0"},
                     "instructions": (
                         "Use as tools SmartCodeBase para ler arquivos, buscar texto, executar "
-                        "grep, consultar o grafo, encontrar skills, buscar documentos importados "
-                        "e pesquisar Confluence do repositório autorizado."
+                        "grep, encontrar skills, buscar documentos importados e pesquisar "
+                        "Confluence do repositorio autorizado."
                     ),
                 },
             )
@@ -251,7 +232,7 @@ class HandleRepositoryMcpRequest:
             return _result(request_id, {"tools": TOOLS})
         if method == "tools/call":
             return await self._call_tool(request_id, server, message, telemetry_context)
-        return _error(request_id, -32601, f"Método não suportado: {method}")
+        return _error(request_id, -32601, f"Metodo nao suportado: {method}")
 
     async def _call_tool(
         self,
@@ -262,11 +243,11 @@ class HandleRepositoryMcpRequest:
     ) -> dict[str, Any]:
         params = message.get("params") or {}
         if not isinstance(params, dict):
-            return _error(request_id, -32602, "params inválido.")
+            return _error(request_id, -32602, "params invalido.")
         name = str(params.get("name") or "")
         arguments = params.get("arguments") or {}
         if not isinstance(arguments, dict):
-            return _error(request_id, -32602, "arguments inválido.")
+            return _error(request_id, -32602, "arguments invalido.")
         canonical_name = SMART_CODEBASE_ALIASES.get(name, name)
         if name not in KNOWN_TOOL_NAMES or canonical_name not in KNOWN_TOOL_NAMES:
             if self._telemetry_recorder and telemetry_context:

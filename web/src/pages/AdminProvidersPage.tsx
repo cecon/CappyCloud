@@ -201,6 +201,10 @@ export function AdminProvidersPage() {
         <Group justify="space-between" align="flex-start">
           <Stack gap={4}>
             <Title order={2}>Providers LLM</Title>
+            <Text c="dimmed" size="xs">
+              Sync atualiza o catalogo dinamico usado pelo chat: modelos novos, modelos retirados,
+              capabilities e precos globais.
+            </Text>
             <Text c="dimmed" size="sm">
               Provedores de modelos IA (OpenRouter, Azure AI Foundry, OpenAI...). Providers manuais
               usam a chave cadastrada no runtime do chat.
@@ -230,7 +234,8 @@ export function AdminProvidersPage() {
         {lastResult && (
           <Alert color="green" title="Sync concluído" withCloseButton onClose={() => setLastResult(null)}>
             {lastResult.fetched} modelos do provider — {lastResult.created} criados,{' '}
-            {lastResult.updated} atualizados, {lastResult.deactivated} desativados.
+            {lastResult.updated} atualizados, {lastResult.deactivated} desativados. O seletor do
+            chat passa a refletir apenas modelos ativos e autorizados.
           </Alert>
         )}
 

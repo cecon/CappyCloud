@@ -45,6 +45,9 @@ Thumbs.db
 .claude/worktrees/
 .codex-artifacts/
 outputs/
+tmp/
+temp/
+backups/
 
 # Locally installed Codex UI helper skills; project-owned skills stay versioned.
 .agents/skills/ui-styling/

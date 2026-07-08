@@ -61,6 +61,8 @@ def test_response_rules_treat_grep_as_candidate_not_evidence() -> None:
     assert "não são evidência suficiente" in section
     assert "Não invente nomes de colunas" in section
     assert "Não recomende criar script novo" in section
+    assert "pelo código que consegui" in section
+    assert "ao menos uma evidência citável" in section
     assert "Não adicione prefixos como `src/`" in section
 
 

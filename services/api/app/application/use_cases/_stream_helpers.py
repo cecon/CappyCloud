@@ -9,6 +9,8 @@ if TYPE_CHECKING:
     from app.domain.entities import Conversation
     from app.ports.repositories import MessageRepository, RepositoryRepository
 
+from app.domain.value_objects import validate_permission_mode
+
 
 async def compute_cost(messages: MessageRepository, usage: dict) -> float:
     """Calcula custo USD via lookup no catálogo ``ai_models``.
@@ -106,6 +108,10 @@ def build_pipeline_body(
     cycle_context: dict | None = None,
 ) -> dict:
     """Monta o dict que vai para o pipeline do agente."""
+    try:
+        permission_mode = validate_permission_mode(conv.permission_mode)
+    except ValueError:
+        permission_mode = validate_permission_mode(None)
     body: dict = {
         "user_id": str(user_id),
         "conversation_id": str(conv.id),
@@ -115,6 +121,7 @@ def build_pipeline_body(
         "session_root": conv.session_root or "",
         "sandbox_id": str(conv.sandbox_id) if conv.sandbox_id else "",
         "override_model": override_model,
+        "permission_mode": permission_mode,
     }
     # ``attachments_payload`` viaja como bytes brutos pelo pipeline → gRPC.
     # Não serializável para JSON, por isso fica fora de qualquer log.
@@ -128,7 +135,7 @@ def build_pipeline_body(
 async def inject_diff_comments(conversation_id: uuid.UUID, content: str) -> str:
     """Prefixa o conteúdo com comentários de diff pendentes e marca-os como bundled."""
     try:
-        from sqlalchemy import text
+        from sqlalchemy import bindparam, text
 
         from app.infrastructure.database import async_session_factory
 
@@ -146,9 +153,12 @@ async def inject_diff_comments(conversation_id: uuid.UUID, content: str) -> str:
                 return content
 
             lines = [f"at `{row.file_path}:{row.line}`: {row.content}" for row in comments]
-            ids = ", ".join(f"'{row.id}'" for row in comments)
+            ids = [row.id for row in comments]
             await session.execute(
-                text(f"UPDATE diff_comments SET bundled_at = NOW() WHERE id IN ({ids})")
+                text("UPDATE diff_comments SET bundled_at = NOW() WHERE id IN :ids").bindparams(
+                    bindparam("ids", expanding=True)
+                ),
+                {"ids": ids},
             )
             await session.commit()
             return "\n".join(lines) + "\n\n" + content

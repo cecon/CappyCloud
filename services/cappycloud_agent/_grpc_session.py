@@ -20,6 +20,7 @@ from ._grpc_helpers import (
     GRPC_UNEXPECTED_END,
     PendingAction,
     connect_with_retry,
+    sanitize_permission_mode,
 )
 
 log = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ class GrpcSession:
         provider_base_url: str = "",
         provider_api_key: str = "",
         provider_api_format: str = "",
+        permission_mode: str = "request_permissions",
     ) -> None:
         self._ip = container_ip
         self._port = grpc_port
@@ -71,6 +73,7 @@ class GrpcSession:
         self._provider_base_url = provider_base_url
         self._provider_api_key = provider_api_key
         self._provider_api_format = provider_api_format
+        self._permission_mode = sanitize_permission_mode(permission_mode)
 
         # Client → gRPC server: ChatRequest and UserInput messages
         self._req_queue: asyncio.Queue = asyncio.Queue()
@@ -94,6 +97,7 @@ class GrpcSession:
             provider_base_url=self._provider_base_url,
             provider_api_key=self._provider_api_key,
             provider_api_format=self._provider_api_format,
+            permission_mode=self._permission_mode,
             attachments=_build_attachments_pb(attachments),
         )
 
@@ -124,20 +128,21 @@ class GrpcSession:
 
     async def send_input(self, reply: str) -> None:
         """Reply to the pending ActionRequired event and resume the stream."""
-        if not self.pending_action:
+        pending = self.pending_action
+        if not pending:
             log.warning(
                 "[%s] send_input called but no pending action", self._session_id
             )
             return
+        self.pending_action = None
         await self._req_queue.put(
             openclaude_pb2.ClientMessage(
                 input=openclaude_pb2.UserInput(
                     reply=reply,
-                    prompt_id=self.pending_action.prompt_id,
+                    prompt_id=pending.prompt_id,
                 )
             )
         )
-        self.pending_action = None
 
     async def send_message(
         self,
@@ -177,7 +182,10 @@ class GrpcSession:
                 if event_type == "text":
                     out_q.put(("text", data))
 
-                elif event_type in ("tool_start", "tool_result"):
+                elif event_type in ("status", "tool_start", "tool_result"):
+                    out_q.put((event_type, data))
+
+                elif event_type == "payload_diagnostic":
                     out_q.put((event_type, data))
 
                 elif event_type == "action_required":
@@ -244,6 +252,11 @@ class GrpcSession:
                     out, pending = handlers.action_required_event(msg)
                     self.pending_action = pending
                     await self._out_queue.put(out)
+
+                elif event == "payload_diagnostic":
+                    out = handlers.payload_diagnostic_event(msg)
+                    if out:
+                        await self._out_queue.put(out)
 
                 elif event == "done":
                     received_done = True

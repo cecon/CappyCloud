@@ -240,3 +240,20 @@ class TestExportSandboxMcpConfig:
         result = await ExportSandboxMcpConfig(repo).execute(sandbox_id)
         # args/env vazios não vão pro JSON (mantém limpo):
         assert result["mcpServers"]["minimal"] == {"command": "echo"}
+
+    async def test_serializes_default_github_mcp_wrapper(
+        self, repo: InMemoryMcpRepository, sandbox_id: uuid.UUID
+    ) -> None:
+        await CreateSandboxMcp(repo).execute(
+            sandbox_id=sandbox_id,
+            name="github",
+            command="/usr/local/bin/github-mcp-server-wrapper",
+            args=[],
+            env={},
+        )
+
+        result = await ExportSandboxMcpConfig(repo).execute(sandbox_id)
+
+        assert result["mcpServers"]["github"] == {
+            "command": "/usr/local/bin/github-mcp-server-wrapper"
+        }

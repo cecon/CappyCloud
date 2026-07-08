@@ -1,28 +1,139 @@
 diff --git a/src/proto/openclaude.proto b/src/proto/openclaude.proto
-index 07d39c9..3baaf9f 100644
+index 07d39c9..52e02b6 100644
 --- a/src/proto/openclaude.proto
 +++ b/src/proto/openclaude.proto
-@@ -25,12 +25,23 @@ message ClientMessage {
+@@ -25,17 +25,29 @@ message ClientMessage {
    }
  }
  
 +message Attachment {
-+  string mime_type = 1;            // ex.: "image/png"
-+  bytes  data      = 2;            // raw bytes (NOT base64-encoded)
-+  string original_filename = 3;    // hint for the model + logs
++  string mime_type         = 1; // ex.: "image/png"
++  bytes  data              = 2; // raw bytes (NOT base64-encoded)
++  string original_filename = 3; // hint for the model + logs
 +}
 +
  message ChatRequest {
-   string message = 1;
-   string working_directory = 2; // Where the agent should execute commands
-   reserved 3;                   // Reserved to prevent accidental reuse
-   optional string model = 4;
-   string session_id = 5;        // Non-empty = cross-stream session persistence
-+  reserved 6;                   // Reserved on CappyCloud side for request_id
-+  repeated Attachment attachments = 7; // Vision input (used only when model supports it)
-+  optional string provider_base_url = 8;   // Per-request OpenAI-compatible provider base URL
-+  optional string provider_api_key = 9;    // Per-request provider key (internal gRPC only)
+-  string message = 1;
+-  string working_directory = 2; // Where the agent should execute commands
+-  reserved 3;                   // Reserved to prevent accidental reuse
+-  optional string model = 4;
+-  string session_id = 5;        // Non-empty = cross-stream session persistence
++  string message            = 1;
++  string working_directory  = 2;
++  reserved 3;
++  optional string model     = 4;
++  string session_id         = 5;
++  string request_id         = 6; // Client-generated UUID for distributed tracing
++  repeated Attachment attachments = 7; // Vision input (only used when model supports it)
++  optional string provider_base_url   = 8; // Per-request OpenAI-compatible provider base URL
++  optional string provider_api_key    = 9; // Per-request provider key (internal gRPC only)
 +  optional string provider_api_format = 10; // chat_completions | responses
++  optional string permission_mode     = 11; // request_permissions | accept_edits | plan | auto | bypass_permissions
  }
  
  message UserInput {
+-  string reply = 1;       // Text response (e.g., "y", "no", or clarification)
+-  string prompt_id = 2;   // ID of the prompt we are responding to
++  string reply = 1;     // Text response (e.g., "y", "no", or clarification)
++  string prompt_id = 2; // ID of the prompt we are responding to
+ }
+ 
+ message CancelSignal {
+@@ -46,56 +58,68 @@ message CancelSignal {
+ // MESSAGES FROM SERVER (Output / Events)
+ // ---------------------------------------------------------
+ message ServerMessage {
+-  // Using oneof guarantees that only one type of event arrives at a time
++  string request_id = 7;  // Echoes ChatRequest.request_id for log correlation
+   oneof event {
+-    TextChunk text_chunk = 1;          // Chunk of text from LLM
+-    ToolCallStart tool_start = 2;      // Agent started using a tool
+-    ToolCallResult tool_result = 3;    // Tool returned a result
+-    ActionRequired action_required = 4;// Agent requires human intervention
+-    FinalResponse done = 5;            // Generation successfully completed
+-    ErrorResponse error = 6;           // A critical error occurred
++    TextChunk      text_chunk      = 1;
++    ToolCallStart  tool_start      = 2;
++    ToolCallResult tool_result     = 3;
++    ActionRequired action_required = 4;
++    FinalResponse  done            = 5;
++    ErrorResponse  error           = 6;
++    RequestPayloadDiagnostic payload_diagnostic = 8;
+   }
+ }
+ 
+-// Stream text chunk
+ message TextChunk {
+   string text = 1;
+ }
+ 
+-// Agent decided to use a tool (bash, read_file, etc.)
+ message ToolCallStart {
+-  string tool_name = 1;
+-  string arguments_json = 2; // Arguments in JSON format
+-  string tool_use_id = 3;    // Correlation ID matching ToolCallResult
++  string tool_name       = 1;
++  string arguments_json  = 2; // Arguments in JSON format
++  string tool_use_id     = 3; // Correlation ID matching ToolCallResult
+ }
+ 
+-// Result of tool execution
+ message ToolCallResult {
+-  string tool_name = 1;
+-  string output = 2;      // stdout/stderr or file contents
+-  bool is_error = 3;      // Did the command itself fail
+-  string tool_use_id = 4; // Correlation ID matching ToolCallStart
++  string tool_name   = 1;
++  bytes  output      = 2;
++  bool   is_error    = 3;
++  string tool_use_id = 4;
+ }
+ 
+-// Agent paused work and is waiting for user decision
+ message ActionRequired {
+-  string prompt_id = 1;        // Client must return this ID in UserInput
+-  string question = 2;         // Question text (e.g., "Execute 'rm -rf /'?")
++  string prompt_id = 1;
++  string question  = 2;
+   enum ActionType {
+-    CONFIRM_COMMAND = 0;       // Yes/No
+-    REQUEST_INFORMATION = 1;   // Text input
++    ACTION_TYPE_UNSPECIFIED = 0;
++    CONFIRM_COMMAND         = 1;
++    REQUEST_INFORMATION     = 2;
+   }
+   ActionType type = 3;
++  optional string tool_use_id = 4;
+ }
+ 
+-// Final statistics
+ message FinalResponse {
+-  string full_text = 1;     // The entire generated text
+-  int32 prompt_tokens = 2;
+-  int32 completion_tokens = 3;
++  string full_text = 1; // fallback when provider returns only final result
++  uint32 prompt_tokens     = 2;
++  uint32 completion_tokens = 3;
+ }
+ 
+ message ErrorResponse {
+   string message = 1;
+-  string code = 2;
+-}
+\ No newline at end of file
++  string code    = 2;
++}
++
++message PayloadSizeCategory {
++  string key         = 1;
++  string label       = 2;
++  int64  size_bytes  = 3;
++  double percentage  = 4;
++}
++
++message RequestPayloadDiagnostic {
++  int64 total_size_bytes = 1;
++  repeated PayloadSizeCategory categories = 2;
++  string source       = 3;
++  string generated_at = 4;
++}
