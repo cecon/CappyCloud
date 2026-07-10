@@ -1,4 +1,10 @@
-import { Alert, Modal } from '@mantine/core'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import type { Repository } from '../api'
 import { DocumentsPanel } from './DocumentsPanel'
 
@@ -11,24 +17,30 @@ type Props = {
 
 export function RepositoryDocumentsModal({ opened, repository, token, onClose }: Props) {
   return (
-    <Modal
-      opened={opened}
-      onClose={onClose}
-      title={repository ? `Documentos de ${repository.name}` : 'Documentos do repositório'}
-      centered
-      size="xl"
-    >
-      {repository && token ? (
-        <DocumentsPanel
-          token={token}
-          repositoryId={repository.id}
-          repositoryName={repository.name}
-        />
-      ) : (
-        <Alert color="red" title="Sessão expirada">
-          Faça login novamente para importar documentos.
-        </Alert>
-      )}
-    </Modal>
+    <Dialog open={opened} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent className="max-h-[88vh] max-w-[min(1120px,calc(100vw-2rem))] overflow-y-auto p-0">
+        <DialogHeader className="border-b border-border px-6 py-5">
+          <DialogTitle>
+            {repository ? `Documentos de ${repository.name}` : 'Documentos do repositório'}
+          </DialogTitle>
+          <DialogDescription>
+            Importação, reindexação, RAG e graph dos documentos carregados no repositório.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="px-6 pb-6">
+          {repository && token ? (
+            <DocumentsPanel
+              token={token}
+              repositoryId={repository.id}
+              repositoryName={repository.name}
+            />
+          ) : (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+              Faça login novamente para importar documentos.
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

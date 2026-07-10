@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import {
   createRepoDocument,
   deleteRepoDocument,
+  fetchDocumentGraphSummary,
   fetchRepoDocuments,
   reindexRepoDocument,
   uploadRepoDocument,
+  type DocumentGraphSummary,
   type RepoDocument,
 } from '../api'
 import styles from './DocumentsPanel.module.css'
@@ -56,6 +58,7 @@ export function DocumentsPanel({ token, repositoryId, repositoryName }: Props) {
   const [fileTitle, setFileTitle] = useState('')
 
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [graphSummary, setGraphSummary] = useState<DocumentGraphSummary | null>(null)
 
   useEffect(() => {
     void load()
@@ -133,13 +136,25 @@ export function DocumentsPanel({ token, repositoryId, repositoryName }: Props) {
   }
 
   async function handleDelete(doc: RepoDocument) {
-    if (!confirm(`Remover "${doc.title}"? Os chunks indexados também serão apagados.`)) return
+    if (!confirm(`Remover "${doc.title}"?? Os chunks indexados também serão apagados.`)) return
     setBusyId(doc.id)
     try {
       await deleteRepoDocument(token, doc.id)
       setDocs((prev) => prev.filter((d) => d.id !== doc.id))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao remover')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function handleTestGraph(doc: RepoDocument) {
+    setBusyId(doc.id)
+    setError(null)
+    try {
+      setGraphSummary(await fetchDocumentGraphSummary(token, doc.id))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao testar graph')
     } finally {
       setBusyId(null)
     }
@@ -173,6 +188,7 @@ export function DocumentsPanel({ token, repositoryId, repositoryName }: Props) {
               <th>Tipo</th>
               <th>Versão</th>
               <th>Chunks</th>
+              <th>Graph</th>
               <th>Status</th>
               <th>Indexado em</th>
               <th></th>
@@ -192,6 +208,20 @@ export function DocumentsPanel({ token, repositoryId, repositoryName }: Props) {
                 <td>{SOURCE_LABELS[d.source_type] ?? d.source_type}</td>
                 <td>v{d.version}</td>
                 <td>{d.chunks_count}</td>
+                <td>
+                  <span
+                    className={`${styles.graphBadge} ${
+                      d.graph_nodes_count > 0 ? styles.graphReady : styles.graphEmpty
+                    }`}
+                    title={
+                      d.graph_nodes_count > 0
+                        ? `${d.graph_nodes_count} nos e ${d.graph_edges_count} relacoes mapeadas`
+                        : 'Documento sem graph mapeado'
+                    }
+                  >
+                    {d.graph_nodes_count > 0 ? `${d.graph_nodes_count} nos` : 'sem graph'}
+                  </span>
+                </td>
                 <td>
                   <span
                     className={`${styles.statusBadge} ${
@@ -215,6 +245,16 @@ export function DocumentsPanel({ token, repositoryId, repositoryName }: Props) {
                       </span>
                     </button>
                   )}
+                  {d.graph_nodes_count > 0 && (
+                    <button
+                      className={styles.iconBtn}
+                      onClick={() => handleTestGraph(d)}
+                      disabled={busyId === d.id}
+                      title="Testar graph"
+                    >
+                      <span className={styles.icon}>hub</span>
+                    </button>
+                  )}
                   <button
                     className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
                     onClick={() => handleDelete(d)}
@@ -228,6 +268,18 @@ export function DocumentsPanel({ token, repositoryId, repositoryName }: Props) {
             ))}
           </tbody>
         </table>
+      )}
+
+      {graphSummary && (
+        <div className={styles.graphSummary}>
+          <strong>Graph validado</strong>
+          <span>
+            {graphSummary.graph_nodes_count} nos, {graphSummary.graph_edges_count} relacoes.
+          </span>
+          {graphSummary.sample_tables.length > 0 && (
+            <span>Tabelas: {graphSummary.sample_tables.join(', ')}</span>
+          )}
+        </div>
       )}
 
       {/* ── Form ──────────────────────────────────────────────── */}

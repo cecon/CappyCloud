@@ -188,8 +188,10 @@ from app.schemas_conversations import (  # noqa: E402, F401
     RepoSelection,
     SendMessageBody,
 )
+from app.schemas_document_graph import DocumentGraphSearchResult  # noqa: E402, F401
 from app.schemas_documents import (  # noqa: E402, F401
     DocumentCreate,
+    DocumentGraphSummary,
     DocumentOut,
 )
 from app.schemas_mcp import McpServerCreate, McpServerOut, McpServerUpdate  # noqa: E402, F401

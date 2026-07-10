@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Alert, Loader, Text } from '@mantine/core'
+﻿import { useEffect, useState } from 'react'
+import { Alert, Loader, Text } from '@/components/ui/legacy'
 import type { EnvStatus } from '../api'
 
 interface Props {
@@ -40,7 +40,7 @@ export function EnvStatusBanner({ status }: Props) {
       color={isReady ? 'teal' : 'orange'}
       style={{
         borderRadius: 0,
-        borderBottom: '1px solid var(--mantine-color-dark-5)',
+        borderBottom: '1px solid var(--border)',
         padding: '8px 16px',
       }}
     >

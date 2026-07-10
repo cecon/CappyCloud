@@ -12,9 +12,9 @@
 
 ### Session 2026-06-19
 
-- Q: Como o CappyCloud deve tratar o cache e a persistencia de sessao novos do OpenClaude? → A: Desabilitar ou restringir para uso interno de execucao; UI e historico sempre vem do CappyCloud.
-- Q: Como o CappyCloud deve tratar fallback automatico por rate limit? → A: Permitir fallback automatico somente para modelos autorizados no catalogo do CappyCloud, com indicacao sanitizada do modelo final usado.
-- Q: Como `MCP_SKILLS` e `skill://` devem entrar nesta atualizacao? → A: Permitir `skill://` apenas como fonte visivel/auditavel, sem substituir skills de repo nem ativar sem cadastro/autorizacao do CappyCloud.
+- Q: Como o CappyCloud deve tratar o cache e a persistencia de sessao novos do OpenClaude?→ A: Desabilitar ou restringir para uso interno de execucao; UI e historico sempre vem do CappyCloud.
+- Q: Como o CappyCloud deve tratar fallback automatico por rate limit?→ A: Permitir fallback automatico somente para modelos autorizados no catalogo do CappyCloud, com indicacao sanitizada do modelo final usado.
+- Q: Como `MCP_SKILLS` e `skill://` devem entrar nesta atualizacao?→ A: Permitir `skill://` apenas como fonte visivel/auditavel, sem substituir skills de repo nem ativar sem cadastro/autorizacao do CappyCloud.
 
 ## User Scenarios & Testing *(mandatory)*
 

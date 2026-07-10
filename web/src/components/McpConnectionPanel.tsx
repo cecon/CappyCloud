@@ -1,4 +1,4 @@
-import { Alert, Paper, Stack, Text, TextInput } from '@mantine/core'
+﻿import { Alert, Paper, Stack, Text, TextInput } from '@/components/ui/legacy'
 import { IconAlertTriangle } from '@tabler/icons-react'
 import styles from '../pages/mcp-server.module.css'
 

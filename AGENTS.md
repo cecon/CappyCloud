@@ -90,5 +90,5 @@ Nao inclua artefatos temporarios, backups locais, dumps de webview ou arquivos
 grandes que nao sejam parte intencional do produto.
 
 <!-- SPECKIT START -->
-Current Spec Kit plan: [specs/006-persistent-user-workspaces/plan.md](specs/006-persistent-user-workspaces/plan.md)
+Current Spec Kit plan: [specs/007-chat-centered-ui-theme/plan.md](specs/007-chat-centered-ui-theme/plan.md)
 <!-- SPECKIT END -->

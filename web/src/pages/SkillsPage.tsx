@@ -134,7 +134,7 @@ export function SkillsPage() {
   }
 
   async function handleDeleteSkill(id: string) {
-    if (!confirm('Remover esta skill?')) return
+    if (!confirm('Remover esta skill?? ')) return
     try {
       await deleteSkill(token, id)
       setAllSkills((prev) => prev.filter((s) => s.id !== id))

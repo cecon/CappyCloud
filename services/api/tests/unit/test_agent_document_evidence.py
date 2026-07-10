@@ -107,7 +107,7 @@ async def test_evidence_prefetch_searches_imported_repository_documents() -> Non
 
     assert attempts == []
     assert docs[0].source == "repository_document"
-    assert "/skills/search" in calls[0][0]
+    assert "/document-graph/search" in calls[0][0]
     assert ("repo_id", "e41b15fa-5da8-4930-b741-ad3d2d859b45") in calls[0][1]
 
 

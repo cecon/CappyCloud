@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react'
+﻿import type { ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
-import { Center, Loader, Stack, Text } from '@mantine/core'
+import { Center, Loader, Stack, Text } from '@/components/ui/legacy'
 import { useCurrentUser } from '../hooks/useCurrentUser'
 
 type Props = {

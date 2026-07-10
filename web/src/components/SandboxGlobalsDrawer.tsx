@@ -1,4 +1,4 @@
-import { Drawer, Stack, Tabs, Text, Title } from '@mantine/core'
+﻿import { Drawer, Stack, Tabs, Text, Title } from '@/components/ui/legacy'
 import type { Sandbox } from '../api'
 import { SandboxAgentsPanel } from './sandbox-globals/SandboxAgentsPanel'
 import { SandboxMcpsPanel } from './sandbox-globals/SandboxMcpsPanel'

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import {
   Alert,
   Badge,
@@ -11,7 +11,7 @@ import {
   Tabs,
   Text,
   Title,
-} from '@mantine/core'
+} from '@/components/ui/legacy'
 import {
   type AdminUser,
   type AiModel,

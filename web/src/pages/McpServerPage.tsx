@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Button,
@@ -10,7 +10,7 @@ import {
   Stack,
   Text,
   Title,
-} from '@mantine/core'
+} from '@/components/ui/legacy'
 import {
   IconPlus,
   IconServer2,
@@ -173,7 +173,7 @@ export function McpServerPage() {
   async function rotateToken(server: UserMcpServer) {
     const token = getToken()
     if (!token) return
-    if (!window.confirm('Rotacionar o token deste MCP server? O token anterior deixará de funcionar.')) {
+    if (!window.confirm('Rotacionar o token deste MCP server?? O token anterior deixará de funcionar.')) {
       return
     }
     setBusyId(server.id)
@@ -192,7 +192,7 @@ export function McpServerPage() {
   async function remove(server: UserMcpServer) {
     const token = getToken()
     if (!token) return
-    if (!window.confirm('Remover este MCP server?')) return
+    if (!window.confirm('Remover este MCP server?? ')) return
     setBusyId(server.id)
     setActionError(null)
     try {

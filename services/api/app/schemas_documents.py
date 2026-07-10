@@ -44,8 +44,17 @@ class DocumentOut(BaseModel):
     status: str
     error_message: str | None = None
     chunks_count: int
+    graph_nodes_count: int = 0
+    graph_edges_count: int = 0
     created_at: datetime
     updated_at: datetime
     indexed_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class DocumentGraphSummary(BaseModel):
+    document_id: uuid.UUID
+    graph_nodes_count: int
+    graph_edges_count: int
+    sample_tables: list[str]

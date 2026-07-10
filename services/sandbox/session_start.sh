@@ -142,9 +142,15 @@ _auth_url() {
     fi
     if [ -n "${DEVOPS_TOKEN}" ]; then
         url=$(echo "$url" | sed \
+            "s|https://[^/@]*@dev.azure.com|https://pat:${DEVOPS_TOKEN}@dev.azure.com|" | sed \
             "s|https://dev.azure.com|https://pat:${DEVOPS_TOKEN}@dev.azure.com|")
     fi
     echo "$url"
+}
+
+_mask_url() {
+    local url="$1"
+    echo "$url" | sed -E 's#https://([^/@]+):([^/@]+)@#https://***:***@#'
 }
 
 # ── Helper: busca a branch base com a URL autenticada da sessão ─
@@ -265,7 +271,7 @@ else
     fi
 
     if [ -n "$RESOLVED_URL" ]; then
-        echo "[session_start] Clonando ${ENV_SLUG} de ${RESOLVED_URL}…"
+        echo "[session_start] Clonando ${ENV_SLUG} de $(_mask_url "$RESOLVED_URL")…"
         AUTH_URL=$(_auth_url "$RESOLVED_URL")
         CLONE_BRANCH="${BASE_BRANCH:-}"
         mkdir -p "$MAIN_REPO"

@@ -87,7 +87,7 @@ def _safe_non_negative_int(value: object) -> int:
         if isinstance(value, str):
             return max(0, int(value))
         return 0
-    except TypeError, ValueError, OverflowError:
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 

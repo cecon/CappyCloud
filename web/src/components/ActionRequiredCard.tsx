@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Button, Group, Stack, Text, TextInput } from '@mantine/core'
+﻿import { useState } from 'react'
+import { Button, Group, Stack, Text, TextInput } from '@/components/ui/legacy'
 import type { ActionRequiredEvent } from '../api'
 import styles from './chat.module.css'
 
@@ -25,10 +25,10 @@ export function ActionRequiredCard({ action, onReply }: Props) {
     <div
       className={styles.actionCard}
       style={{
-        border: '1px solid var(--mantine-color-yellow-7)',
+        border: '1px solid var(--warning)',
         borderRadius: 12,
         padding: '16px',
-        background: 'var(--mantine-color-dark-7)',
+        background: 'var(--card)',
         maxWidth: '92%',
         opacity: replied ? 0.5 : 1,
         transition: 'opacity 0.3s ease',
@@ -37,7 +37,7 @@ export function ActionRequiredCard({ action, onReply }: Props) {
       {/* Header */}
       <Group gap="xs" mb="sm" align="center">
         <Text size="lg" lh={1}>
-          ⚠️
+          !
         </Text>
         <Text size="sm" fw={600} c="yellow">
           {isConfirm ? 'Confirmação necessária' : 'Informação necessária'}
@@ -52,8 +52,8 @@ export function ActionRequiredCard({ action, onReply }: Props) {
           whiteSpace: 'pre-wrap',
           lineHeight: 1.6,
           padding: '8px 12px',
-          borderLeft: '2px solid var(--mantine-color-yellow-7)',
-          background: 'var(--mantine-color-dark-8)',
+          borderLeft: '2px solid var(--warning)',
+          background: 'var(--background)',
           borderRadius: '0 6px 6px 0',
         }}
       >

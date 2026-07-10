@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+﻿import { useCallback, useEffect, useState } from 'react'
 import {
   ActionIcon,
   Alert,
@@ -16,7 +16,7 @@ import {
   Text,
   TextInput,
   Title,
-} from '@mantine/core'
+} from '@/components/ui/legacy'
 import {
   IconCopy,
   IconDotsVertical,
@@ -186,7 +186,7 @@ export function AdminSandboxesPage() {
   }
 
   async function handleDelete(sb: Sandbox) {
-    if (!window.confirm(`Apagar sandbox "${sb.name}"? Esta ação não pode ser desfeita.`)) {
+    if (!window.confirm(`Apagar sandbox "${sb.name}"?? Esta ação não pode ser desfeita.`)) {
       return
     }
     const token = getToken()

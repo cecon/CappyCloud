@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+﻿import React, { useState } from 'react'
 import {
   Button,
   Container,
@@ -8,7 +8,7 @@ import {
   Text,
   TextInput,
   Title,
-} from '@mantine/core'
+} from '@/components/ui/legacy'
 import { errorToUserMessage, loginRequest, setToken } from '../api'
 import { isPlausibleEmail } from '../validation'
 

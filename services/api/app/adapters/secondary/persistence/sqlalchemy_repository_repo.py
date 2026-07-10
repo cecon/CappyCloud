@@ -9,14 +9,15 @@ completo da tabela ``repositories`` continua a viver no router admin
 from __future__ import annotations
 
 import uuid
+from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities import Repository as RepositoryEntity
 from app.infrastructure.encryption import get_encryptor
-from app.infrastructure.orm_models_platform import GitProvider as GitProviderORM
-from app.infrastructure.orm_models_platform import Repository as RepositoryORM
+from app.infrastructure.orm_models import GitProvider as GitProviderORM
+from app.infrastructure.orm_models import Repository as RepositoryORM
 from app.ports.repositories import RepositoryRepository
 
 
@@ -27,6 +28,12 @@ def _inject_token_in_url(url: str, token: str, provider_type: str) -> str:
     if provider_type == "github" and "github.com" in url:
         return url.replace("https://github.com", f"https://x-token:{token}@github.com", 1)
     if provider_type == "azure_devops" and "dev.azure.com" in url:
+        parsed = urlsplit(url)
+        if parsed.scheme == "https" and parsed.hostname == "dev.azure.com":
+            netloc = f"pat:{token}@dev.azure.com"
+            if parsed.port:
+                netloc = f"{netloc}:{parsed.port}"
+            return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
         return url.replace("https://dev.azure.com", f"https://pat:{token}@dev.azure.com", 1)
     if provider_type == "gitlab" and "gitlab.com" in url:
         return url.replace("https://gitlab.com", f"https://oauth2:{token}@gitlab.com", 1)

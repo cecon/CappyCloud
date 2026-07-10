@@ -1,4 +1,4 @@
-.loading {
+﻿.loading {
   min-height: 220px;
   display: grid;
   place-items: center;
@@ -99,7 +99,7 @@
     max-width: 58vw;
   }
 
-  .endpointBox :global(.mantine-Group-root) {
+  .endpointBox :global(.legacy-ui) {
     align-items: stretch;
     flex-direction: column;
   }
@@ -108,4 +108,34 @@
   .tokenRevealCode {
     width: 100%;
   }
+}
+
+/* Theme lock: align legacy MCP surface with tmp/Cappy palette. */
+.emptyState,
+.serverCard,
+.connectionPanel,
+.endpointBox,
+.tokenRevealBox,
+.endpointCode,
+.tokenRevealCode {
+  border-color: var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: none;
+}
+
+.emptyState,
+.serverCard,
+.connectionPanel {
+  border-radius: 8px;
+}
+
+.cardTitle h3 {
+  color: var(--foreground);
+}
+
+.endpointCode,
+.tokenRevealCode {
+  background: #14100a;
+  color: var(--foreground);
 }

@@ -67,7 +67,7 @@ function normalize(models: AiModel[]): NormalizedRow[] {
 }
 
 function fmtCost(value: number | null | undefined): string {
-  if (value == null) return '?'
+  if (value == null) return '?? '
   if (value === 0) return 'free'
   if (value < 0.01) return `$${value.toFixed(4)}`
   return `$${value.toFixed(2)}`
@@ -112,12 +112,15 @@ export function ModelPicker({
     () => rows.find((r) => r.model.model_id === value) ?? null,
     [rows, value],
   )
+  const searchable = !compact || rows.length > 8
 
   const reposition = useCallback(() => {
     const trigger = triggerRef.current
     if (!trigger) return
     const rect = trigger.getBoundingClientRect()
-    const popoverWidth = Math.min(440, Math.max(rect.width, 320))
+    const popoverWidth = compact
+      ? Math.min(240, Math.max(rect.width, 220))
+      : Math.min(440, Math.max(rect.width, 320))
     const left = Math.min(
       Math.max(8, rect.left),
       window.innerWidth - popoverWidth - 8,
@@ -134,7 +137,7 @@ export function ModelPicker({
       width: popoverWidth,
       maxHeight: popoverMaxHeight,
     })
-  }, [])
+  }, [compact])
 
   /** Abre o popover e reseta filtro/seleção numa só transição.
    *  Mantém os resets fora de useEffect (regra react-hooks/set-state-in-effect). */
@@ -243,9 +246,7 @@ export function ModelPicker({
         aria-label={`Modelo IA seleccionado: ${triggerLabel}. Clica para mudar.`}
         title={selected ? selected.model.model_id : placeholder}
       >
-        <span className={styles.triggerIcon} aria-hidden="true">
-          smart_toy
-        </span>
+        <span className={styles.triggerIcon} aria-hidden="true" />
         <span className={styles.triggerText}>
           {triggerProvider && (
             <span className={styles.triggerProvider}>{triggerProvider}</span>
@@ -260,34 +261,38 @@ export function ModelPicker({
       {open && (
         <div
           ref={popoverRef}
-          className={styles.popover}
+          className={`${styles.popover} ${compact ? styles.popoverCompact : ''}`}
           style={popoverStyle}
           role="dialog"
           aria-label="Selecionar modelo IA"
         >
-          <div className={styles.searchBar}>
-            <span className={styles.searchIcon} aria-hidden="true">
-              search
-            </span>
-            <input
-              ref={inputRef}
-              className={styles.searchInput}
-              placeholder="Procurar modelo, fabricante…"
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value)
-                setActiveIndex(0)
-              }}
-              onKeyDown={handleInputKey}
-              role="combobox"
-              aria-expanded
-              aria-controls="model-picker-list"
-              aria-autocomplete="list"
-            />
-            <span className={styles.searchCount}>
-              {filtered.length}/{rows.length}
-            </span>
-          </div>
+          {searchable ? (
+            <div className={styles.searchBar}>
+              <span className={styles.searchIcon} aria-hidden="true">
+                search
+              </span>
+              <input
+                ref={inputRef}
+                className={styles.searchInput}
+                placeholder="Procurar modelo, fabricante..."
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                  setActiveIndex(0)
+                }}
+                onKeyDown={handleInputKey}
+                role="combobox"
+                aria-expanded
+                aria-controls="model-picker-list"
+                aria-autocomplete="list"
+              />
+              <span className={styles.searchCount}>
+                {filtered.length}/{rows.length}
+              </span>
+            </div>
+          ) : (
+            <div className={styles.compactLabel}>Modelo</div>
+          )}
 
           <div
             ref={listRef}

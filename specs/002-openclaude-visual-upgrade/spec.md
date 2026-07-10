@@ -12,9 +12,9 @@
 
 ### Session 2026-06-17
 
-- Q: O breakdown de tamanho do payload deve aparecer apenas durante o stream ou ficar disponivel no historico do turno? -> A: Mostrar e persistir no turno do chat, disponivel tambem ao recarregar a conversa.
-- Q: Como o breakdown deve aparecer visualmente no turno do chat? -> A: Resumo compacto sempre visivel quando houver diagnostico, com detalhes recolhidos e expansiveis.
-- Q: Quais informacoes devem aparecer no resumo compacto do breakdown? -> A: Total e tres maiores categorias; expansao mostra todas as categorias seguras disponiveis.
+- Q: O breakdown de tamanho do payload deve aparecer apenas durante o stream ou ficar disponivel no historico do turno?-> A: Mostrar e persistir no turno do chat, disponivel tambem ao recarregar a conversa.
+- Q: Como o breakdown deve aparecer visualmente no turno do chat?-> A: Resumo compacto sempre visivel quando houver diagnostico, com detalhes recolhidos e expansiveis.
+- Q: Quais informacoes devem aparecer no resumo compacto do breakdown?-> A: Total e tres maiores categorias; expansao mostra todas as categorias seguras disponiveis.
 
 ## User Scenarios & Testing *(mandatory)*
 

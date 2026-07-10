@@ -17,10 +17,10 @@ import styles from '../pages/settings.module.css'
 const PAGE_SIZE = 25
 
 /**
- * Formata um custo USD por 1M tokens. Retorna "free", "?" ou "$0.15".
+ * Formata um custo USD por 1M tokens. Retorna "free", "?? " ou "$0.15".
  */
 function fmtCost(value: number | null): string {
-  if (value == null) return '?'
+  if (value == null) return '?? '
   if (value === 0) return 'free'
   if (value < 0.01) return `$${value.toFixed(4)}`
   return `$${value.toFixed(2)}`

@@ -1,12 +1,12 @@
-import { Fragment, type Dispatch, type SetStateAction, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+﻿import { Fragment, type Dispatch, type SetStateAction, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Burger,
   ScrollArea,
   Stack,
   Text,
-} from '@mantine/core'
-import { useDisclosure } from '@mantine/hooks'
+} from '@/components/ui/legacy'
+import { useDisclosure } from '@/components/ui/legacy'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -21,6 +21,7 @@ import {
   fetchConversations,
   fetchConversationUsage,
   fetchMessages,
+  fetchSandboxes,
   fetchUserPreferences,
   fetchWorkspaces,
   DEFAULT_PERMISSION_MODE,
@@ -34,21 +35,40 @@ import {
   type AiModel,
   type ChatMessage,
   type Conversation,
-  type ConversationDiff,
   type ConversationUsage,
+  type CurrentUser,
   type DoneEvent,
   type PayloadSizeBreakdown,
   type PermissionMode,
+  type Sandbox,
   type StatusEvent,
   type Workspace,
 } from '../api'
 import { ActionRequiredCard } from '../components/ActionRequiredCard'
 import { AttachmentTray, type TrayItem } from '../components/AttachmentTray'
-import { DiffViewer } from '../components/DiffViewer'
-import { FileExplorer } from '../components/FileExplorer'
 import { ModelPicker } from '../components/ModelPicker'
 import { ThinkingIndicator } from '../components/ThinkingIndicator'
 import { ThinkingStream, type ThoughtStep } from '../components/ThinkingStream'
+import { CappyIcon } from '../components/layout/icons'
+import { roleFromUser, visibleNavigationItems, type NavigationItem } from '../components/layout/navigation'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select'
+import { useCurrentUser } from '../hooks/useCurrentUser'
 import styles from '../components/chat.module.css'
 
 const ALLOWED_ATTACHMENT_MIME = new Set([
@@ -91,19 +111,52 @@ const STICKY_SCROLL_THRESHOLD_PX = 96
 const CHAT_PREFS_KEY = 'cappycloud.chat.preferences.v1'
 const CHAT_CONVERSATIONS_COLLAPSED_KEY = 'cappycloud.chat.conversationsCollapsed'
 const CONVERSATION_PAGE_SIZE = 6
+type ChatMainMode = 'chat' | 'sandboxes'
 
 type PermissionModeOption = {
   value: PermissionMode
   label: string
   icon: string
+  description: string
+  tone?: 'safe' | 'warn' | 'danger'
 }
 
 const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
-  { value: 'request_permissions', label: 'Solicitar permissões', icon: 'lock' },
-  { value: 'accept_edits', label: 'Aceitar edições', icon: 'edit_note' },
-  { value: 'plan', label: 'Modo de planejamento', icon: 'rule' },
-  { value: 'auto', label: 'Modo automático', icon: 'bolt' },
-  { value: 'bypass_permissions', label: 'Ignorar permissões', icon: 'warning' },
+  {
+    value: 'request_permissions',
+    label: 'Perguntar antes de agir',
+    icon: 'shield',
+    description: 'O agente pede confirmação para alterar algo',
+    tone: 'safe',
+  },
+  {
+    value: 'accept_edits',
+    label: 'Aceitar edições',
+    icon: 'edit_note',
+    description: 'Alterações propostas podem ser aplicadas',
+    tone: 'warn',
+  },
+  {
+    value: 'plan',
+    label: 'Modo de planejamento',
+    icon: 'rule',
+    description: 'Responde e planeja sem executar mudanças',
+    tone: 'safe',
+  },
+  {
+    value: 'auto',
+    label: 'Modo automático',
+    icon: 'bolt',
+    description: 'Executa sem pedir, use com cuidado',
+    tone: 'warn',
+  },
+  {
+    value: 'bypass_permissions',
+    label: 'Ignorar permissões',
+    icon: 'warning',
+    description: 'Permite ações amplas durante a execução',
+    tone: 'danger',
+  },
 ]
 
 const PERMISSION_MODE_VALUES = new Set<PermissionMode>(
@@ -125,24 +178,6 @@ function fallbackReasonLabel(reason?: string): string {
   return normalized || 'runtime model changed'
 }
 
-function permissionModeWarning(mode: PermissionMode, runtimeConfirmed: boolean) {
-  if (mode === 'accept_edits') {
-    return {
-      severity: 'caution' as const,
-      icon: 'edit_note',
-      text: runtimeConfirmed ? 'Edições autoaprovadas · runtime confirmado' : 'Edições autoaprovadas',
-    }
-  }
-  if (mode === 'auto' || mode === 'bypass_permissions') {
-    return {
-      severity: 'high' as const,
-      icon: 'warning',
-      text: runtimeConfirmed ? 'Permissões permissivas · runtime confirmado' : 'Permissões permissivas',
-    }
-  }
-  return null
-}
-
 type RepoChatPreference = {
   branch?: string
   modelId?: string
@@ -152,6 +187,91 @@ type ChatPreferenceState = {
   lastRepoSlug?: string
   lastModelId?: string
   byRepo?: Record<string, RepoChatPreference>
+}
+
+function userInitials(email?: string | null): string {
+  if (!email) return 'CC'
+  const [name] = email.split('@')
+  const parts = name.split(/[._-]+/).filter(Boolean)
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+  return name.slice(0, 2).toUpperCase()
+}
+
+function userRoleLabel(user: { role?: string; is_super_admin?: boolean } | null): string {
+  if (!user) return 'Conta'
+  if (user.is_super_admin) return 'Super admin'
+  if (user.role === 'admin') return 'Administrador'
+  return 'Usuário'
+}
+
+function SidebarUserMenuLink({ item }: { item: NavigationItem }) {
+  return (
+    <DropdownMenuItem asChild>
+      <Link to={item.to}>
+        <CappyIcon name={item.icon} className="size-4" />
+        <span>{item.label}</span>
+      </Link>
+    </DropdownMenuItem>
+  )
+}
+
+function SidebarUserMenu({ user }: { user: CurrentUser | null }) {
+  const role = roleFromUser(user)
+  const primary = visibleNavigationItems(role, 'primary')
+  const work = visibleNavigationItems(role, 'work')
+  const admin = visibleNavigationItems(role, 'admin')
+  const account = visibleNavigationItems(role, 'account')
+
+  function logout() {
+    setToken(null)
+    window.location.href = '/login'
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" className={styles.sidebarUserCard} aria-label="Abrir menu do usuário">
+          <span className={styles.sidebarUserAvatar}>
+            {userInitials(user?.email)}
+          </span>
+          <span className={styles.sidebarUserMeta}>
+            <span className={styles.sidebarUserName}>
+              {user?.email ?? 'CappyCloud'}
+            </span>
+            <span className={styles.sidebarUserRole}>
+              {userRoleLabel(user)}
+            </span>
+          </span>
+          <span className={`${styles.icon} ${styles.sidebarUserChevron}`}>expand_more</span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" side="right" sideOffset={10} className="w-72">
+        <DropdownMenuLabel>
+          <span className="block truncate text-sm text-foreground">{user?.email ?? 'Conta'}</span>
+          <span className="block text-xs font-normal text-muted-foreground">{userRoleLabel(user)}</span>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {primary.map((item) => <SidebarUserMenuLink key={item.to} item={item} />)}
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Trabalho</DropdownMenuLabel>
+        {work.map((item) => <SidebarUserMenuLink key={item.to} item={item} />)}
+        {admin.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Administracao</DropdownMenuLabel>
+            {admin.map((item) => <SidebarUserMenuLink key={item.to} item={item} />)}
+          </>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Conta</DropdownMenuLabel>
+        {account.map((item) => <SidebarUserMenuLink key={item.to} item={item} />)}
+        <DropdownMenuItem onClick={logout}>
+          <CappyIcon name="logout" className="size-4" />
+          Sair
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 function fileExtension(name: string): string {
@@ -393,6 +513,30 @@ const markdownComponents: Components = {
       </div>
     )
   },
+  pre({ children }) {
+    return <>{children}</>
+  },
+  code({ className, children, ...props }) {
+    const rawCode = String(children ?? '').replace(/\n$/, '')
+    const match = /language-(\w+)/.exec(className ?? '')
+    const language = match?.[1]
+    const hasBlockBreak = rawCode.includes('\n')
+
+    if (!hasBlockBreak && !language) {
+      return (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      )
+    }
+
+    return (
+      <CodeBlockCard
+        code={rawCode}
+        language={language ?? 'text'}
+      />
+    )
+  },
 }
 
 /** Devolve os rótulos corretos para sessão nova ou retomada. */
@@ -522,10 +666,13 @@ function updateActivityTrace(
  */
 export function ChatPage() {
   const token = getToken()!
+  const currentUserState = useCurrentUser()
+  const currentUser = currentUserState.status === 'ready' ? currentUserState.user : null
   const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure()
 
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [mainMode, setMainMode] = useState<ChatMainMode>('chat')
   const [conversationSearch, setConversationSearch] = useState('')
   const [visibleConversationCount, setVisibleConversationCount] = useState(CONVERSATION_PAGE_SIZE)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -540,6 +687,7 @@ export function ChatPage() {
   const [permissionWarningRuntimeConfirmed, setPermissionWarningRuntimeConfirmed] = useState(false)
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [sandboxes, setSandboxes] = useState<Sandbox[]>([])
   const [selectedSlug, setSelectedSlug] = useState<string>('')
   const [selectedBranch, setSelectedBranch] = useState<string>('')
   const [models, setModels] = useState<AiModel[]>([])
@@ -561,16 +709,7 @@ export function ChatPage() {
   const [sessionProgress, setSessionProgress] = useState<SessionStageState[]>([])
   const [sessionProgressAnchor, setSessionProgressAnchor] = useState<SessionProgressAnchor | null>(null)
   const [activityTraces, setActivityTraces] = useState<Record<string, ActivityTrace>>({})
-  const [conversationsCollapsed, setConversationsCollapsed] = useState(() => {
-    try {
-      return window.localStorage.getItem(CHAT_CONVERSATIONS_COLLAPSED_KEY) === 'true'
-    } catch {
-      return false
-    }
-  })
-  const conversationsToggleIcon = conversationsCollapsed
-    ? 'keyboard_double_arrow_right'
-    : 'keyboard_double_arrow_left'
+  const [conversationsCollapsed, setConversationsCollapsed] = useState(false)
 
   const setPermissionMode = useCallback(
     (mode: PermissionMode) => {
@@ -755,8 +894,7 @@ export function ChatPage() {
     [trayItems, activeId, token],
   )
 
-  /** Limpa a tray sem chamar DELETE — usado após envio bem-sucedido (anexos
-   *  ficam vinculados à conversa e sobrevivem como histórico no banco). */
+  /** Limpa a tray sem chamar DELETE; anexos ficam vinculados ao historico. */
   const clearTrayLocal = useCallback(() => setTrayItems([]), [])
 
   /** Handler para input file e drag&drop. */
@@ -790,10 +928,6 @@ export function ChatPage() {
     [uploadFiles],
   )
 
-  const [sidePanel, setSidePanel] = useState<'none' | 'diff' | 'files'>('none')
-  const [diff, setDiff] = useState<ConversationDiff | null>(null)
-  const [diffLoading, setDiffLoading] = useState(false)
-
   const [diffStats, setDiffStats] = useState<{ added: number; removed: number } | null>(null)
   const [prLoading, setPrLoading] = useState(false)
   const [prUrl, setPrUrl] = useState<string | null>(null)
@@ -805,7 +939,7 @@ export function ChatPage() {
   const optimisticConversationIdRef = useRef<string | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const chatPrefsRef = useRef<ChatPreferenceState>(readChatPrefs())
-  /** Comprimento do `accumulated` text já aplicado à timeline thoughtSteps. */
+  /** Comprimento do `accumulated` text ja aplicado na timeline thoughtSteps. */
   const lastTextOffsetRef = useRef(0)
   const lastStreamCursorRef = useRef<number | null>(null)
 
@@ -851,11 +985,12 @@ export function ChatPage() {
     let cancelled = false
     ;(async () => {
       try {
-        const [convsResult, wsList, modelsList, userPrefsResult] = await Promise.allSettled([
+        const [convsResult, wsList, modelsList, userPrefsResult, sandboxesResult] = await Promise.allSettled([
           fetchConversations(token),
           fetchWorkspaces(token),
           fetchAiModels(token),
           fetchUserPreferences(token),
+          fetchSandboxes(token),
         ])
         if (cancelled) return
 
@@ -901,6 +1036,14 @@ export function ChatPage() {
           setConversations(convsResult.value)
           if (convsResult.value.length > 0) setActiveId((prev) => prev ?? convsResult.value[0].id)
         } else if (convsResult.reason instanceof AuthError) {
+          setToken(null)
+          window.location.href = '/login'
+          return
+        }
+
+        if (sandboxesResult.status === 'fulfilled') {
+          setSandboxes(sandboxesResult.value)
+        } else if (sandboxesResult.reason instanceof AuthError) {
           setToken(null)
           window.location.href = '/login'
           return
@@ -955,7 +1098,6 @@ export function ChatPage() {
     let cancelled = false
     const preserveOptimistic = optimisticConversationIdRef.current === activeId
     setDiffStats(null)
-    setDiff(null)
     setPrUrl(null)
     setHeadBranch(null)
     if (!preserveOptimistic) {
@@ -1056,26 +1198,8 @@ export function ChatPage() {
     }
   }
 
-  async function handleOpenDiff() {
-    if (!activeId) return
-    if (sidePanel === 'diff') { setSidePanel('none'); return }
-    setSidePanel('diff')
-    setDiffLoading(true)
-    try {
-      const d = await fetchConversationDiff(token, activeId)
-      setDiff(d)
-    } catch {
-      setDiff(null)
-    } finally {
-      setDiffLoading(false)
-    }
-  }
-
-  function handleToggleFiles() {
-    setSidePanel((p) => p === 'files' ? 'none' : 'files')
-  }
-
   const handleNewChat = useCallback(() => {
+    setMainMode('chat')
     setTrayItems([])
     setIsDragOver(false)
     setActiveId(null)
@@ -1102,6 +1226,7 @@ export function ChatPage() {
 
   /** Seleciona uma conversa histórica sem deixar o streaming atual contaminar a UI. */
   function handleSelectConversation(conversationId: string) {
+    setMainMode('chat')
     if (conversationId === activeId) return
     abortControllerRef.current?.abort()
     abortControllerRef.current = null
@@ -1113,7 +1238,6 @@ export function ChatPage() {
     setSessionProgressAnchor(null)
     setActivityTraces({})
     setInput('')
-    setSidePanel('none')
     setPermissionWarningRuntimeConfirmed(false)
     setActiveId(conversationId)
     closeMobile()
@@ -1569,6 +1693,12 @@ export function ChatPage() {
     filteredConversations.length - visibleConversations.length,
     0,
   )
+  const activeSandboxCount = sandboxes.filter((sandbox) =>
+    sandbox.status === 'active' ||
+    sandbox.container_status === 'running' ||
+    sandbox.container_status === 'configured',
+  ).length
+  const sandboxAccessCount = activeSandboxCount || sandboxes.length
   const streamIdleMs = streaming && streamActivityAt
     ? Math.max(0, Date.now() - streamActivityAt)
     : 0
@@ -1577,6 +1707,7 @@ export function ChatPage() {
     : hiddenConversationCount > 0
       ? `${visibleConversations.length} de ${conversations.length} sessões`
       : `${conversations.length} sessões`
+  void sidebarConversationCountLabel
   const groups = groupConversations(visibleConversations)
   const handleConversationListScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
     if (hiddenConversationCount <= 0) return
@@ -1607,20 +1738,12 @@ export function ChatPage() {
         >
           <div className={styles.sidebarHead}>
             <div className={styles.sidebarHeadLeft}>
+              <img src="/capybara.png" alt="" className={styles.sidebarLogo} />
               <div>
-                <div className={styles.sidebarTitle}>Conversas</div>
-                <div className={styles.sidebarSubtitle}>{sidebarConversationCountLabel}</div>
+                <div className={styles.sidebarTitle}>CappyCloud</div>
+                <div className={styles.sidebarSubtitle}>Workspace</div>
               </div>
             </div>
-            <button
-              type="button"
-              className={styles.panelCollapseBtn}
-              onClick={() => setConversationsCollapsed((prev) => !prev)}
-              title={conversationsCollapsed ? 'Expandir conversas' : 'Recolher conversas'}
-              aria-label={conversationsCollapsed ? 'Expandir conversas' : 'Recolher conversas'}
-            >
-              <span className={styles.icon}>{conversationsToggleIcon}</span>
-            </button>
             <Burger opened={mobileOpened} onClick={toggleMobile} size="sm" color="var(--cc-on-surface-variant)" hiddenFrom="sm" />
           </div>
 
@@ -1628,8 +1751,7 @@ export function ChatPage() {
           <div className={styles.sidebarActions}>
             <button className={styles.newSessionBtn} onClick={handleNewChat}>
               <span className={styles.icon}>add</span>
-              <span>Nova Sessão</span>
-              <span className={styles.kbdHint}>⌘N</span>
+              <span>Nova conversa</span>
             </button>
             <div className={styles.sessionSearch} role="search">
               <span className={styles.icon}>search</span>
@@ -1663,6 +1785,24 @@ export function ChatPage() {
             <span className={styles.icon}>forum</span>
             <span className={styles.collapsedCount}>{conversations.length}</span>
           </button>
+
+          <div className={styles.sidebarUtility}>
+            <button
+              type="button"
+              className={`${styles.sandboxAccessBtn} ${mainMode === 'sandboxes' ? styles.sandboxAccessBtnActive : ''}`}
+              onClick={() => {
+                setMainMode('sandboxes')
+                closeMobile()
+              }}
+            >
+              <span className={`${styles.icon} ${styles.sandboxAccessIcon}`}>dns</span>
+              <span className={styles.sandboxAccessLabel}>Sandboxes & acessos</span>
+              <span className={styles.sandboxAccessCount}>
+                <span aria-hidden />
+                {sandboxAccessCount}
+              </span>
+            </button>
+          </div>
 
           <div className={styles.sessionList} onScroll={handleConversationListScroll}>
             {groups.length === 0 && (
@@ -1705,11 +1845,21 @@ export function ChatPage() {
               </div>
             )}
           </div>
+          <div className={styles.sidebarFooter}>
+            <SidebarUserMenu user={currentUser} />
+          </div>
         </aside>
 
         {/* ── Main ─────────────────────────────────────────────── */}
         <main className={styles.main}>
-          {!activeId ? (
+          {mainMode === 'sandboxes' ? (
+            <SandboxAccessView
+              sandboxes={sandboxes}
+              workspaces={workspaces}
+              conversations={conversations}
+              onBackToChat={() => setMainMode('chat')}
+            />
+          ) : !activeId ? (
           <EmptyState
             input={input}
             setInput={setInput}
@@ -1721,9 +1871,6 @@ export function ChatPage() {
             setSelectedSlug={setSelectedSlug}
             selectedBranch={selectedBranch}
             setSelectedBranch={setSelectedBranch}
-            models={sortedModels}
-            selectedModelId={selectedModelId}
-            setSelectedModelId={setSelectedModelId}
             permissionMode={permissionMode}
             setPermissionMode={setPermissionMode}
             permissionWarningRuntimeConfirmed={permissionWarningRuntimeConfirmed}
@@ -1759,7 +1906,7 @@ export function ChatPage() {
               activeEnvSlug={activeEnvSlug}
               activeEnvName={workspaces.find(w => w.slug === activeEnvSlug)?.name ?? activeEnvSlug ?? workspaces[0]?.name ?? null}
               activeBaseBranch={activeConv?.repos?.[0]?.base_branch ?? null}
-              workspaces={workspaces}
+              sandboxAccessCount={sandboxAccessCount}
               diffStats={diffStats}
               prLoading={prLoading}
               prUrl={prUrl}
@@ -1769,11 +1916,6 @@ export function ChatPage() {
               activeTitle={activeConv?.title ?? 'Conversa'}
               token={token}
               conversationId={activeId!}
-              sidePanel={sidePanel}
-              diff={diff}
-              diffLoading={diffLoading}
-              onOpenDiff={handleOpenDiff}
-              onToggleFiles={handleToggleFiles}
               models={sortedModels}
               selectedModelId={selectedModelId}
               setSelectedModelId={setSelectedModelId}
@@ -1804,7 +1946,7 @@ function PermissionModeControl({
   value,
   onChange,
   disabled,
-  runtimeConfirmed,
+  runtimeConfirmed: _runtimeConfirmed,
   compact = false,
 }: {
   value: PermissionMode
@@ -1814,46 +1956,65 @@ function PermissionModeControl({
   compact?: boolean
 }) {
   const option = permissionModeOption(value)
-  const warning = permissionModeWarning(value, runtimeConfirmed)
-  const warningClass = warning
-    ? `${styles.permissionModeWarning} ${
-        warning.severity === 'high'
-          ? styles.permissionModeWarningHigh
-          : styles.permissionModeWarningCaution
-      }`
-    : ''
+  const pillTone =
+    option.tone === 'danger'
+      ? styles.permissionModePillHigh
+      : option.tone === 'warn'
+        ? styles.permissionModePillCaution
+        : ''
 
   return (
     <div className={`${styles.permissionModeControl} ${compact ? styles.permissionModeControlCompact : ''}`}>
-      <div
-        className={`${styles.permissionModePill} ${disabled ? styles.permissionModePillDisabled : ''}`}
-        title={disabled ? `${option.label} · bloqueado durante execução` : 'Modo de permissões'}
-      >
-        <span className={`${styles.icon} ${styles.permissionModeIcon}`}>{option.icon}</span>
-        <span className={styles.permissionModeLabel}>{option.label}</span>
-        <span className={`${styles.icon} ${styles.permissionModeChevron}`}>expand_more</span>
-        <select
-          className={styles.permissionModeSelect}
-          value={value}
-          onChange={(event) => onChange(normalizePermissionMode(event.currentTarget.value))}
-          disabled={disabled}
-          aria-label="Modo de permissões"
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild disabled={disabled}>
+          <button
+            type="button"
+            className={`${styles.permissionModePill} ${pillTone} ${disabled ? styles.permissionModePillDisabled : ''}`}
+            title={disabled ? `${option.label} · bloqueado durante execução` : 'Modo de permissões'}
+            aria-label="Modo de permissões"
+            disabled={disabled}
+          >
+            <span className={`${styles.icon} ${styles.permissionModeIcon}`}>{option.icon}</span>
+            <span className={styles.permissionModeLabel}>{option.label}</span>
+            <span className={`${styles.icon} ${styles.permissionModeChevron}`}>expand_more</span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align={compact ? 'start' : 'end'}
+          sideOffset={8}
+          className={styles.permissionModeMenu}
         >
-          {PERMISSION_MODE_OPTIONS.map((mode) => (
-            <option key={mode.value} value={mode.value}>{mode.label}</option>
-          ))}
-        </select>
-      </div>
-      {warning && (
-        <div className={warningClass} role="status">
-          <span className={`${styles.icon} ${styles.permissionModeWarningIcon}`}>{warning.icon}</span>
-          <span>{warning.text}</span>
-        </div>
-      )}
+          <DropdownMenuLabel className={styles.permissionModeMenuLabel}>
+            Permissões do agente
+          </DropdownMenuLabel>
+          {PERMISSION_MODE_OPTIONS.map((mode) => {
+            const selected = mode.value === value
+            const toneClass =
+              mode.tone === 'danger'
+                ? styles.permissionModeMenuItemDanger
+                : mode.tone === 'warn'
+                  ? styles.permissionModeMenuItemWarn
+                  : styles.permissionModeMenuItemSafe
+
+            return (
+              <DropdownMenuItem
+                key={mode.value}
+                className={`${styles.permissionModeMenuItem} ${toneClass} ${selected ? styles.permissionModeMenuItemSelected : ''}`}
+                onClick={() => onChange(normalizePermissionMode(mode.value))}
+              >
+                <span className={`${styles.icon} ${styles.permissionModeMenuIcon}`}>{mode.icon}</span>
+                <span className={styles.permissionModeMenuText}>
+                  <span className={styles.permissionModeMenuTitle}>{mode.label}</span>
+                  <span className={styles.permissionModeMenuDescription}>{mode.description}</span>
+                </span>
+              </DropdownMenuItem>
+            )
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
-
 interface EmptyStateProps {
   input: string
   setInput: (v: string) => void
@@ -1865,9 +2026,6 @@ interface EmptyStateProps {
   setSelectedSlug: (s: string) => void
   selectedBranch: string
   setSelectedBranch: Dispatch<SetStateAction<string>>
-  models: AiModel[]
-  selectedModelId: string
-  setSelectedModelId: (id: string) => void
   permissionMode: PermissionMode
   setPermissionMode: (mode: PermissionMode) => void
   permissionWarningRuntimeConfirmed: boolean
@@ -1885,7 +2043,7 @@ function EmptyState({
   input, setInput, inputRef, onExecute, streaming,
   workspaces, selectedSlug, setSelectedSlug,
   selectedBranch, setSelectedBranch,
-  models, selectedModelId, setSelectedModelId, token,
+  token,
   permissionMode, setPermissionMode, permissionWarningRuntimeConfirmed,
   trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
 }: EmptyStateProps) {
@@ -1924,10 +2082,6 @@ function EmptyState({
 
   const repoRequired = workspaces.length > 0 && !selectedSlug
   const branchRequired = !!selectedSlug && !selectedBranch
-  const selectedWorkspaceName =
-    workspaces.find((workspace) => workspace.slug === selectedSlug)?.name ?? 'Escolha o repositório'
-  const selectedModelName =
-    models.find((model) => model.model_id === selectedModelId)?.display_name ?? 'Modelo padrão'
 
   return (
     <div className={styles.emptyState}>
@@ -1937,26 +2091,45 @@ function EmptyState({
           <div className={styles.mascotGlow} />
         </div>
         <div className={styles.welcomeCopy}>
-          <span className={styles.welcomeEyebrow}>CappyCloud Command Center</span>
-          <h1 className={styles.welcomeTitle}>Desenvolva com OpenClaude em worktrees isolados.</h1>
+          <h1 className={styles.welcomeTitle}>O que você quer descobrir hoje? </h1>
           <p className={styles.welcomeText}>
-            Escolha o repositório, descreva a tarefa e acompanhe execução, ferramentas,
-            diff e PR a partir de uma única superfície.
+            Pergunte em português. O agente lê o <strong>repositório selecionado</strong> na sua cópia isolada
+            e responde com passos, consultas e evidências.
           </p>
-        </div>
-        <div className={styles.welcomeMetrics} aria-label="Resumo da sessão">
-          <div className={styles.metricCard}>
-            <span className={styles.metricValue}>{workspaces.length}</span>
-            <span className={styles.metricLabel}>repositórios</span>
-          </div>
-          <div className={styles.metricCard}>
-            <span className={styles.metricValue}>{models.length || 1}</span>
-            <span className={styles.metricLabel}>modelos</span>
-          </div>
         </div>
       </section>
 
-      {/* Premium Command Bar */}
+      <div className={styles.quickActions}>
+        <QuickActionCard
+          icon="search"
+          iconColor="var(--cc-primary)"
+          title="Consultar dados"
+          desc="Me mostra o faturamento de ontem por forma de pagamento"
+          onPick={setInput}
+        />
+        <QuickActionCard
+          icon="bug_report"
+          iconColor="var(--cc-error)"
+          title="Investigar um bug"
+          desc="O desconto não está batendo no cupom fiscal, por quê?? "
+          onPick={setInput}
+        />
+        <QuickActionCard
+          icon="library_books"
+          iconColor="var(--cc-secondary)"
+          title="Entender uma rotina"
+          desc="Como funciona o fechamento de caixa no fim do dia?? "
+          onPick={setInput}
+        />
+        <QuickActionCard
+          icon="support_agent"
+          iconColor="var(--muted-foreground)"
+          title="Ajudar no suporte"
+          desc="Cliente diz que a comanda sumiu, o que verifico?? "
+          onPick={setInput}
+        />
+      </div>
+
       <div
         className={`${styles.commandBarWrapper} ${isDragOver ? styles.commandBarWrapperDragOver : ''}`}
         onDragOver={(e) => {
@@ -2000,10 +2173,10 @@ function EmptyState({
                 className={styles.commandTextarea}
                 placeholder={
                   !selectedSlug
-                    ? 'Selecione um repositório e branch antes de continuar…'
+                    ? 'Pergunte algo ao agente...'
                     : !selectedBranch
-                      ? 'Selecione uma branch antes de continuar…'
-                      : 'Descreva o que o agente deve fazer ou cole um print…'
+                      ? 'Selecione uma branch antes de continuar...'
+                      : 'Pergunte algo ao agente... (Enter para enviar)'
                 }
                 rows={2}
                 value={input}
@@ -2026,33 +2199,42 @@ function EmptyState({
                   <span className={styles.icon}>attachment</span>
                 </button>
                 {workspaces.length > 0 ? (
-                  <div
-                    className={`${styles.contextPill} ${repoRequired ? styles.contextPillRequired : ''}`}
-                    style={{ marginLeft: '0.5rem' }}
+                  <Select
+                    value={selectedSlug}
+                    onValueChange={setSelectedSlug}
                   >
-                    <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
-                      source
-                    </span>
-                    <span className={styles.contextPillLabel} style={!selectedSlug ? { opacity: 0.45 } : undefined}>
-                      {workspaces.find(w => w.slug === selectedSlug)?.name ?? 'Repositório…'}
-                    </span>
-                    <span className={styles.icon} style={{ fontSize: '0.75rem', opacity: 0.35 }}>
-                      expand_more
-                    </span>
-                    <select
-                      className={styles.contextPillSelect}
-                      value={selectedSlug}
-                      onChange={(e) => setSelectedSlug(e.target.value)}
+                    <SelectTrigger
+                      className={`${styles.contextSelectTrigger} ${styles.contextSelectTriggerRepo} ${
+                        repoRequired ? styles.contextPillRequired : ''
+                      }`}
                       title="Selecionar repositório"
+                      aria-label="Selecionar repositório"
                     >
-                      {!selectedSlug && (
-                        <option value="" disabled>Selecionar repositório…</option>
-                      )}
-                      {workspaces.map((w) => (
-                        <option key={w.slug} value={w.slug}>{w.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                      <span className={styles.icon} aria-hidden="true">
+                        source
+                      </span>
+                      <SelectValue placeholder="Repositório..." />
+                    </SelectTrigger>
+                    <SelectContent
+                      className={styles.contextSelectContent}
+                      position="item-aligned"
+                    >
+                      <SelectGroup>
+                        <SelectLabel className={styles.contextSelectLabel}>
+                          Repositório
+                        </SelectLabel>
+                        {workspaces.map((w) => (
+                          <SelectItem
+                            key={w.slug}
+                            value={w.slug}
+                            className={styles.contextSelectItem}
+                          >
+                            {w.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
                 ) : (
                   <div className={`${styles.contextPill} ${styles.contextPillRequired}`} style={{ marginLeft: '0.5rem' }}>
                     <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.5 }}>source</span>
@@ -2060,43 +2242,43 @@ function EmptyState({
                   </div>
                 )}
                 {selectedSlug && (
-                  <div
-                    className={`${styles.contextPill} ${branchRequired ? styles.contextPillRequired : ''}`}
-                    style={{ marginLeft: '0.25rem' }}
+                  <Select
+                    value={selectedBranch}
+                    onValueChange={setSelectedBranch}
+                    disabled={branchesLoading}
                   >
-                    <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.6 }}>
-                      fork_right
-                    </span>
-                    <span className={styles.contextPillLabel} style={!selectedBranch ? { opacity: 0.45 } : undefined}>
-                      {branchesLoading ? '…' : (selectedBranch || 'Branch…')}
-                    </span>
-                    <span className={styles.icon} style={{ fontSize: '0.75rem', opacity: 0.35 }}>
-                      expand_more
-                    </span>
-                    <select
-                      className={styles.contextPillSelect}
-                      value={selectedBranch}
-                      onChange={(e) => setSelectedBranch(e.target.value)}
-                      disabled={branchesLoading}
+                    <SelectTrigger
+                      className={`${styles.contextSelectTrigger} ${styles.contextSelectTriggerBranch} ${
+                        branchRequired ? styles.contextPillRequired : ''
+                      }`}
                       title="Selecionar branch"
+                      aria-label="Selecionar branch"
                     >
-                      {!selectedBranch && !branchesLoading && (
-                        <option value="" disabled>Selecionar branch…</option>
-                      )}
-                      {branches.map((b) => (
-                        <option key={b} value={b}>{b}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                {models.length > 0 && (
-                  <div style={{ marginLeft: '0.25rem' }}>
-                    <ModelPicker
-                      models={models}
-                      value={selectedModelId}
-                      onChange={setSelectedModelId}
-                    />
-                  </div>
+                      <span className={styles.icon} aria-hidden="true">
+                        fork_right
+                      </span>
+                      <SelectValue placeholder={branchesLoading ? '...' : 'Branch...'} />
+                    </SelectTrigger>
+                    <SelectContent
+                      className={styles.contextSelectContent}
+                      position="item-aligned"
+                    >
+                      <SelectGroup>
+                        <SelectLabel className={styles.contextSelectLabel}>
+                          Branch
+                        </SelectLabel>
+                        {branches.map((b) => (
+                          <SelectItem
+                            key={b}
+                            value={b}
+                            className={styles.contextSelectItem}
+                          >
+                            {b}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
                 )}
                 <PermissionModeControl
                   value={permissionMode}
@@ -2127,28 +2309,16 @@ function EmptyState({
         </div>
       </div>
 
-      {/* Quick Actions */}
-      <div className={styles.quickActions}>
-        <QuickActionCard
-          icon="source"
-          iconColor="var(--cc-secondary)"
-          title={selectedWorkspaceName}
-          desc="Sessões isoladas por worktree, prontas para diff e PR."
-        />
-        <QuickActionCard
-          icon="smart_toy"
-          iconColor="var(--cc-error)"
-          title={selectedModelName}
-          desc="Modelo selecionado para novas execuções do agente."
-        />
-      </div>
+      <p className={styles.emptyHint}>
+        Você está numa cópia isolada — nada do que testar aqui afeta os outros usuários.
+      </p>
     </div>
   )
 }
 
 /** Renderiza um atalho contextual da tela inicial do agente. */
-function QuickActionCard({ icon, iconColor, title, desc, href }: {
-  icon: string; iconColor: string; title: string; desc: string; href?: string
+function QuickActionCard({ icon, iconColor, title, desc, href, onPick }: {
+  icon: string; iconColor: string; title: string; desc: string; href?: string; onPick?: (value: string) => void
 }) {
   const content = (
     <div className={styles.quickCard}>
@@ -2159,6 +2329,14 @@ function QuickActionCard({ icon, iconColor, title, desc, href }: {
       <p className={styles.quickCardDesc}>{desc}</p>
     </div>
   )
+
+  if (onPick) {
+    return (
+      <button type="button" className={styles.quickCardButton} onClick={() => onPick(desc)}>
+        {content}
+      </button>
+    )
+  }
 
   if (!href) return content
 
@@ -2194,7 +2372,7 @@ interface ActiveChatProps {
   activeEnvSlug: string | null
   activeEnvName: string | null
   activeBaseBranch: string | null
-  workspaces: Workspace[]
+  sandboxAccessCount: number
   diffStats: { added: number; removed: number } | null
   prLoading: boolean
   prUrl: string | null
@@ -2204,11 +2382,6 @@ interface ActiveChatProps {
   activeTitle: string
   token: string
   conversationId: string
-  sidePanel: 'none' | 'diff' | 'files'
-  diff: ConversationDiff | null
-  diffLoading: boolean
-  onOpenDiff: () => void
-  onToggleFiles: () => void
   models: AiModel[]
   selectedModelId: string
   setSelectedModelId: (id: string) => void
@@ -2230,11 +2403,10 @@ interface ActiveChatProps {
 function ActiveChat({
   messages, messagesLoading, messagesError, sessionProgressAnchor, thoughtSteps, activityTraces, streamElapsedMs, streamIdleMs, sessionProgress, pendingAction,
   showThinking, streaming, input, setInput, inputRef,
-  onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch,
-  workspaces,
+  onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch, sandboxAccessCount,
   diffStats, prLoading, prUrl, prError, headBranch, onCreatePr,
   activeTitle: _activeTitle,
-  token, conversationId, sidePanel, diff, diffLoading, onOpenDiff, onToggleFiles,
+  token, conversationId,
   models, selectedModelId, setSelectedModelId,
   permissionMode, setPermissionMode, permissionWarningRuntimeConfirmed,
   convUsage, liveUsage,
@@ -2313,11 +2485,22 @@ function ActiveChat({
   const activityTraceFor = (message: ChatMessage): ActivityTrace | null => {
     if (message.role !== 'user') return null
     return activityTraces[message.id]
-      ?? tracesByContent.find((trace) => trace.content === message.content)
-      ?? null
+      ? (tracesByContent.find((trace) => trace.content === message.content) ?? null)
+      : null
   }
   const hasSendableAttachment = trayItems.some(isSendableTrayItem)
   const hasUploadInProgress = trayItems.some((item) => item.kind === 'uploading')
+  const selectedModelLabel =
+    models.find((model) => model.id === selectedModelId || model.model_id === selectedModelId)?.display_name ||
+    selectedModelId ||
+    'Modelo'
+  const activeBranchLabel = headBranch ?? activeBaseBranch ?? 'develop'
+  const sandboxUsersLabel = sandboxAccessCount === 1 ? '1 na sandbox' : `${sandboxAccessCount} na sandbox`
+  const hasUsageMeta =
+    convUsage.total_prompt_tokens > 0 ||
+    convUsage.total_completion_tokens > 0 ||
+    (liveUsage ? liveUsage.prompt_tokens > 0 || liveUsage.completion_tokens > 0 : false) ||
+    !!liveUsage?.fallback
 
   return (
     <div className={styles.activeChat}>
@@ -2327,15 +2510,15 @@ function ActiveChat({
           <div className={styles.sessionHeaderLeft}>
           {activeEnvSlug ? (
             <>
-              <span className={`${styles.icon} ${styles.sessionHeaderIcon}`}>source</span>
+              <span className={`${styles.icon} ${styles.sessionHeaderIcon}`}>folder_open</span>
               <span className={styles.sessionHeaderEnv}>{activeEnvName ?? activeEnvSlug}</span>
               {activeBaseBranch && (
-                <>
-                  <span className={styles.sessionHeaderArrow}>›</span>
-                  <span className={styles.sessionHeaderBranch}>
-                    {headBranch ?? activeBaseBranch}
-                  </span>
-                </>
+                <span className={styles.sessionHeaderBranch}>
+                  <span className={`${styles.icon} ${styles.sessionHeaderBranchIcon}`}>account_tree</span>
+                  <span className={styles.sessionHeaderBranchText}>seu espaço isolado</span>
+                  <span className={styles.sessionHeaderBranchSep}>·</span>
+                  <span className={styles.sessionHeaderBranchName}>{activeBranchLabel}</span>
+                </span>
               )}
             </>
           ) : (
@@ -2345,6 +2528,28 @@ function ActiveChat({
           )}
           </div>
           <div className={styles.sessionHeaderRight}>
+          <div className={styles.sessionPresenceChip} title="Pessoas nesta sandbox">
+            <span className={styles.sessionPresenceAvatars}>
+              <span>VC</span>
+            </span>
+            <span>{sandboxUsersLabel}</span>
+          </div>
+          {models.length > 0 ? (
+            <div className={styles.sessionHeaderModelPicker}>
+              <ModelPicker
+                models={models}
+                value={selectedModelId}
+                onChange={setSelectedModelId}
+                disabled={streaming}
+                compact
+              />
+            </div>
+          ) : (
+            <div className={styles.sessionModelChip} title={selectedModelLabel}>
+              <span aria-hidden />
+              {selectedModelLabel}
+            </div>
+          )}
           {diffStats && (diffStats.added > 0 || diffStats.removed > 0) && (
             <>
               <span className={styles.diffAdded}>+{diffStats.added}</span>
@@ -2373,7 +2578,7 @@ function ActiveChat({
                     {prError && (
                       <span
                         role="alert"
-                        style={{ fontSize: '0.72rem', color: 'var(--mantine-color-red-5)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        style={{ fontSize: '0.72rem', color: 'var(--destructive)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                         title={prError}
                       >
                         {prError}
@@ -2384,24 +2589,6 @@ function ActiveChat({
               )}
             </>
           )}
-          <div className={styles.sessionHeaderPanelBtns}>
-            <button
-              type="button"
-              className={`${styles.chatContextIconBtn} ${sidePanel === 'files' ? styles.chatContextIconBtnActive : ''}`}
-              onClick={onToggleFiles}
-              title="Explorador de ficheiros"
-            >
-              <span className={styles.icon}>folder_open</span>
-            </button>
-            <button
-              type="button"
-              className={`${styles.chatContextIconBtn} ${sidePanel === 'diff' ? styles.chatContextIconBtnActive : ''}`}
-              onClick={onOpenDiff}
-              title="Ver diff"
-            >
-              <span className={styles.icon}>difference</span>
-            </button>
-          </div>
           </div>
         </div>
       </div>
@@ -2434,20 +2621,24 @@ function ActiveChat({
                 </div>
               )}
               {sessionProgress.length > 0 && sessionProgressBeforeIndex < 0 && (
-                <SessionProgressCard
-                  stages={sessionProgress}
-                  elapsedMs={streamElapsedMs}
-                  idleMs={streamIdleMs}
-                />
+                <AgentBubble compact>
+                  <SessionProgressCard
+                    stages={sessionProgress}
+                    elapsedMs={streamElapsedMs}
+                    idleMs={streamIdleMs}
+                  />
+                </AgentBubble>
               )}
               {messages.map((m, index) => (
                 <Fragment key={m.id}>
                   {sessionProgress.length > 0 && index === sessionProgressBeforeIndex && (
-                    <SessionProgressCard
-                      stages={sessionProgress}
-                      elapsedMs={streamElapsedMs}
-                      idleMs={streamIdleMs}
-                    />
+                    <AgentBubble compact>
+                      <SessionProgressCard
+                        stages={sessionProgress}
+                        elapsedMs={streamElapsedMs}
+                        idleMs={streamIdleMs}
+                      />
+                    </AgentBubble>
                   )}
                   <PaperMessage
                     key={m.id}
@@ -2460,42 +2651,48 @@ function ActiveChat({
                     payloadDiagnostics={m.payload_diagnostics ?? null}
                   />
                   {activityTraceFor(m)?.steps.length ? (
-                    <ThinkingStream
-                      steps={activityTraceFor(m)!.steps}
-                      streaming={streaming && sessionProgressAnchor?.content === m.content}
-                      elapsedMs={
-                        streaming && sessionProgressAnchor?.content === m.content
-                          ? streamElapsedMs
-                          : activityTraceFor(m)!.elapsedMs
-                      }
-                      idleMs={
-                        streaming && sessionProgressAnchor?.content === m.content
-                          ? streamIdleMs
-                          : 0
-                      }
-                      interrupted={!!activityTraceFor(m)!.interrupted}
-                    />
+                    <AgentBubble compact>
+                      <ThinkingStream
+                        steps={activityTraceFor(m)!.steps}
+                        streaming={streaming && sessionProgressAnchor?.content === m.content}
+                        elapsedMs={
+                          streaming && sessionProgressAnchor?.content === m.content
+                            ? streamElapsedMs
+                            : activityTraceFor(m)!.elapsedMs
+                        }
+                        idleMs={
+                          streaming && sessionProgressAnchor?.content === m.content
+                            ? streamIdleMs
+                            : 0
+                        }
+                        interrupted={!!activityTraceFor(m)!.interrupted}
+                      />
+                    </AgentBubble>
                   ) : null}
                 </Fragment>
               ))}
               {((thoughtSteps.length > 0 && !sessionProgressAnchor) || (streaming && showThinking)) && (
-                <Stack gap="xs">
-                  {thoughtSteps.length > 0 && !sessionProgressAnchor && (
-                    <ThinkingStream
-                      steps={thoughtSteps}
-                      streaming={streaming}
-                      elapsedMs={streamElapsedMs}
-                      idleMs={streamIdleMs}
-                    />
-                  )}
-                  {streaming &&
-                    sessionProgress.length === 0 &&
-                    showThinking && <ThinkingIndicator />}
-                </Stack>
+                <AgentBubble compact>
+                  <Stack gap="xs">
+                    {thoughtSteps.length > 0 && !sessionProgressAnchor && (
+                      <ThinkingStream
+                        steps={thoughtSteps}
+                        streaming={streaming}
+                        elapsedMs={streamElapsedMs}
+                        idleMs={streamIdleMs}
+                      />
+                    )}
+                    {streaming &&
+                      sessionProgress.length === 0 &&
+                      showThinking && <ThinkingIndicator />}
+                  </Stack>
+                </AgentBubble>
               )}
 
               {pendingAction && (
-                <ActionRequiredCard action={pendingAction} onReply={onActionReply} />
+                <AgentBubble compact>
+                  <ActionRequiredCard action={pendingAction} onReply={onActionReply} />
+                </AgentBubble>
               )}
               </Stack>
               </div>
@@ -2509,28 +2706,6 @@ function ActiveChat({
           )}
         </div>
 
-        {/* Side panel — wrapper flex evita altura 0 com ScrollArea/diff */}
-        {sidePanel !== 'none' && (
-          <div className={styles.sidePanel}>
-            <div className={styles.sidePanelFill} key={`${conversationId}-${sidePanel}`}>
-              {sidePanel === 'diff' && (
-                diffLoading
-                  ? <div className={styles.sidePanelLoading}><Text size="xs" c="dimmed">A carregar diff…</Text></div>
-                  : diff
-                    ? (
-                      <DiffViewer
-                        key={`${conversationId}-${diff.files.map((f) => f.path).join('|')}`}
-                        diff={diff}
-                      />
-                      )
-                    : <div className={styles.sidePanelLoading}><Text size="xs" c="dimmed">Sem diff disponível</Text></div>
-              )}
-              {sidePanel === 'files' && (
-                <FileExplorer token={token} conversationId={conversationId} />
-              )}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Compact input bar */}
@@ -2626,87 +2801,55 @@ function ActiveChat({
           )}
           </div>
 
-          {/* Context status bar — repo + branch */}
           <div className={styles.chatContextBar}>
-          <div className={styles.chatContextPill}>
-            <span className={`${styles.icon} ${styles.chatContextIcon}`}>source</span>
-            <span className={styles.chatContextText}>
-              {activeEnvName ?? activeEnvSlug ?? workspaces[0]?.name ?? '—'}
-            </span>
-          </div>
-          {activeBaseBranch && (
-            <div className={styles.chatContextPill} style={{ marginLeft: '0.35rem' }}>
-              <span className={`${styles.icon} ${styles.chatContextIcon}`}>fork_right</span>
-              <span className={styles.chatContextText}>
-                {headBranch ?? activeBaseBranch}
-              </span>
-            </div>
-          )}
-          {models.length > 0 && (
-            <div style={{ marginLeft: '0.35rem' }}>
-              <ModelPicker
-                models={models}
-                value={selectedModelId}
-                onChange={setSelectedModelId}
-                disabled={streaming}
-                compact
-              />
-            </div>
-          )}
-          <PermissionModeControl
-            value={permissionMode}
-            onChange={setPermissionMode}
-            disabled={streaming}
-            runtimeConfirmed={permissionWarningRuntimeConfirmed}
-            compact
-          />
-          {(convUsage.total_prompt_tokens > 0 || convUsage.total_completion_tokens > 0) && (
-            <div
-              className={styles.chatContextPill}
-              style={{ marginLeft: '0.35rem' }}
-              title={`Total da conversa: ${convUsage.total_prompt_tokens} in + ${convUsage.total_completion_tokens} out`}
-            >
-              <span className={`${styles.icon} ${styles.chatContextIcon}`}>insights</span>
-              <span className={styles.chatContextText}>
-                {(convUsage.total_prompt_tokens + convUsage.total_completion_tokens).toLocaleString('pt-BR')} tok
-                · {formatCostUsd(convUsage.total_cost_usd)}
-              </span>
-            </div>
-          )}
-          {liveUsage && (liveUsage.prompt_tokens > 0 || liveUsage.completion_tokens > 0) && (
-            <div
-              className={styles.chatContextPill}
-              style={{ marginLeft: '0.35rem', opacity: 0.85 }}
-              title="Último turno (ainda não consolidado nos totais)"
-            >
-              <span className={`${styles.icon} ${styles.chatContextIcon}`}>bolt</span>
-              <span className={styles.chatContextText}>
-                +{liveUsage.prompt_tokens + liveUsage.completion_tokens} tok agora
-              </span>
-            </div>
-          )}
-          {liveUsage?.fallback && (
-            <div
-              className={`${styles.chatContextPill} ${styles.chatContextPillNotice}`}
-              style={{ marginLeft: '0.35rem' }}
-              title={`Selecionado: ${liveUsage.fallback.selected_model} | final: ${liveUsage.fallback.final_model}`}
-            >
-              <span className={`${styles.icon} ${styles.chatContextIcon}`}>swap_horiz</span>
-              <span className={styles.chatContextText}>
-                final {liveUsage.fallback.final_model}
-              </span>
-              <span className={styles.chatContextReason}>
-                {fallbackReasonLabel(liveUsage.fallback.reason)}
-              </span>
-            </div>
-          )}
-          <span
-            className={styles.chatContextText}
-            style={{ opacity: 0.35, fontSize: '0.7rem', marginLeft: '0.5rem' }}
-            title="Para mudar repositório ou branch, crie uma Nova Sessão"
-          >
-            · fixo
-          </span>
+            <PermissionModeControl
+              value={permissionMode}
+              onChange={setPermissionMode}
+              disabled={streaming}
+              runtimeConfirmed={permissionWarningRuntimeConfirmed}
+              compact
+            />
+            {hasUsageMeta && (
+              <>
+              {(convUsage.total_prompt_tokens > 0 || convUsage.total_completion_tokens > 0) && (
+                <div
+                  className={styles.chatContextPill}
+                  title={`Total da conversa: ${convUsage.total_prompt_tokens} in + ${convUsage.total_completion_tokens} out`}
+                >
+                  <span className={`${styles.icon} ${styles.chatContextIcon}`}>insights</span>
+                  <span className={styles.chatContextText}>
+                    {(convUsage.total_prompt_tokens + convUsage.total_completion_tokens).toLocaleString('pt-BR')} tok
+                    · {formatCostUsd(convUsage.total_cost_usd)}
+                  </span>
+                </div>
+              )}
+              {liveUsage && (liveUsage.prompt_tokens > 0 || liveUsage.completion_tokens > 0) && (
+                <div
+                  className={styles.chatContextPill}
+                  title="Último turno (ainda não consolidado nos totais)"
+                >
+                  <span className={`${styles.icon} ${styles.chatContextIcon}`}>bolt</span>
+                  <span className={styles.chatContextText}>
+                    +{liveUsage.prompt_tokens + liveUsage.completion_tokens} tok agora
+                  </span>
+                </div>
+              )}
+              {liveUsage?.fallback && (
+                <div
+                  className={`${styles.chatContextPill} ${styles.chatContextPillNotice}`}
+                  title={`Selecionado: ${liveUsage.fallback.selected_model} | final: ${liveUsage.fallback.final_model}`}
+                >
+                  <span className={`${styles.icon} ${styles.chatContextIcon}`}>swap_horiz</span>
+                  <span className={styles.chatContextText}>
+                    final {liveUsage.fallback.final_model}
+                  </span>
+                  <span className={styles.chatContextReason}>
+                    {fallbackReasonLabel(liveUsage.fallback.reason)}
+                  </span>
+                </div>
+              )}
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -2810,6 +2953,104 @@ function SessionProgressCard({
 /* ────────────────────────────────────────────────────────────────
    Message bubble
    ──────────────────────────────────────────────────────────────── */
+function AgentBubble({
+  children,
+  compact = false,
+}: {
+  children: React.ReactNode
+  compact?: boolean
+}) {
+  return (
+    <div className={`${styles.agentBubble} ${compact ? styles.agentBubbleCompact : ''}`}>
+      <div className={styles.agentBubbleAvatar}>
+        <img src="/capybara.png" alt="" />
+      </div>
+      <div className={styles.agentBubbleBody}>{children}</div>
+    </div>
+  )
+}
+
+function CodeBlockCard({
+  code,
+  language,
+}: {
+  code: string
+  language: string
+}) {
+  const [copied, setCopied] = useState(false)
+  const normalizedLanguage = language.toLowerCase()
+  const label = normalizedLanguage === 'sql'
+    ? 'Consulta pronta · SQL'
+    : `Código · ${normalizedLanguage.toUpperCase()}`
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard?.writeText(code)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1400)
+    } catch {
+      /* clipboard pode estar bloqueado */
+    }
+  }
+
+  return (
+    <div className={styles.codeBlockCard}>
+      <div className={styles.codeBlockHeader}>
+        <span>{label}</span>
+        <button type="button" onClick={handleCopy}>
+          <span className={styles.icon}>{copied ? 'check' : 'content_copy'}</span>
+          {copied ? 'copiado' : 'copiar'}
+        </button>
+      </div>
+      <pre>
+        <code className={`language-${normalizedLanguage}`}>
+          {normalizedLanguage === 'sql' ? renderSqlTokens(code) : code}
+        </code>
+      </pre>
+    </div>
+  )
+}
+
+const SQL_KEYWORDS = new Set([
+  'select', 'from', 'where', 'join', 'inner', 'left', 'right', 'full', 'outer',
+  'on', 'and', 'or', 'as', 'group', 'by', 'order', 'having', 'limit', 'offset',
+  'insert', 'into', 'update', 'delete', 'values', 'set', 'case', 'when', 'then',
+  'else', 'end', 'distinct', 'union', 'all', 'count', 'sum', 'avg', 'min', 'max',
+])
+
+function renderSqlTokens(code: string): React.ReactNode[] {
+  const tokenPattern = /(--.*? $|'(?:''|[^'])*'|:[a-zA-Z_][\w]*|\b\d+(?:\.\d+)?\b|\b[a-zA-Z_][\w]*\b)/gm
+  const nodes: React.ReactNode[] = []
+  let lastIndex = 0
+  let tokenIndex = 0
+
+  for (const match of code.matchAll(tokenPattern)) {
+    const value = match[0]
+    const index = match.index ?? 0
+    if (index > lastIndex) nodes.push(code.slice(lastIndex, index))
+
+    const lower = value.toLowerCase()
+    const className = value.startsWith('--')
+      ? styles.sqlComment
+      : value.startsWith("'")
+        ? styles.sqlString
+        : value.startsWith(':')
+          ? styles.sqlParam
+          : /^\d/.test(value)
+            ? styles.sqlNumber
+            : SQL_KEYWORDS.has(lower)
+              ? styles.sqlKeyword
+              : undefined
+
+    nodes.push(className ? <span className={className} key={tokenIndex}>{value}</span> : value)
+    tokenIndex += 1
+    lastIndex = index + value.length
+  }
+
+  if (lastIndex < code.length) nodes.push(code.slice(lastIndex))
+  return nodes
+}
+
 function PaperMessage({
   role,
   content,
@@ -2836,8 +3077,7 @@ function PaperMessage({
   const costLabel = totalTokens === 0 && (costUsd ?? 0) === 0
     ? 'uso não informado'
     : formatCostUsd(costUsd ?? 0)
-  const showCopy = !isUser && !streaming && content.trim().length > 0
-  return (
+  const messageBubble = (
     <div className={`${styles.message} ${isUser ? styles.messageUser : styles.messageAgent}`}>
       <Text
         size="xs"
@@ -2874,7 +3114,6 @@ function PaperMessage({
       {!isUser && payloadDiagnostics && (
         <PayloadDiagnosticSummary diagnostics={payloadDiagnostics} />
       )}
-      {showCopy && <CopyMessageButton content={content} />}
       {hasUsage && (
         <div className={styles.messageUsageFooter}>
           {modelUsed && <span className={styles.messageUsageModel}>{modelUsed}</span>}
@@ -2888,6 +3127,9 @@ function PaperMessage({
       )}
     </div>
   )
+
+  if (isUser) return messageBubble
+  return <AgentBubble>{messageBubble}</AgentBubble>
 }
 
 function PayloadDiagnosticSummary({ diagnostics }: { diagnostics: PayloadSizeBreakdown }) {
@@ -2948,6 +3190,161 @@ function PayloadDiagnosticSummary({ diagnostics }: { diagnostics: PayloadSizeBre
   )
 }
 
+function SandboxAccessView({
+  sandboxes,
+  workspaces,
+  conversations,
+  onBackToChat,
+}: {
+  sandboxes: Sandbox[]
+  workspaces: Workspace[]
+  conversations: Conversation[]
+  onBackToChat: () => void
+}) {
+  const activeSandboxes = sandboxes.filter(isSandboxAvailable)
+  const visiblePeople = new Set(
+    conversations
+      .map((conversation) => conversation.user_email || conversation.user_id)
+      .filter((value): value is string => Boolean(value)),
+  )
+  const visiblePeopleCount = visiblePeople.size || (conversations.length > 0 ? 1 : 0)
+  const configuredCount = sandboxes.filter((sandbox) => sandbox.container_status === 'configured').length
+  const offlineCount = sandboxes.filter((sandbox) =>
+    sandbox.status === 'offline' ||
+    sandbox.container_status === 'stopped' ||
+    sandbox.container_status === 'not_created',
+  ).length
+
+  return (
+    <section className={styles.sandboxAccessView}>
+      <header className={styles.sandboxAccessHeader}>
+        <div>
+          <span className={styles.sandboxAccessEyebrow}>Workspace</span>
+          <h1>Sandboxes & acessos</h1>
+          <p>
+            Visão operacional dos ambientes disponíveis, status dos containers e ocupação
+            observável pelas sessões carregadas.
+          </p>
+        </div>
+        <button type="button" className={styles.sandboxAccessBackBtn} onClick={onBackToChat}>
+          <span className={styles.icon}>chat_bubble</span>
+          Voltar ao chat
+        </button>
+      </header>
+
+      <div className={styles.sandboxMetricsGrid}>
+        <SandboxMetricCard label="Sandboxes ativas" value={activeSandboxes.length} detail={`${sandboxes.length} cadastradas`} tone="good" />
+        <SandboxMetricCard label="Pessoas visíveis" value={visiblePeopleCount} detail="baseado nas sessões carregadas" tone="neutral" />
+        <SandboxMetricCard label="Configuradas" value={configuredCount} detail="prontas para uso" tone="good" />
+        <SandboxMetricCard label="Indisponíveis" value={offlineCount} detail="paradas ou não criadas" tone={offlineCount > 0 ? 'warn' : 'neutral'} />
+      </div>
+
+      <div className={styles.sandboxAccessContent}>
+        <div className={styles.sandboxListPanel}>
+          <div className={styles.sandboxPanelHeader}>
+            <div>
+              <h2>Ambientes</h2>
+              <p>{workspaces.length} repositórios visíveis neste workspace</p>
+            </div>
+          </div>
+
+          {sandboxes.length === 0 ? (
+            <div className={styles.sandboxEmptyState}>
+              <span className={styles.icon}>dns</span>
+              <strong>Nenhuma sandbox disponível</strong>
+              <p>Quando uma sandbox for liberada para seu usuário, ela aparecerá aqui.</p>
+            </div>
+          ) : (
+            <div className={styles.sandboxRows}>
+              {sandboxes.map((sandbox) => (
+                <article className={styles.sandboxRow} key={sandbox.id}>
+                  <div className={styles.sandboxRowMain}>
+                    <span className={styles.sandboxRowIcon}>
+                      <span className={styles.icon}>dns</span>
+                    </span>
+                    <div>
+                      <h3>{sandbox.name}</h3>
+                      <p>{sandbox.host}:{sandbox.session_port} · {sandbox.runtime}</p>
+                    </div>
+                  </div>
+                  <div className={styles.sandboxRowMeta}>
+                    <span className={`${styles.sandboxStatusBadge} ${sandboxStatusClass(sandbox)}`}>
+                      {sandboxStatusLabel(sandbox)}
+                    </span>
+                    <span className={styles.sandboxUsersBadge}>
+                      <span aria-hidden />
+                      {visiblePeopleCount} visíveis
+                    </span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <aside className={styles.sandboxInsightPanel}>
+          <h2>Uso por pessoas</h2>
+          <p>
+            O backend atual lista sandboxes, mas ainda não expõe presença em tempo real por usuário.
+            Esta tela já reserva a área para esse número.
+          </p>
+          <div className={styles.sandboxInsightNumber}>
+            <strong>{visiblePeopleCount}</strong>
+            <span>pessoas em sessões visíveis</span>
+          </div>
+          <div className={styles.sandboxInsightNote}>
+            Para mostrar “usando agora” com precisão, precisamos persistir heartbeat por sessão ou
+            consultar o session_server da sandbox.
+          </div>
+        </aside>
+      </div>
+    </section>
+  )
+}
+
+function SandboxMetricCard({
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  label: string
+  value: number
+  detail: string
+  tone: 'good' | 'warn' | 'neutral'
+}) {
+  return (
+    <div className={`${styles.sandboxMetricCard} ${styles[`sandboxMetricCard_${tone}`]}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </div>
+  )
+}
+
+function isSandboxAvailable(sandbox: Sandbox): boolean {
+  return sandbox.status === 'active' ||
+    sandbox.container_status === 'running' ||
+    sandbox.container_status === 'configured'
+}
+
+function sandboxStatusLabel(sandbox: Sandbox): string {
+  if (sandbox.status === 'offline') return 'Offline'
+  if (sandbox.container_status === 'configured') return 'Configurada'
+  if (sandbox.container_status === 'running') return 'Rodando'
+  if (sandbox.container_status === 'starting') return 'Iniciando'
+  if (sandbox.container_status === 'error') return 'Erro'
+  if (sandbox.container_status === 'stopped') return 'Parada'
+  if (sandbox.container_status === 'not_created') return 'Não criada'
+  return sandbox.status || sandbox.container_status
+}
+
+function sandboxStatusClass(sandbox: Sandbox): string {
+  if (sandbox.container_status === 'error') return styles.sandboxStatusBadgeError
+  if (isSandboxAvailable(sandbox)) return styles.sandboxStatusBadgeActive
+  return styles.sandboxStatusBadgeMuted
+}
+
 function formatByteSize(value: number): string {
   const bytes = Math.max(0, Math.round(value || 0))
   if (bytes < 1024) return `${bytes} B`
@@ -2955,48 +3352,4 @@ function formatByteSize(value: number): string {
   if (kb < 1024) return `${kb.toFixed(kb >= 10 ? 0 : 1)} KB`
   const mb = kb / 1024
   return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`
-}
-
-/** Botão de copiar conteúdo da resposta do agente. Feedback visual por 1.6s. */
-function CopyMessageButton({ content }: { content: string }) {
-  const [copied, setCopied] = useState(false)
-
-  async function handleCopy() {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(content)
-      } else {
-        const ta = document.createElement('textarea')
-        ta.value = content
-        ta.setAttribute('readonly', '')
-        ta.style.position = 'fixed'
-        ta.style.opacity = '0'
-        document.body.appendChild(ta)
-        ta.select()
-        document.execCommand('copy')
-        document.body.removeChild(ta)
-      }
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1600)
-    } catch {
-      /* silently ignore — clipboard pode estar bloqueado */
-    }
-  }
-
-  return (
-    <button
-      type="button"
-      className={`${styles.messageCopyBtn} ${copied ? styles.messageCopyBtnCopied : ''}`}
-      onClick={handleCopy}
-      aria-label={copied ? 'Resposta copiada' : 'Copiar resposta do agente'}
-      title={copied ? 'Copiado!' : 'Copiar'}
-    >
-      <span className={styles.messageCopyIcon} aria-hidden="true">
-        {copied ? 'check' : 'content_copy'}
-      </span>
-      <span className={styles.messageCopyLabel}>
-        {copied ? 'Copiado' : 'Copiar'}
-      </span>
-    </button>
-  )
 }

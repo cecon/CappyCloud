@@ -12,11 +12,11 @@
 
 ### Session 2026-06-17
 
-- Q: Como o CappyCloud deve determinar que o aviso de segurança da v0.15.0 se aplica? → A: Mostrar pelo modo configurado na sessão e enriquecer com alerta de runtime quando disponível.
-- Q: Onde o risco de permissões permissivas deve aparecer para o usuário? → A: Adicionar seletor por sessão no chat: solicitar permissões, aceitar edições, planejamento, automático, ignorar permissões.
-- Q: Qual deve ser o modo padrão de permissões em uma nova sessão? → A: Nova sessão começa em solicitar permissões.
-- Q: Quais modos de permissão devem acionar o aviso de risco de bypass? → A: Aviso de risco em modo automático e ignorar permissões; cautela menor em aceitar edições.
-- Q: Como classificar provider de terceiros para disparar o aviso de bypass? → A: Não classificar por provider; avisar só pelo modo de permissão.
+- Q: Como o CappyCloud deve determinar que o aviso de segurança da v0.15.0 se aplica?→ A: Mostrar pelo modo configurado na sessão e enriquecer com alerta de runtime quando disponível.
+- Q: Onde o risco de permissões permissivas deve aparecer para o usuário?→ A: Adicionar seletor por sessão no chat: solicitar permissões, aceitar edições, planejamento, automático, ignorar permissões.
+- Q: Qual deve ser o modo padrão de permissões em uma nova sessão?→ A: Nova sessão começa em solicitar permissões.
+- Q: Quais modos de permissão devem acionar o aviso de risco de bypass?→ A: Aviso de risco em modo automático e ignorar permissões; cautela menor em aceitar edições.
+- Q: Como classificar provider de terceiros para disparar o aviso de bypass?→ A: Não classificar por provider; avisar só pelo modo de permissão.
 
 ## User Scenarios & Testing *(mandatory)*
 

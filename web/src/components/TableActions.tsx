@@ -1,5 +1,5 @@
-import type { MouseEventHandler, ReactNode } from 'react'
-import { ActionIcon, Group, Table, Tooltip, type ActionIconProps } from '@mantine/core'
+﻿import type { MouseEventHandler, ReactNode } from 'react'
+import { ActionIcon, Group, Table, Tooltip, type ActionIconProps } from '@/components/ui/legacy'
 
 type ActionsHeaderProps = {
   width?: number

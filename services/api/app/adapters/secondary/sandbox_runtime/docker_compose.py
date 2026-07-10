@@ -107,7 +107,7 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
             with urllib.request.urlopen(url, timeout=5) as response:
                 if 200 <= response.status < 300:
                     return RuntimeProbe(status=ContainerStatus.RUNNING, runtime_ref=url)
-        except OSError, urllib.error.URLError, TimeoutError:
+        except (OSError, urllib.error.URLError, TimeoutError):
             return None
         return None
 

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { ScrollArea, Text } from '@mantine/core'
+﻿import { useEffect, useState } from 'react'
+import { ScrollArea, Text } from '@/components/ui/legacy'
 import { fetchConversationFile, fetchConversationFiles } from '../api'
 import styles from './FileExplorer.module.css'
 
@@ -168,7 +168,7 @@ function TreeNodeView({
         style={{ paddingLeft: `${0.5 + depth * 1}rem` }}
         onClick={() => onSelect(node.path)}
       >
-        <span className={styles.treeIcon}>📄</span>
+        <span className={styles.treeIcon}>ðŸ“„</span>
         <span className={styles.treeLabel}>{node.name}</span>
       </button>
     )
@@ -182,7 +182,7 @@ function TreeNodeView({
         onClick={() => setOpen((o) => !o)}
       >
         <span className={styles.treeChevron}>{open ? '▼' : '▶'}</span>
-        <span className={styles.treeIcon}>📁</span>
+        <span className={styles.treeIcon}>ðŸ“</span>
         <span className={styles.treeLabel}>{node.name}</span>
       </button>
       {open && node.children.map((child) => (

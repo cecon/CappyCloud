@@ -90,6 +90,13 @@ async def _fetch_repo_docs(
     for query in initial_queries:
         try:
             hits.extend(
+                await _fetch_repo_graph_for(client, session_url, repo_ids, query)
+            )
+        except Exception:
+            continue
+    for query in initial_queries:
+        try:
+            hits.extend(
                 await _fetch_repo_docs_for(client, session_url, repo_ids, query)
             )
         except Exception:
@@ -143,6 +150,45 @@ async def _fetch_repo_docs_for(
             continue
         summary = _focus_repo_doc_summary(raw_summary, query)
         if title:
+            hits.append(
+                _DocHit(
+                    query=query,
+                    title=title,
+                    url=source_url,
+                    summary=_trim(summary, _REPO_DOC_SNIPPET_LIMIT),
+                    source="repository_document",
+                )
+            )
+    return hits
+
+
+async def _fetch_repo_graph_for(
+    client: httpx.AsyncClient,
+    session_url: str,
+    repo_ids: list[str],
+    query: str,
+) -> list[_DocHit]:
+    params: list[tuple[str, str]] = [
+        ("q", query[:512]),
+        ("limit", str(_REPO_DOC_RESULTS_PER_QUERY)),
+    ]
+    params.extend(("repo_id", repo_id) for repo_id in repo_ids)
+    resp = await client.get(
+        f"{session_url.rstrip('/')}/document-graph/search",
+        params=params,
+    )
+    if resp.status_code != 200:
+        return []
+    data = resp.json()
+    items = data if isinstance(data, list) else data.get("results") or []
+    hits: list[_DocHit] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        source_url = str(item.get("source_url") or "").strip()
+        summary = str(item.get("summary") or "")
+        if title and summary:
             hits.append(
                 _DocHit(
                     query=query,

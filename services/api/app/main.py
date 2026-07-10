@@ -30,6 +30,7 @@ from app.adapters.primary.http import conversation_diff as conv_diff_router
 from app.adapters.primary.http import conversation_files as conv_files_router
 from app.adapters.primary.http import conversation_pr as conv_pr_router
 from app.adapters.primary.http import conversations as conv_router
+from app.adapters.primary.http import document_graph as document_graph_router
 from app.adapters.primary.http import documents as documents_router
 from app.adapters.primary.http import environments as env_router
 from app.adapters.primary.http import git_providers as git_providers_router
@@ -213,6 +214,7 @@ app.include_router(user_workspaces_router.router, prefix="/api")
 app.include_router(user_mcp_servers_router.router, prefix="/api")
 app.include_router(repository_mcp_router.router, prefix="/api")
 app.include_router(documents_router.router, prefix="/api")
+app.include_router(document_graph_router.router, prefix="/api")
 app.include_router(skills_router.router, prefix="/api")
 app.include_router(skills_search_router.router, prefix="/api")
 app.include_router(admin_sandbox_mcps_router.router, prefix="/api")

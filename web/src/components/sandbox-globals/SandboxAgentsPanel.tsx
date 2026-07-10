@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+﻿import { useCallback, useEffect, useState } from 'react'
 import {
   ActionIcon,
   Alert,
@@ -13,7 +13,7 @@ import {
   Text,
   Textarea,
   TextInput,
-} from '@mantine/core'
+} from '@/components/ui/legacy'
 import {
   createSandboxAgent,
   deleteSandboxAgent,
@@ -133,7 +133,7 @@ export function SandboxAgentsPanel({ sandbox }: Props) {
   }
 
   async function handleDelete(agent: SandboxAgent) {
-    if (!window.confirm(`Apagar subagent "${agent.name}"?`)) return
+    if (!window.confirm(`Apagar subagent "${agent.name}"?? `)) return
     const token = getToken()
     if (!token) return
     try {

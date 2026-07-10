@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+﻿import { useCallback, useEffect, useState } from 'react'
 import {
   Alert,
   Badge,
@@ -14,7 +14,7 @@ import {
   Text,
   TextInput,
   Title,
-} from '@mantine/core'
+} from '@/components/ui/legacy'
 import { IconFileText, IconPencil, IconRefresh, IconTrash } from '@tabler/icons-react'
 import {
   createRepository,
@@ -206,7 +206,7 @@ export function AdminRepositoriesPage() {
   }
 
   async function handleDelete(repoId: string) {
-    if (!window.confirm('Remover este repositório? A operação dispara remoção do sandbox também.')) {
+    if (!window.confirm('Remover este repositório?? A operação dispara remoção do sandbox também.')) {
       return
     }
     const token = getToken()

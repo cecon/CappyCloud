@@ -30,6 +30,7 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.infrastructure.document_graph import delete_document_graph, replace_document_graph
 from app.infrastructure.embeddings import embed_text
 from app.infrastructure.orm_models import Document, Skill
 from app.infrastructure.skill_importer import ImporterError, import_url
@@ -192,6 +193,11 @@ async def _delete_existing_chunks(session: AsyncSession, document_id: uuid.UUID)
     await session.execute(delete(Skill).where(Skill.document_id == document_id))
 
 
+async def _delete_existing_document_indexes(session: AsyncSession, document_id: uuid.UUID) -> None:
+    await _delete_existing_chunks(session, document_id)
+    await delete_document_graph(session, document_id)
+
+
 async def ingest_document(
     session: AsyncSession,
     document: Document,
@@ -217,7 +223,7 @@ async def ingest_document(
             document.title = title[:512]
         document.checksum = _checksum(raw_text)
 
-        await _delete_existing_chunks(session, document.id)
+        await _delete_existing_document_indexes(session, document.id)
 
         chunks = chunk_text(raw_text)
         base_slug = _slugify(document.title)
@@ -243,6 +249,7 @@ async def ingest_document(
                 log.warning("embedding falhou para chunk %d de %s: %s", idx, document.id, exc)
             session.add(skill)
 
+        await replace_document_graph(session, document, raw_text)
         document.chunks_count = len(chunks)
         document.status = "indexed"
         document.indexed_at = _now()

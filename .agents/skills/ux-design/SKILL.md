@@ -1,162 +1,86 @@
 ---
 name: ux-design
-description: Use esta habilidade quando precisar tomar decisões de UX/UI no CappyCloud — escolher padrões de componentes, estilos visuais, fluxos de interação, acessibilidade e micro-animações. Cobre React 19 + Mantine 9 com tema dark mode estilo IDE premium.
+description: Use esta habilidade quando precisar tomar decisoes de UX/UI no CappyCloud - padroes de componentes, fluxos, acessibilidade, estados e micro-interacoes. O padrao legado e React 19 + Mantine 9; features com Spec Kit aprovado podem usar shadcn/ui + Tailwind.
 ---
 
-# UX Design Intelligence — CappyCloud
+# UX Design Intelligence - CappyCloud
 
-Motor de raciocínio de design para o CappyCloud. Toda decisão visual deve partir daqui antes de implementar.
+Toda decisao visual deve partir do contexto da feature, da constituicao e do
+plano Spec Kit ativo.
 
-## 1. Identidade Visual
+## 1. Base Ativa De UX
 
-**Tema**: "The Silent Architect" — IDE premium, dark mode.
+- **Padrao legado**: React 19 + Mantine 9 + CSS Modules.
+- **`007-chat-centered-ui-theme`**: shadcn/ui + Tailwind CSS v4, com chat como centro do layout autenticado.
+- **Regra de migracao**: nao manter Mantine e shadcn/ui como sistemas paralelos permanentes na mesma superficie autenticada.
 
-| Token | Valor | Uso |
-|-------|-------|-----|
-| Background primário | `#0d0d0f` | Superfícies principais |
-| Background secundário | `#141417` | Cards, painéis |
-| Background elevado | `#1a1a1f` | Modais, dropdowns |
-| Borda sutil | `#2a2a32` | Separadores, bordas |
-| Texto primário | `#e8e8ed` | Headings, labels |
-| Texto secundário | `#7a7a8a` | Subtext, placeholders |
-| Accent azul | `#4f8ef7` | CTAs primários, links |
-| Accent verde | `#3ecf8e` | Sucesso, status online |
-| Accent vermelho | `#f04e4e` | Erro, destrutivo |
-| Accent amarelo | `#f5a623` | Aviso, pendente |
+Quando o plano aprovar shadcn/Tailwind, use primitivos Radix/shadcn, tokens em
+`web/src/index.css`, helper `cn`, lucide icons e composicoes com Tailwind.
 
-**Tipografia**: Sistema nativo do Mantine. Use `fz` props: `xs`/`sm`/`md`/`lg`/`xl`. Nunca hardcode `px`.
+## 2. Identidade Visual
 
-## 2. Padrões de Componentes Mantine
+Tema profissional estilo IDE premium:
 
-### Inputs e Forms
-```tsx
-// Sempre dark-aware, sem background branco
-<TextInput
-  styles={{ input: { background: 'var(--mantine-color-dark-7)', borderColor: 'var(--mantine-color-dark-4)' } }}
-/>
-```
-- Validação inline: use `error` prop — nunca toast para erros de campo
-- Labels sempre presentes (acessibilidade)
-- Placeholder em `--mantine-color-dark-3`
+- superficies principais escuras ou claras com contraste consistente
+- texto primario evidente e texto secundario ainda legivel
+- acentos para acao, sucesso, erro, aviso e status
+- bordas e separadores sutis para orientar sem poluir
+- radius contido, preferencialmente ate 8px em cards e paineis
 
-### Cards e Painéis
-```tsx
-<Paper p="md" radius="md" withBorder style={{ borderColor: 'var(--mantine-color-dark-4)' }}>
-```
-- `withBorder` sempre — evita cards "flutuantes" sem delimitação
-- `radius="md"` padrão (8px)
-- `p="md"` ou `p="lg"` — nunca `p="xs"` em containers principais
+Evite layouts genericos, landing pages desnecessarias, decoracao sem funcao e
+paletas dominadas por uma unica familia de cor.
 
-### Tabelas e Listas de Dados
-- Use `<Table striped highlightOnHover>` do Mantine
-- Colunas: máximo 6 visíveis; demais em painel lateral ou expandível
-- Estado vazio: sempre um `<EmptyState>` component, nunca lista em branco
-- Paginação: use `<Pagination>` — nunca scroll infinito em tabelas admin
+## 3. Padroes Para O Chat-Centered Layout
 
-### Modais e Drawers
-- Ações destrutivas: sempre `<Modal>` com confirmação explícita
-- Formulários complexos (>4 campos): `<Drawer>` lateral, não modal
-- `<Modal size="md">` padrão; `"xl"` apenas para visualizações de conteúdo
+- O chat deve ser a area principal da experiencia autenticada.
+- Historico, contexto, permissao, atividade do agente e composer devem ficar
+  acessiveis sem duplicar menus laterais.
+- Menus secundarios e administracao devem partir do menu do usuario.
+- Administracao deve abrir como console, painel ou modal sobre a experiencia
+  centrada no chat quando a feature assim definir.
+- O composer deve permanecer visivel ou rapidamente acessivel durante respostas,
+  pedidos de permissao, blocos de codigo e mensagens longas.
 
-### Feedback e Notificações
-- Erros de API: `notifications.show({ color: 'red', ... })` via Mantine Notifications
-- Sucesso de ação: notificação de 3s, sem interrupção de fluxo
-- Loading: `<Loader size="sm" color="blue">` inline; `<Skeleton>` para placeholders de conteúdo
-- Estados de erro de página inteira: componente `<ErrorBoundary>` com retry
+## 4. Componentes E Estados
 
-## 3. Padrões de Layout
+Todo componente interativo deve cobrir:
 
-### Hierarquia de Espaçamento
-```
-gap="xs"  → 8px   (itens relacionados: ícone + label)
-gap="sm"  → 12px  (elementos dentro de um card)
-gap="md"  → 16px  (seções dentro de uma página)
-gap="lg"  → 24px  (grupos de seções)
-gap="xl"  → 32px  (separação entre blocos principais)
+```text
+default -> hover -> active/pressed -> focus-visible -> disabled -> loading -> error
 ```
 
-### Grid de Página
-- Sidebar: largura fixa `260px`
-- Conteúdo principal: `flex: 1`, `min-width: 0` (evita overflow)
-- Painel lateral de detalhes: `320px`–`400px`
-- Nunca use porcentagens para larguras de painel — use `px` ou `rem`
+Use:
 
-### Responsividade
-- Mobile-first apenas para páginas públicas (login, landing)
-- Dashboard e páginas admin: `min-width: 1024px` — é uma ferramenta profissional
-- Use `<Stack>` em mobile, `<Group>` em desktop via `visibleFrom`/`hiddenFrom`
+- icons em botoes de ferramenta quando houver simbolo familiar
+- tooltips para icons nao obvios
+- toggles/checkboxes para opcoes binarias
+- selects/menus para conjuntos fechados
+- tabs para visoes paralelas
+- dialogs/sheets para confirmacoes e edicoes focadas
 
-## 4. Micro-interações e Animações
-
-**Regra**: animações devem ser imperceptíveis individualmente, mas sentidas como fluidez geral.
-
-```css
-/* Transição padrão para hover/active */
-transition: all 0.15s ease;
-
-/* Fade-in de conteúdo carregado */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-animation: fadeIn 0.2s ease;
-
-/* Pulse para indicadores de loading */
-animation: pulse 1.5s ease-in-out infinite;
-```
-
-- Hover em botões: `scale(1.02)` + `brightness(1.1)` — nunca só cor
-- Clique: `scale(0.98)` de 80ms
-- Abertura de modal: `transform: scale(0.95) → 1.0` em 150ms
-- Nunca use `animation-duration > 300ms` em interações diretas do usuário
+Erros de campo devem aparecer inline. Sucesso e falhas de acao podem usar aviso
+contextual ou toast, desde que nao escondam o estado real da tela.
 
 ## 5. Acessibilidade
 
-- Contraste mínimo: 4.5:1 para texto normal, 3:1 para texto grande
-- Todos os ícones interativos: `aria-label` obrigatório
-- Focus visible: nunca `outline: none` sem substituto visual
-- Ordem de tab: lógica e sequencial — teste navegando só com teclado
-- `<ActionIcon>` sempre com `title` prop para tooltip de acessibilidade
+- Contraste minimo: 4.5:1 para texto normal, 3:1 para texto grande.
+- Todo icone interativo sem texto adjacente precisa de `aria-label` ou titulo.
+- Nunca remova foco visual sem substituto claro.
+- Ordem de tab deve seguir a leitura da interface.
+- Menus, dialogs e sheets precisam devolver foco corretamente ao fechar.
 
-## 6. Anti-Patterns a Evitar
+## 6. Responsividade
 
-| Evitar | Usar em vez |
-|--------|------------|
-| Cores hardcoded (`#fff`, `#000`) | Variáveis CSS do Mantine |
-| `position: absolute` para layout | Flexbox/Grid |
-| `!important` em CSS | Especificidade adequada |
-| Modais em cascata (modal dentro de modal) | Drawer ou página dedicada |
-| Spinner de página inteira em recargas parciais | Skeleton por seção |
-| Toast para erro de validação de campo | `error` prop inline |
-| Botões sem estado de loading | `loading` prop do Mantine |
-| Tabela sem estado vazio | Componente EmptyState |
+O primeiro alvo do CappyCloud e desktop/notebook profissional. Mesmo assim,
+os viewports definidos na feature devem ser verificados contra overlap,
+scroll horizontal indevido e texto cortado.
 
-## 7. Fluxo de Decisão
+## 7. Checklist Pre-Entrega
 
-```
-Nova interface/componente?
-  ├── Existe componente Mantine para isso? → Use com customização mínima
-  ├── Precisa de composição? → Combine componentes Mantine
-  └── Precisa de algo novo? → Construa sobre primitivos Mantine (Box, Flex)
-
-Decisão de cor?
-  ├── Status/feedback → Use cores semânticas (success/error/warning)
-  ├── Interação principal → Accent azul (#4f8ef7)
-  └── Conteúdo → Texto primário/secundário conforme hierarquia
-
-Layout?
-  ├── Lista de dados → Table + Pagination
-  ├── Formulário longo → Drawer lateral
-  ├── Confirmação → Modal pequeno
-  └── Dashboard → Grid com MetricStrip + Cards
-```
-
-## 8. Checklist Pré-entrega
-
-- [ ] Dark mode funcionando sem nenhum branco/cinza claro visível
-- [ ] Todos os estados: loading, error, empty, filled
-- [ ] Hover e focus visíveis em todos os elementos interativos
-- [ ] Sem texto hardcoded — use variáveis de cor do Mantine
-- [ ] Animações presentes em transições de estado
-- [ ] `aria-label` em todos os ícones sem texto adjacente
-- [ ] Testado com `code-review` após implementação
+- [ ] Chat identificavel como superficie principal em ate 5 segundos
+- [ ] Caminho de demo principal concluido em menos de 60 segundos
+- [ ] Nenhum menu lateral duplicado no chat
+- [ ] Funcoes secundarias acessiveis pelo menu do usuario
+- [ ] Admin respeita permissoes e abre no padrao definido
+- [ ] Contraste, foco, hover, erro, loading e vazio validados
+- [ ] Sem texto ou controles sobrepostos nos viewports previstos

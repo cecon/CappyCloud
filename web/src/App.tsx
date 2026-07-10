@@ -2,6 +2,7 @@ import { lazy, Suspense, type ReactNode, useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { getToken, setToken } from './api'
 import { AppLayout } from './components/AppLayout'
+import { AdminOverlayRouter } from './components/admin/AdminOverlayRouter'
 import { RequireAdmin } from './components/RequireAdmin'
 import { RequireSuperAdmin } from './components/RequireSuperAdmin'
 import { ThinkingIndicator } from './components/ThinkingIndicator'
@@ -16,7 +17,6 @@ const ChatPage = lazy(() => import('./pages/ChatPage').then(m => ({ default: m.C
 const ChangePasswordPage = lazy(() =>
   import('./pages/ChangePasswordPage').then((m) => ({ default: m.ChangePasswordPage })),
 )
-const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })))
 const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })))
 const McpServerPage = lazy(() =>
   import('./pages/McpServerPage').then((m) => ({ default: m.McpServerPage })),
@@ -87,7 +87,9 @@ function AuthenticatedBarePage({ children }: { children: ReactNode }) {
 function AdminPage({ children }: { children: ReactNode }) {
   return (
     <ProtectedPage>
-      <RequireAdmin>{children}</RequireAdmin>
+      <RequireAdmin>
+        <AdminOverlayRouter>{children}</AdminOverlayRouter>
+      </RequireAdmin>
     </ProtectedPage>
   )
 }
@@ -109,7 +111,7 @@ export default function App() {
         <Route
           path="/"
           element={
-            <ProtectedPage><DashboardPage /></ProtectedPage>
+            <ProtectedPage><Navigate to="/chat" replace /></ProtectedPage>
           }
         />
         <Route
@@ -204,7 +206,9 @@ export default function App() {
           path="/admin/skills-global"
           element={
             <SuperAdminPage>
-              <AdminGlobalSkillsPage />
+              <AdminOverlayRouter>
+                <AdminGlobalSkillsPage />
+              </AdminOverlayRouter>
             </SuperAdminPage>
           }
         />

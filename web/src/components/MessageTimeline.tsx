@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { ActionIcon, Group, Text, Timeline, Tooltip } from '@mantine/core'
+﻿import { useState } from 'react'
+import { ActionIcon, Group, Text, Timeline, Tooltip } from '@/components/ui/legacy'
 import {
   IconThumbDown,
   IconThumbDownFilled,
