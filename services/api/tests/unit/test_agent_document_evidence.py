@@ -6,10 +6,11 @@ from .agent_runtime_test_loader import evidence_docs as _evidence_docs
 from .agent_runtime_test_loader import evidence_models as _evidence_models
 from .agent_runtime_test_loader import evidence_prefetch as _evidence_prefetch
 from .agent_runtime_test_loader import evidence_render as _evidence_render
+from .agent_runtime_test_loader import evidence_repo_docs as _evidence_repo_docs
 
 
 def test_repository_document_queries_strip_prompt_context() -> None:
-    queries = _evidence_docs._repo_doc_queries(
+    queries = _evidence_repo_docs._repo_doc_queries(
         ["SCHEMA BANCO DADOS ProdIndCbs"],
         "## Worktree\nignore este contexto\n\n## Mensagem do utilizador\n"
         "Use somente o documento importado SCHEMA BANCO DE DADOS para dbo.tgPrdProdSoli.",
@@ -36,7 +37,7 @@ def test_repository_document_summary_focuses_mentioned_table() -> None:
 - PK: ProdCod
 """
 
-    focused = _evidence_docs._focus_repo_doc_summary(
+    focused = _evidence_repo_docs._focus_repo_doc_summary(
         summary,
         "Na tabela dbo.tgPrdProdSoli qual campo CBS aparece?",
     )
@@ -48,7 +49,7 @@ def test_repository_document_summary_focuses_mentioned_table() -> None:
 
 
 def test_repository_document_expansion_queries_follow_bare_table_mentions() -> None:
-    queries = _evidence_docs._repo_doc_expansion_queries(
+    queries = _evidence_repo_docs._repo_doc_expansion_queries(
         [
             _evidence_models._DocHit(
                 query="empresas ativas",
@@ -71,7 +72,7 @@ def test_repository_document_table_filter_ignores_foreign_key_mentions() -> None
   - `PrSoCod` int PK FK->dbo.tgPrdProdSoli.PrSoCod
 """
 
-    assert not _evidence_docs._matches_mentioned_table(
+    assert not _evidence_repo_docs._matches_mentioned_table(
         summary,
         "Na tabela dbo.tgPrdProdSoli qual e a PK?",
     )
