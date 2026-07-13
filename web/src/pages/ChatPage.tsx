@@ -2651,7 +2651,7 @@ function ActiveChat({
                     payloadDiagnostics={m.payload_diagnostics ?? null}
                   />
                   {activityTraceFor(m)?.steps.length ? (
-                    <AgentBubble compact>
+                    <AgentBubble>
                       <ThinkingStream
                         steps={activityTraceFor(m)!.steps}
                         streaming={streaming && sessionProgressAnchor?.content === m.content}
@@ -2672,8 +2672,8 @@ function ActiveChat({
                 </Fragment>
               ))}
               {((thoughtSteps.length > 0 && !sessionProgressAnchor) || (streaming && showThinking)) && (
-                <AgentBubble compact>
-                  <Stack gap="xs">
+                <AgentBubble>
+                  <div className={styles.thinkingLiveStack}>
                     {thoughtSteps.length > 0 && !sessionProgressAnchor && (
                       <ThinkingStream
                         steps={thoughtSteps}
@@ -2685,7 +2685,7 @@ function ActiveChat({
                     {streaming &&
                       sessionProgress.length === 0 &&
                       showThinking && <ThinkingIndicator />}
-                  </Stack>
+                  </div>
                 </AgentBubble>
               )}
 
