@@ -132,8 +132,10 @@ services:
     volumes:
       - cappycloud_attachments_data:/var/cappycloud/attachments
     networks:
-      - cappycloud_internal
-      - traefik-public
+      cappycloud_internal:
+        aliases:
+          - api
+      traefik-public: {}
     deploy:
       replicas: 1
       placement:
