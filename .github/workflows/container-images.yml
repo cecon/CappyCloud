@@ -78,13 +78,22 @@ jobs:
     steps:
       - name: Trigger Portainer webhook
         run: |
-          if [ -z "${PORTAINER_WEBHOOK_URL}" ]; then
-            echo "PORTAINER_WEBHOOK_URL is not configured; skipping Portainer redeploy."
+          WEBHOOKS="${PORTAINER_WEBHOOK_URLS:-${PORTAINER_WEBHOOK_URL:-}}"
+
+          if [ -z "${WEBHOOKS}" ]; then
+            echo "No Portainer webhook configured; skipping Portainer redeploy."
             exit 0
           fi
 
-          curl --fail --show-error --silent \
-            --request POST \
-            "${PORTAINER_WEBHOOK_URL}"
+          echo "${WEBHOOKS}" | while IFS= read -r webhook_url; do
+            if [ -z "${webhook_url}" ]; then
+              continue
+            fi
+
+            curl --fail --show-error --silent \
+              --request POST \
+              "${webhook_url}"
+          done
         env:
           PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
+          PORTAINER_WEBHOOK_URLS: ${{ secrets.PORTAINER_WEBHOOK_URLS }}

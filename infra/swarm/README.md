@@ -33,9 +33,10 @@ O workflow `.github/workflows/container-images.yml` publica as imagens:
 
 Cada imagem recebe duas tags no push para `main`: o SHA curto do commit e
 `latest`. O Portainer deve ficar apontado para `latest` e ter o webhook do stack
-registrado no secret `PORTAINER_WEBHOOK_URL` do GitHub. Ao terminar o push das
-imagens, o workflow chama esse webhook para o Portainer redeployar o stack e
-puxar a imagem nova.
+registrado no secret `PORTAINER_WEBHOOK_URL` do GitHub. Quando existirem
+webhooks separados por serviço, registre todos no secret multi-linha
+`PORTAINER_WEBHOOK_URLS`. Ao terminar o push das imagens, o workflow chama cada
+webhook configurado para o Portainer redeployar e puxar a imagem nova.
 
 Se os packages GHCR estiverem privados, configure tambem a credencial do registry
 `ghcr.io` no Portainer com permissao de leitura desses packages. Como alternativa,
