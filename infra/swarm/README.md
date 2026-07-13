@@ -20,6 +20,27 @@ Evidência usada para o stack:
 - `ENCRYPTION_KEY`
 - `INTERNAL_API_TOKEN`
 
+Para o fluxo automatico via GitHub Actions + Portainer, configure:
+
+- `CAPPYCLOUD_REGISTRY=ghcr.io/cecon`
+- `CAPPYCLOUD_IMAGE_TAG=latest`
+
+O workflow `.github/workflows/container-images.yml` publica as imagens:
+
+- `ghcr.io/cecon/cappycloud-api`
+- `ghcr.io/cecon/cappycloud-web`
+- `ghcr.io/cecon/cappycloud-sandbox`
+
+Cada imagem recebe duas tags no push para `main`: o SHA curto do commit e
+`latest`. O Portainer deve ficar apontado para `latest` e ter o webhook do stack
+registrado no secret `PORTAINER_WEBHOOK_URL` do GitHub. Ao terminar o push das
+imagens, o workflow chama esse webhook para o Portainer redeployar o stack e
+puxar a imagem nova.
+
+Se os packages GHCR estiverem privados, configure tambem a credencial do registry
+`ghcr.io` no Portainer com permissao de leitura desses packages. Como alternativa,
+deixe os packages publicos.
+
 `OPENROUTER_API_KEY` é opcional quando o provedor/modelo ativo está cadastrado
 no banco com chave própria, como Azure. O sandbox ainda recebe um placeholder
 não secreto para satisfazer o boot do openclaude; em runtime a API envia a

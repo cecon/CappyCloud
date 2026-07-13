@@ -1,7 +1,7 @@
 # Portainer stack variables for CappyCloud
 # Cole os valores reais no painel do Portainer. Nao versionar este arquivo.
-CAPPYCLOUD_REGISTRY=iaservicecontainerdev.azurecr.io
-CAPPYCLOUD_IMAGE_TAG=82b91ff-202606151007
+CAPPYCLOUD_REGISTRY=ghcr.io/cecon
+CAPPYCLOUD_IMAGE_TAG=latest
 CAPPYCLOUD_HOST=cappy.cappyfy.com
 POSTGRES_USER=cappy
 POSTGRES_DB=cappycloud
