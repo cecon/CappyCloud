@@ -1,4 +1,4 @@
-import { Badge, Button, Code, Group, Paper, Stack, Text, Title } from '@mantine/core'
+﻿import { Badge, Button, Code, Group, Paper, Stack, Text, Title } from '@/components/ui/legacy'
 import {
   IconCopy,
   IconKey,

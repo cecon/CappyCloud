@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Badge,
@@ -16,7 +16,7 @@ import {
   Textarea,
   TextInput,
   Title,
-} from '@mantine/core'
+} from '@/components/ui/legacy'
 import { IconPencil, IconTrash } from '@tabler/icons-react'
 import {
   createGlobalSkill,
@@ -182,7 +182,7 @@ export function AdminGlobalSkillsPage() {
   }
 
   async function handleDelete(skill: GlobalSkill) {
-    if (!window.confirm(`Apagar skill global "${skill.name}"?`)) return
+    if (!window.confirm(`Apagar skill global "${skill.name}"?? `)) return
     const token = getToken()
     if (!token) return
     setActionError(null)
@@ -222,7 +222,7 @@ export function AdminGlobalSkillsPage() {
           <Stack gap={4}>
             <Title order={2}>Skills globais</Title>
             <Text c="dimmed" size="sm">
-              Catálogo global de skills. Cada skill é adicionada às sandboxes selecionadas e
+              Catalogo global de skills. Cada skill e adicionada as sandboxes selecionadas e
               escrita em ~/.claude/skills no boot.
             </Text>
           </Stack>

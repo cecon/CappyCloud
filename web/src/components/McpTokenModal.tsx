@@ -1,4 +1,4 @@
-import { Alert, Button, Code, Group, Modal, Stack, Text } from '@mantine/core'
+﻿import { Alert, Button, Code, Group, Modal, Stack, Text } from '@/components/ui/legacy'
 import { IconAlertTriangle, IconCopy } from '@tabler/icons-react'
 import styles from '../pages/mcp-server.module.css'
 

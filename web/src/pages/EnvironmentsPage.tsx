@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+﻿import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ActionIcon,
@@ -14,7 +14,7 @@ import {
   Text,
   TextInput,
   Title,
-} from '@mantine/core'
+} from '@/components/ui/legacy'
 import {
   type RepoEnv,
   type EnvStatus,
@@ -99,7 +99,7 @@ export function EnvironmentsPage({ token }: Props) {
   }
 
   async function handleDelete(envId: string) {
-    if (!confirm('Remover este ambiente? O container Docker será parado.')) return
+    if (!confirm('Remover este ambiente?? O container Docker será parado.')) return
     try {
       await deleteRepoEnvironment(token, envId)
       setEnvs((prev) => prev.filter((e) => e.id !== envId))

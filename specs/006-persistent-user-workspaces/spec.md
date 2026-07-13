@@ -12,7 +12,7 @@
 
 ### Session 2026-07-08
 
-- Q: What should happen when a persistent user baseline workspace is dirty because a previous operation ended unexpectedly? -> A: Repair automatically by discarding uncommitted baseline changes before the agent relies on it.
+- Q: What should happen when a persistent user baseline workspace is dirty because a previous operation ended unexpectedly?-> A: Repair automatically by discarding uncommitted baseline changes before the agent relies on it.
 
 ## User Scenarios & Testing *(mandatory)*
 

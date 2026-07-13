@@ -1,4 +1,4 @@
-import { Alert, Button, Group, Modal, Select, Stack, Switch, TextInput } from '@mantine/core'
+﻿import { Alert, Button, Group, Modal, Select, Stack, Switch, TextInput } from '@/components/ui/legacy'
 
 export type McpServerFormState = {
   name: string

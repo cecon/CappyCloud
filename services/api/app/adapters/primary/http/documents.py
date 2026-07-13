@@ -7,7 +7,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
@@ -15,13 +15,38 @@ from app.domain.entities import User, UserRole
 from app.infrastructure.document_ingester import IngesterError, ingest_document
 from app.infrastructure.orm_models import Document, Repository
 from app.infrastructure.orm_models_access import UserRepositoryAccess
-from app.schemas import DocumentCreate, DocumentOut
+from app.infrastructure.orm_models_document_graph import DocumentGraphEdge, DocumentGraphNode
+from app.schemas import DocumentCreate, DocumentGraphSummary, DocumentOut
 
 router = APIRouter(tags=["documents"])
 log = logging.getLogger(__name__)
 
 _UPLOAD_MAX_BYTES = 25 * 1024 * 1024
 _REUPLOAD_ONLY_TYPES = {"pdf", "xlsx", "markdown", "txt", "docx"}
+
+
+async def _document_out(session: AsyncSession, document: Document) -> DocumentOut:
+    graph_nodes_count = await session.scalar(
+        select(func.count(DocumentGraphNode.id)).where(DocumentGraphNode.document_id == document.id)
+    )
+    graph_edges_count = await session.scalar(
+        select(func.count(DocumentGraphEdge.id)).where(DocumentGraphEdge.document_id == document.id)
+    )
+    out = DocumentOut.model_validate(document)
+    out.graph_nodes_count = int(graph_nodes_count or 0)
+    out.graph_edges_count = int(graph_edges_count or 0)
+    return out
+
+
+def _document_out_with_graph_counts(
+    document: Document,
+    graph_nodes_count: int | None,
+    graph_edges_count: int | None,
+) -> DocumentOut:
+    out = DocumentOut.model_validate(document)
+    out.graph_nodes_count = int(graph_nodes_count or 0)
+    out.graph_edges_count = int(graph_edges_count or 0)
+    return out
 
 
 def _source_type_from_filename(filename: str) -> str:
@@ -81,12 +106,31 @@ async def list_documents(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> list[DocumentOut]:
     await _get_repo_or_404(session, current, repo_id)
+    graph_nodes = (
+        select(DocumentGraphNode.document_id, func.count(DocumentGraphNode.id).label("nodes_count"))
+        .group_by(DocumentGraphNode.document_id)
+        .subquery()
+    )
+    graph_edges = (
+        select(DocumentGraphEdge.document_id, func.count(DocumentGraphEdge.id).label("edges_count"))
+        .group_by(DocumentGraphEdge.document_id)
+        .subquery()
+    )
     rows = await session.execute(
-        select(Document)
+        select(Document, graph_nodes.c.nodes_count, graph_edges.c.edges_count)
+        .outerjoin(graph_nodes, graph_nodes.c.document_id == Document.id)
+        .outerjoin(graph_edges, graph_edges.c.document_id == Document.id)
         .where(Document.repository_id == repo_id)
         .order_by(Document.created_at.desc())
     )
-    return [DocumentOut.model_validate(document) for document in rows.scalars()]
+    out: list[DocumentOut] = []
+    for row in rows.all():
+        if isinstance(row, Document):
+            out.append(DocumentOut.model_validate(row))
+            continue
+        document, nodes_count, edges_count = row
+        out.append(_document_out_with_graph_counts(document, nodes_count, edges_count))
+    return out
 
 
 @router.post("/repositories/{repo_id}/documents", response_model=DocumentOut, status_code=201)
@@ -122,7 +166,7 @@ async def create_document(
 
     await session.commit()
     await session.refresh(document)
-    return DocumentOut.model_validate(document)
+    return await _document_out(session, document)
 
 
 @router.post(
@@ -167,7 +211,7 @@ async def upload_document(
 
     await session.commit()
     await session.refresh(document)
-    return DocumentOut.model_validate(document)
+    return await _document_out(session, document)
 
 
 @router.get("/documents/{doc_id}", response_model=DocumentOut)
@@ -177,7 +221,7 @@ async def get_document(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> DocumentOut:
     document = await _get_doc_or_404(session, current, doc_id)
-    return DocumentOut.model_validate(document)
+    return await _document_out(session, document)
 
 
 @router.post("/documents/{doc_id}/reindex", response_model=DocumentOut)
@@ -202,7 +246,35 @@ async def reindex_document(
 
     await session.commit()
     await session.refresh(document)
-    return DocumentOut.model_validate(document)
+    return await _document_out(session, document)
+
+
+@router.get("/documents/{doc_id}/graph-summary", response_model=DocumentGraphSummary)
+async def get_document_graph_summary(
+    doc_id: uuid.UUID,
+    current: Annotated[User, Depends(get_authenticated_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> DocumentGraphSummary:
+    document = await _get_doc_or_404(session, current, doc_id)
+    graph_nodes_count = await session.scalar(
+        select(func.count(DocumentGraphNode.id)).where(DocumentGraphNode.document_id == document.id)
+    )
+    graph_edges_count = await session.scalar(
+        select(func.count(DocumentGraphEdge.id)).where(DocumentGraphEdge.document_id == document.id)
+    )
+    sample_rows = await session.execute(
+        select(DocumentGraphNode.name)
+        .where(DocumentGraphNode.document_id == document.id)
+        .where(DocumentGraphNode.kind == "table")
+        .order_by(DocumentGraphNode.name)
+        .limit(8)
+    )
+    return DocumentGraphSummary(
+        document_id=document.id,
+        graph_nodes_count=int(graph_nodes_count or 0),
+        graph_edges_count=int(graph_edges_count or 0),
+        sample_tables=list(sample_rows.scalars()),
+    )
 
 
 @router.delete("/documents/{doc_id}", status_code=204)

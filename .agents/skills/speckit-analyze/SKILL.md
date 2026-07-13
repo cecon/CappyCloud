@@ -126,7 +126,7 @@ Focus on high-signal findings. Limit to 50 findings total; aggregate remainder i
 #### B. Ambiguity Detection
 
 - Flag vague adjectives (fast, scalable, secure, intuitive, robust) lacking measurable criteria
-- Flag unresolved placeholders (TODO, TKTK, ???, `<placeholder>`, etc.)
+- Flag unresolved placeholders (TODO, TKTK, ?, `<placeholder>`, etc.)
 
 #### C. Underspecification
 
@@ -175,7 +175,7 @@ Output a Markdown report (no file writes) with the following structure:
 
 **Coverage Summary Table:**
 
-| Requirement Key | Has Task? | Task IDs | Notes |
+| Requirement Key | Has Task?| Task IDs | Notes |
 |-----------------|-----------|----------|-------|
 
 **Constitution Alignment Issues:** (if any)

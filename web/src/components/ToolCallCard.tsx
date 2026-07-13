@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Badge, Code, Collapse, Group, Text } from '@mantine/core'
+﻿import { useState } from 'react'
+import { Badge, Code, Collapse, Group, Text } from '@/components/ui/legacy'
 import styles from './chat.module.css'
 
 export type ToolCallState = {
@@ -28,7 +28,7 @@ export function ToolCallCard({ tool }: Props) {
 
   const borderColor = tool.done
     ? tool.isError
-      ? 'var(--mantine-color-red-8)'
+      ? 'color-mix(in srgb, var(--destructive) 22%, transparent)'
       : 'var(--cc-outline-variant)'
     : 'var(--cc-primary)'
 
@@ -116,7 +116,7 @@ export function ToolCallCard({ tool }: Props) {
                   fontSize: 11,
                   maxHeight: 180,
                   overflow: 'auto',
-                  color: tool.isError ? 'var(--mantine-color-red-4)' : undefined,
+                  color: tool.isError ? 'var(--destructive)' : undefined,
                 }}
               >
                 {tool.output}

@@ -11,13 +11,13 @@ Este guia define o processo e os critérios para revisão de código no projeto 
 
 ### 1. Arquitetura Hexagonal (Ports & Adapters)
 - [ ] **Lógica de Negócio**: TODA a lógica de negócio está em `app/application/use_cases/`?
-- [ ] **Adapters Primários**: Os routers em `app/adapters/primary/http/` são "thin"? Eles apenas fazem parse, chamam o use case e retornam a resposta?
+- [ ] **Adapters Primários**: Os routers em `app/adapters/primary/http/` são "thin"?Eles apenas fazem parse, chamam o use case e retornam a resposta?
 - [ ] **Ports**: Novas dependências externas (DB, serviços) possuem uma Interface (ABC) em `app/ports/`?
 - [ ] **Adapters Secundários**: As implementações concretas estão em `app/adapters/secondary/`?
 - [ ] **Domínio**: As entidades em `app/domain/` são puras (sem dependências externas como SQLAlchemy ou FastAPI)?
 
 ### 2. Padrões de Código e Qualidade
-- [ ] **Limite de Linhas**: O arquivo possui mais de 300 linhas? Se sim, deve ser dividido.
+- [ ] **Limite de Linhas**: O arquivo possui mais de 300 linhas?Se sim, deve ser dividido.
 - [ ] **Tipagem**: Todas as funções e classes públicas possuem type annotations (`mypy` compliant)?
 - [ ] **Nomenclatura**: Segue `snake_case` para Python e `camelCase` para TypeScript?
 - [ ] **Validação**: Validações de domínio vivem no `domain` (value objects) e são chamadas pelos schemas Pydantic?

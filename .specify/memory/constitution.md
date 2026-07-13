@@ -1,18 +1,19 @@
 <!--
 Sync Impact Report
-Version change: 1.0.0 -> 1.0.1
-Modified principles: None; clarified propagation into Spec Kit templates.
+Version change: 1.0.1 -> 1.1.0
+Modified principles: VI. UX And API Contracts Must Reduce Friction.
 Added sections: Sync Impact Report.
 Removed sections: None.
 Templates requiring updates:
-- .specify/templates/plan-template.md: updated
-- .specify/templates/spec-template.md: updated
-- .specify/templates/tasks-template.md: updated
+- .specify/templates/plan-template.md: reviewed, no change required
+- .specify/templates/spec-template.md: reviewed, no change required
+- .specify/templates/tasks-template.md: reviewed, no change required
 - .specify/templates/commands/*.md: not present in this installation
 Runtime guidance reviewed:
-- AGENTS.md: already updated
-- docs/how-to/spec-kit.md: already updated
-- README.md: reviewed, no change required
+- AGENTS.md: already aligned with Spec Kit flow
+- .agents/skills/frontend-implementation/SKILL.md: updated for governed shadcn/Tailwind migration
+- .agents/skills/design-system/SKILL.md: updated for governed shadcn/Tailwind tokens
+- .agents/skills/ux-design/SKILL.md: updated for governed shadcn/Tailwind UX decisions
 Follow-up TODOs: None.
 -->
 
@@ -91,8 +92,16 @@ model, executed flow, or relevant page/result.
 API responses, validation errors, streaming behavior, loading states, and empty
 states MUST be explicit enough for the frontend and the user to understand what
 happened. User-facing text SHOULD be accessible Portuguese when the product
-surface is Portuguese. Frontend work MUST follow the existing React and Mantine
-patterns instead of introducing a parallel design system.
+surface is Portuguese.
+
+Frontend work MUST follow the active frontend design system recorded in the
+current Spec Kit plan. Existing features default to the repository's React and
+Mantine patterns. A non-trivial design-system migration MAY adopt another
+component and theming foundation only when the specification, plan, and tasks
+explicitly approve it, update dependent skills/templates, and include migration
+and validation tasks for every affected product surface. Parallel UI systems
+MUST NOT remain in the same authenticated product surface after migration unless
+the Spec Kit artifacts explicitly scope the temporary overlap and its removal.
 
 ## Additional Constraints
 
@@ -132,6 +141,6 @@ in the same change that updates the source rule.
 Amendments require updating this file, checking dependent templates or docs,
 and documenting the effect on future Spec Kit plans.
 
-**Version**: 1.0.1
+**Version**: 1.1.0
 **Ratified**: 2026-06-10
-**Last Amended**: 2026-06-10
+**Last Amended**: 2026-07-10

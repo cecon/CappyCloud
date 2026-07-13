@@ -12,11 +12,11 @@
 
 ### Session 2026-06-16
 
-- Q: What execution scope should the MVP support? → A: Agents may generate changes in the cycle worktree/sandbox, but human review is required before any external action.
-- Q: What should be the default scope for reusable knowledge? → A: Reuse is limited to the authorized repository/domain; cross-repository reuse requires an explicit authorized relationship, and isolation must be enforced during knowledge retrieval before content reaches the agent.
-- Q: Which review gates are mandatory in the MVP? → A: Product, architecture, and quality gates are always required; compliance is triggered automatically when the cycle touches configured sensitive surfaces such as fiscal rules, electronic documents, tax parameters, or regulated customer data.
-- Q: What minimum lifecycle states should an agentic delivery cycle support? → A: Draft, Ready, Running, Review, Rework, Approved, Rejected, Cancelled, and Failed, with controlled valid transitions between states.
-- Q: Who can authorize external actions? → A: Only users with explicit permission for the repository or domain may authorize external actions, and only after all required gates are complete; authorization must be rechecked at the external action execution boundary.
+- Q: What execution scope should the MVP support?→ A: Agents may generate changes in the cycle worktree/sandbox, but human review is required before any external action.
+- Q: What should be the default scope for reusable knowledge?→ A: Reuse is limited to the authorized repository/domain; cross-repository reuse requires an explicit authorized relationship, and isolation must be enforced during knowledge retrieval before content reaches the agent.
+- Q: Which review gates are mandatory in the MVP?→ A: Product, architecture, and quality gates are always required; compliance is triggered automatically when the cycle touches configured sensitive surfaces such as fiscal rules, electronic documents, tax parameters, or regulated customer data.
+- Q: What minimum lifecycle states should an agentic delivery cycle support?→ A: Draft, Ready, Running, Review, Rework, Approved, Rejected, Cancelled, and Failed, with controlled valid transitions between states.
+- Q: Who can authorize external actions?→ A: Only users with explicit permission for the repository or domain may authorize external actions, and only after all required gates are complete; authorization must be rechecked at the external action execution boundary.
 
 ## User Scenarios & Testing *(mandatory)*
 

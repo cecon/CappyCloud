@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Badge,
@@ -12,7 +12,7 @@ import {
   Table,
   Text,
   Title,
-} from '@mantine/core'
+} from '@/components/ui/legacy'
 import {
   type AdminAiProvider,
   type AiModel,

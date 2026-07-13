@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Badge, ScrollArea, Text } from '@mantine/core'
+﻿import { useState } from 'react'
+import { Badge, ScrollArea, Text } from '@/components/ui/legacy'
 import type { ConversationDiff, DiffFile } from '../api'
 import styles from './DiffViewer.module.css'
 

@@ -1,47 +1,170 @@
-html,
-body,
-#root {
-  height: 100%;
-  margin: 0;
+﻿@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
 }
 
-/* ── Design System: The Silent Architect ─────────────────────── */
-/* Mapeamento das superfícies do Stitch para variáveis Mantine    */
+:root {
+  color-scheme: light;
+  --radius: 0.5rem;
+  --background: #f6f2e9;
+  --foreground: #2a2418;
+  --card: #fffdf7;
+  --card-foreground: #2a2418;
+  --popover: #fffdf7;
+  --popover-foreground: #2a2418;
+  --primary: #b6772a;
+  --primary-foreground: #fff8eb;
+  --secondary: #eef3e6;
+  --secondary-foreground: #315421;
+  --muted: #efe9dc;
+  --muted-foreground: #6f6551;
+  --accent: #efe7d5;
+  --accent-foreground: #5d3a12;
+  --destructive: #b84235;
+  --destructive-foreground: #fff7f4;
+  --border: rgba(40, 32, 16, 0.16);
+  --input: rgba(40, 32, 16, 0.18);
+  --ring: #b6772a;
+  --success: #4d8a38;
+  --warning: #c07826;
 
-[data-mantine-color-scheme='dark'] {
-  /* Surface hierarchy — obsidian tonal nesting */
-  --mantine-color-body:   #0e0e0f;
-  --mantine-color-dark-9: #000000;
-  --mantine-color-dark-8: #0e0e0f;
-  --mantine-color-dark-7: #131315;
-  --mantine-color-dark-6: #19191b;
-  --mantine-color-dark-5: #1f1f22;
-  --mantine-color-dark-4: #252628;
-  --mantine-color-dark-3: #2b2c2f;
-  --mantine-color-dark-2: #48484b;
-  --mantine-color-dark-1: #757578;
-  --mantine-color-dark-0: #acaaae;
-
-  /* Design system tokens */
-  --cc-surface:             #0e0e0f;
-  --cc-surface-low:         #131315;
-  --cc-surface-container:   #19191b;
-  --cc-surface-high:        #1f1f22;
-  --cc-surface-highest:     #252628;
-  --cc-surface-bright:      #2b2c2f;
-  --cc-on-surface:          #e7e5e8;
-  --cc-on-surface-variant:  #acaaae;
-  --cc-outline-variant:     #48484b;
-  --cc-primary:             #3b82f6;
-  --cc-secondary:           #22c55e;
-  --cc-error:               #ef4444;
+  --cc-surface: var(--background);
+  --cc-surface-low: #efe9dc;
+  --cc-surface-container: var(--card);
+  --cc-surface-high: #f2ecdd;
+  --cc-surface-highest: #e4dccb;
+  --cc-surface-bright: #d8cbb6;
+  --cc-on-surface: var(--foreground);
+  --cc-on-surface-variant: var(--muted-foreground);
+  --cc-outline-variant: var(--border);
+  --cc-primary: var(--primary);
+  --cc-secondary: var(--success);
+  --cc-error: var(--destructive);
 }
 
-/* Scrollbar fina no estilo IDE */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--cc-surface-high) transparent;
+.dark,
+[data-theme='dark'] {
+  color-scheme: dark;
+  --background: #18150f;
+  --foreground: #f2ede1;
+  --card: #201c15;
+  --card-foreground: #f2ede1;
+  --popover: #201c15;
+  --popover-foreground: #f2ede1;
+  --primary: #e0a458;
+  --primary-foreground: #2a1f08;
+  --secondary: #232d1c;
+  --secondary-foreground: #cfe7be;
+  --muted: #282318;
+  --muted-foreground: #a89f8c;
+  --accent: #2e2818;
+  --accent-foreground: #f2d29f;
+  --destructive: #e26d5a;
+  --destructive-foreground: #2a0d08;
+  --border: rgba(240, 235, 222, 0.09);
+  --input: rgba(240, 235, 222, 0.16);
+  --ring: #eeb877;
+  --success: #7fbd6a;
+  --warning: #e0894a;
+
+  --cc-surface: var(--background);
+  --cc-surface-low: #120f0b;
+  --cc-surface-container: var(--card);
+  --cc-surface-high: var(--muted);
+  --cc-surface-highest: #2e2818;
+  --cc-surface-bright: #382f20;
+  --cc-on-surface: var(--foreground);
+  --cc-on-surface-variant: var(--muted-foreground);
+  --cc-outline-variant: var(--border);
+  --cc-primary: var(--primary);
+  --cc-secondary: var(--success);
+  --cc-error: var(--destructive);
 }
-*::-webkit-scrollbar { width: 6px; height: 6px; }
-*::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb { background: var(--cc-surface-high); border-radius: 3px; }
+
+@layer base {
+  * {
+    @apply border-border;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 999px;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+    margin: 0;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  a {
+    color: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .app-theme-page {
+    min-height: 100%;
+    background: var(--background);
+    color: var(--foreground);
+  }
+}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+﻿import { useCallback, useEffect, useState } from 'react'
 import {
   ActionIcon,
   Alert,
@@ -12,7 +12,7 @@ import {
   Text,
   Textarea,
   TextInput,
-} from '@mantine/core'
+} from '@/components/ui/legacy'
 import {
   createSandboxSkill,
   deleteSandboxSkill,
@@ -120,7 +120,7 @@ export function SandboxSkillsPanel({ sandbox, canManage = true }: Props) {
   }
 
   async function handleDelete(skill: SandboxSkill) {
-    if (!window.confirm(`Apagar skill "${skill.name}"?`)) return
+    if (!window.confirm(`Apagar skill "${skill.name}"?? `)) return
     const token = getToken()
     if (!token) return
     try {

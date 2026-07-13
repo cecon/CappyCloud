@@ -70,6 +70,10 @@ evidence_terms = load_agent_module(
     "services.cappycloud_agent._evidence_terms",
     ROOT / "services/cappycloud_agent/_evidence_terms.py",
 )
+evidence_repo_docs = load_agent_module(
+    "services.cappycloud_agent._evidence_repo_docs",
+    ROOT / "services/cappycloud_agent/_evidence_repo_docs.py",
+)
 evidence_docs = load_agent_module(
     "services.cappycloud_agent._evidence_docs",
     ROOT / "services/cappycloud_agent/_evidence_docs.py",

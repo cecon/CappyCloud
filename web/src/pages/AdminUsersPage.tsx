@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+﻿import { useCallback, useEffect, useState } from 'react'
 import {
   ActionIcon,
   Alert,
@@ -18,7 +18,7 @@ import {
   Text,
   TextInput,
   Title,
-} from '@mantine/core'
+} from '@/components/ui/legacy'
 import {
   IconDotsVertical,
   IconKey,

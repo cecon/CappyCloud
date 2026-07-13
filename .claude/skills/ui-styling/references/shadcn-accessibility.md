@@ -234,7 +234,7 @@ Announce errors to screen readers:
         <Input
           {...field}
           aria-invalid={!!fieldState.error}
-          aria-describedby={fieldState.error ? "email-error" : undefined}
+          aria-describedby={fieldState.error ?"email-error" : undefined}
         />
       </FormControl>
       <FormMessage id="email-error" />

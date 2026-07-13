@@ -83,6 +83,51 @@
   color: #f08585;
 }
 
+.graphBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.35rem;
+  padding: 0.12rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.graphReady {
+  background: color-mix(in oklab, var(--status-success) 18%, transparent);
+  border-color: color-mix(in oklab, var(--status-success) 38%, transparent);
+  color: var(--status-success);
+}
+
+.graphEmpty {
+  background: color-mix(in oklab, var(--status-warning) 14%, transparent);
+  border-color: color-mix(in oklab, var(--status-warning) 32%, transparent);
+  color: var(--status-warning);
+}
+
+.graphSummary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid color-mix(in oklab, var(--status-success) 32%, var(--border-default));
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--status-success) 10%, var(--surface-raised));
+  color: var(--text-primary);
+  font-size: 0.8rem;
+}
+
+.graphSummary strong {
+  color: var(--status-success);
+}
+
+.graphSummary span {
+  color: var(--text-secondary);
+}
+
 .tabs {
   display: flex;
   gap: 0.25rem;

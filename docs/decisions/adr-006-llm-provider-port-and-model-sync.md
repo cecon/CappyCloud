@@ -134,7 +134,7 @@ Reforço do que ficou em [ADR-004](adr-004-sandbox-lifecycle-and-registry.md):
 
 1. UI mostra dropdown de modelos filtrados por `UserModelAccess` e pela
    sandbox selecionada (modelos do provider configurado na sandbox).
-2. API valida no guard: `user` tem acesso a `model_id`? `model` pertence ao
+2. API valida no guard: `user` tem acesso a `model_id`?`model` pertence ao
    provider configurado na `sandbox`?
 3. Bootstrap injeta `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL` e modelo
    default no openclaude da sandbox.

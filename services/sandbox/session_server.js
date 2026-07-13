@@ -87,7 +87,7 @@ async function createWorktree({ slug, alias, base_branch, branch_name, worktree_
   const args = [slug, alias, worktree_path, base_branch || '', branch_name || '', clone_url]
   const { stdout, stderr } = await execFileAsync('/session_start.sh', args, {
     env: { ...process.env },
-    timeout: 60_000,
+    timeout: 300_000,
   })
   const gitDir = path.join(worktree_path, '.git')
   if (!fs.existsSync(gitDir)) {
@@ -393,6 +393,34 @@ const server = http.createServer(async (req, res) => {
         if (repoId) params.append('repo_id', repoId)
       }
       const apiUrl = `http://${apiHost}:${apiPort}/api/skills/_search/internal?${params}`
+      try {
+        const resp = await fetch(apiUrl, {
+          headers: internalToken ? { 'X-Internal-Token': internalToken } : {},
+        })
+        const text = await resp.text()
+        if (resp.status >= 400) {
+          return json(res, resp.status, { error: 'API error', detail: text.slice(0, 300) })
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        return res.end(text)
+      } catch (err) {
+        return json(res, 502, { error: 'API unreachable', detail: err.message })
+      }
+    }
+
+    if (req.method === 'GET' && pathname === '/document-graph/search') {
+      const q = url.searchParams.get('q') || ''
+      const limit = url.searchParams.get('limit') || '5'
+      if (!q) return json(res, 400, { error: 'q is required' })
+
+      const apiHost = process.env.API_HOST || 'cappycloud-api'
+      const apiPort = process.env.API_PORT_INTERNAL || '8080'
+      const internalToken = process.env.INTERNAL_API_TOKEN || ''
+      const params = new URLSearchParams({ q, limit })
+      for (const repoId of url.searchParams.getAll('repo_id')) {
+        if (repoId) params.append('repo_id', repoId)
+      }
+      const apiUrl = `http://${apiHost}:${apiPort}/api/document-graph/_search/internal?${params}`
       try {
         const resp = await fetch(apiUrl, {
           headers: internalToken ? { 'X-Internal-Token': internalToken } : {},

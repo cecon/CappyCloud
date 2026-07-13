@@ -666,10 +666,10 @@ export interface StreamHandlers {
   onActionRequired(action: ActionRequiredEvent): void
   onStatus(status: StatusEvent): void
   onError(message: string): void
-  onCursor?(cursor: number): void
-  onPayloadDiagnostic?(diagnostics: PayloadSizeBreakdown): void
+  onCursor? (cursor: number): void
+  onPayloadDiagnostic? (diagnostics: PayloadSizeBreakdown): void
   /** Acumulador final de tokens/modelo enviado quando o agente termina o turno. */
-  onDone?(usage: DoneEvent): void
+  onDone? (usage: DoneEvent): void
   signal?: AbortSignal
 }
 
@@ -1267,7 +1267,7 @@ export async function fetchConversationFile(
   path: string
 ): Promise<{ path: string; content: string }> {
   const res = await apiFetch(
-    `/api/conversations/${conversationId}/file?path=${encodeURIComponent(path)}`,
+    `/api/conversations/${conversationId}/file?? path=${encodeURIComponent(path)}`,
     { headers: { Authorization: `Bearer ${token}` } }
   )
   if (!res.ok) {
@@ -1357,7 +1357,7 @@ export async function updateGitProviderToken(
   newToken: string,
 ): Promise<GitProvider> {
   const res = await apiFetch(
-    `/api/git-providers/${providerId}/token?token=${encodeURIComponent(newToken)}`,
+    `/api/git-providers/${providerId}/token?? token=${encodeURIComponent(newToken)}`,
     {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${token}` },
@@ -1883,9 +1883,18 @@ export interface RepoDocument {
   status: 'pending' | 'processing' | 'indexed' | 'error' | string
   error_message: string | null
   chunks_count: number
+  graph_nodes_count: number
+  graph_edges_count: number
   created_at: string
   updated_at: string
   indexed_at: string | null
+}
+
+export interface DocumentGraphSummary {
+  document_id: string
+  graph_nodes_count: number
+  graph_edges_count: number
+  sample_tables: string[]
 }
 
 export interface DocumentCreate {
@@ -1956,6 +1965,20 @@ export async function reindexRepoDocument(
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(formatApiErrorPayload(err) || 'Falha ao reindexar')
+  }
+  return res.json()
+}
+
+export async function fetchDocumentGraphSummary(
+  token: string,
+  docId: string,
+): Promise<DocumentGraphSummary> {
+  const res = await apiFetch(`/api/documents/${docId}/graph-summary`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao testar graph do documento')
   }
   return res.json()
 }

@@ -1,4 +1,5 @@
 import type { Skill, SkillCreate, Workspace } from '../api'
+import { Modal } from './ui/legacy'
 import styles from '../pages/settings.module.css'
 
 type FilterMode = 'all' | 'active'
@@ -24,9 +25,6 @@ type SkillsPageSectionsProps = {
   onSaveSkill: (e: React.FormEvent) => void
 }
 
-/**
- * Blocos de UI da página Skills: CRUD simples com lista e painel de edição.
- */
 export function SkillsPageSections(p: SkillsPageSectionsProps) {
   const repoNameById = new Map(p.workspaces.map((workspace) => [workspace.id, workspace.name]))
   const editing = p.editingSkillId !== null
@@ -38,7 +36,7 @@ export function SkillsPageSections(p: SkillsPageSectionsProps) {
           <div>
             <h2 className={styles.sectionTitle}>Skills cadastradas</h2>
             <p className={styles.sectionDesc}>
-              {p.filteredSkills.length} item(ns) para uso dinâmico no contexto do agente.
+              {p.filteredSkills.length} item(ns) para uso dinamico no contexto do agente.
             </p>
           </div>
           <div className={styles.crudToolbar}>
@@ -57,7 +55,7 @@ export function SkillsPageSections(p: SkillsPageSectionsProps) {
             </button>
           </div>
         </div>
-        {p.loading && <p className={styles.hint}>Carregando…</p>}
+        {p.loading && <p className={styles.hint}>Carregando...</p>}
         {p.error && <p className={styles.errorMsg}>{p.error}</p>}
 
         {p.filteredSkills.length === 0 && !p.loading ? (
@@ -67,16 +65,16 @@ export function SkillsPageSections(p: SkillsPageSectionsProps) {
             <thead>
               <tr>
                 <th>Repo</th>
-                <th>Título</th>
-                <th>Descrição</th>
+                <th>Titulo</th>
+                <th>Descricao</th>
                 <th>Status</th>
-                <th style={{ textAlign: 'right' }}>Ações</th>
+                <th style={{ textAlign: 'right' }}>Acoes</th>
               </tr>
             </thead>
             <tbody>
               {p.filteredSkills.map((s) => (
                 <tr key={s.id} className={p.editingSkillId === s.id ? styles.selectedRow : undefined}>
-                  <td>{s.repository_id ? repoNameById.get(s.repository_id) ?? 'Repo removido' : 'Global'}</td>
+                  <td>{s.repository_id ? (repoNameById.get(s.repository_id) ?? 'Repo removido') : 'Global'}</td>
                   <td>{s.title}</td>
                   <td>
                     <span className={styles.descriptionCell} title={s.summary || s.content}>
@@ -87,7 +85,7 @@ export function SkillsPageSections(p: SkillsPageSectionsProps) {
                     <button
                       className={`${styles.statusPill} ${s.active ? styles.statusPillOn : styles.statusPillOff}`}
                       onClick={() => p.onToggleActive(s)}
-                      title={s.active ? 'Desactivar' : 'Activar'}
+                      title={s.active ? 'Desativar' : 'Ativar'}
                     >
                       {s.active ? 'Ativa' : 'Inativa'}
                     </button>
@@ -117,20 +115,18 @@ export function SkillsPageSections(p: SkillsPageSectionsProps) {
         )}
       </section>
 
-      {p.formOpen && (
-      <section className={`${styles.section} ${styles.editPanel}`}>
-        <div className={styles.crudHeader}>
-          <div>
-            <h2 className={styles.sectionTitle}>{editing ? 'Editar skill' : 'Nova skill'}</h2>
-            <p className={styles.sectionDesc}>Defina o repo, título e a regra curta que o agente deve receber.</p>
-          </div>
-          <button type="button" className={styles.actionBtn} onClick={p.onCancelForm} title="Fechar">
-            <span className={styles.icon}>close</span>
-          </button>
-        </div>
+      <Modal
+        opened={p.formOpen}
+        onClose={p.onCancelForm}
+        title={editing ? 'Editar skill' : 'Nova skill'}
+        size="38rem"
+      >
+        <p className={styles.sectionDesc}>
+          Defina o repo, titulo e a regra curta que o agente deve receber.
+        </p>
         <form onSubmit={p.onSaveSkill} className={styles.form}>
           <label className={styles.label}>
-            Repositório
+            Repositorio
             <select
               className={styles.input}
               value={p.skillForm.repository_id}
@@ -138,7 +134,7 @@ export function SkillsPageSections(p: SkillsPageSectionsProps) {
               required
             >
               {!p.skillForm.repository_id && (
-                <option value="" disabled>Selecione um repositório…</option>
+                <option value="" disabled>Selecione um repositorio...</option>
               )}
               {p.workspaces.map((workspace) => (
                 <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
@@ -146,17 +142,17 @@ export function SkillsPageSections(p: SkillsPageSectionsProps) {
             </select>
           </label>
           <label className={styles.label}>
-            Título
+            Titulo
             <input
               className={styles.input}
               value={p.skillForm.title}
               onChange={(e) => p.setSkillForm((prev) => ({ ...prev, title: e.target.value }))}
-              placeholder="Ex.: NFS-e — Configuração"
+              placeholder="Ex.: NFS-e - Configuracao"
               required
             />
           </label>
           <label className={styles.label}>
-            Descrição
+            Descricao
             <textarea
               className={styles.input}
               value={p.skillForm.summary ?? ''}
@@ -173,12 +169,11 @@ export function SkillsPageSections(p: SkillsPageSectionsProps) {
               Cancelar
             </button>
             <button className={styles.submitBtn} type="submit" disabled={p.savingSkill}>
-              {p.savingSkill ? 'Salvando…' : editing ? 'Salvar alterações' : 'Criar skill'}
+              {p.savingSkill ? 'Salvando...' : editing ? 'Salvar alteracoes' : 'Criar skill'}
             </button>
           </div>
         </form>
-      </section>
-      )}
+      </Modal>
     </div>
   )
 }

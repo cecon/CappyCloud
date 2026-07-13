@@ -197,11 +197,6 @@
   gap: 1rem;
 }
 
-.crudLayout:has(.editPanel) {
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
-  align-items: start;
-}
-
 .crudHeader {
   display: flex;
   align-items: flex-start;
@@ -260,11 +255,6 @@
   background: rgba(255, 255, 255, 0.045);
   color: var(--cc-on-surface-variant);
   border-color: rgba(255, 255, 255, 0.06);
-}
-
-.editPanel {
-  position: sticky;
-  top: 1rem;
 }
 
 .hint {
@@ -589,4 +579,132 @@
     overflow-x: auto;
     white-space: nowrap;
   }
+}
+
+/* Theme lock: align settings/admin legacy modules with tmp/Cappy palette. */
+.page {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.header,
+.section {
+  border-color: var(--border);
+  background: var(--card);
+  box-shadow: none;
+}
+
+.header::before {
+  display: none;
+}
+
+.backLink:hover,
+.settingsLinkIcon {
+  color: var(--primary);
+}
+
+.title,
+.sectionTitle,
+.identityBlock,
+.settingsLinkTitle {
+  color: var(--foreground);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0;
+}
+
+.sectionDesc,
+.hint,
+.descriptionCell,
+.settingsLinkDesc,
+.settingsLinkArrow,
+.label,
+.panelText {
+  color: var(--muted-foreground);
+}
+
+.settingsLink {
+  border-top-color: var(--border);
+}
+
+.settingsLink:hover,
+.selectedRow {
+  background: var(--accent);
+}
+
+.badge,
+.statusPillOff {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.badge_super,
+.badge_pending {
+  background: rgba(224, 164, 88, 0.13);
+  color: var(--primary);
+}
+
+.badge_cloned,
+.statusPillOn {
+  border-color: rgba(127, 189, 106, 0.2);
+  background: rgba(127, 189, 106, 0.13);
+  color: var(--success);
+}
+
+.badge_error {
+  background: rgba(226, 109, 90, 0.13);
+  color: var(--destructive);
+}
+
+.table th,
+.table td {
+  border-color: var(--border);
+}
+
+.table th {
+  color: var(--muted-foreground);
+  font-weight: 800;
+}
+
+.table tbody tr:hover {
+  background: var(--accent);
+}
+
+.actionBtn,
+.reloadBranchBtn,
+.secondaryBtn,
+.input {
+  border-color: var(--input);
+  background: var(--card);
+  color: var(--foreground);
+}
+
+.actionBtn:hover:not(:disabled),
+.reloadBranchBtn:hover:not(:disabled),
+.secondaryBtn:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+.actionBtnDanger:hover:not(:disabled) {
+  border-color: var(--destructive);
+  background: rgba(226, 109, 90, 0.13);
+  color: var(--destructive);
+}
+
+.primaryBtn,
+.submitBtn {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: none;
+}
+
+.primaryBtn:hover:not(:disabled),
+.submitBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary) 88%, white);
+}
+
+.input:focus {
+  border-color: var(--ring);
+  background: var(--card);
+  box-shadow: 0 0 0 3px rgba(224, 164, 88, 0.12);
 }

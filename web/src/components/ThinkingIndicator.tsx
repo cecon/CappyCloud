@@ -1,4 +1,4 @@
-import { Group, Text } from '@mantine/core'
+﻿import { Group, Text } from '@/components/ui/legacy'
 import styles from './chat.module.css'
 
 interface ThinkingIndicatorProps {

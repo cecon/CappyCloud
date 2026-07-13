@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Alert, Button, Container, Paper, PasswordInput, Stack, Text, Title } from '@mantine/core'
+﻿import React, { useState } from 'react'
+import { Alert, Button, Container, Paper, PasswordInput, Stack, Text, Title } from '@/components/ui/legacy'
 import { useNavigate } from 'react-router-dom'
 import { changePasswordRequest, errorToUserMessage, getToken } from '../api'
 

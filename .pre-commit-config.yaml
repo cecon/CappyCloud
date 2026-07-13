@@ -22,6 +22,11 @@ repos:
 
   - repo: local
     hooks:
+      - id: check-text-encoding
+        name: "UTF-8 sem mojibake"
+        entry: python scripts/check_text_encoding.py
+        language: system
+        types_or: [text]
       - id: max-file-length
         name: "Máximo 300 linhas por arquivo de código"
         entry: python scripts/check_file_length.py

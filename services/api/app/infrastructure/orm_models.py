@@ -308,6 +308,10 @@ from app.infrastructure.orm_models_agentic_delivery import (  # noqa: F401, E402
     SensitiveSurface,
     StructuredWorkPackage,
 )
+from app.infrastructure.orm_models_document_graph import (  # noqa: F401, E402
+    DocumentGraphEdge,
+    DocumentGraphNode,
+)
 from app.infrastructure.orm_models_execution import (  # noqa: F401, E402
     AgentEvent,
     AgentTask,

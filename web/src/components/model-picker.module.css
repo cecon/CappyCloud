@@ -1,4 +1,4 @@
-/*
+﻿/*
  * ModelPicker — popover custom (não usar <select> nativo com 368 opções).
  * Aplica regras ui-ux-pro-max: touch ≥44pt, contraste ≥4.5:1, focus visível,
  * tokens semânticos, números monospace para alinhamento à direita.
@@ -14,23 +14,23 @@
 .trigger {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  min-height: 36px;
-  padding: 0.3rem 0.65rem;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 9px;
-  color: var(--cc-on-surface, #f2f2f2);
+  gap: 0.5rem;
+  min-height: 34px;
+  padding: 0.38rem 0.7rem;
+  background: var(--card);
+  border: 1px solid var(--input);
+  border-radius: 999px;
+  color: var(--foreground);
   font-family: 'Inter', sans-serif;
   font-size: 0.78rem;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
   max-width: 260px;
 }
 
 .trigger:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(255, 255, 255, 0.14);
+  background: var(--accent);
+  border-color: var(--ring);
 }
 
 .trigger:focus-visible {
@@ -44,17 +44,19 @@
 }
 
 .triggerCompact {
-  min-height: 28px;
-  padding: 0.2rem 0.55rem;
+  min-height: 30px;
+  padding: 0.32rem 0.65rem;
   font-size: 0.72rem;
-  border-radius: 7px;
+  border-radius: 999px;
   max-width: 220px;
 }
 
 .triggerIcon {
-  font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', sans-serif;
-  font-size: 1rem;
-  opacity: 0.7;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--primary);
+  opacity: 1;
   flex-shrink: 0;
 }
 
@@ -69,17 +71,26 @@
 
 .triggerProvider {
   font-size: 0.6rem;
-  opacity: 0.55;
+  color: var(--muted-foreground);
   text-transform: lowercase;
   letter-spacing: 0.04em;
 }
 
 .triggerName {
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 200px;
+}
+
+.triggerCompact .triggerText {
+  flex-direction: row;
+  align-items: center;
+}
+
+.triggerCompact .triggerProvider {
+  display: none;
 }
 
 .triggerChevron {
@@ -94,13 +105,28 @@
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  background: var(--cc-surface-high, #1a1a1d);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.55),
-    0 8px 24px -8px rgba(0, 0, 0, 0.35);
+  background: var(--popover);
+  border: 1px solid var(--input);
+  border-radius: 10px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.34);
   overflow: hidden;
   font-family: 'Inter', sans-serif;
+}
+
+.popoverCompact {
+  width: min(240px, calc(100vw - 16px)) !important;
+  padding: 8px;
+  gap: 2px;
+}
+
+.compactLabel {
+  padding: 6px 7px 8px;
+  color: var(--muted-foreground);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
 .searchBar {
@@ -149,6 +175,11 @@
   gap: 1px;
 }
 
+.popoverCompact .list {
+  padding: 0;
+  gap: 2px;
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -166,15 +197,47 @@
 }
 
 .rowActive {
-  background: rgba(96, 165, 250, 0.1);
+  background: var(--accent);
 }
 
 .rowSelected {
-  border-color: rgba(96, 165, 250, 0.45);
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
 }
 
 .rowSelected.rowActive {
-  background: rgba(96, 165, 250, 0.18);
+  background: color-mix(in srgb, var(--primary) 16%, var(--card));
+}
+
+.popoverCompact .row {
+  min-height: 34px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  gap: 8px;
+}
+
+.popoverCompact .rowProvider,
+.popoverCompact .rowMeta,
+.popoverCompact .rowStats,
+.popoverCompact .rowSubtle,
+.popoverCompact .footer {
+  display: none;
+}
+
+.popoverCompact .rowName {
+  color: var(--muted-foreground);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.popoverCompact .rowSelected,
+.popoverCompact .rowSelected.rowActive {
+  background: color-mix(in srgb, var(--primary) 18%, var(--card));
+  border-color: transparent;
+}
+
+.popoverCompact .rowSelected .rowName {
+  color: var(--foreground);
 }
 
 .rowClear .rowMain {
@@ -331,4 +394,77 @@
   font-size: 12px;
   line-height: 1;
   font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 20;
+}
+
+:global(:root:not(.dark):not([data-theme='dark'])) .trigger {
+  border-color: var(--input);
+  background: var(--card);
+  color: var(--foreground);
+}
+
+:global(:root:not(.dark):not([data-theme='dark'])) .trigger:hover:not(:disabled) {
+  border-color: var(--ring);
+  background: var(--accent);
+}
+
+:global(:root:not(.dark):not([data-theme='dark'])) .triggerProvider,
+:global(:root:not(.dark):not([data-theme='dark'])) .triggerChevron {
+  color: var(--muted-foreground);
+  opacity: 1;
+}
+
+:global(:root:not(.dark):not([data-theme='dark'])) .popover {
+  border-color: var(--border);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: 0 20px 44px rgba(40, 32, 16, 0.18);
+}
+
+:global(:root:not(.dark):not([data-theme='dark'])) .searchBar,
+:global(:root:not(.dark):not([data-theme='dark'])) .footer {
+  border-color: var(--border);
+  background: var(--card);
+}
+
+:global(:root:not(.dark):not([data-theme='dark'])) .searchInput,
+:global(:root:not(.dark):not([data-theme='dark'])) .row,
+:global(:root:not(.dark):not([data-theme='dark'])) .rowPricing {
+  color: var(--foreground);
+}
+
+:global(:root:not(.dark):not([data-theme='dark'])) .searchInput::placeholder,
+:global(:root:not(.dark):not([data-theme='dark'])) .searchCount,
+:global(:root:not(.dark):not([data-theme='dark'])) .rowMeta,
+:global(:root:not(.dark):not([data-theme='dark'])) .rowSubtle,
+:global(:root:not(.dark):not([data-theme='dark'])) .rowCtx,
+:global(:root:not(.dark):not([data-theme='dark'])) .footer,
+:global(:root:not(.dark):not([data-theme='dark'])) .empty {
+  color: var(--muted-foreground);
+}
+
+:global(:root:not(.dark):not([data-theme='dark'])) .rowActive {
+  background: var(--accent);
+}
+
+:global(:root:not(.dark):not([data-theme='dark'])) .rowSelected {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+}
+
+:global(:root:not(.dark):not([data-theme='dark'])) .rowProvider,
+:global(:root:not(.dark):not([data-theme='dark'])) .visionBadge {
+  border-color: color-mix(in srgb, var(--primary) 24%, var(--border));
+  background: color-mix(in srgb, var(--primary) 12%, var(--card));
+  color: var(--primary);
+}
+
+:global(:root:not(.dark):not([data-theme='dark'])) .rowProviderTag {
+  background: var(--muted);
+}
+
+:global(:root:not(.dark):not([data-theme='dark'])) .rowPriceIn {
+  color: var(--primary);
+}
+
+:global(:root:not(.dark):not([data-theme='dark'])) .rowPriceOut {
+  color: var(--warning);
 }

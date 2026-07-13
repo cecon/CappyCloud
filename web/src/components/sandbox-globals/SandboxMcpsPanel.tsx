@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+﻿import { useCallback, useEffect, useState } from 'react'
 import {
   ActionIcon,
   Alert,
@@ -14,7 +14,7 @@ import {
   Text,
   Textarea,
   TextInput,
-} from '@mantine/core'
+} from '@/components/ui/legacy'
 import {
   createSandboxMcp,
   deleteSandboxMcp,
@@ -148,7 +148,7 @@ export function SandboxMcpsPanel({ sandbox }: Props) {
   }
 
   async function handleDelete(mcp: McpServer) {
-    if (!window.confirm(`Apagar MCP "${mcp.name}"?`)) return
+    if (!window.confirm(`Apagar MCP "${mcp.name}"?? `)) return
     const token = getToken()
     if (!token) return
     try {

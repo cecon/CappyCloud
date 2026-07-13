@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+﻿import { useCallback, useEffect, useState } from 'react'
 import {
   Alert,
   Badge,
@@ -19,7 +19,7 @@ import {
   Text,
   TextInput,
   Title,
-} from '@mantine/core'
+} from '@/components/ui/legacy'
 import { IconPencil, IconPlus, IconRefresh } from '@tabler/icons-react'
 import {
   createAdminProvider,
