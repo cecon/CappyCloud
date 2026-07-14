@@ -1,4 +1,4 @@
-﻿"""Prompt sections used by the CappyCloud agent context."""
+"""Prompt sections used by the CappyCloud agent context."""
 
 from __future__ import annotations
 
@@ -58,26 +58,6 @@ def render_repo_agents(agent_profiles: list[dict]) -> str:
         lines.append(line)
         if agent.get("system_prompt"):
             lines.append(f"\n{agent['system_prompt']}")
-    return "\n".join(lines)
-
-
-def render_agentic_cycle_context(cycle_context: dict | None) -> str:
-    if not cycle_context:
-        return ""
-    repository_ids = cycle_context.get("repository_ids") or []
-    lines = [
-        "## Contexto do ciclo Agentic Delivery",
-        f"- Ciclo: `{cycle_context.get('cycle_id') or ''}`",
-        f"- Pacote de trabalho: `{cycle_context.get('work_package_id') or ''}`",
-        f"- Versão do pacote: `{cycle_context.get('work_package_version') or ''}`",
-        f"- Domínio: `{cycle_context.get('domain_key') or 'não informado'}`",
-        f"- Repositórios autorizados: {', '.join(f'`{r}`' for r in repository_ids)}",
-        "",
-        "Trate esta execução como review-only. Não faça push, deploy, merge, "
-        "alteração irreversível ou chamada externa que mude estado. Produza "
-        "evidências para afirmações importantes; quando faltar fonte, marque a "
-        "afirmação como não suportada em vez de inferir.",
-    ]
     return "\n".join(lines)
 
 

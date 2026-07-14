@@ -28,7 +28,7 @@ The implementation approach is a frontend redesign of `web/` using React 19, Vit
 
 **Constraints**: No horizontal page scrolling for core desktop/notebook viewports; maintain accessible Portuguese UI text; preserve authorization behavior for admin/super-admin/user views; keep backend and runtime context dynamic; avoid committing generated dumps or temporary files from `tmp/`.
 
-**Scale/Scope**: All existing authenticated routes in `web/src/App.tsx`: `/`, `/chat`, `/runs`, `/agentic-delivery`, `/analytics`, `/skills`, `/mcp`, `/settings`, `/change-password`, `/admin/users`, `/admin/sandboxes`, `/admin/repositories`, `/admin/skills-global`, `/admin/models`, `/admin/providers`, plus redirects that must remain sane. Login remains public but should not visually clash with the new theme.
+**Scale/Scope**: All existing authenticated routes in `web/src/App.tsx`: `/`, `/chat`, `/runs`, `/analytics`, `/skills`, `/mcp`, `/settings`, `/change-password`, `/admin/users`, `/admin/sandboxes`, `/admin/repositories`, `/admin/skills-global`, `/admin/models`, `/admin/providers`, plus redirects that must remain sane. Login remains public but should not visually clash with the new theme.
 
 ## Constitution Check
 

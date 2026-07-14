@@ -91,34 +91,6 @@ Mensagem persistida numa Conversation.
 
 ---
 
-### Agentic Delivery Cycle
-Ciclo auditável para transformar uma intenção de mudança em pacote de trabalho,
-execução de agente em modo review-only, revisão humana e eventual autorização de
-ação externa.
-
-| Campo             | Tipo       | Descrição                                      |
-|-------------------|------------|------------------------------------------------|
-| `id`              | UUID       | Chave primária                                 |
-| `repository_id`   | UUID       | Repositório/domínio de isolamento do ciclo     |
-| `status`          | enum       | Estado da máquina de estados do ciclo          |
-| `objective`       | str        | Objetivo funcional da mudança                  |
-| `created_by`      | UUID       | Utilizador que abriu o ciclo                   |
-| `created_at`      | datetime   | UTC                                            |
-| `updated_at`      | datetime   | UTC                                            |
-
-**Regras:**
-- Conhecimento reutilizável é filtrado por `repository_id` antes de ranking ou
-  exposição ao agente.
-- Gates obrigatórios precisam ser aprovados antes de ação externa.
-- Compliance é disparado automaticamente quando a mudança toca superfícies
-  sensíveis configuradas, como fiscal, documento eletrônico ou dado regulado.
-- Aprovação humana só libera ação externa quando o utilizador tem permissão
-  explícita no repositório/domínio.
-- A autorização é validada no servidor no momento da ação, não apenas na UI.
-
-Ver [Agentic Delivery Factory](how-to/agentic-delivery-factory.md).
-
----
 
 ## Regras de negócio
 
