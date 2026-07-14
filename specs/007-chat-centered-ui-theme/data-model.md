@@ -64,7 +64,7 @@ This feature does not introduce persisted backend data. The model below describe
 
 **Fields**:
 
-- `section`: dashboard, users, sandboxes, repositories, MCP servers, skills, models, providers, runs, analytics, or agentic delivery where applicable.
+- `section`: dashboard, users, sandboxes, repositories, MCP servers, skills, models, providers, runs, analytics where applicable.
 - `permissionLevel`: user, admin, or super-admin.
 - `contentState`: loading, loaded, empty, error, saving.
 - `actions`: create, edit, delete, test, sync, grant access, revoke access, promote/demote, view details, confirm/cancel.
@@ -84,7 +84,6 @@ This feature does not introduce persisted backend data. The model below describe
 - `/`
 - `/chat`
 - `/runs`
-- `/agentic-delivery`
 - `/analytics`
 - `/skills`
 - `/mcp`

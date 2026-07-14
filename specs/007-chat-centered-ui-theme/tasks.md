@@ -83,7 +83,7 @@
 - [X] T034 [US2] Integrate `UserMenu` into `web/src/components/AppLayout.tsx`
 - [X] T035 [P] [US2] Add theme preference control and persistence in `web/src/components/layout/ThemeToggle.tsx`
 - [X] T036 [P] [US2] Add account actions for change password and logout in `web/src/components/layout/UserMenu.tsx`
-- [X] T037 [US2] Move secondary route links for runs, analytics, agentic delivery, skills, MCP, and settings from the old sidebar metadata into `web/src/components/layout/navigation.ts`
+- [X] T037 [US2] Move secondary route links for runs, analytics, skills, MCP, and settings from the old sidebar metadata into `web/src/components/layout/navigation.ts`
 - [X] T038 [US2] Move admin/super-admin entries for users, sandboxes, repositories, global skills, models, and providers into role-aware user menu groups in `web/src/components/layout/navigation.ts`
 - [X] T039 [US2] Preserve anonymous, `must_change_password`, admin, and super-admin guard behavior in `web/src/App.tsx`
 - [ ] T040 [US2] Remove obsolete sidebar group rendering from `web/src/components/app-layout.module.css`
@@ -104,7 +104,6 @@
 - [ ] T042 [US3] Migrate dashboard/start route styling from `web/src/pages/DashboardPage.tsx` and `web/src/components/dashboard/` to Tailwind/shadcn components
 - [ ] T043 [P] [US3] Migrate runs UI from `web/src/pages/RunsPage.tsx` and `web/src/pages/runs.module.css`
 - [ ] T044 [P] [US3] Migrate analytics UI from `web/src/pages/AnalyticsPage.tsx` and `web/src/pages/analytics.module.css`
-- [ ] T045 [P] [US3] Migrate agentic delivery UI from `web/src/pages/AgenticDeliveryPage.tsx`, `web/src/pages/agentic-delivery-page.module.css`, and `web/src/components/agentic-delivery/`
 - [ ] T046 [P] [US3] Migrate skills UI from `web/src/pages/SkillsPage.tsx` and `web/src/components/SkillsPageSections.tsx`
 - [ ] T047 [P] [US3] Migrate MCP user UI from `web/src/pages/McpServerPage.tsx`, `web/src/pages/mcp-server.module.css`, and `web/src/components/UserMcpServerCard.tsx`
 - [ ] T048 [P] [US3] Migrate settings UI from `web/src/pages/SettingsPage.tsx` and `web/src/pages/settings.module.css`

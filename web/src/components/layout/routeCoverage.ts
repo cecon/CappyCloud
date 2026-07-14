@@ -8,7 +8,6 @@ export const authenticatedRouteCoverage: RouteCoverageItem[] = [
   { route: '/', access: 'authenticated', presentation: 'chat-shell' },
   { route: '/chat', access: 'authenticated', presentation: 'chat-shell' },
   { route: '/runs', access: 'authenticated', presentation: 'overlay' },
-  { route: '/agentic-delivery', access: 'authenticated', presentation: 'overlay' },
   { route: '/analytics', access: 'authenticated', presentation: 'overlay' },
   { route: '/skills', access: 'authenticated', presentation: 'overlay' },
   { route: '/mcp', access: 'authenticated', presentation: 'overlay' },

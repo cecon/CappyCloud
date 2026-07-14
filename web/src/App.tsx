@@ -9,9 +9,6 @@ import { ThinkingIndicator } from './components/ThinkingIndicator'
 import { useCurrentUser } from './hooks/useCurrentUser'
 
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })))
-const AgenticDeliveryPage = lazy(() =>
-  import('./pages/AgenticDeliveryPage').then((m) => ({ default: m.AgenticDeliveryPage })),
-)
 const SkillsPage = lazy(() => import('./pages/SkillsPage').then(m => ({ default: m.SkillsPage })))
 const ChatPage = lazy(() => import('./pages/ChatPage').then(m => ({ default: m.ChatPage })))
 const ChangePasswordPage = lazy(() =>
@@ -153,12 +150,6 @@ export default function App() {
           }
         />
         <Route
-          path="/agentic-delivery"
-          element={
-            <ProtectedPage><AgenticDeliveryPage /></ProtectedPage>
-          }
-        />
-        <Route
           path="/login"
           element={
             token ? (
@@ -232,6 +223,7 @@ export default function App() {
             </AdminPage>
           }
         />
+        <Route path="*" element={<Navigate to="/chat" replace />} />
       </Routes>
     </Suspense>
   )

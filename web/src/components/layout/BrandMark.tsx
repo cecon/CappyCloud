@@ -6,7 +6,7 @@ export function BrandMark({ className }: { className?: string }) {
     <img
       src={markUrl}
       alt=""
-      className={cn('size-9 rounded-md object-contain', className)}
+      className={cn('h-9 w-9 rounded-md object-contain', className)}
       aria-hidden="true"
     />
   )

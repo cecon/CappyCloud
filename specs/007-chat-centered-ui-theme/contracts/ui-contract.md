@@ -11,7 +11,6 @@ This contract defines expected UI behavior for the authenticated web app after t
 | `/` | authenticated | Opens the chat-centered shell or routes into the primary chat/start experience. |
 | `/chat` | authenticated | Shows the primary chat surface, conversation support rail, context bar, message stream, and composer. |
 | `/runs` | authenticated | Opens from user menu as a redesigned console/panel or routed overlay. |
-| `/agentic-delivery` | authenticated | Opens from user menu as a redesigned console/panel or routed overlay. |
 | `/analytics` | authenticated | Opens from user menu as a redesigned console/panel or routed overlay. |
 | `/skills` | authenticated | Opens from user menu as a redesigned console/panel or routed overlay. |
 | `/mcp` | authenticated | Opens from user menu/admin console as redesigned MCP management. |
