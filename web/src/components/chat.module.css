@@ -2903,6 +2903,7 @@
   align-items: flex-start;
   gap: 13px;
   width: min(100%, 58rem);
+  min-width: 0;
   align-self: flex-start;
 }
 
@@ -2930,6 +2931,14 @@
 .agentBubbleBody {
   min-width: 0;
   flex: 1;
+}
+
+.thinkingLiveStack {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .agentBubbleBody > .messageAgent,
@@ -2961,6 +2970,9 @@
   border-color: var(--border);
   border-radius: 12px;
   background: var(--card);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .thinkingStreamHeader {
@@ -4349,7 +4361,8 @@
 .thinkingStream {
   align-self: flex-start;
   width: 100%;
-  max-width: 92%;
+  max-width: 100%;
+  min-width: 0;
   border: 1px solid var(--cc-outline-variant);
   border-radius: 10px;
   background: linear-gradient(
@@ -4421,6 +4434,7 @@
   position: relative;
   z-index: 1;
   width: 100%;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 0.65rem;
@@ -4541,6 +4555,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
+  min-width: 0;
   padding: 0.5rem 0.85rem 0.85rem;
   border-top: 1px solid rgba(255, 255, 255, 0.04);
   max-height: 460px;
@@ -4548,6 +4563,7 @@
 }
 
 .thinkingStreamStep {
+  min-width: 0;
   opacity: 0;
   transform: translateY(3px);
   animation: sessionStepIn 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -4558,6 +4574,7 @@
 
 .thinkingStreamTextStep {
   display: flex;
+  min-width: 0;
   gap: 0.5rem;
   padding: 0.35rem 0;
   font-size: 0.8rem;
@@ -4575,8 +4592,10 @@
 
 .thinkingStreamTextBody {
   flex: 1;
+  min-width: 0;
   white-space: pre-wrap;
-  word-wrap: break-word;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* Tool call compacta. */
@@ -4585,6 +4604,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
+  min-width: 0;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.055);
   border-radius: 8px;
@@ -4637,6 +4657,7 @@
   align-items: center;
   gap: 0.45rem;
   width: 100%;
+  min-width: 0;
   padding: 0.35rem 0.55rem;
   background: transparent;
   border: 0;
@@ -4682,11 +4703,15 @@
 
 .thinkingStreamToolName {
   flex-shrink: 0;
+  max-width: 12rem;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.72rem;
   font-weight: 600;
   color: var(--cc-on-surface);
   text-transform: capitalize;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .thinkingStreamToolSummary {
@@ -4715,6 +4740,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
+  min-width: 0;
   padding: 0.5rem 0.55rem 0.25rem;
 }
 
@@ -4737,7 +4763,8 @@
   line-height: 1.45;
   color: var(--cc-on-surface);
   white-space: pre-wrap;
-  word-wrap: break-word;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   max-height: 200px;
   overflow: auto;
 }
