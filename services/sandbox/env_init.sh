@@ -17,7 +17,10 @@
 set -euo pipefail
 
 OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}"
-OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+# OpenClaude 0.17 initializes its provider registry before CappyCloud injects
+# the per-request provider credentials. Keep startup independent from
+# OPENGATEWAY_API_KEY; real requests replace this with ChatRequest.provider_api_key.
+OPENAI_API_KEY="${OPENAI_API_KEY:-cappycloud-runtime-bootstrap-key}"
 OPENAI_MODEL="${OPENAI_MODEL:-anthropic/claude-3.5-sonnet}"
 CLAUDE_CODE_USE_OPENAI="${CLAUDE_CODE_USE_OPENAI:-1}"
 GRPC_HOST="${GRPC_HOST:-0.0.0.0}"
