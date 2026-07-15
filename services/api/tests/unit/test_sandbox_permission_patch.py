@@ -9,6 +9,7 @@ from tests.unit.agent_runtime_test_loader import ROOT
 PATCH_TEXT = (ROOT / "services/sandbox/patches/multimodal-grpc-handler.patch").read_text(
     encoding="utf-8"
 )
+ENV_INIT_TEXT = (ROOT / "services/sandbox/env_init.sh").read_text(encoding="utf-8")
 
 
 def test_request_permissions_auto_allows_read_only_tools() -> None:
@@ -33,3 +34,9 @@ def test_request_permissions_keeps_mutating_tools_interactive() -> None:
     assert match is not None
     assert "CAPPYCLOUD_READ_ONLY_TOOLS.has(toolName)" in match.group("body")
     assert "? { behavior: 'allow' } : null" in match.group("body")
+
+
+def test_sandbox_bootstrap_does_not_require_opengateway_key() -> None:
+    assert 'OPENGATEWAY_API_KEY="${OPENGATEWAY_API_KEY' not in ENV_INIT_TEXT
+    assert 'OPENAI_API_KEY="${OPENAI_API_KEY:-cappycloud-runtime-bootstrap-key}"' in ENV_INIT_TEXT
+    assert "provider_api_key" in ENV_INIT_TEXT
