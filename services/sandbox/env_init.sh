@@ -42,6 +42,51 @@ EOF
 
 echo "Provider: OpenRouter  model=${OPENAI_MODEL}"
 
+# Patch openclaude startup provider fallback for headless CappyCloud.
+# OpenClaude 0.17 defaults a first-run profile to Gitlawb Opengateway, which
+# requires OPENGATEWAY_API_KEY before CappyCloud can inject per-request provider
+# credentials. The sandbox is an OpenAI-compatible runtime; use the generic
+# custom provider and keep the real provider credentials request-scoped.
+_PROVIDER_PROFILE_TS=/openclaude/src/utils/providerProfile.ts
+if [ -f "$_PROVIDER_PROFILE_TS" ]; then
+    node - "$_PROVIDER_PROFILE_TS" << 'PATCH_EOF'
+const fs = require('fs');
+const file = process.argv[2];
+let c = fs.readFileSync(file, 'utf8');
+if (c.includes("CappyCloud default startup provider")) {
+  console.log('[env_init] startup provider patch: already present.');
+  process.exit(0);
+}
+const pattern = /  if \(!persisted\) \{\r?\n    \/\/ No saved profile[^\r\n]*\r?\n    const env = buildCompatibilityProcessEnv\(\{\r?\n      processEnv,\r?\n      compatibilityMode: 'openai',\r?\n      profileEnv: \{[\s\S]*?    env\[DEFAULT_STARTUP_PROVIDER_ENV_VAR\] = 'gitlawb-opengateway'\r?\n    return env\r?\n  \}/;
+const replacement = `  if (!persisted) {
+    // CappyCloud default startup provider: generic OpenAI-compatible runtime.
+    const env = buildCompatibilityProcessEnv({
+      processEnv,
+      compatibilityMode: 'openai',
+      profileEnv: {
+        OPENAI_BASE_URL:
+          processEnv.OPENAI_BASE_URL ??
+          processEnv.OPENAI_API_BASE ??
+          getRouteDefaultBaseUrl('custom') ??
+          'https://openrouter.ai/api/v1',
+        OPENAI_MODEL:
+          processEnv.OPENAI_MODEL ??
+          getRouteDefaultModel('custom') ??
+          'anthropic/claude-3.5-sonnet',
+      },
+    })
+    env[DEFAULT_STARTUP_PROVIDER_ENV_VAR] = 'custom'
+    return env
+  }`;
+if (!pattern.test(c)) {
+  console.log('[env_init] startup provider patch: needle not found, skipping.');
+  process.exit(0);
+}
+fs.writeFileSync(file, c.replace(pattern, replacement));
+console.log('[env_init] startup provider patch applied.');
+PATCH_EOF
+fi
+
 # ── Git global identity ───────────────────────────────────────
 git config --global user.email "${GIT_USER_EMAIL:-agent@cappycloud.local}"
 git config --global user.name "${GIT_USER_NAME:-CappyCloud Agent}"

@@ -40,3 +40,9 @@ def test_sandbox_bootstrap_does_not_require_opengateway_key() -> None:
     assert 'OPENGATEWAY_API_KEY="${OPENGATEWAY_API_KEY' not in ENV_INIT_TEXT
     assert 'OPENAI_API_KEY="${OPENAI_API_KEY:-cappycloud-runtime-bootstrap-key}"' in ENV_INIT_TEXT
     assert "provider_api_key" in ENV_INIT_TEXT
+
+
+def test_sandbox_startup_provider_uses_openai_compatible_fallback() -> None:
+    assert "CappyCloud default startup provider" in ENV_INIT_TEXT
+    assert "env[DEFAULT_STARTUP_PROVIDER_ENV_VAR] = 'custom'" in ENV_INIT_TEXT
+    assert "getRouteDefaultBaseUrl('custom')" in ENV_INIT_TEXT
