@@ -44,6 +44,7 @@ index 11e6c66..42ae6dd 100644
 +])
 +
 +const CAPPYCLOUD_EDIT_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit', 'MultiEdit'])
++const CAPPYCLOUD_READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS', 'LSP'])
 +const CAPPYCLOUD_MUTATING_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit', 'MultiEdit', 'Bash'])
 +
 +type CappycloudPermissionDecision = {
@@ -61,7 +62,7 @@ index 11e6c66..42ae6dd 100644
 +
 +function cappycloudPermissionDecision(mode: string, toolName: string): CappycloudPermissionDecision | null {
 +  if (mode === 'request_permissions') {
-+    return null
++    return CAPPYCLOUD_READ_ONLY_TOOLS.has(toolName) ? { behavior: 'allow' } : null
 +  }
 +  if (mode === 'accept_edits') {
 +    return CAPPYCLOUD_EDIT_TOOLS.has(toolName) ? { behavior: 'allow' } : null
