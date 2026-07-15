@@ -17,7 +17,7 @@ index 11e6c66..42ae6dd 100644
  
  const PROTO_PATH = path.resolve(import.meta.dirname, '../proto/openclaude.proto')
  
-@@ -24,6 +26,367 @@ const openclaudeProto = protoDescriptor.openclaude.v1
+@@ -24,6 +26,368 @@ const openclaudeProto = protoDescriptor.openclaude.v1
  
  const MAX_SESSIONS = 1000
  
@@ -386,7 +386,7 @@ index 11e6c66..42ae6dd 100644
  export class GrpcServer {
    private server: grpc.Server
    private sessions: Map<string, any[]> = new Map()
-@@ -61,12 +424,15 @@ export class GrpcServer {
+@@ -61,12 +425,15 @@ export class GrpcServer {
      let previousMessages: any[] = []
      let sessionId = ''
      let interrupted = false
@@ -402,7 +402,7 @@ index 11e6c66..42ae6dd 100644
                error: {
                  message: 'A request is already in progress on this stream',
                  code: 'ALREADY_EXISTS'
-@@ -76,21 +442,56 @@ export class GrpcServer {
+@@ -76,21 +443,56 @@ export class GrpcServer {
            }
            interrupted = false
            const req = clientMessage.request
@@ -467,7 +467,7 @@ index 11e6c66..42ae6dd 100644
              // Register OpenClaude's built-in agents (general-purpose,
              // statusline-setup, optional code-guide). Without this the Agent
              // tool throws "Agent type 'general-purpose' not found" the moment
-@@ -102,19 +503,49 @@ export class GrpcServer {
+@@ -102,19 +504,49 @@ export class GrpcServer {
                if (toolUseID) {
                  toolNameById.set(toolUseID, tool.name)
                }
@@ -517,7 +517,7 @@ index 11e6c66..42ae6dd 100644
                 action_required: {
                   prompt_id: promptId,
                   question,
-@@ -144,12 +575,30 @@ export class GrpcServer {
+@@ -144,12 +576,30 @@ export class GrpcServer {
            let promptTokens = 0
            let completionTokens = 0
  
@@ -549,7 +549,7 @@ index 11e6c66..42ae6dd 100644
                   text_chunk: {
                     text: msg.event.delta.text
                   }
-@@ -169,6 +618,7 @@ export class GrpcServer {
+@@ -169,6 +619,7 @@ export class GrpcServer {
                        outputStr = block.content.map(c => c.type === 'text' ? c.text : '').join('\n')
                      }
                      call.write({
@@ -557,7 +557,7 @@ index 11e6c66..42ae6dd 100644
                       tool_result: {
                         tool_name: toolNameById.get(block.tool_use_id) ?? block.tool_use_id,
                         tool_use_id: block.tool_use_id,
-@@ -192,19 +642,12 @@ export class GrpcServer {
+@@ -192,19 +643,12 @@ export class GrpcServer {
            }
  
            if (!interrupted) {
@@ -581,7 +581,7 @@ index 11e6c66..42ae6dd 100644
               done: {
                 full_text: fullText,
                  prompt_tokens: promptTokens,
-@@ -232,6 +675,7 @@ export class GrpcServer {
+@@ -232,6 +676,7 @@ export class GrpcServer {
        } catch (err: any) {
          console.error('Error processing stream')
          call.write({
