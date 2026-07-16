@@ -1,17 +1,10 @@
-﻿import { useEffect, useState } from 'react'
-import {
-  Alert,
-  Badge,
-  Button,
-  Checkbox,
-  Drawer,
-  Group,
-  Loader,
-  Stack,
-  Tabs,
-  Text,
-  Title,
-} from '@/components/ui/legacy'
+import { useEffect, useState, type ReactNode } from 'react'
+import { LoaderCircle } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { cn } from '@/lib/utils'
 import {
   type AdminUser,
   type AiModel,
@@ -35,16 +28,9 @@ import {
   type Sandbox,
 } from '../api'
 
-type Props = {
-  user: AdminUser | null
-  onClose: () => void
-}
+type Props = { user: AdminUser | null; onClose: () => void }
 
-type Pair<T> = {
-  available: T[] | null
-  allowed: Set<string>
-  busy: Set<string>
-}
+type Pair<T> = { available: T[] | null; allowed: Set<string>; busy: Set<string> }
 
 const EMPTY = <T,>(): Pair<T> => ({ available: null, allowed: new Set(), busy: new Set() })
 
@@ -109,11 +95,8 @@ export function UserAccessDrawer({ user, onClose }: Props) {
     setState({ ...state, busy: nextBusy })
     setError(null)
     try {
-      if (wasAllowed) {
-        await revoke(token, user.id, resourceId)
-      } else {
-        await grant(token, user.id, resourceId)
-      }
+      if (wasAllowed) await revoke(token, user.id, resourceId)
+      else await grant(token, user.id, resourceId)
       const nextAllowed = new Set(state.allowed)
       if (wasAllowed) nextAllowed.delete(resourceId)
       else nextAllowed.add(resourceId)
@@ -136,7 +119,6 @@ export function UserAccessDrawer({ user, onClose }: Props) {
     setError(null)
     try {
       await bulkGrantAiModelsByTier(token, user.id, tier)
-      // Reload allowed model ids:
       const allowed = await fetchUserAiModelAccess(token, user.id)
       setModels((prev) => ({ ...prev, allowed: new Set(allowed) }))
     } catch (err) {
@@ -147,194 +129,180 @@ export function UserAccessDrawer({ user, onClose }: Props) {
   }
 
   return (
-    <Drawer
-      opened={user !== null}
-      onClose={onClose}
-      position="right"
-      size="xl"
-      title={
-        user ? (
-          <Stack gap={2}>
-            <Title order={4}>Acessos · {user.email}</Title>
-            <Text size="xs" c="dimmed">
-              ADMIN vê tudo; USER vê apenas os recursos selecionados aqui.
-            </Text>
-          </Stack>
-        ) : null
-      }
-    >
-      {user && (
-        <Stack gap="md">
-          {error && (
-            <Alert color="red" title="Falha" withCloseButton onClose={() => setError(null)}>
-              {error}
-            </Alert>
-          )}
-          <Tabs defaultValue="sandboxes" keepMounted={false}>
-            <Tabs.List>
-              <Tabs.Tab value="sandboxes">Sandboxes</Tabs.Tab>
-              <Tabs.Tab value="repos">Repositórios</Tabs.Tab>
-              <Tabs.Tab value="models">Modelos LLM</Tabs.Tab>
-            </Tabs.List>
+    <Sheet open={user !== null} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent
+        side="right"
+        className="flex h-dvh w-[min(54rem,calc(100vw-1rem))] max-w-none flex-col overflow-y-auto p-0 sm:max-w-none"
+      >
+        {user && (
+          <>
+            <SheetHeader className="border-b border-border px-6 py-5 pr-12">
+              <SheetTitle>Acessos · {user.email}</SheetTitle>
+              <SheetDescription>
+                ADMIN vê tudo; USER vê apenas os recursos selecionados aqui.
+              </SheetDescription>
+            </SheetHeader>
 
-            <Tabs.Panel value="sandboxes" pt="md">
-              <AccessList
-                available={sandboxes.available}
-                allowed={sandboxes.allowed}
-                busy={sandboxes.busy}
-                renderLabel={(s) => (
-                  <Group gap="xs">
-                    <Text fw={500}>{s.name}</Text>
-                    <Badge size="xs" variant="light" color="gray">
-                      {s.host}
-                    </Badge>
-                  </Group>
-                )}
-                onToggle={(id) =>
-                  toggleAccess(
-                    sandboxes,
-                    setSandboxes,
-                    id,
-                    grantUserSandboxAccess,
-                    revokeUserSandboxAccess,
-                  )
-                }
-              />
-            </Tabs.Panel>
+            <div className="flex-1 space-y-4 px-6 py-5">
+              {error && <AccessAlert message={error} onClose={() => setError(null)} />}
+              <Tabs defaultValue="sandboxes" className="space-y-4">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="sandboxes">Sandboxes</TabsTrigger>
+                  <TabsTrigger value="repos">Repositórios</TabsTrigger>
+                  <TabsTrigger value="models">Modelos LLM</TabsTrigger>
+                </TabsList>
 
-            <Tabs.Panel value="repos" pt="md">
-              <AccessList
-                available={repos.available}
-                allowed={repos.allowed}
-                busy={repos.busy}
-                renderLabel={(r) => (
-                  <Group gap="xs">
-                    <Text fw={500}>{r.name}</Text>
-                    <Badge size="xs" variant="light" color="gray">
-                      {r.slug}
-                    </Badge>
-                  </Group>
-                )}
-                onToggle={(id) =>
-                  toggleAccess(
-                    repos,
-                    setRepos,
-                    id,
-                    grantUserRepositoryAccess,
-                    revokeUserRepositoryAccess,
-                  )
-                }
-              />
-            </Tabs.Panel>
+                <TabsContent value="sandboxes" className="mt-0">
+                  <AccessList
+                    available={sandboxes.available}
+                    allowed={sandboxes.allowed}
+                    busy={sandboxes.busy}
+                    renderLabel={(s) => <ResourceLabel title={s.name} badge={s.host} />}
+                    onToggle={(id) =>
+                      toggleAccess(sandboxes, setSandboxes, id, grantUserSandboxAccess, revokeUserSandboxAccess)
+                    }
+                  />
+                </TabsContent>
 
-            <Tabs.Panel value="models" pt="md">
-              <Stack gap="sm">
-                <Group justify="space-between">
-                  <Text size="sm" c="dimmed">
-                    {visibleAllowedModels} de {visibleModels} modelos ativos liberados.
-                    {hiddenAllowedModels > 0
-                      ? ` ${hiddenAllowedModels} vínculo(s) inativo(s) oculto(s).`
-                      : ''}
-                  </Text>
-                  <Group gap="xs">
-                    <Button
-                      size="xs"
-                      variant="light"
-                      loading={bulkBusy === 'free'}
-                      disabled={bulkBusy !== null}
-                      onClick={() => void bulkByTier('free')}
-                    >
-                      Liberar todos free
-                    </Button>
-                    <Button
-                      size="xs"
-                      variant="light"
-                      color="grape"
-                      loading={bulkBusy === 'paid'}
-                      disabled={bulkBusy !== null}
-                      onClick={() => void bulkByTier('paid')}
-                    >
-                      Liberar todos paid
-                    </Button>
-                  </Group>
-                </Group>
-                <AccessList
-                  available={models.available}
-                  allowed={models.allowed}
-                  busy={models.busy}
-                  renderLabel={(m) => (
-                    <Group gap="xs">
-                      <Text fw={500}>{m.display_name}</Text>
-                      <Badge
-                        size="xs"
-                        variant="light"
-                        color={m.tier === 'free' ? 'green' : m.tier === 'paid' ? 'grape' : 'gray'}
-                      >
-                        {m.tier}
-                      </Badge>
-                    </Group>
-                  )}
-                  onToggle={(id) =>
-                    toggleAccess(
-                      models,
-                      setModels,
-                      id,
-                      grantUserAiModelAccess,
-                      revokeUserAiModelAccess,
-                    )
-                  }
-                />
-              </Stack>
-            </Tabs.Panel>
-          </Tabs>
-        </Stack>
-      )}
-    </Drawer>
+                <TabsContent value="repos" className="mt-0">
+                  <AccessList
+                    available={repos.available}
+                    allowed={repos.allowed}
+                    busy={repos.busy}
+                    renderLabel={(r) => <ResourceLabel title={r.name} badge={r.slug} />}
+                    onToggle={(id) =>
+                      toggleAccess(repos, setRepos, id, grantUserRepositoryAccess, revokeUserRepositoryAccess)
+                    }
+                  />
+                </TabsContent>
+
+                <TabsContent value="models" className="mt-0">
+                  <div className="space-y-3">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <p className="text-sm text-muted-foreground">
+                        {visibleAllowedModels} de {visibleModels} modelos ativos liberados.
+                        {hiddenAllowedModels > 0
+                          ? ` ${hiddenAllowedModels} vínculo(s) inativo(s) oculto(s).`
+                          : ''}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <BulkButton active={bulkBusy === 'free'} disabled={bulkBusy !== null} onClick={() => void bulkByTier('free')}>
+                          Liberar todos free
+                        </BulkButton>
+                        <BulkButton active={bulkBusy === 'paid'} disabled={bulkBusy !== null} onClick={() => void bulkByTier('paid')}>
+                          Liberar todos paid
+                        </BulkButton>
+                      </div>
+                    </div>
+                    <AccessList
+                      available={models.available}
+                      allowed={models.allowed}
+                      busy={models.busy}
+                      renderLabel={(m) => <ModelLabel model={m} />}
+                      onToggle={(id) =>
+                        toggleAccess(models, setModels, id, grantUserAiModelAccess, revokeUserAiModelAccess)
+                      }
+                    />
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </div>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
   )
 }
 
 type AccessListProps<T extends { id: string }> = {
-  available: T[] | null
-  allowed: Set<string>
-  busy: Set<string>
-  renderLabel: (item: T) => React.ReactNode
-  onToggle: (id: string) => void
+  available: T[] | null; allowed: Set<string>; busy: Set<string>
+  renderLabel: (item: T) => ReactNode; onToggle: (id: string) => void
 }
 
-function AccessList<T extends { id: string }>({
-  available,
-  allowed,
-  busy,
-  renderLabel,
-  onToggle,
-}: AccessListProps<T>) {
+function AccessList<T extends { id: string }>({ available, allowed, busy, renderLabel, onToggle }: AccessListProps<T>) {
   if (available === null) {
     return (
-      <Group justify="center" py="xl">
-        <Loader size="sm" />
-      </Group>
+      <div className="flex justify-center py-12">
+        <Spinner />
+      </div>
     )
   }
   if (available.length === 0) {
-    return (
-      <Text c="dimmed" ta="center" py="xl" size="sm">
-        Nenhum recurso cadastrado.
-      </Text>
-    )
+    return <p className="py-12 text-center text-sm text-muted-foreground">Nenhum recurso cadastrado.</p>
   }
   return (
-    <Stack gap="xs">
+    <div className="space-y-2">
       {available.map((item) => (
-        <Group key={item.id} justify="space-between" wrap="nowrap">
-          <Checkbox
-            checked={allowed.has(item.id)}
-            disabled={busy.has(item.id)}
-            onChange={() => onToggle(item.id)}
-            label={renderLabel(item)}
-          />
-          {busy.has(item.id) && <Loader size="xs" />}
-        </Group>
+        <label
+          key={item.id}
+          className={cn(
+            'flex min-h-11 cursor-pointer items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2 text-sm transition-colors hover:bg-accent/50',
+            busy.has(item.id) && 'cursor-wait opacity-75',
+          )}
+        >
+          <span className="flex min-w-0 items-center gap-3">
+            <input
+              type="checkbox"
+              className="size-4 shrink-0 accent-primary"
+              checked={allowed.has(item.id)}
+              disabled={busy.has(item.id)}
+              onChange={() => onToggle(item.id)}
+            />
+            <span className="min-w-0">{renderLabel(item)}</span>
+          </span>
+          {busy.has(item.id) && <Spinner className="size-4 shrink-0" />}
+        </label>
       ))}
-    </Stack>
+    </div>
+  )
+}
+
+function ResourceLabel({ title, badge }: { title: string; badge: string }) {
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-2">
+      <span className="truncate font-medium">{title}</span>
+      <Badge variant="outline" className="max-w-full truncate text-muted-foreground">
+        {badge}
+      </Badge>
+    </span>
+  )
+}
+
+function ModelLabel({ model }: { model: AiModel }) {
+  const variant = model.tier === 'free' ? 'success' : model.tier === 'paid' ? 'secondary' : 'outline'
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-2">
+      <span className="truncate font-medium">{model.display_name}</span>
+      <Badge variant={variant}>{model.tier}</Badge>
+    </span>
+  )
+}
+
+function BulkButton({ active, children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { active: boolean }) {
+  return (
+    <Button size="sm" variant="secondary" {...props}>
+      {active && <Spinner />}
+      {children}
+    </Button>
+  )
+}
+
+function Spinner({ className }: { className?: string }) {
+  return <LoaderCircle className={cn('size-4 animate-spin', className)} aria-hidden="true" />
+}
+
+function AccessAlert({ message, onClose }: { message: string; onClose: () => void }) {
+  return (
+    <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm" role="alert">
+      <div className="flex gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-foreground">Falha</p>
+          <p className="mt-1 text-muted-foreground">{message}</p>
+        </div>
+        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+          Fechar
+        </Button>
+      </div>
+    </div>
   )
 }
