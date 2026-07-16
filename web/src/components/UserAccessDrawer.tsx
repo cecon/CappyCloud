@@ -91,18 +91,18 @@ export function UserAccessDrawer({ user, onClose }: Props) {
     if (!token) return
     const wasAllowed = state.allowed.has(resourceId)
     const nextBusy = new Set(state.busy)
+    const optimisticAllowed = new Set(state.allowed)
+    if (wasAllowed) optimisticAllowed.delete(resourceId)
+    else optimisticAllowed.add(resourceId)
     nextBusy.add(resourceId)
-    setState({ ...state, busy: nextBusy })
+    setState({ ...state, allowed: optimisticAllowed, busy: nextBusy })
     setError(null)
     try {
       if (wasAllowed) await revoke(token, user.id, resourceId)
       else await grant(token, user.id, resourceId)
-      const nextAllowed = new Set(state.allowed)
-      if (wasAllowed) nextAllowed.delete(resourceId)
-      else nextAllowed.add(resourceId)
       const newBusy = new Set(nextBusy)
       newBusy.delete(resourceId)
-      setState({ ...state, allowed: nextAllowed, busy: newBusy })
+      setState({ ...state, allowed: optimisticAllowed, busy: newBusy })
     } catch (err) {
       setError(errorToUserMessage(err))
       const newBusy = new Set(nextBusy)
@@ -233,48 +233,62 @@ function AccessList<T extends { id: string }>({ available, allowed, busy, render
   return (
     <div className="space-y-2">
       {available.map((item) => (
-        <label
+        <AccessRow
           key={item.id}
-          className={cn(
-            'flex min-h-11 cursor-pointer items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2 text-sm transition-colors hover:bg-accent/50',
-            busy.has(item.id) && 'cursor-wait opacity-75',
-          )}
-        >
-          <span className="flex min-w-0 items-center gap-3">
-            <input
-              type="checkbox"
-              className="size-4 shrink-0 accent-primary"
-              checked={allowed.has(item.id)}
-              disabled={busy.has(item.id)}
-              onChange={() => onToggle(item.id)}
-            />
-            <span className="min-w-0">{renderLabel(item)}</span>
-          </span>
-          {busy.has(item.id) && <Spinner className="size-4 shrink-0" />}
-        </label>
+          busy={busy.has(item.id)}
+          checked={allowed.has(item.id)}
+          label={renderLabel(item)}
+          resourceId={item.id}
+          onToggle={onToggle}
+        />
       ))}
+    </div>
+  )
+}
+
+function AccessRow({
+  busy, checked, label, resourceId, onToggle,
+}: {
+  busy: boolean; checked: boolean; label: ReactNode; resourceId: string; onToggle: (id: string) => void
+}) {
+  const inputId = `access-${resourceId}`
+  return (
+    <div
+      className={cn(
+        'flex min-h-11 items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2 text-sm transition-colors hover:bg-accent/50',
+        busy && 'cursor-wait opacity-75',
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <input id={inputId} type="checkbox" className="size-4 shrink-0 accent-primary" checked={checked} disabled={busy} onChange={() => onToggle(resourceId)} />
+        <label
+          htmlFor={inputId}
+          className={cn('min-w-0 flex-1', busy ? 'cursor-wait' : 'cursor-pointer')}
+        >
+          {label}
+        </label>
+      </div>
+      {busy && <Spinner className="size-4 shrink-0" />}
     </div>
   )
 }
 
 function ResourceLabel({ title, badge }: { title: string; badge: string }) {
   return (
-    <span className="flex min-w-0 flex-wrap items-center gap-2">
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
       <span className="truncate font-medium">{title}</span>
-      <Badge variant="outline" className="max-w-full truncate text-muted-foreground">
-        {badge}
-      </Badge>
-    </span>
+      <Badge variant="outline" className="max-w-full truncate text-muted-foreground">{badge}</Badge>
+    </div>
   )
 }
 
 function ModelLabel({ model }: { model: AiModel }) {
   const variant = model.tier === 'free' ? 'success' : model.tier === 'paid' ? 'secondary' : 'outline'
   return (
-    <span className="flex min-w-0 flex-wrap items-center gap-2">
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
       <span className="truncate font-medium">{model.display_name}</span>
       <Badge variant={variant}>{model.tier}</Badge>
-    </span>
+    </div>
   )
 }
 
@@ -295,10 +309,7 @@ function AccessAlert({ message, onClose }: { message: string; onClose: () => voi
   return (
     <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm" role="alert">
       <div className="flex gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold text-foreground">Falha</p>
-          <p className="mt-1 text-muted-foreground">{message}</p>
-        </div>
+        <div className="min-w-0 flex-1"><p className="font-semibold text-foreground">Falha</p><p className="mt-1 text-muted-foreground">{message}</p></div>
         <Button type="button" variant="ghost" size="sm" onClick={onClose}>
           Fechar
         </Button>
