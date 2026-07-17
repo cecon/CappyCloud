@@ -133,6 +133,7 @@ export function UserAccessDrawer({ user, onClose }: Props) {
       <SheetContent
         side="right"
         className="flex h-dvh w-[min(54rem,calc(100vw-1rem))] max-w-none flex-col overflow-y-auto p-0 sm:max-w-none"
+        style={{ width: 'min(54rem, calc(100vw - 1rem))', maxWidth: 'none' }}
       >
         {user && (
           <>
@@ -259,7 +260,7 @@ function AccessRow({
         busy && 'cursor-wait opacity-75',
       )}
     >
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <input id={inputId} type="checkbox" className="size-4 shrink-0 accent-primary" checked={checked} disabled={busy} onChange={() => onToggle(resourceId)} />
         <label
           htmlFor={inputId}
