@@ -80,6 +80,10 @@ def get_bootstrap_gateways() -> dict[SandboxRuntime, SandboxBootstrapGateway]:
     }
 
 
+def _error_detail(exc: Exception, fallback: str) -> str:
+    return str(exc).strip() or fallback
+
+
 def _serialize(sb: Sandbox) -> SandboxOut:
     return SandboxOut(
         id=sb.id,
@@ -236,9 +240,15 @@ async def boot_sandbox(
     except SandboxNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except RuntimeFailureError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=_error_detail(exc, "Falha ao iniciar sandbox no runtime."),
+        ) from exc
     except BootstrapFailureError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=_error_detail(exc, "Falha ao configurar sandbox apos iniciar o container."),
+        ) from exc
     except NotImplementedError as exc:
         raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
     return _serialize(sb)
@@ -259,7 +269,10 @@ async def stop_sandbox(
     except SandboxNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except RuntimeFailureError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=_error_detail(exc, "Falha ao parar sandbox no runtime."),
+        ) from exc
     except NotImplementedError as exc:
         raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
     return _serialize(sb)

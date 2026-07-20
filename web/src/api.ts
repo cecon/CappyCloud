@@ -10,15 +10,15 @@ const TOKEN_KEY = 'cappycloud_token'
  */
 function formatApiErrorPayload(data: unknown): string {
   if (typeof data !== 'object' || data === null) {
-    return 'Pedido inválido'
+    return typeof data === 'string' ? data.trim() : 'Pedido inválido'
   }
   if (!('detail' in data)) {
-    return JSON.stringify(data)
+    return stringifyNonEmpty(data)
   }
   const detail = (data as { detail: unknown }).detail
 
   if (typeof detail === 'string') {
-    return detail
+    return detail.trim()
   }
 
   if (Array.isArray(detail)) {
@@ -58,10 +58,10 @@ function formatApiErrorPayload(data: unknown): string {
   }
 
   if (typeof detail === 'object' && detail !== null) {
-    return JSON.stringify(detail)
+    return stringifyNonEmpty(detail)
   }
 
-  return String(detail ?? 'Pedido inválido')
+  return String(detail ?? '').trim()
 }
 
 /**
@@ -69,15 +69,24 @@ function formatApiErrorPayload(data: unknown): string {
  */
 export function errorToUserMessage(e: unknown): string {
   if (e instanceof Error) {
-    return e.message || 'Erro desconhecido'
+    return e.message.trim() || 'Erro desconhecido'
   }
   if (typeof e === 'string') {
-    return e
+    return e.trim() || 'Erro desconhecido'
   }
   try {
-    return JSON.stringify(e)
+    return stringifyNonEmpty(e) || 'Falha inesperada. Tente novamente ou consulte os logs da API.'
   } catch {
-    return String(e)
+    return String(e).trim() || 'Falha inesperada. Tente novamente ou consulte os logs da API.'
+  }
+}
+
+function stringifyNonEmpty(value: unknown): string {
+  try {
+    const text = JSON.stringify(value)
+    return text && text !== '{}' && text !== '[]' ? text : ''
+  } catch {
+    return ''
   }
 }
 
