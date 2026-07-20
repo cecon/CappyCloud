@@ -125,6 +125,10 @@ function countSessionRoots() {
   return activeSessions.size
 }
 
+function clearActiveSessions() {
+  activeSessions.clear()
+}
+
 async function isGitClean(worktreePath) {
   const { stdout } = await execFileAsync('git', ['-C', worktreePath, 'status', '--porcelain'], {
     timeout: 30_000,
@@ -487,7 +491,7 @@ const server = http.createServer(async (req, res) => {
     // POST /globals/configure — materializa skills/agents globais
     if (await globalsHandler.tryHandle(req, res, { json, readBody })) return
 
-    if (await runtimeHandler.tryHandle(req, res, { json })) return
+    if (await runtimeHandler.tryHandle(req, res, { json, clearActiveSessions })) return
 
     return json(res, 404, { error: 'Not found' })
   } catch (err) {

@@ -16,7 +16,7 @@ function isStopped() {
   return fs.existsSync(STOP_SENTINEL)
 }
 
-async function tryHandle(req, res, { json }) {
+async function tryHandle(req, res, { json, clearActiveSessions }) {
   const pathname = (req.url || '').split('?')[0]
   if (req.method === 'GET' && pathname === '/runtime/status') {
     json(res, 200, { openclaude: isStopped() ? 'stopped' : 'running' })
@@ -24,6 +24,7 @@ async function tryHandle(req, res, { json }) {
   }
   if (req.method === 'POST' && pathname === '/runtime/stop-openclaude') {
     fs.writeFileSync(STOP_SENTINEL, '1', 'utf8')
+    if (typeof clearActiveSessions === 'function') clearActiveSessions()
     json(res, 202, { stopping: true })
     setTimeout(stopOpenClaude, 100)
     return true

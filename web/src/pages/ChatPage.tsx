@@ -1090,7 +1090,7 @@ export function ChatPage() {
     const repoSandboxIsValid =
       !!repoSandboxId &&
       sandboxes.some((sandbox) => sandbox.id === repoSandboxId && isSandboxAvailable(sandbox))
-    const fallback = availableSandboxes[0]?.id ?? sandboxes[0]?.id ?? ''
+    const fallback = availableSandboxes[0]?.id ?? ''
     setSelectedSandboxId(repoSandboxIsValid ? repoSandboxId : fallback)
   }, [availableSandboxes, sandboxes, selectedSandboxId, selectedSlug, workspaces])
 
@@ -1738,12 +1738,8 @@ export function ChatPage() {
     filteredConversations.length - visibleConversations.length,
     0,
   )
-  const activeSandboxCount = sandboxes.filter((sandbox) =>
-    sandbox.status === 'active' ||
-    sandbox.container_status === 'running' ||
-    sandbox.container_status === 'configured',
-  ).length
-  const sandboxAccessCount = activeSandboxCount || sandboxes.length
+  const activeSandboxCount = sandboxes.filter(isSandboxAvailable).length
+  const sandboxAccessCount = activeSandboxCount
   const streamIdleMs = streaming && streamActivityAt
     ? Math.max(0, Date.now() - streamActivityAt)
     : 0
@@ -1911,7 +1907,7 @@ export function ChatPage() {
             inputRef={inputRef}
             onExecute={(text) => handleNewChatWithMessage(text)}
             streaming={streaming}
-            sandboxes={availableSandboxes.length ? availableSandboxes : sandboxes}
+            sandboxes={availableSandboxes}
             selectedSandboxId={selectedSandboxId}
             setSelectedSandboxId={setSelectedSandboxId}
             selectableWorkspaces={selectableWorkspaces}
@@ -2107,7 +2103,7 @@ function EmptyState({
   // auto-clone trata o caso de repo não clonado
   const hasSendableAttachment = trayItems.some(isSendableTrayItem)
   const hasUploadInProgress = trayItems.some((item) => item.kind === 'uploading')
-  const sandboxRequired = sandboxes.length > 0 && !selectedSandboxId
+  const sandboxRequired = !selectedSandboxId
   const canExecute =
     !sandboxRequired &&
     !!selectedSlug &&
@@ -3426,9 +3422,10 @@ function SandboxMetricCard({
 }
 
 function isSandboxAvailable(sandbox: Sandbox): boolean {
-  return sandbox.status === 'active' ||
+  return sandbox.status === 'active' && (
     sandbox.container_status === 'running' ||
     sandbox.container_status === 'configured'
+  )
 }
 
 function sandboxStatusLabel(sandbox: Sandbox): string {

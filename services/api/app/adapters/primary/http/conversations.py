@@ -10,6 +10,9 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.primary.http.conversation_sandbox_guard import (
+    ensure_sandbox_ready_for_chat,
+)
 from app.adapters.primary.http.deps import (
     get_authenticated_user,
     get_create_conv_uc,
@@ -32,6 +35,7 @@ from app.application.use_cases.conversations import (
     StreamMessage,
 )
 from app.domain.entities import User, UserRole
+from app.infrastructure.orm_models import Conversation as ConversationORM
 from app.infrastructure.orm_models import Repository
 from app.infrastructure.orm_models_platform import AiModel
 from app.schemas import (
@@ -52,7 +56,6 @@ async def list_conversations(
     uc: Annotated[ListConversations, Depends(get_list_convs_uc)],
     scope: str = Query(default="own", pattern="^(own|all)$"),
 ) -> list[ConversationOut]:
-    """Lista conversas do utilizador; ADMIN pode pedir ``scope=all``."""
     include_all = current.role is UserRole.ADMIN and scope == "all"
     convs = await uc.execute(current.id, include_all=include_all)
     return [
@@ -80,12 +83,6 @@ async def create_conversation(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     body: ConversationCreate | None = None,
 ) -> ConversationOut:
-    """Cria conversa nova, opcionalmente ligada a um ambiente.
-
-    USERs precisam ter ``UserSandboxAccess`` para o ``sandbox_id`` e
-    ``UserRepositoryAccess`` para cada repositório listado em ``repos``
-    (ADR-005 §5). ADMIN bypassa as duas validações.
-    """
     b = body or ConversationCreate()
 
     repo_rows: list[Repository] = []
@@ -116,9 +113,7 @@ async def create_conversation(
         resolved_sandbox_id = next(iter(repo_sandbox_ids))
     if resolved_sandbox_id is not None:
         mismatched_repos = [
-            repo.slug
-            for repo in repo_rows
-            if repo.sandbox_id != resolved_sandbox_id
+            repo.slug for repo in repo_rows if repo.sandbox_id != resolved_sandbox_id
         ]
         if mismatched_repos:
             names = ", ".join(mismatched_repos)
@@ -152,6 +147,9 @@ async def create_conversation(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail=f"Sem acesso aos repositórios: {names}.",
                     )
+
+    if resolved_sandbox_id is not None:
+        await ensure_sandbox_ready_for_chat(session, resolved_sandbox_id)
 
     ai_model_id: uuid.UUID | None = None
     if b.model_id:
@@ -203,10 +201,6 @@ async def get_conversation_usage(
     current: Annotated[User, Depends(get_authenticated_user)],
     uc: Annotated[ListMessages, Depends(get_list_msgs_uc)],
 ) -> ConversationUsage:
-    """Totais agregados de tokens e custo da conversa.
-
-    Soma todos os turnos do assistente (mensagens com ``role='assistant'``).
-    """
     try:
         msgs = await uc.execute(conversation_id, current.id)
     except LookupError as exc:
@@ -224,7 +218,6 @@ async def list_messages(
     current: Annotated[User, Depends(get_authenticated_user)],
     uc: Annotated[ListMessages, Depends(get_list_msgs_uc)],
 ) -> list[MessageOut]:
-    """Histórico de mensagens."""
     try:
         msgs = await uc.execute(conversation_id, current.id)
     except LookupError as exc:
@@ -254,18 +247,21 @@ async def stream_message(
     conversation_id: uuid.UUID,
     body: SendMessageBody,
     current: Annotated[User, Depends(get_authenticated_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
     uc: Annotated[StreamMessage, Depends(get_stream_msg_uc)],
     cursor: int | None = Query(
         default=None,
         description="Último agent_event.id recebido (para reconexão)",
     ),
 ) -> StreamingResponse:
-    """Envia mensagem e devolve resposta do agente em SSE.
-
-    Suporta reconexão via `cursor`: ao passar o último `agent_event.id` recebido,
-    o stream retoma a partir desse ponto sem perder eventos.
-    """
     try:
+        stmt = select(ConversationORM.sandbox_id).where(ConversationORM.id == conversation_id)
+        if current.role is not UserRole.ADMIN:
+            stmt = stmt.where(ConversationORM.user_id == current.id)
+        sandbox_id = (await session.execute(stmt)).scalar_one_or_none()
+        if sandbox_id is not None:
+            await ensure_sandbox_ready_for_chat(session, sandbox_id)
+
         stream = await uc.execute(
             conversation_id,
             current.id,
