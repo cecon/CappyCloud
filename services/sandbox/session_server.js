@@ -16,6 +16,7 @@
 //   POST   /git/*                  → git_handlers.js (ls-remote, branch-r, ls-files, file)
 //   POST   /worktree/*             → worktree_handlers.js (ls-files, diff, PR, …)
 //   POST   /mcp/configure          → escreve mcpServers em ~/.claude/settings.json
+//   POST   /globals/configure      → escreve skills/agents em ~/.claude/
 //   GET    /health                 → liveness probe
 // ──────────────────────────────────────────────────────────────
 
@@ -26,6 +27,7 @@ const { execFile, execFileSync } = require('child_process')
 const { promisify } = require('util')
 
 const gitHandlers = require('./git_handlers')
+const globalsHandler = require('./globals_handler')
 const mcpHandler = require('./mcp_handler')
 const confluenceHandler = require('./confluence_handler')
 const repoHandlers = require('./repo_handlers')
@@ -467,6 +469,9 @@ const server = http.createServer(async (req, res) => {
 
     // POST /mcp/configure — delega para mcp_handler.js
     if (await mcpHandler.tryHandle(req, res, { json, readBody })) return
+
+    // POST /globals/configure — materializa skills/agents globais
+    if (await globalsHandler.tryHandle(req, res, { json, readBody })) return
 
     return json(res, 404, { error: 'Not found' })
   } catch (err) {

@@ -17,6 +17,7 @@ import tarfile
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
+from typing import Any
 
 import docker
 from docker.errors import APIError, DockerException, NotFound
@@ -118,9 +119,8 @@ class DockerSandboxBootstrap(SandboxBootstrapGateway):
             if not enabled:
                 log.info("Bootstrap sem Docker: nenhuma skill habilitada para materializar.")
                 return
-            raise BootstrapFailureError(
-                "Docker indisponível para materializar skills globais no container."
-            ) from exc
+            self._write_skills_http_sync(sandbox, enabled, exc)
+            return
         skills_dir = f"{CLAUDE_DIR_IN_CONTAINER}/{SKILLS_SUBDIR}"
         # Limpa antes — DB é single source of truth.
         self._reset_dir(container, skills_dir)
@@ -161,9 +161,8 @@ class DockerSandboxBootstrap(SandboxBootstrapGateway):
             if not enabled:
                 log.info("Bootstrap sem Docker: nenhum agent habilitado para materializar.")
                 return
-            raise BootstrapFailureError(
-                "Docker indisponível para materializar agents globais no container."
-            ) from exc
+            self._write_agents_http_sync(sandbox, enabled, exc)
+            return
         agents_dir = f"{CLAUDE_DIR_IN_CONTAINER}/{AGENTS_SUBDIR}"
         self._reset_dir(container, agents_dir)
 
@@ -195,9 +194,8 @@ class DockerSandboxBootstrap(SandboxBootstrapGateway):
     # ── helpers internos ────────────────────────────────────────────────
 
     @staticmethod
-    def _write_settings_http_sync(sandbox: Sandbox, settings: dict) -> None:
-        url = f"http://{sandbox.host}:{sandbox.session_port}/mcp/configure"
-        body = json.dumps(settings).encode("utf-8")
+    def _post_json_http_sync(url: str, payload: dict[str, Any]) -> None:
+        body = json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(
             url,
             data=body,
@@ -211,7 +209,46 @@ class DockerSandboxBootstrap(SandboxBootstrapGateway):
         except (OSError, urllib.error.URLError, TimeoutError) as exc:
             raise BootstrapFailureError(f"não foi possível chamar {url}: {exc}") from exc
 
+    @staticmethod
+    def _write_settings_http_sync(sandbox: Sandbox, settings: dict) -> None:
+        url = f"http://{sandbox.host}:{sandbox.session_port}/mcp/configure"
+        DockerSandboxBootstrap._post_json_http_sync(url, settings)
+
         log.info("Bootstrap escreveu settings.json via HTTP em %s", url)
+
+    def _write_skills_http_sync(
+        self, sandbox: Sandbox, skills: list[SandboxSkill], docker_exc: BootstrapFailureError
+    ) -> None:
+        url = f"http://{sandbox.host}:{sandbox.session_port}/globals/configure"
+        payload = {
+            "skills": [
+                {"name": skill.name, "markdown": self._render_skill_md(skill)} for skill in skills
+            ]
+        }
+        try:
+            self._post_json_http_sync(url, payload)
+        except BootstrapFailureError as http_exc:
+            raise BootstrapFailureError(
+                f"{docker_exc}; fallback HTTP de skills também falhou: {http_exc}"
+            ) from http_exc
+        log.info("Bootstrap escreveu %d skill(s) via HTTP em %s", len(skills), url)
+
+    def _write_agents_http_sync(
+        self, sandbox: Sandbox, agents: list[SandboxAgent], docker_exc: BootstrapFailureError
+    ) -> None:
+        url = f"http://{sandbox.host}:{sandbox.session_port}/globals/configure"
+        payload = {
+            "agents": [
+                {"name": agent.name, "markdown": self._render_agent_md(agent)} for agent in agents
+            ]
+        }
+        try:
+            self._post_json_http_sync(url, payload)
+        except BootstrapFailureError as http_exc:
+            raise BootstrapFailureError(
+                f"{docker_exc}; fallback HTTP de agents também falhou: {http_exc}"
+            ) from http_exc
+        log.info("Bootstrap escreveu %d agent(s) via HTTP em %s", len(agents), url)
 
     def _require_container(self, sandbox: Sandbox) -> Container:
         names = DockerComposeSandboxRuntime._container_name_candidates(sandbox)

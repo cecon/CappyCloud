@@ -142,6 +142,7 @@ COPY services/sandbox/env_init.sh /env_init.sh
 COPY services/sandbox/session_start.sh /session_start.sh
 COPY services/sandbox/session_server.js /session_server.js
 COPY services/sandbox/git_handlers.js /git_handlers.js
+COPY services/sandbox/globals_handler.js /globals_handler.js
 COPY services/sandbox/mcp_handler.js /mcp_handler.js
 COPY services/sandbox/confluence_auth.js /confluence_auth.js
 COPY services/sandbox/confluence_handler.js /confluence_handler.js
