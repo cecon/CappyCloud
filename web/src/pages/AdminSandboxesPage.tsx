@@ -75,6 +75,15 @@ const STATUS_LABELS: Record<ContainerStatus, string> = {
   error: 'ERRO',
 }
 
+const STATUS_POLL_MS = 5000
+
+function formatRefreshAge(lastRefreshAt: number | null): string {
+  if (!lastRefreshAt) return 'checando...'
+  const ageSeconds = Math.max(0, Math.floor((Date.now() - lastRefreshAt) / 1000))
+  if (ageSeconds < 2) return 'agora'
+  return `há ${ageSeconds}s`
+}
+
 function envEntriesToRecord(entries: { key: string; value: string }[]): Record<string, string> {
   const out: Record<string, string> = {}
   for (const { key, value } of entries) {
@@ -101,21 +110,36 @@ export function AdminSandboxesPage() {
   const [globalsFor, setGlobalsFor] = useState<Sandbox | null>(null)
 
   const [pendingAction, setPendingAction] = useState<string | null>(null)
+  const [refreshingStatus, setRefreshingStatus] = useState(false)
+  const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null)
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (options: { silent?: boolean } = {}) => {
     const token = getToken()
     if (!token) return
+    if (options.silent) setRefreshingStatus(true)
     try {
       const list = await fetchAdminSandboxes(token)
       setItems(list)
       setLoadError(null)
+      setLastRefreshAt(Date.now())
     } catch (err) {
-      setLoadError(errorToUserMessage(err))
+      if (!options.silent) {
+        setLoadError(errorToUserMessage(err))
+      }
+    } finally {
+      if (options.silent) setRefreshingStatus(false)
     }
   }, [])
 
   useEffect(() => {
     void reload()
+  }, [reload])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void reload({ silent: true })
+    }, STATUS_POLL_MS)
+    return () => window.clearInterval(timer)
   }, [reload])
 
   async function handleCreate() {
@@ -320,12 +344,20 @@ export function AdminSandboxesPage() {
                         </Text>
                       </Table.Td>
                       <Table.Td>
-                        <Badge
-                          color={STATUS_COLORS[sb.container_status]}
-                          variant={sb.container_status === 'configured' ? 'filled' : 'light'}
-                        >
-                          {STATUS_LABELS[sb.container_status]}
-                        </Badge>
+                        <Stack gap={4}>
+                          <Group gap={6} wrap="nowrap">
+                            <Badge
+                              color={STATUS_COLORS[sb.container_status]}
+                              variant={sb.container_status === 'configured' ? 'filled' : 'light'}
+                            >
+                              {STATUS_LABELS[sb.container_status]}
+                            </Badge>
+                            {refreshingStatus && <Loader size={12} />}
+                          </Group>
+                          <Text size="xs" c="dimmed">
+                            visto {formatRefreshAge(lastRefreshAt)}
+                          </Text>
+                        </Stack>
                       </Table.Td>
                       <ActionsCell>
                         <RowActionIcon

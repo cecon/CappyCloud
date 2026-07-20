@@ -28,13 +28,13 @@ from app.application.use_cases.admin_sandboxes import (
     CreateSandbox,
     DeleteSandbox,
     GetSandbox,
-    ListSandboxes,
     SandboxInUseError,
     SandboxNameTakenError,
     SandboxNotFoundError,
     StopSandbox,
     UpdateSandbox,
 )
+from app.application.use_cases.sandbox_statuses import RefreshSandboxStatuses
 from app.domain.entities import Sandbox, SandboxRuntime, UserRole
 from app.ports.mcp_repository import McpServerRepository
 from app.ports.repositories import SandboxRepository
@@ -108,8 +108,9 @@ def _serialize(sb: Sandbox) -> SandboxAdminOut:
 )
 async def list_sandboxes(
     repo: Annotated[SandboxRepository, Depends(get_sandbox_repo)],
+    runtimes: Annotated[dict[SandboxRuntime, SandboxRuntimeGateway], Depends(get_runtime_gateways)],
 ) -> list[SandboxAdminOut]:
-    rows = await ListSandboxes(repo).execute()
+    rows = await RefreshSandboxStatuses(repo, runtimes).execute()
     return [_serialize(s) for s in rows]
 
 

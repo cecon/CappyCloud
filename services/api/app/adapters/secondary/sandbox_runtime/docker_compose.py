@@ -101,12 +101,27 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
         )
 
     @staticmethod
+    def _online_status_for(sandbox: Sandbox) -> ContainerStatus:
+        if sandbox.container_status is ContainerStatus.CONFIGURED:
+            return ContainerStatus.CONFIGURED
+        return ContainerStatus.RUNNING
+
+    @staticmethod
+    def _unreachable_status_for(sandbox: Sandbox) -> ContainerStatus:
+        if sandbox.container_status in {ContainerStatus.STARTING, ContainerStatus.CONFIGURING}:
+            return ContainerStatus.STARTING
+        return ContainerStatus.ERROR
+
+    @staticmethod
     def _probe_session_server(sandbox: Sandbox) -> RuntimeProbe | None:
-        url = f"http://{sandbox.host}:{sandbox.session_port}/repos/list"
+        url = f"http://{sandbox.host}:{sandbox.session_port}/health"
         try:
             with urllib.request.urlopen(url, timeout=5) as response:
                 if 200 <= response.status < 300:
-                    return RuntimeProbe(status=ContainerStatus.RUNNING, runtime_ref=url)
+                    return RuntimeProbe(
+                        status=DockerComposeSandboxRuntime._online_status_for(sandbox),
+                        runtime_ref=url,
+                    )
         except OSError:
             return None
         except urllib.error.URLError:
@@ -207,11 +222,30 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
         return await asyncio.to_thread(self._status_sync, sandbox)
 
     def _status_sync(self, sandbox: Sandbox) -> RuntimeProbe:
-        existing = self._find_container(sandbox)
+        try:
+            existing = self._find_container(sandbox)
+        except RuntimeFailureError as exc:
+            external = self._probe_session_server(sandbox)
+            if external is not None:
+                return external
+            raise exc
         if existing is None:
+            external = self._probe_session_server(sandbox)
+            if external is not None:
+                return external
             return RuntimeProbe(status=ContainerStatus.NOT_CREATED)
         existing.reload()
-        return self._probe_from_container(existing)
+        probe = self._probe_from_container(existing)
+        if probe.status is not ContainerStatus.RUNNING:
+            return probe
+        external = self._probe_session_server(sandbox)
+        if external is not None:
+            return external
+        return RuntimeProbe(
+            status=self._unreachable_status_for(sandbox),
+            runtime_ref=probe.runtime_ref,
+            last_error="session server /health indisponível",
+        )
 
     async def remove(self, sandbox: Sandbox) -> None:
         await asyncio.to_thread(self._remove_sync, sandbox)
