@@ -1257,6 +1257,7 @@ export interface Sandbox {
   status: string
   runtime: SandboxRuntime
   image: string
+  claude_md?: string
   env_vars: Record<string, string>
   container_status: ContainerStatus
   created_at: string
@@ -1276,6 +1277,7 @@ export interface SandboxAdminCreate {
   name: string
   runtime: SandboxRuntime
   image: string
+  claude_md?: string
   env_vars?: Record<string, string>
   host?: string | null
   grpc_port?: number
@@ -1284,6 +1286,7 @@ export interface SandboxAdminCreate {
 
 export interface SandboxAdminUpdate {
   image?: string
+  claude_md?: string
   env_vars?: Record<string, string>
   host?: string
   grpc_port?: number

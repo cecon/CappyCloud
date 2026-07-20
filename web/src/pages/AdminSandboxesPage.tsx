@@ -222,6 +222,11 @@ export function AdminSandboxesPage() {
     }
   }
 
+  function applyUpdatedSandbox(updated: Sandbox) {
+    setItems((prev) => (prev ? prev.map((s) => (s.id === updated.id ? updated : s)) : prev))
+    setGlobalsFor((current) => (current?.id === updated.id ? updated : current))
+  }
+
   function addEnvRow() {
     setForm({ ...form, envEntries: [...form.envEntries, { key: '', value: '' }] })
   }
@@ -483,7 +488,11 @@ export function AdminSandboxesPage() {
       </Modal>
 
       {/* MCPs do sandbox */}
-      <SandboxGlobalsDrawer sandbox={globalsFor} onClose={() => setGlobalsFor(null)} />
+      <SandboxGlobalsDrawer
+        sandbox={globalsFor}
+        onClose={() => setGlobalsFor(null)}
+        onUpdated={applyUpdatedSandbox}
+      />
 
       {/* Clonar */}
       <Modal

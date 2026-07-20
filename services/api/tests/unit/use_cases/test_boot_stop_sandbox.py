@@ -29,6 +29,7 @@ async def _make(repo: InMemorySandboxRepository, name: str = "alpha") -> Sandbox
         name=name,
         runtime=SandboxRuntime.COMPOSE,
         image="cappycloud/sandbox:latest",
+        claude_md="# Alpha sandbox",
         env_vars={"FOO": "bar"},
     )
 
@@ -101,6 +102,7 @@ class TestBootSandbox:
         assert len(bootstrap.calls) == 1
         called_sandbox_id, called_settings = bootstrap.calls[0]
         assert called_sandbox_id == a.id
+        assert bootstrap.claude_calls == [(a.id, "# Alpha sandbox")]
         # Sem MCPs cadastrados → mcpServers vazio:
         assert called_settings == {"mcpServers": {}}
         # Sem skills/agents cadastrados → bootstrap chamado com lista vazia:
@@ -201,6 +203,9 @@ class TestBootSandbox:
         from app.ports.sandbox_bootstrap import BootstrapFailureError, SandboxBootstrapGateway
 
         class FailingBootstrap(SandboxBootstrapGateway):
+            async def write_claude_md(self, sandbox):  # type: ignore[no-untyped-def]
+                pass
+
             async def write_settings_json(self, sandbox, settings):  # type: ignore[no-untyped-def]
                 raise BootstrapFailureError("disk full")
 

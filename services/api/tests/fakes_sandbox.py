@@ -73,8 +73,12 @@ class FakeSandboxBootstrap(SandboxBootstrapGateway):
 
     def __init__(self) -> None:
         self.calls: list[tuple[uuid.UUID, dict]] = []
+        self.claude_calls: list[tuple[uuid.UUID, str]] = []
         self.skill_calls: list[tuple[uuid.UUID, list]] = []
         self.agent_calls: list[tuple[uuid.UUID, list]] = []
+
+    async def write_claude_md(self, sandbox: Sandbox) -> None:
+        self.claude_calls.append((sandbox.id, sandbox.claude_md))
 
     async def write_settings_json(self, sandbox: Sandbox, settings: dict) -> None:
         self.calls.append((sandbox.id, settings))

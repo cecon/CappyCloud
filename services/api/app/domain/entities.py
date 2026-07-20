@@ -91,6 +91,7 @@ class Sandbox:
     env_vars: dict[str, str] = field(default_factory=dict)
     container_status: ContainerStatus = ContainerStatus.NOT_CREATED
     register_token: str | None = None
+    claude_md: str = ""
     created_at: datetime = field(default_factory=_utcnow)
 
 

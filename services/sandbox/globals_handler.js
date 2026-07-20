@@ -44,6 +44,12 @@ function writeAgents(home, agents) {
   return agents.map(item => item.name)
 }
 
+function writeClaudeMd(home, content) {
+  const dir = path.join(home, '.claude')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'CLAUDE.md'), String(content || ''), 'utf8')
+}
+
 async function tryHandle(req, res, { json, readBody }) {
   if (req.method !== 'POST' || (req.url || '').split('?')[0] !== '/globals/configure') {
     return false
@@ -53,6 +59,10 @@ async function tryHandle(req, res, { json, readBody }) {
     const body = await readBody(req)
     const home = process.env.HOME || '/root'
     const updated = {}
+    if (Object.prototype.hasOwnProperty.call(body, 'claude_md')) {
+      writeClaudeMd(home, body.claude_md)
+      updated.claude_md = true
+    }
     if (Array.isArray(body.skills)) {
       updated.skills = writeSkills(home, body.skills)
     }

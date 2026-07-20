@@ -91,6 +91,7 @@ class CreateSandbox:
         name: str,
         runtime: SandboxRuntime,
         image: str,
+        claude_md: str = "",
         env_vars: dict[str, str] | None = None,
         host: str | None = None,
         grpc_port: int = 50051,
@@ -111,6 +112,7 @@ class CreateSandbox:
             status="active",
             runtime=runtime,
             image=image.strip(),
+            claude_md=claude_md,
             env_vars=dict(env_vars or {}),
             container_status=ContainerStatus.NOT_CREATED,
         )
@@ -133,6 +135,7 @@ class UpdateSandbox:
         sandbox_id: uuid.UUID,
         *,
         image: str | None = None,
+        claude_md: str | None = None,
         env_vars: dict[str, str] | None = None,
         host: str | None = None,
         grpc_port: int | None = None,
@@ -148,6 +151,7 @@ class UpdateSandbox:
         updated = replace(
             current,
             image=image.strip() if image is not None else current.image,
+            claude_md=claude_md if claude_md is not None else current.claude_md,
             env_vars=dict(env_vars) if env_vars is not None else current.env_vars,
             host=host if host is not None else current.host,
             grpc_port=grpc_port if grpc_port is not None else current.grpc_port,
@@ -250,6 +254,7 @@ class BootSandbox:
         skills = await ListSandboxSkills(self._skills).execute(sandbox.id)
         agents = await ListSandboxAgents(self._agents).execute(sandbox.id)
         try:
+            await bootstrap.write_claude_md(sandbox)
             await bootstrap.write_settings_json(sandbox, settings)
             await bootstrap.write_skills(sandbox, skills)
             await bootstrap.write_agents(sandbox, agents)
@@ -336,6 +341,7 @@ class CloneSandbox:
             status="active",
             runtime=source.runtime,
             image=source.image,
+            claude_md=source.claude_md,
             env_vars=dict(source.env_vars),
             container_status=ContainerStatus.NOT_CREATED,
         )

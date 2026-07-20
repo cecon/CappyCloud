@@ -260,12 +260,12 @@ const server = http.createServer(async (req, res) => {
       // CLAUDE.md na raiz da sessão: só se não houver instruções no próprio repo
       // (cada worktree pode ter o seu CLAUDE.md / AGENTS.md). Aqui é a raiz
       // multi-repo, fica como descrição neutra do ambiente.
-      if (
-        !fs.existsSync(path.join(session_root, 'CLAUDE.md')) &&
-        !fs.existsSync(path.join(session_root, 'AGENTS.md')) &&
-        fs.existsSync('/app/CLAUDE.md')
-      ) {
-        fs.copyFileSync('/app/CLAUDE.md', path.join(session_root, 'CLAUDE.md'))
+      if (!fs.existsSync(path.join(session_root, 'CLAUDE.md')) && !fs.existsSync(path.join(session_root, 'AGENTS.md'))) {
+        const sandboxClaude = path.join(process.env.HOME || '/root', '.claude', 'CLAUDE.md')
+        const sourceClaude = fs.existsSync(sandboxClaude) ? sandboxClaude : '/app/CLAUDE.md'
+        if (fs.existsSync(sourceClaude)) {
+          fs.copyFileSync(sourceClaude, path.join(session_root, 'CLAUDE.md'))
+        }
       }
 
       for (const repo of repos) {

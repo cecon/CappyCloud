@@ -48,6 +48,14 @@ class DockerSandboxBootstrap(SandboxBootstrapGateway):
             self._client = docker.from_env()
         return self._client
 
+    async def write_claude_md(self, sandbox: Sandbox) -> None:
+        await asyncio.to_thread(self._write_claude_md_sync, sandbox)
+
+    def _write_claude_md_sync(self, sandbox: Sandbox) -> None:
+        url = f"http://{sandbox.host}:{sandbox.session_port}/globals/configure"
+        self._post_json_http_sync(url, {"claude_md": sandbox.claude_md})
+        log.info("Bootstrap escreveu CLAUDE.md via HTTP em %s", url)
+
     @staticmethod
     def _container_name(sandbox: Sandbox) -> str:
         return f"{CONTAINER_PREFIX}{sandbox.name}"

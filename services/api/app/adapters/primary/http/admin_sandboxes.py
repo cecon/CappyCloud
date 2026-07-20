@@ -46,9 +46,9 @@ from app.ports.sandbox_runtime import (
 )
 from app.schemas import (
     SandboxAdminCreate,
+    SandboxAdminOut,
     SandboxAdminUpdate,
     SandboxCloneBody,
-    SandboxOut,
 )
 
 router = APIRouter(prefix="/admin/sandboxes", tags=["admin"])
@@ -84,8 +84,8 @@ def _error_detail(exc: Exception, fallback: str) -> str:
     return str(exc).strip() or fallback
 
 
-def _serialize(sb: Sandbox) -> SandboxOut:
-    return SandboxOut(
+def _serialize(sb: Sandbox) -> SandboxAdminOut:
+    return SandboxAdminOut(
         id=sb.id,
         name=sb.name,
         host=sb.host,
@@ -94,6 +94,7 @@ def _serialize(sb: Sandbox) -> SandboxOut:
         status=sb.status,
         runtime=sb.runtime,
         image=sb.image,
+        claude_md=sb.claude_md,
         env_vars=dict(sb.env_vars),
         container_status=sb.container_status,
         created_at=sb.created_at,
@@ -102,25 +103,25 @@ def _serialize(sb: Sandbox) -> SandboxOut:
 
 @router.get(
     "",
-    response_model=list[SandboxOut],
+    response_model=list[SandboxAdminOut],
     dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
 async def list_sandboxes(
     repo: Annotated[SandboxRepository, Depends(get_sandbox_repo)],
-) -> list[SandboxOut]:
+) -> list[SandboxAdminOut]:
     rows = await ListSandboxes(repo).execute()
     return [_serialize(s) for s in rows]
 
 
 @router.get(
     "/{sandbox_id}",
-    response_model=SandboxOut,
+    response_model=SandboxAdminOut,
     dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
 async def get_sandbox(
     sandbox_id: uuid.UUID,
     repo: Annotated[SandboxRepository, Depends(get_sandbox_repo)],
-) -> SandboxOut:
+) -> SandboxAdminOut:
     try:
         sb = await GetSandbox(repo).execute(sandbox_id)
     except SandboxNotFoundError as exc:
@@ -130,19 +131,20 @@ async def get_sandbox(
 
 @router.post(
     "",
-    response_model=SandboxOut,
+    response_model=SandboxAdminOut,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
 async def create_sandbox(
     body: SandboxAdminCreate,
     repo: Annotated[SandboxRepository, Depends(get_sandbox_repo)],
-) -> SandboxOut:
+) -> SandboxAdminOut:
     try:
         sb = await CreateSandbox(repo).execute(
             name=body.name,
             runtime=body.runtime,
             image=body.image,
+            claude_md=body.claude_md,
             env_vars=body.env_vars,
             host=body.host,
             grpc_port=body.grpc_port,
@@ -157,18 +159,19 @@ async def create_sandbox(
 
 @router.patch(
     "/{sandbox_id}",
-    response_model=SandboxOut,
+    response_model=SandboxAdminOut,
     dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
 async def update_sandbox(
     sandbox_id: uuid.UUID,
     body: SandboxAdminUpdate,
     repo: Annotated[SandboxRepository, Depends(get_sandbox_repo)],
-) -> SandboxOut:
+) -> SandboxAdminOut:
     try:
         sb = await UpdateSandbox(repo).execute(
             sandbox_id,
             image=body.image,
+            claude_md=body.claude_md,
             env_vars=body.env_vars,
             host=body.host,
             grpc_port=body.grpc_port,
@@ -199,7 +202,7 @@ async def delete_sandbox(
 
 @router.post(
     "/{sandbox_id}/clone",
-    response_model=SandboxOut,
+    response_model=SandboxAdminOut,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
@@ -207,7 +210,7 @@ async def clone_sandbox(
     sandbox_id: uuid.UUID,
     body: SandboxCloneBody,
     repo: Annotated[SandboxRepository, Depends(get_sandbox_repo)],
-) -> SandboxOut:
+) -> SandboxAdminOut:
     try:
         sb = await CloneSandbox(repo).execute(sandbox_id, body.new_name)
     except SandboxNotFoundError as exc:
@@ -221,7 +224,7 @@ async def clone_sandbox(
 
 @router.post(
     "/{sandbox_id}/boot",
-    response_model=SandboxOut,
+    response_model=SandboxAdminOut,
     dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
 async def boot_sandbox(
@@ -234,7 +237,7 @@ async def boot_sandbox(
     mcps: Annotated[McpServerRepository, Depends(get_mcp_repo)],
     skills: Annotated[SandboxSkillRepository, Depends(get_skill_repo)],
     agents: Annotated[SandboxAgentRepository, Depends(get_agent_repo)],
-) -> SandboxOut:
+) -> SandboxAdminOut:
     try:
         sb = await BootSandbox(repo, runtimes, bootstraps, mcps, skills, agents).execute(sandbox_id)
     except SandboxNotFoundError as exc:
@@ -256,14 +259,14 @@ async def boot_sandbox(
 
 @router.post(
     "/{sandbox_id}/stop",
-    response_model=SandboxOut,
+    response_model=SandboxAdminOut,
     dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
 async def stop_sandbox(
     sandbox_id: uuid.UUID,
     repo: Annotated[SandboxRepository, Depends(get_sandbox_repo)],
     runtimes: Annotated[dict[SandboxRuntime, SandboxRuntimeGateway], Depends(get_runtime_gateways)],
-) -> SandboxOut:
+) -> SandboxAdminOut:
     try:
         sb = await StopSandbox(repo, runtimes).execute(sandbox_id)
     except SandboxNotFoundError as exc:
