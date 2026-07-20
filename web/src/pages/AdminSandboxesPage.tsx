@@ -311,6 +311,7 @@ export function AdminSandboxesPage() {
                   <Table.Th style={{ width: 120 }}>Runtime</Table.Th>
                   <Table.Th>Imagem</Table.Th>
                   <Table.Th style={{ width: 180 }}>Container</Table.Th>
+                  <Table.Th style={{ width: 120 }}>Sessões</Table.Th>
                   <ActionsHeader width={132} />
                 </Table.Tr>
               </Table.Thead>
@@ -344,6 +345,11 @@ export function AdminSandboxesPage() {
                         >
                           {STATUS_LABELS[sb.container_status]}
                         </Badge>
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm" fw={600}>
+                          {sb.active_sessions ?? 0}
+                        </Text>
                       </Table.Td>
                       <ActionsCell>
                         <RowActionIcon

@@ -33,6 +33,7 @@ class RuntimeProbe:
     status: ContainerStatus
     runtime_ref: str | None = None
     last_error: str | None = None
+    active_sessions: int = 0
 
 
 class SandboxRuntimeGateway(ABC):

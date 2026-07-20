@@ -97,6 +97,7 @@ def _serialize(sb: Sandbox) -> SandboxAdminOut:
         claude_md=sb.claude_md,
         env_vars=dict(sb.env_vars),
         container_status=sb.container_status,
+        active_sessions=getattr(sb, "active_sessions", 0),
         created_at=sb.created_at,
     )
 

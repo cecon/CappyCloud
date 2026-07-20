@@ -1,32 +1,20 @@
-"""Adapter Docker Compose para o ``SandboxRuntimeGateway`` (ADR-004 §8).
-
-Usa o Docker SDK contra o daemon local. Pensado para dev (Docker Desktop) —
-em produção (Swarm), use :class:`DockerSwarmSandboxRuntime`.
-
-Pontos importantes:
-
-- Container nomeado com prefixo ``cappycloud-sandbox-<name>`` para evitar
-  colisão com outros containers (e tornar o lookup por nome confiável).
-- Procura por nome via filtro do Docker, não por id — assim a operação é
-  idempotente mesmo após restart da API.
-- ``ensure_service`` é síncrono internamente (Docker SDK em Python é blocking).
-  Envolvido em ``asyncio.to_thread`` para não bloquear o event loop.
-"""
+"""Adapter Docker Compose para o ``SandboxRuntimeGateway``."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import time
-import urllib.error
-import urllib.request
 from typing import Any
 
 import docker
 from docker.errors import APIError, DockerException, ImageNotFound, NotFound
 from docker.models.containers import Container
 
+from app.adapters.secondary.sandbox_runtime.docker_sidecar import (
+    probe_session_server,
+    restart_session_server,
+    stop_session_server,
+)
 from app.domain.entities import ContainerStatus, Sandbox
 from app.ports.sandbox_runtime import (
     RuntimeFailureError,
@@ -38,7 +26,6 @@ log = logging.getLogger(__name__)
 
 CONTAINER_PREFIX = "cappycloud-sandbox-"
 
-# Mapeia o ``State.Status`` do Docker para o enum canônico do CappyCloud.
 _DOCKER_STATE_TO_STATUS: dict[str, ContainerStatus] = {
     "created": ContainerStatus.STARTING,
     "restarting": ContainerStatus.STARTING,
@@ -51,10 +38,9 @@ _DOCKER_STATE_TO_STATUS: dict[str, ContainerStatus] = {
 
 
 class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
-    """Implementação para Docker Desktop / compose local."""
+    """Implementacao para Docker Desktop / compose local."""
 
     def __init__(self, client: docker.DockerClient | None = None) -> None:
-        # ``client`` é injetável para testes (mock); em prod usa env do daemon.
         self._client = client
 
     def _docker(self) -> docker.DockerClient:
@@ -68,7 +54,6 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
 
     @staticmethod
     def _container_name_candidates(sandbox: Sandbox) -> tuple[str, ...]:
-        """Canonical managed name plus legacy/external Compose service name."""
         canonical = DockerComposeSandboxRuntime._container_name(sandbox)
         if sandbox.name == canonical:
             return (canonical,)
@@ -86,7 +71,7 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
                 ) from exc
             except DockerException as exc:
                 raise RuntimeFailureError(
-                    f"Docker indisponível para consultar containers: {exc}",
+                    f"Docker indisponivel para consultar containers: {exc}",
                     sandbox_id=sandbox.id,
                 ) from exc
         return None
@@ -95,81 +80,17 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
     def _probe_from_container(container: Container) -> RuntimeProbe:
         state: dict[str, Any] = container.attrs.get("State", {})
         docker_status = state.get("Status", "")
-        last_error = state.get("Error") or None
         return RuntimeProbe(
             status=_DOCKER_STATE_TO_STATUS.get(docker_status, ContainerStatus.ERROR),
             runtime_ref=container.id,
-            last_error=last_error,
+            last_error=state.get("Error") or None,
         )
-
-    @staticmethod
-    def _online_status_for(sandbox: Sandbox) -> ContainerStatus:
-        if sandbox.container_status is ContainerStatus.CONFIGURED:
-            return ContainerStatus.CONFIGURED
-        return ContainerStatus.RUNNING
 
     @staticmethod
     def _unreachable_status_for(sandbox: Sandbox) -> ContainerStatus:
         if sandbox.container_status in {ContainerStatus.STARTING, ContainerStatus.CONFIGURING}:
             return ContainerStatus.STARTING
         return ContainerStatus.ERROR
-
-    @staticmethod
-    def _probe_session_server(sandbox: Sandbox) -> RuntimeProbe | None:
-        url = f"http://{sandbox.host}:{sandbox.session_port}/health"
-        try:
-            with urllib.request.urlopen(url, timeout=5) as response:
-                if 200 <= response.status < 300:
-                    data = json.loads(response.read().decode("utf-8") or "{}")
-                    if data.get("openclaude") == "stopped":
-                        return RuntimeProbe(status=ContainerStatus.STOPPED, runtime_ref=url)
-                    return RuntimeProbe(
-                        status=DockerComposeSandboxRuntime._online_status_for(sandbox),
-                        runtime_ref=url,
-                    )
-        except OSError:
-            return None
-        except urllib.error.URLError:
-            return None
-        except TimeoutError:
-            return None
-        return None
-
-    @staticmethod
-    def _post_runtime_control(sandbox: Sandbox, action: str) -> None:
-        url = f"http://{sandbox.host}:{sandbox.session_port}/runtime/{action}"
-        request = urllib.request.Request(url, data=b"{}", method="POST")
-        request.add_header("Content-Type", "application/json")
-        try:
-            urllib.request.urlopen(request, timeout=5).close()
-        except OSError as exc:
-            raise RuntimeFailureError(
-                f"Falha ao controlar OpenClaude via sidecar: {exc}",
-                sandbox_id=sandbox.id,
-            ) from exc
-
-    @staticmethod
-    def _restart_session_server(sandbox: Sandbox) -> RuntimeProbe:
-        DockerComposeSandboxRuntime._post_runtime_control(sandbox, "restart-openclaude")
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            time.sleep(1)
-            probe = DockerComposeSandboxRuntime._probe_session_server(sandbox)
-            if probe is not None:
-                return probe
-        return RuntimeProbe(
-            status=ContainerStatus.STARTING,
-            runtime_ref=f"http://{sandbox.host}:{sandbox.session_port}/runtime/restart-openclaude",
-            last_error="OpenClaude reiniciando; /health ainda indisponível",
-        )
-
-    @staticmethod
-    def _stop_session_server(sandbox: Sandbox) -> RuntimeProbe:
-        DockerComposeSandboxRuntime._post_runtime_control(sandbox, "stop-openclaude")
-        return RuntimeProbe(
-            status=ContainerStatus.STOPPED,
-            runtime_ref=f"http://{sandbox.host}:{sandbox.session_port}/runtime/stop-openclaude",
-        )
 
     async def ensure_service(self, sandbox: Sandbox, *, restart: bool = False) -> RuntimeProbe:
         return await asyncio.to_thread(self._ensure_service_sync, sandbox, restart)
@@ -181,46 +102,52 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
         except RuntimeFailureError as exc:
             existing = None
             docker_error = exc
+
         if existing is not None:
-            # Lê estado inicial diretamente de ``attrs`` (já vem populado por
-            # ``containers.get``); só recarregamos depois de uma ação (start).
             state_status = existing.attrs.get("State", {}).get("Status", "")
             if state_status == "running" and restart:
-                try:
-                    existing.restart(timeout=10)
-                except APIError as exc:
-                    raise RuntimeFailureError(
-                        f"Falha ao reiniciar container existente: {exc}",
-                        sandbox_id=sandbox.id,
-                    ) from exc
-                existing.reload()
+                self._restart_existing(existing, sandbox)
             elif state_status != "running":
-                try:
-                    existing.start()
-                except APIError as exc:
-                    raise RuntimeFailureError(
-                        f"Falha ao iniciar container existente: {exc}",
-                        sandbox_id=sandbox.id,
-                    ) from exc
-                existing.reload()
+                self._start_existing(existing, sandbox)
             return self._probe_from_container(existing)
 
-        external = self._probe_session_server(sandbox)
+        external = probe_session_server(sandbox)
         if external is not None:
             if restart or external.status is ContainerStatus.STOPPED:
-                return self._restart_session_server(sandbox)
+                return restart_session_server(sandbox)
             return external
-
         if docker_error is not None:
             raise docker_error
+        return self._create_container(sandbox)
 
+    @staticmethod
+    def _restart_existing(container: Container, sandbox: Sandbox) -> None:
+        try:
+            container.restart(timeout=10)
+        except APIError as exc:
+            raise RuntimeFailureError(
+                f"Falha ao reiniciar container existente: {exc}",
+                sandbox_id=sandbox.id,
+            ) from exc
+        container.reload()
+
+    @staticmethod
+    def _start_existing(container: Container, sandbox: Sandbox) -> None:
+        try:
+            container.start()
+        except APIError as exc:
+            raise RuntimeFailureError(
+                f"Falha ao iniciar container existente: {exc}",
+                sandbox_id=sandbox.id,
+            ) from exc
+        container.reload()
+
+    def _create_container(self, sandbox: Sandbox) -> RuntimeProbe:
         if not sandbox.image:
             raise RuntimeFailureError(
-                "Sandbox sem imagem definida — defina ``image`` antes de bootar.",
+                "Sandbox sem imagem definida - defina `image` antes de bootar.",
                 sandbox_id=sandbox.id,
             )
-
-        name = self._container_name(sandbox)
         ports = {
             f"{sandbox.grpc_port}/tcp": sandbox.grpc_port,
             f"{sandbox.session_port}/tcp": sandbox.session_port,
@@ -228,7 +155,7 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
         try:
             container = self._docker().containers.run(
                 image=sandbox.image,
-                name=name,
+                name=self._container_name(sandbox),
                 detach=True,
                 environment=dict(sandbox.env_vars),
                 ports=ports,
@@ -241,7 +168,7 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
             )
         except ImageNotFound as exc:
             raise RuntimeFailureError(
-                f"Imagem '{sandbox.image}' não encontrada localmente — "
+                f"Imagem '{sandbox.image}' nao encontrada localmente - "
                 "rode docker pull antes ou ajuste a sandbox.",
                 sandbox_id=sandbox.id,
             ) from exc
@@ -263,9 +190,9 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
         except RuntimeFailureError:
             existing = None
         if existing is None:
-            external = self._probe_session_server(sandbox)
+            external = probe_session_server(sandbox)
             if external is not None:
-                return self._stop_session_server(sandbox)
+                return stop_session_server(sandbox)
             return RuntimeProbe(status=ContainerStatus.NOT_CREATED)
         try:
             existing.stop(timeout=10)
@@ -283,26 +210,27 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
         try:
             existing = self._find_container(sandbox)
         except RuntimeFailureError as exc:
-            external = self._probe_session_server(sandbox)
+            external = probe_session_server(sandbox)
             if external is not None:
                 return external
             raise exc
         if existing is None:
-            external = self._probe_session_server(sandbox)
+            external = probe_session_server(sandbox)
             if external is not None:
                 return external
             return RuntimeProbe(status=ContainerStatus.NOT_CREATED)
+
         existing.reload()
         probe = self._probe_from_container(existing)
         if probe.status is not ContainerStatus.RUNNING:
             return probe
-        external = self._probe_session_server(sandbox)
+        external = probe_session_server(sandbox)
         if external is not None:
             return external
         return RuntimeProbe(
             status=self._unreachable_status_for(sandbox),
             runtime_ref=probe.runtime_ref,
-            last_error="session server /health indisponível",
+            last_error="session server /health indisponivel",
         )
 
     async def remove(self, sandbox: Sandbox) -> None:

@@ -1260,6 +1260,7 @@ export interface Sandbox {
   claude_md?: string
   env_vars: Record<string, string>
   container_status: ContainerStatus
+  active_sessions: number
   created_at: string
 }
 

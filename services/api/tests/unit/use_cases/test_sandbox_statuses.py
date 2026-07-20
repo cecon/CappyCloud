@@ -47,3 +47,20 @@ class TestRefreshSandboxStatuses:
 
         assert result[0].id == sandbox.id
         assert result[0].container_status is ContainerStatus.ERROR
+
+    async def test_refresh_exposes_runtime_active_sessions(
+        self, repo: InMemorySandboxRepository
+    ) -> None:
+        sandbox = await CreateSandbox(repo).execute(
+            name="alpha",
+            runtime=SandboxRuntime.COMPOSE,
+            image="cappycloud/sandbox:latest",
+        )
+
+        runtime = FakeRuntimeGateway(active_sessions=2)
+        result = await RefreshSandboxStatuses(repo, {SandboxRuntime.COMPOSE: runtime}).execute()
+        persisted = await repo.get(sandbox.id)
+
+        assert result[0].active_sessions == 2
+        assert persisted is not None
+        assert getattr(persisted, "active_sessions", 0) == 0

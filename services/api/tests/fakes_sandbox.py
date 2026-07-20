@@ -42,10 +42,12 @@ class FakeRuntimeGateway(SandboxRuntimeGateway):
         *,
         ensure_status: ContainerStatus = ContainerStatus.RUNNING,
         stop_status: ContainerStatus = ContainerStatus.STOPPED,
+        active_sessions: int = 0,
         fail_on: str | None = None,
     ) -> None:
         self.ensure_status = ensure_status
         self.stop_status = stop_status
+        self.active_sessions = active_sessions
         self.fail_on = fail_on
         self.calls: list[str] = []
         self.restart_flags: list[bool] = []
@@ -55,16 +57,28 @@ class FakeRuntimeGateway(SandboxRuntimeGateway):
         self.restart_flags.append(restart)
         if self.fail_on == "ensure":
             raise RuntimeFailureError("Boom", sandbox_id=sandbox.id)
-        return RuntimeProbe(status=self.ensure_status, runtime_ref="fake-cid")
+        return RuntimeProbe(
+            status=self.ensure_status,
+            runtime_ref="fake-cid",
+            active_sessions=self.active_sessions,
+        )
 
     async def stop(self, sandbox: Sandbox) -> RuntimeProbe:
         self.calls.append("stop")
         if self.fail_on == "stop":
             raise RuntimeFailureError("Boom", sandbox_id=sandbox.id)
-        return RuntimeProbe(status=self.stop_status, runtime_ref="fake-cid")
+        return RuntimeProbe(
+            status=self.stop_status,
+            runtime_ref="fake-cid",
+            active_sessions=self.active_sessions,
+        )
 
     async def status(self, sandbox: Sandbox) -> RuntimeProbe:
-        return RuntimeProbe(status=self.ensure_status, runtime_ref="fake-cid")
+        return RuntimeProbe(
+            status=self.ensure_status,
+            runtime_ref="fake-cid",
+            active_sessions=self.active_sessions,
+        )
 
     async def remove(self, sandbox: Sandbox) -> None:
         self.calls.append("remove")

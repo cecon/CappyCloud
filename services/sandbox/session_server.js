@@ -38,6 +38,7 @@ const worktreeHandlers = require('./worktree_handlers')
 
 const execFileAsync = promisify(execFile)
 const PORT = parseInt(process.env.SESSION_SERVER_PORT || '8080', 10)
+const activeSessions = new Set()
 
 /**
  * Injeta tokens de autenticação na URL git antes de clonar/fazer fetch.
@@ -118,6 +119,10 @@ function assertSafeUserWorkspacePath(candidate) {
 
 function worktreeExists(worktreePath) {
   return fs.existsSync(path.join(worktreePath, '.git'))
+}
+
+function countSessionRoots() {
+  return activeSessions.size
 }
 
 async function isGitClean(worktreePath) {
@@ -214,6 +219,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         status: 'ok',
         openclaude: runtimeHandler.isStopped() ? 'stopped' : 'running',
+        sessions: countSessionRoots(),
       })
     }
 
@@ -237,6 +243,7 @@ const server = http.createServer(async (req, res) => {
         })
         .filter(Boolean)
       const ready = root_exists && repos_status.every(r => r.exists)
+      if (ready) activeSessions.add(session_id)
       return json(res, 200, { session_id, session_root, root_exists, repos: repos_status, ready })
     }
 
@@ -312,6 +319,7 @@ const server = http.createServer(async (req, res) => {
         })
       }
 
+      activeSessions.add(session_id)
       return json(res, 200, {
         session_id,
         session_root,
@@ -371,6 +379,7 @@ const server = http.createServer(async (req, res) => {
       try { repos = JSON.parse(url.searchParams.get('repos') || '[]') } catch {}
 
       await destroySession({ session_root, repos })
+      activeSessions.delete(session_id)
       console.log(`[session_server] removed session ${session_id}`)
       return json(res, 200, { deleted: true, session_id })
     }

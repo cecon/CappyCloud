@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from app.domain.entities import ContainerStatus, Sandbox, SandboxRuntime
 from app.ports.repositories import SandboxRepository
 from app.ports.sandbox_runtime import RuntimeFailureError, SandboxRuntimeGateway
@@ -32,7 +34,10 @@ class RefreshSandboxStatuses:
             probe = await runtime.status(sandbox)
         except RuntimeFailureError, NotImplementedError:
             return await self._update_or_keep(sandbox, ContainerStatus.ERROR)
-        return await self._update_or_keep(sandbox, probe.status)
+        refreshed = await self._update_or_keep(sandbox, probe.status)
+        observed = replace(refreshed)
+        observed.active_sessions = probe.active_sessions  # type: ignore[attr-defined]
+        return observed
 
     async def _update_or_keep(self, sandbox: Sandbox, status: ContainerStatus) -> Sandbox:
         if sandbox.container_status is status:
