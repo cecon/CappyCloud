@@ -66,7 +66,7 @@ async def launch_runner(
     )
 
     user_prompt = prompt
-    sandbox_session_url = f"http://{sandbox.grpc_host}:8080"
+    sandbox_session_url = f"http://{sandbox.grpc_host}:{sandbox.session_port}"
     prompt = await build_prompt_with_worktree_context(
         prompt,
         sandbox_session_url,

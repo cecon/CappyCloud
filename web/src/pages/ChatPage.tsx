@@ -688,6 +688,7 @@ export function ChatPage() {
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [sandboxes, setSandboxes] = useState<Sandbox[]>([])
+  const [selectedSandboxId, setSelectedSandboxId] = useState<string>('')
   const [selectedSlug, setSelectedSlug] = useState<string>('')
   const [selectedBranch, setSelectedBranch] = useState<string>('')
   const [models, setModels] = useState<AiModel[]>([])
@@ -700,6 +701,15 @@ export function ChatPage() {
   const [liveUsage, setLiveUsage] = useState<DoneEvent | null>(null)
 
   const sortedModels = useMemo(() => sortModelsForSelect(models), [models])
+  const availableSandboxes = useMemo(() => sandboxes.filter(isSandboxAvailable), [sandboxes])
+  const selectedSandbox = useMemo(
+    () => sandboxes.find((sandbox) => sandbox.id === selectedSandboxId) ?? null,
+    [sandboxes, selectedSandboxId],
+  )
+  const selectableWorkspaces = useMemo(() => {
+    if (!selectedSandboxId) return workspaces
+    return workspaces.filter((workspace) => workspace.sandbox_id === selectedSandboxId)
+  }, [selectedSandboxId, workspaces])
 
   const [thoughtSteps, setThoughtSteps] = useState<ThoughtStep[]>([])
   const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null)
@@ -1067,6 +1077,32 @@ export function ChatPage() {
   }, [selectedSlug, models])
 
   useEffect(() => {
+    if (sandboxes.length === 0) {
+      setSelectedSandboxId('')
+      return
+    }
+    const currentIsValid = sandboxes.some(
+      (sandbox) => sandbox.id === selectedSandboxId && isSandboxAvailable(sandbox),
+    )
+    if (currentIsValid) return
+
+    const repoSandboxId = workspaces.find((workspace) => workspace.slug === selectedSlug)?.sandbox_id
+    const repoSandboxIsValid =
+      !!repoSandboxId &&
+      sandboxes.some((sandbox) => sandbox.id === repoSandboxId && isSandboxAvailable(sandbox))
+    const fallback = availableSandboxes[0]?.id ?? sandboxes[0]?.id ?? ''
+    setSelectedSandboxId(repoSandboxIsValid ? repoSandboxId : fallback)
+  }, [availableSandboxes, sandboxes, selectedSandboxId, selectedSlug, workspaces])
+
+  useEffect(() => {
+    if (!selectedSandboxId || !selectedSlug) return
+    const selectedWorkspace = workspaces.find((workspace) => workspace.slug === selectedSlug)
+    if (selectedWorkspace?.sandbox_id === selectedSandboxId) return
+    setSelectedSlug('')
+    setSelectedBranch('')
+  }, [selectedSandboxId, selectedSlug, workspaces])
+
+  useEffect(() => {
     if (!selectedSlug) return
     updateChatPrefs((prefs) => {
       const byRepo = { ...(prefs.byRepo || {}) }
@@ -1260,7 +1296,12 @@ export function ChatPage() {
     const repos = selectedSlug
       ? [{ slug: selectedSlug, base_branch: selectedBranch || null }]
       : []
-    const c = await createConversation(token, repos, modelForRequest || null)
+    const c = await createConversation(
+      token,
+      repos,
+      modelForRequest || null,
+      selectedSandboxId || null,
+    )
     // Update otimista do título — o backend renomeia "Nova conversa" para o
     // início da primeira mensagem (mesma lógica de _TITLE_MAX_LEN=80).
     const previewTitle =
@@ -1666,6 +1707,10 @@ export function ChatPage() {
 
   const activeConv = conversations.find((c) => c.id === activeId)
   const activeEnvSlug = activeConv?.repos?.[0]?.slug ?? null
+  const activeSandboxName =
+    sandboxes.find((sandbox) => sandbox.id === activeConv?.sandbox_id)?.name ??
+    selectedSandbox?.name ??
+    null
   const showThinking =
     streaming &&
     !sessionProgress.length &&
@@ -1866,7 +1911,10 @@ export function ChatPage() {
             inputRef={inputRef}
             onExecute={(text) => handleNewChatWithMessage(text)}
             streaming={streaming}
-            workspaces={workspaces}
+            sandboxes={availableSandboxes.length ? availableSandboxes : sandboxes}
+            selectedSandboxId={selectedSandboxId}
+            setSelectedSandboxId={setSelectedSandboxId}
+            selectableWorkspaces={selectableWorkspaces}
             selectedSlug={selectedSlug}
             setSelectedSlug={setSelectedSlug}
             selectedBranch={selectedBranch}
@@ -1906,6 +1954,7 @@ export function ChatPage() {
               activeEnvSlug={activeEnvSlug}
               activeEnvName={workspaces.find(w => w.slug === activeEnvSlug)?.name ?? activeEnvSlug ?? workspaces[0]?.name ?? null}
               activeBaseBranch={activeConv?.repos?.[0]?.base_branch ?? null}
+              activeSandboxName={activeSandboxName}
               sandboxAccessCount={sandboxAccessCount}
               diffStats={diffStats}
               prLoading={prLoading}
@@ -2021,7 +2070,10 @@ interface EmptyStateProps {
   inputRef: React.RefObject<HTMLTextAreaElement | null>
   onExecute: (text: string) => void
   streaming: boolean
-  workspaces: Workspace[]
+  selectableWorkspaces: Workspace[]
+  sandboxes: Sandbox[]
+  selectedSandboxId: string
+  setSelectedSandboxId: (id: string) => void
   selectedSlug: string
   setSelectedSlug: (s: string) => void
   selectedBranch: string
@@ -2041,7 +2093,8 @@ interface EmptyStateProps {
 
 function EmptyState({
   input, setInput, inputRef, onExecute, streaming,
-  workspaces, selectedSlug, setSelectedSlug,
+  selectableWorkspaces, sandboxes, selectedSandboxId, setSelectedSandboxId,
+  selectedSlug, setSelectedSlug,
   selectedBranch, setSelectedBranch,
   token,
   permissionMode, setPermissionMode, permissionWarningRuntimeConfirmed,
@@ -2054,7 +2107,9 @@ function EmptyState({
   // auto-clone trata o caso de repo não clonado
   const hasSendableAttachment = trayItems.some(isSendableTrayItem)
   const hasUploadInProgress = trayItems.some((item) => item.kind === 'uploading')
+  const sandboxRequired = sandboxes.length > 0 && !selectedSandboxId
   const canExecute =
+    !sandboxRequired &&
     !!selectedSlug &&
     !!selectedBranch &&
     (!!input.trim() || hasSendableAttachment) &&
@@ -2080,7 +2135,7 @@ function EmptyState({
     }
   }
 
-  const repoRequired = workspaces.length > 0 && !selectedSlug
+  const repoRequired = selectableWorkspaces.length > 0 && !selectedSlug
   const branchRequired = !!selectedSlug && !selectedBranch
 
   return (
@@ -2198,7 +2253,54 @@ function EmptyState({
                 >
                   <span className={styles.icon}>attachment</span>
                 </button>
-                {workspaces.length > 0 ? (
+                {sandboxes.length > 0 ? (
+                  <Select
+                    value={selectedSandboxId}
+                    onValueChange={(id) => {
+                      setSelectedSandboxId(id)
+                      setSelectedSlug('')
+                      setSelectedBranch('')
+                    }}
+                  >
+                    <SelectTrigger
+                      className={`${styles.contextSelectTrigger} ${styles.contextSelectTriggerSandbox} ${
+                        sandboxRequired ? styles.contextPillRequired : ''
+                      }`}
+                      title="Selecionar sandbox"
+                      aria-label="Selecionar sandbox"
+                    >
+                      <span className={styles.icon} aria-hidden="true">
+                        dns
+                      </span>
+                      <SelectValue placeholder="Sandbox..." />
+                    </SelectTrigger>
+                    <SelectContent
+                      className={styles.contextSelectContent}
+                      position="item-aligned"
+                    >
+                      <SelectGroup>
+                        <SelectLabel className={styles.contextSelectLabel}>
+                          Sandbox
+                        </SelectLabel>
+                        {sandboxes.map((sandbox) => (
+                          <SelectItem
+                            key={sandbox.id}
+                            value={sandbox.id}
+                            className={styles.contextSelectItem}
+                          >
+                            {sandbox.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className={`${styles.contextPill} ${styles.contextPillRequired}`} style={{ marginLeft: '0.5rem' }}>
+                    <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.5 }}>dns</span>
+                    <span className={styles.contextPillLabel} style={{ opacity: 0.45 }}>Nenhuma sandbox</span>
+                  </div>
+                )}
+                {selectableWorkspaces.length > 0 ? (
                   <Select
                     value={selectedSlug}
                     onValueChange={setSelectedSlug}
@@ -2223,7 +2325,7 @@ function EmptyState({
                         <SelectLabel className={styles.contextSelectLabel}>
                           Repositório
                         </SelectLabel>
-                        {workspaces.map((w) => (
+                        {selectableWorkspaces.map((w) => (
                           <SelectItem
                             key={w.slug}
                             value={w.slug}
@@ -2372,6 +2474,7 @@ interface ActiveChatProps {
   activeEnvSlug: string | null
   activeEnvName: string | null
   activeBaseBranch: string | null
+  activeSandboxName: string | null
   sandboxAccessCount: number
   diffStats: { added: number; removed: number } | null
   prLoading: boolean
@@ -2403,7 +2506,7 @@ interface ActiveChatProps {
 function ActiveChat({
   messages, messagesLoading, messagesError, sessionProgressAnchor, thoughtSteps, activityTraces, streamElapsedMs, streamIdleMs, sessionProgress, pendingAction,
   showThinking, streaming, input, setInput, inputRef,
-  onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch, sandboxAccessCount,
+  onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch, activeSandboxName, sandboxAccessCount: _sandboxAccessCount,
   diffStats, prLoading, prUrl, prError, headBranch, onCreatePr,
   activeTitle: _activeTitle,
   token, conversationId,
@@ -2495,7 +2598,7 @@ function ActiveChat({
     selectedModelId ||
     'Modelo'
   const activeBranchLabel = headBranch ?? activeBaseBranch ?? 'develop'
-  const sandboxUsersLabel = sandboxAccessCount === 1 ? '1 na sandbox' : `${sandboxAccessCount} na sandbox`
+  const sandboxLabel = activeSandboxName ?? 'Sandbox'
   const hasUsageMeta =
     convUsage.total_prompt_tokens > 0 ||
     convUsage.total_completion_tokens > 0 ||
@@ -2528,11 +2631,11 @@ function ActiveChat({
           )}
           </div>
           <div className={styles.sessionHeaderRight}>
-          <div className={styles.sessionPresenceChip} title="Pessoas nesta sandbox">
+          <div className={styles.sessionPresenceChip} title="Sandbox desta conversa">
             <span className={styles.sessionPresenceAvatars}>
-              <span>VC</span>
+              <span className={styles.icon}>dns</span>
             </span>
-            <span>{sandboxUsersLabel}</span>
+            <span>{sandboxLabel}</span>
           </div>
           {models.length > 0 ? (
             <div className={styles.sessionHeaderModelPicker}>

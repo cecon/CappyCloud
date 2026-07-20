@@ -21,6 +21,7 @@ import json
 import logging
 from dataclasses import dataclass
 
+import asyncpg
 import httpx
 
 from ._session_store import SandboxRecord, SessionStore
@@ -46,15 +47,60 @@ class EnvironmentManager:
         sandbox_grpc_port: int,
         sandbox_session_port: int = 8080,
         sandbox_name: str = "cappycloud-sandbox",
+        database_url: str = "",
     ) -> None:
         self._store = session_store
         self._default_host = sandbox_host
         self._default_grpc_port = sandbox_grpc_port
         self._default_session_port = sandbox_session_port
         self._default_name = sandbox_name
+        self._database_url = database_url
 
     def _session_base(self, host: str, session_port: int) -> str:
         return f"http://{host}:{session_port}"
+
+    async def _resolve_sandbox_endpoint(self, sandbox_id: str) -> tuple[str, int, int, str]:
+        if not sandbox_id or not self._database_url:
+            return (
+                self._default_host,
+                self._default_grpc_port,
+                self._default_session_port,
+                self._default_name,
+            )
+        try:
+            conn = await asyncpg.connect(self._database_url)
+            try:
+                row = await conn.fetchrow(
+                    """
+                    SELECT name, host, grpc_port, session_port
+                    FROM sandboxes
+                    WHERE id = $1::uuid
+                    """,
+                    sandbox_id,
+                )
+            finally:
+                await conn.close()
+        except Exception as exc:
+            log.warning("Falha ao resolver sandbox %s; usando padrão: %s", sandbox_id, exc)
+            return (
+                self._default_host,
+                self._default_grpc_port,
+                self._default_session_port,
+                self._default_name,
+            )
+        if not row:
+            return (
+                self._default_host,
+                self._default_grpc_port,
+                self._default_session_port,
+                self._default_name,
+            )
+        return (
+            str(row["host"] or self._default_host),
+            int(row["grpc_port"] or self._default_grpc_port),
+            int(row["session_port"] or self._default_session_port),
+            str(row["name"] or self._default_name),
+        )
 
     # ── Public API ───────────────────────────────────────────────
 
@@ -113,7 +159,7 @@ class EnvironmentManager:
             return
 
         host = record.grpc_host or self._default_host
-        base = self._session_base(host, self._default_session_port)
+        base = self._session_base(host, record.session_port or self._default_session_port)
         session_id = record.chat_id.replace("-", "")[:12]
 
         if record.session_root:
@@ -141,7 +187,7 @@ class EnvironmentManager:
     async def _ensure_session(self, record: SandboxRecord) -> None:
         """Re-create worktrees if the volume was wiped (idempotent)."""
         host = record.grpc_host or self._default_host
-        base = self._session_base(host, self._default_session_port)
+        base = self._session_base(host, record.session_port or self._default_session_port)
         session_id = record.chat_id.replace("-", "")[:12]
         async with httpx.AsyncClient(timeout=60) as client:
             resp = await client.post(
@@ -158,7 +204,7 @@ class EnvironmentManager:
     async def _probe_session_server(self, record: SandboxRecord) -> None:
         """Confirma sessão/worktrees sem recriá-los quando já estão prontos."""
         host = record.grpc_host or self._default_host
-        base = self._session_base(host, self._default_session_port)
+        base = self._session_base(host, record.session_port or self._default_session_port)
         session_id = record.chat_id.replace("-", "")[:12]
         try:
             async with httpx.AsyncClient(timeout=10) as client:
@@ -192,9 +238,10 @@ class EnvironmentManager:
     ) -> SandboxRecord:
         session_id = chat_id.replace("-", "")[:12]
 
-        host = self._default_host
-        grpc_port = self._default_grpc_port
-        base = self._session_base(host, self._default_session_port)
+        host, grpc_port, session_port, sandbox_name = await self._resolve_sandbox_endpoint(
+            sandbox_id
+        )
+        base = self._session_base(host, session_port)
 
         session_root = session_root or f"/repos/sessions/{session_id}"
         resolved_repos = repos or []
@@ -240,9 +287,10 @@ class EnvironmentManager:
             user_id=user_id,
             chat_id=chat_id,
             sandbox_id=sandbox_id,
-            sandbox_name=self._default_name,
+            sandbox_name=sandbox_name,
             grpc_host=host,
             grpc_port=grpc_port,
+            session_port=session_port,
             session_root=session_root,
             repos=resolved_repos,
         )

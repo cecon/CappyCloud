@@ -88,10 +88,49 @@ async def create_conversation(
     """
     b = body or ConversationCreate()
 
+    repo_rows: list[Repository] = []
+    if b.repos:
+        slugs = [r.slug for r in b.repos]
+        repo_rows = (
+            (await session.execute(select(Repository).where(Repository.slug.in_(slugs))))
+            .scalars()
+            .all()
+        )
+        found_slugs = {repo.slug for repo in repo_rows}
+        missing_slugs = [slug for slug in slugs if slug not in found_slugs]
+        if missing_slugs:
+            names = ", ".join(missing_slugs)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Repositórios não encontrados: {names}.",
+            )
+
+    resolved_sandbox_id = b.sandbox_id
+    repo_sandbox_ids = {repo.sandbox_id for repo in repo_rows if repo.sandbox_id is not None}
+    if resolved_sandbox_id is None and len(repo_sandbox_ids) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Repositórios pertencem a sandboxes diferentes.",
+        )
+    if resolved_sandbox_id is None and len(repo_sandbox_ids) == 1:
+        resolved_sandbox_id = next(iter(repo_sandbox_ids))
+    if resolved_sandbox_id is not None:
+        mismatched_repos = [
+            repo.slug
+            for repo in repo_rows
+            if repo.sandbox_id != resolved_sandbox_id
+        ]
+        if mismatched_repos:
+            names = ", ".join(mismatched_repos)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Repositórios fora da sandbox selecionada: {names}.",
+            )
+
     if current.role is not UserRole.ADMIN:
-        if b.sandbox_id is not None:
+        if resolved_sandbox_id is not None:
             ok = await SQLAlchemyUserSandboxAccessRepository(session).has_access(
-                current.id, b.sandbox_id
+                current.id, resolved_sandbox_id
             )
             if not ok:
                 raise HTTPException(
@@ -99,12 +138,6 @@ async def create_conversation(
                     detail="Sem acesso à sandbox solicitada.",
                 )
         if b.repos:
-            slugs = [r.slug for r in b.repos]
-            repo_rows = (
-                (await session.execute(select(Repository).where(Repository.slug.in_(slugs))))
-                .scalars()
-                .all()
-            )
             repo_ids = [r.id for r in repo_rows]
             if repo_ids:
                 allowed = set(
@@ -147,7 +180,7 @@ async def create_conversation(
     conv = await uc.execute(
         current.id,
         title=b.title,
-        sandbox_id=b.sandbox_id,
+        sandbox_id=resolved_sandbox_id,
         ai_model_id=ai_model_id,
         repos=repos_dicts,
     )

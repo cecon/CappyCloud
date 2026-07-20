@@ -314,6 +314,7 @@ export type Conversation = {
   title: string
   created_at: string
   updated_at: string
+  sandbox_id: string | null
   repos: RepoSelection[]
   session_root: string | null
   permission_mode: PermissionMode
@@ -539,9 +540,11 @@ export async function createConversation(
   token: string,
   repos: RepoSelection[] = [],
   modelId?: string | null,
+  sandboxId?: string | null,
 ): Promise<Conversation> {
   const body: Record<string, unknown> = { repos }
   if (modelId) body.model_id = modelId
+  if (sandboxId) body.sandbox_id = sandboxId
   const res = await apiFetch('/api/conversations', {
     method: 'POST',
     headers: {
@@ -945,6 +948,7 @@ export interface Workspace {
   slug: string
   name: string
   url: string
+  sandbox_id: string | null
   confluence_url: string
   confluence_space: string
   confluence_labels: string[]

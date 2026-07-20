@@ -88,6 +88,7 @@ class Pipeline:
             sandbox_host=self.valves.SANDBOX_HOST,
             sandbox_grpc_port=self.valves.SANDBOX_GRPC_PORT,
             sandbox_session_port=self.valves.SANDBOX_SESSION_PORT,
+            database_url=self.valves.DATABASE_URL,
         )
         self._dispatcher = TaskDispatcher(
             env_manager=self._env_manager,
@@ -203,8 +204,16 @@ class Pipeline:
             except Exception as exc:
                 log.warning("Falha ao carregar repo_agent_profiles: %s", exc)
 
-        sandbox_host = os.getenv("SANDBOX_HOST", "cappycloud-sandbox")
-        sandbox_session_port = os.getenv("SANDBOX_SESSION_PORT", "8080")
+        sandbox_host = self.valves.SANDBOX_HOST
+        sandbox_session_port = self.valves.SANDBOX_SESSION_PORT
+        if self._env_manager is not None:
+            try:
+                sandbox_host, _, sandbox_session_port, _ = self._run(
+                    self._env_manager._resolve_sandbox_endpoint(sandbox_id),
+                    timeout=5,
+                )
+            except Exception as exc:
+                log.warning("Falha ao resolver endpoint da sandbox %s: %s", sandbox_id, exc)
         sandbox_session_url = f"http://{sandbox_host}:{sandbox_session_port}"
 
         # NOTA: a estrutura top-level do worktree é injetada pelo dispatcher,

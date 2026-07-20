@@ -4960,6 +4960,11 @@
   margin-left: 0.5rem;
 }
 
+.contextSelectTriggerSandbox {
+  max-width: 190px;
+  margin-left: 0.5rem;
+}
+
 .contextSelectTriggerBranch {
   max-width: 168px;
 }
