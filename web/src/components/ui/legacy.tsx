@@ -56,6 +56,19 @@ function unit(value: Size | undefined): string | number | undefined {
   return spacing[value] ?? value
 }
 
+function overlaySize(value: Size | undefined, fallback: string): string | number {
+  if (value == null) return fallback
+  if (typeof value === 'number') return value
+  const sizes: Record<string, string> = {
+    xs: '20rem',
+    sm: '24rem',
+    md: '32rem',
+    lg: '44rem',
+    xl: '60rem',
+  }
+  return sizes[value] ?? value
+}
+
 function color(value: string | undefined): string | undefined {
   if (!value) return undefined
   const map: Record<string, string> = {
@@ -646,7 +659,7 @@ export function Modal({ opened, onClose, title, children, size }: { opened: bool
             top: '50%',
             zIndex: 51,
             width: 'calc(100vw - 2rem)',
-            maxWidth: unit(size) ?? '42rem',
+            maxWidth: overlaySize(size, '42rem'),
             maxHeight: 'calc(100dvh - 2rem)',
             transform: 'translate(-50%, -50%)',
           }}
@@ -669,7 +682,12 @@ export function Drawer({ opened, onClose, title, children, position = 'right', s
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-background/70 backdrop-blur-sm" />
         <DialogPrimitive.Content
           className={cn('fixed top-0 z-50 flex h-dvh flex-col gap-4 overflow-auto border-border bg-popover p-6 text-popover-foreground shadow-lg', position === 'right' ? 'right-0 border-l' : 'left-0 border-r')}
-          style={{ width: unit(size) ?? '36rem', maxWidth: 'calc(100vw - 2rem)' }}
+          style={{
+            width: overlaySize(size, '36rem'),
+            minWidth: 'min(20rem, calc(100vw - 1rem))',
+            maxWidth: 'calc(100vw - 1rem)',
+            boxSizing: 'border-box',
+          }}
         >
           {title && <DialogPrimitive.Title className="text-lg font-semibold">{title}</DialogPrimitive.Title>}
           {children}

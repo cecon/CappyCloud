@@ -22,14 +22,14 @@ const SheetOverlay = React.forwardRef<
 SheetOverlay.displayName = SheetPrimitive.Overlay.displayName
 
 const sheetVariants = cva(
-  'fixed z-50 gap-4 bg-popover p-6 text-popover-foreground shadow-lg transition ease-in-out',
+  'fixed z-50 box-border gap-4 bg-popover p-6 text-popover-foreground shadow-lg transition ease-in-out',
   {
     variants: {
       side: {
         top: 'inset-x-0 top-0 border-b border-border',
         bottom: 'inset-x-0 bottom-0 border-t border-border',
-        left: 'inset-y-0 left-0 h-full w-3/4 border-r border-border sm:max-w-sm',
-        right: 'inset-y-0 right-0 h-full w-3/4 border-l border-border sm:max-w-md',
+        left: 'inset-y-0 left-0 h-full w-[min(32rem,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] border-r border-border',
+        right: 'inset-y-0 right-0 h-full w-[min(32rem,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] border-l border-border',
       },
     },
     defaultVariants: {
