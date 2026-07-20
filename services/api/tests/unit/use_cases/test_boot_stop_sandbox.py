@@ -109,6 +109,27 @@ class TestBootSandbox:
         assert len(bootstrap.skill_calls) == 1 and bootstrap.skill_calls[0][1] == []
         assert len(bootstrap.agent_calls) == 1 and bootstrap.agent_calls[0][1] == []
 
+    async def test_boot_restarts_runtime_when_sandbox_was_already_active(
+        self,
+        repo: InMemorySandboxRepository,
+        runtime: FakeRuntimeGateway,
+        bootstrap: FakeSandboxBootstrap,
+        mcps: InMemoryMcpRepository,
+    ) -> None:
+        a = await _make(repo, name="alpha")
+        await repo.update_container_status(a.id, ContainerStatus.CONFIGURED)
+
+        result = await _boot_uc(
+            repo,
+            {SandboxRuntime.COMPOSE: runtime},
+            {SandboxRuntime.COMPOSE: bootstrap},
+            mcps,
+        ).execute(a.id)
+
+        assert result.container_status is ContainerStatus.CONFIGURED
+        assert runtime.calls == ["ensure", "ensure"]
+        assert runtime.restart_flags == [False, True]
+
     async def test_boot_writes_mcp_servers_from_db(
         self,
         repo: InMemorySandboxRepository,

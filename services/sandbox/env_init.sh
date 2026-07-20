@@ -411,6 +411,11 @@ SESSION_SERVER_PID=$!
 echo "Session server PID: ${SESSION_SERVER_PID}"
 
 # ── Inicia o servidor gRPC do openclaude (processo principal) ─
+if [ -f /tmp/cappycloud-openclaude-stopped ]; then
+    echo "OpenClaude stopped by CappyCloud control plane; session server remains online."
+    wait "${SESSION_SERVER_PID}"
+fi
+
 echo "Starting openclaude gRPC server on ${GRPC_HOST}:${GRPC_PORT}..."
 cd /openclaude
 exec npm run dev:grpc

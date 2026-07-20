@@ -22,6 +22,7 @@ import {
   IconDotsVertical,
   IconPlayerPlay,
   IconPlayerStop,
+  IconRefresh,
   IconSettings,
   IconTrash,
 } from '@tabler/icons-react'
@@ -40,6 +41,7 @@ import {
 } from '../api'
 import { SandboxGlobalsDrawer } from '../components/SandboxGlobalsDrawer'
 import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
+import styles from './AdminSandboxesPage.module.css'
 
 type CreateState = {
   name: string
@@ -77,11 +79,13 @@ const STATUS_LABELS: Record<ContainerStatus, string> = {
 
 const STATUS_POLL_MS = 5000
 
-function formatRefreshAge(lastRefreshAt: number | null): string {
-  if (!lastRefreshAt) return 'checando...'
-  const ageSeconds = Math.max(0, Math.floor((Date.now() - lastRefreshAt) / 1000))
-  if (ageSeconds < 2) return 'agora'
-  return `há ${ageSeconds}s`
+function isLiveStatus(status: ContainerStatus): boolean {
+  return (
+    status === 'starting' ||
+    status === 'running' ||
+    status === 'configuring' ||
+    status === 'configured'
+  )
 }
 
 function envEntriesToRecord(entries: { key: string; value: string }[]): Record<string, string> {
@@ -110,24 +114,18 @@ export function AdminSandboxesPage() {
   const [globalsFor, setGlobalsFor] = useState<Sandbox | null>(null)
 
   const [pendingAction, setPendingAction] = useState<string | null>(null)
-  const [refreshingStatus, setRefreshingStatus] = useState(false)
-  const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null)
 
   const reload = useCallback(async (options: { silent?: boolean } = {}) => {
     const token = getToken()
     if (!token) return
-    if (options.silent) setRefreshingStatus(true)
     try {
       const list = await fetchAdminSandboxes(token)
       setItems(list)
       setLoadError(null)
-      setLastRefreshAt(Date.now())
     } catch (err) {
       if (!options.silent) {
         setLoadError(errorToUserMessage(err))
       }
-    } finally {
-      if (options.silent) setRefreshingStatus(false)
     }
   }, [])
 
@@ -320,13 +318,9 @@ export function AdminSandboxesPage() {
                 {items.map((sb) => {
                   const isPending = pendingAction === sb.id
                   const containerExists = sb.container_status !== 'not_created'
-                  const stoppable =
-                    sb.container_status === 'running' ||
-                    sb.container_status === 'configured' ||
-                    sb.container_status === 'configuring' ||
-                    sb.container_status === 'starting'
+                  const live = isLiveStatus(sb.container_status)
                   return (
-                    <Table.Tr key={sb.id}>
+                    <Table.Tr key={sb.id} className={live ? styles.liveRow : undefined}>
                       <Table.Td>
                         <Text fw={600}>{sb.name}</Text>
                         <Text size="xs" c="dimmed">
@@ -344,30 +338,24 @@ export function AdminSandboxesPage() {
                         </Text>
                       </Table.Td>
                       <Table.Td>
-                        <Stack gap={4}>
-                          <Group gap={6} wrap="nowrap">
-                            <Badge
-                              color={STATUS_COLORS[sb.container_status]}
-                              variant={sb.container_status === 'configured' ? 'filled' : 'light'}
-                            >
-                              {STATUS_LABELS[sb.container_status]}
-                            </Badge>
-                            {refreshingStatus && <Loader size={12} />}
-                          </Group>
-                          <Text size="xs" c="dimmed">
-                            visto {formatRefreshAge(lastRefreshAt)}
-                          </Text>
-                        </Stack>
+                        <Badge
+                          color={STATUS_COLORS[sb.container_status]}
+                          variant={sb.container_status === 'configured' ? 'filled' : 'light'}
+                        >
+                          {STATUS_LABELS[sb.container_status]}
+                        </Badge>
                       </Table.Td>
                       <ActionsCell>
                         <RowActionIcon
-                          label="Iniciar/recriar container"
-                          color="blue"
+                          label={
+                            live ? 'Sincronizar e reiniciar OpenClaude' : 'Iniciar container'
+                          }
+                          color={live ? 'yellow' : 'blue'}
                           onClick={() => void handleBoot(sb)}
                           loading={isPending}
                           disabled={isPending}
                         >
-                          <IconPlayerPlay size={16} />
+                          {live ? <IconRefresh size={16} /> : <IconPlayerPlay size={16} />}
                         </RowActionIcon>
                         <RowActionIcon
                           label="Parar container"
@@ -375,7 +363,7 @@ export function AdminSandboxesPage() {
                           variant="default"
                           onClick={() => void handleStop(sb)}
                           loading={isPending}
-                          disabled={isPending || !stoppable}
+                          disabled={isPending || !live}
                         >
                           <IconPlayerStop size={16} />
                         </RowActionIcon>

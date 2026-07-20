@@ -38,16 +38,17 @@ class RuntimeProbe:
 class SandboxRuntimeGateway(ABC):
     """Contrato que cada adapter de orquestrador implementa.
 
-    Idempotente: chamar ``ensure_service`` em sandbox já criada é no-op.
+    Idempotente: chamar ``ensure_service`` em sandbox já criada é no-op,
+    exceto quando ``restart=True`` for solicitado.
     """
 
     @abstractmethod
-    async def ensure_service(self, sandbox: Sandbox) -> RuntimeProbe:
+    async def ensure_service(self, sandbox: Sandbox, *, restart: bool = False) -> RuntimeProbe:
         """Garante que o container/service existe e está rodando.
 
         - Não existe → cria e inicia.
         - Existe parado → inicia.
-        - Existe rodando → no-op.
+        - Existe rodando → no-op, ou restart quando ``restart=True``.
 
         Levanta :class:`RuntimeFailureError` se a criação/start falhar.
         """

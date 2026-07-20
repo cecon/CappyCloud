@@ -224,6 +224,7 @@ class BootSandbox:
                 sandbox_id=sandbox.id,
             )
 
+        restart_after_bootstrap = sandbox.container_status in _NAME_INVARIANT_ACTIVE_STATUSES
         await self._sandboxes.update_container_status(sandbox.id, ContainerStatus.STARTING)
         try:
             probe = await runtime.ensure_service(sandbox)
@@ -231,7 +232,7 @@ class BootSandbox:
             await self._sandboxes.update_container_status(sandbox.id, ContainerStatus.ERROR)
             raise
 
-        if probe.status is not ContainerStatus.RUNNING:
+        if probe.status not in {ContainerStatus.RUNNING, ContainerStatus.CONFIGURED}:
             final = await self._sandboxes.update_container_status(sandbox.id, probe.status)
             if final is None:
                 raise SandboxNotFoundError(f"Sandbox {sandbox.id} sumiu durante boot.")
@@ -261,6 +262,19 @@ class BootSandbox:
         except BootstrapFailureError:
             await self._sandboxes.update_container_status(sandbox.id, ContainerStatus.ERROR)
             raise
+
+        if restart_after_bootstrap:
+            await self._sandboxes.update_container_status(sandbox.id, ContainerStatus.STARTING)
+            try:
+                probe = await runtime.ensure_service(sandbox, restart=True)
+            except RuntimeFailureError:
+                await self._sandboxes.update_container_status(sandbox.id, ContainerStatus.ERROR)
+                raise
+            if probe.status not in {ContainerStatus.RUNNING, ContainerStatus.CONFIGURED}:
+                final = await self._sandboxes.update_container_status(sandbox.id, probe.status)
+                if final is None:
+                    raise SandboxNotFoundError(f"Sandbox {sandbox.id} sumiu durante restart.")
+                return final
 
         final = await self._sandboxes.update_container_status(
             sandbox.id, ContainerStatus.CONFIGURED

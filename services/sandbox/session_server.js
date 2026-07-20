@@ -17,6 +17,7 @@
 //   POST   /worktree/*             → worktree_handlers.js (ls-files, diff, PR, …)
 //   POST   /mcp/configure          → escreve mcpServers em ~/.claude/settings.json
 //   POST   /globals/configure      → escreve skills/agents em ~/.claude/
+//   POST   /runtime/restart-openclaude → reinicia o processo principal do container
 //   GET    /health                 → liveness probe
 // ──────────────────────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ const globalsHandler = require('./globals_handler')
 const mcpHandler = require('./mcp_handler')
 const confluenceHandler = require('./confluence_handler')
 const repoHandlers = require('./repo_handlers')
+const runtimeHandler = require('./runtime_handler')
 const taskHandler = require('./task_handler')
 const worktreeHandlers = require('./worktree_handlers')
 
@@ -209,7 +211,10 @@ const server = http.createServer(async (req, res) => {
   try {
     // GET /health
     if (req.method === 'GET' && pathname === '/health') {
-      return json(res, 200, { status: 'ok' })
+      return json(res, 200, {
+        status: 'ok',
+        openclaude: runtimeHandler.isStopped() ? 'stopped' : 'running',
+      })
     }
 
     // GET /sessions/:id/status — checagem leve sem criar worktrees.
@@ -472,6 +477,8 @@ const server = http.createServer(async (req, res) => {
 
     // POST /globals/configure — materializa skills/agents globais
     if (await globalsHandler.tryHandle(req, res, { json, readBody })) return
+
+    if (await runtimeHandler.tryHandle(req, res, { json })) return
 
     return json(res, 404, { error: 'Not found' })
   } catch (err) {

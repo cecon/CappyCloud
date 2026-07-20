@@ -48,9 +48,11 @@ class FakeRuntimeGateway(SandboxRuntimeGateway):
         self.stop_status = stop_status
         self.fail_on = fail_on
         self.calls: list[str] = []
+        self.restart_flags: list[bool] = []
 
-    async def ensure_service(self, sandbox: Sandbox) -> RuntimeProbe:
+    async def ensure_service(self, sandbox: Sandbox, *, restart: bool = False) -> RuntimeProbe:
         self.calls.append("ensure")
+        self.restart_flags.append(restart)
         if self.fail_on == "ensure":
             raise RuntimeFailureError("Boom", sandbox_id=sandbox.id)
         return RuntimeProbe(status=self.ensure_status, runtime_ref="fake-cid")

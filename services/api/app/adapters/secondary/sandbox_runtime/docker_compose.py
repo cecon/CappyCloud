@@ -16,7 +16,9 @@ Pontos importantes:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -118,6 +120,9 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
         try:
             with urllib.request.urlopen(url, timeout=5) as response:
                 if 200 <= response.status < 300:
+                    data = json.loads(response.read().decode("utf-8") or "{}")
+                    if data.get("openclaude") == "stopped":
+                        return RuntimeProbe(status=ContainerStatus.STOPPED, runtime_ref=url)
                     return RuntimeProbe(
                         status=DockerComposeSandboxRuntime._online_status_for(sandbox),
                         runtime_ref=url,
@@ -130,10 +135,46 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
             return None
         return None
 
-    async def ensure_service(self, sandbox: Sandbox) -> RuntimeProbe:
-        return await asyncio.to_thread(self._ensure_service_sync, sandbox)
+    @staticmethod
+    def _post_runtime_control(sandbox: Sandbox, action: str) -> None:
+        url = f"http://{sandbox.host}:{sandbox.session_port}/runtime/{action}"
+        request = urllib.request.Request(url, data=b"{}", method="POST")
+        request.add_header("Content-Type", "application/json")
+        try:
+            urllib.request.urlopen(request, timeout=5).close()
+        except OSError as exc:
+            raise RuntimeFailureError(
+                f"Falha ao controlar OpenClaude via sidecar: {exc}",
+                sandbox_id=sandbox.id,
+            ) from exc
 
-    def _ensure_service_sync(self, sandbox: Sandbox) -> RuntimeProbe:
+    @staticmethod
+    def _restart_session_server(sandbox: Sandbox) -> RuntimeProbe:
+        DockerComposeSandboxRuntime._post_runtime_control(sandbox, "restart-openclaude")
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            time.sleep(1)
+            probe = DockerComposeSandboxRuntime._probe_session_server(sandbox)
+            if probe is not None:
+                return probe
+        return RuntimeProbe(
+            status=ContainerStatus.STARTING,
+            runtime_ref=f"http://{sandbox.host}:{sandbox.session_port}/runtime/restart-openclaude",
+            last_error="OpenClaude reiniciando; /health ainda indisponível",
+        )
+
+    @staticmethod
+    def _stop_session_server(sandbox: Sandbox) -> RuntimeProbe:
+        DockerComposeSandboxRuntime._post_runtime_control(sandbox, "stop-openclaude")
+        return RuntimeProbe(
+            status=ContainerStatus.STOPPED,
+            runtime_ref=f"http://{sandbox.host}:{sandbox.session_port}/runtime/stop-openclaude",
+        )
+
+    async def ensure_service(self, sandbox: Sandbox, *, restart: bool = False) -> RuntimeProbe:
+        return await asyncio.to_thread(self._ensure_service_sync, sandbox, restart)
+
+    def _ensure_service_sync(self, sandbox: Sandbox, restart: bool) -> RuntimeProbe:
         docker_error: RuntimeFailureError | None = None
         try:
             existing = self._find_container(sandbox)
@@ -144,7 +185,16 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
             # Lê estado inicial diretamente de ``attrs`` (já vem populado por
             # ``containers.get``); só recarregamos depois de uma ação (start).
             state_status = existing.attrs.get("State", {}).get("Status", "")
-            if state_status != "running":
+            if state_status == "running" and restart:
+                try:
+                    existing.restart(timeout=10)
+                except APIError as exc:
+                    raise RuntimeFailureError(
+                        f"Falha ao reiniciar container existente: {exc}",
+                        sandbox_id=sandbox.id,
+                    ) from exc
+                existing.reload()
+            elif state_status != "running":
                 try:
                     existing.start()
                 except APIError as exc:
@@ -157,6 +207,8 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
 
         external = self._probe_session_server(sandbox)
         if external is not None:
+            if restart or external.status is ContainerStatus.STOPPED:
+                return self._restart_session_server(sandbox)
             return external
 
         if docker_error is not None:
@@ -206,8 +258,14 @@ class DockerComposeSandboxRuntime(SandboxRuntimeGateway):
         return await asyncio.to_thread(self._stop_sync, sandbox)
 
     def _stop_sync(self, sandbox: Sandbox) -> RuntimeProbe:
-        existing = self._find_container(sandbox)
+        try:
+            existing = self._find_container(sandbox)
+        except RuntimeFailureError:
+            existing = None
         if existing is None:
+            external = self._probe_session_server(sandbox)
+            if external is not None:
+                return self._stop_session_server(sandbox)
             return RuntimeProbe(status=ContainerStatus.NOT_CREATED)
         try:
             existing.stop(timeout=10)

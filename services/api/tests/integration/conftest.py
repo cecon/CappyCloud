@@ -91,7 +91,7 @@ class _StubModelsByTierLookup(ModelsByTierLookup):
 class _StubRuntimeGateway(SandboxRuntimeGateway):
     """Runtime sintético para os testes HTTP — simula transições sem Docker."""
 
-    async def ensure_service(self, sandbox) -> RuntimeProbe:  # type: ignore[no-untyped-def]
+    async def ensure_service(self, sandbox, *, restart: bool = False) -> RuntimeProbe:  # type: ignore[no-untyped-def]
         return RuntimeProbe(status=ContainerStatus.RUNNING, runtime_ref="stub-cid")
 
     async def stop(self, sandbox) -> RuntimeProbe:  # type: ignore[no-untyped-def]
