@@ -88,7 +88,7 @@ async def create_conversation(
     repo_rows: list[Repository] = []
     if b.repos:
         slugs = [r.slug for r in b.repos]
-        repo_rows = (
+        repo_rows = list(
             (await session.execute(select(Repository).where(Repository.slug.in_(slugs))))
             .scalars()
             .all()
