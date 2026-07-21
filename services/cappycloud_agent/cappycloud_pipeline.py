@@ -155,6 +155,15 @@ class Pipeline:
             cursor = None
 
         action_reply = bool(body.get("action_reply"))
+        if cursor is not None and not action_reply:
+            task_id = self._run(
+                self._dispatcher.get_active_task_id(conversation_id or "__none__"),
+                timeout=10,
+            )
+            if task_id:
+                yield from self._stream_events(task_id, cursor)
+                return
+
         if action_reply:
             task_id = self._run(
                 self._dispatcher.get_active_task_id(conversation_id or "__none__"),

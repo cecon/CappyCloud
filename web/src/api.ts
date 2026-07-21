@@ -704,29 +704,59 @@ export async function streamAssistantReply(
   if (attachmentIds && attachmentIds.length > 0) bodyPayload.attachment_ids = attachmentIds
   if (permissionMode) bodyPayload.permission_mode = permissionMode
   if (actionReply) bodyPayload.action_reply = true
-  const qs = cursor != null ? `?cursor=${encodeURIComponent(String(cursor))}` : ''
-  const res = await apiFetch(`/api/conversations/${conversationId}/messages/stream${qs}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(bodyPayload),
-    signal,
-  })
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(err || 'Erro no agente')
+  let retryCursor = cursor
+  let retries = 0
+  let reader: ReadableStreamDefaultReader<Uint8Array>
+
+  async function openReader(): Promise<ReadableStreamDefaultReader<Uint8Array>> {
+    const qs = retryCursor != null ? `?cursor=${encodeURIComponent(String(retryCursor))}` : ''
+    const res = await apiFetch(`/api/conversations/${conversationId}/messages/stream${qs}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(bodyPayload),
+      signal,
+    })
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(err || 'Erro no agente')
+    }
+    return res.body!.getReader()
   }
-  const reader = res.body!.getReader()
+  reader = await openReader()
   const dec = new TextDecoder()
   let buf = ''
   let accText = ''
   let sawDone = false
+  let lastCursor = cursor
 
   while (!sawDone) {
-    const { done, value } = await reader.read()
-    if (done) break
+    let chunk: ReadableStreamReadResult<Uint8Array>
+    try {
+      chunk = await reader.read()
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') throw e
+      if (lastCursor == null || retries >= 3) throw e
+      retries += 1
+      retryCursor = lastCursor
+      await new Promise((resolve) => setTimeout(resolve, 400 * retries))
+      reader = await openReader()
+      continue
+    }
+    const { done, value } = chunk
+    if (done) {
+      if (!sawDone && lastCursor != null && retries < 3) {
+        retries += 1
+        retryCursor = lastCursor
+        await new Promise((resolve) => setTimeout(resolve, 400 * retries))
+        reader = await openReader()
+        continue
+      }
+      break
+    }
+    retries = 0
     buf += dec.decode(value, { stream: true })
 
     // Process all complete SSE lines; keep any partial line in buf
@@ -738,6 +768,7 @@ export async function streamAssistantReply(
       try {
         const evt = JSON.parse(line.slice(6)) as Record<string, unknown>
         if (typeof evt.cursor === 'number') {
+          lastCursor = evt.cursor
           eventHandlers.onCursor?.(evt.cursor)
         }
         switch (evt.type) {
