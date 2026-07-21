@@ -32,7 +32,7 @@ async def launch_runner(
     session_root: str = "",
     sandbox_id: str = "",
     override_model: str | None = None,
-    permission_mode: str = "request_permissions",
+    permission_mode: str = "bypass_permissions",
     sandbox_session_url: str = "",
     attachments: list[dict] | None = None,
 ) -> None:
@@ -66,7 +66,7 @@ async def launch_runner(
     )
 
     user_prompt = prompt
-    sandbox_session_url = f"http://{sandbox.grpc_host}:8080"
+    sandbox_session_url = f"http://{sandbox.grpc_host}:{sandbox.session_port}"
     prompt = await build_prompt_with_worktree_context(
         prompt,
         sandbox_session_url,

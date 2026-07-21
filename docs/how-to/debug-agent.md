@@ -83,11 +83,32 @@ Campos relevantes:
 # Verificar se o servidor gRPC está respondendo
 docker exec cappycloud-sandbox grpc_health_probe -addr=localhost:50051
 
-# Ou com nc
+# Ou com nc, quando disponivel na imagem
 docker exec cappycloud-sandbox nc -zv localhost 50051
 
 # Verificar o sidecar HTTP de sessões
 docker exec cappycloud-sandbox curl -fsS http://localhost:8080/health
+```
+
+O container e o sidecar HTTP podem estar `running` mesmo quando o processo
+OpenClaude nao esta aceitando gRPC. Para esse caso, valide tambem:
+
+```bash
+docker exec cappycloud-sandbox curl -fsS http://localhost:8080/runtime/status
+docker exec cappycloud-sandbox nc -z localhost 50051
+```
+
+Resultado esperado:
+
+- `openclaude: "running"`: porta gRPC aberta.
+- `openclaude: "stopped"`: parada solicitada pelo sentinel interno.
+- `openclaude: "unhealthy"`: sidecar vivo, mas a porta gRPC esta fechada.
+
+Quando aparecer `unhealthy`, reinicie o runtime antes de assumir que a sessao
+esta disponivel:
+
+```bash
+docker exec cappycloud-sandbox curl -fsS -X POST http://localhost:8080/runtime/restart-openclaude
 ```
 
 ---

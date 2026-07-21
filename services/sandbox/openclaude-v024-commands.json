@@ -1,0 +1,142 @@
+[
+  {
+    "name": "/model",
+    "description": "Escolher ou inspecionar modelos disponiveis",
+    "category": "model",
+    "source": "upstream",
+    "availability": {
+      "state": "available",
+      "required_capability": "authorized_model_catalog"
+    },
+    "requires_confirmation": true,
+    "confirmation_reason": "Pode alterar o modelo da conversa.",
+    "execution_mode": "chat_action"
+  },
+  {
+    "name": "/ctx",
+    "description": "Ver uso de contexto da conversa",
+    "category": "context",
+    "source": "upstream",
+    "availability": {
+      "state": "available",
+      "required_capability": "conversation_usage"
+    },
+    "requires_confirmation": false,
+    "execution_mode": "chat_action"
+  },
+  {
+    "name": "/cost",
+    "description": "Ver tokens e custo registrados da conversa",
+    "category": "cost",
+    "source": "upstream",
+    "availability": {
+      "state": "available",
+      "required_capability": "provider_usage"
+    },
+    "requires_confirmation": false,
+    "execution_mode": "chat_action"
+  },
+  {
+    "name": "/doctor",
+    "description": "Diagnosticar runtime, providers e busca web",
+    "category": "diagnostic",
+    "source": "upstream",
+    "availability": {
+      "state": "unavailable",
+      "reason": "Diagnostico headless ainda nao possui execucao segura no chat."
+    },
+    "requires_confirmation": false,
+    "execution_mode": "unavailable"
+  },
+  {
+    "name": "/bughunter",
+    "description": "Executar analise de bugs no repositorio ativo",
+    "category": "analysis",
+    "source": "upstream",
+    "availability": {
+      "state": "unavailable",
+      "reason": "Analise bughunter ainda nao possui mapeamento seguro no chat."
+    },
+    "requires_confirmation": true,
+    "confirmation_reason": "Pode executar ferramentas no repositorio ativo.",
+    "execution_mode": "unavailable"
+  },
+  {
+    "name": "/bughunter-security",
+    "description": "Executar analise de seguranca no repositorio ativo",
+    "category": "analysis",
+    "source": "upstream",
+    "availability": {
+      "state": "unavailable",
+      "reason": "Analise de seguranca ainda nao possui mapeamento seguro no chat."
+    },
+    "requires_confirmation": true,
+    "confirmation_reason": "Pode executar ferramentas no repositorio ativo.",
+    "execution_mode": "unavailable"
+  },
+  {
+    "name": "/bughunter-perf",
+    "description": "Executar analise de performance no repositorio ativo",
+    "category": "analysis",
+    "source": "upstream",
+    "availability": {
+      "state": "unavailable",
+      "reason": "Analise de performance ainda nao possui mapeamento seguro no chat."
+    },
+    "requires_confirmation": true,
+    "confirmation_reason": "Pode executar ferramentas no repositorio ativo.",
+    "execution_mode": "unavailable"
+  },
+  {
+    "name": "/set-context-window",
+    "description": "Ajustar janela de contexto da conversa",
+    "category": "context",
+    "source": "upstream",
+    "availability": {
+      "state": "unavailable",
+      "reason": "Alteracao de contexto ainda nao possui execucao segura no chat."
+    },
+    "requires_confirmation": true,
+    "confirmation_reason": "Altera configuracao de contexto da conversa.",
+    "execution_mode": "unavailable"
+  },
+  {
+    "name": "/clear-context-window",
+    "description": "Limpar override de janela de contexto",
+    "category": "context",
+    "source": "upstream",
+    "availability": {
+      "state": "unavailable",
+      "reason": "Alteracao de contexto ainda nao possui execucao segura no chat."
+    },
+    "requires_confirmation": true,
+    "confirmation_reason": "Altera configuracao de contexto da conversa.",
+    "execution_mode": "unavailable"
+  },
+  {
+    "name": "/goal",
+    "description": "Gerenciar objetivo da sessao",
+    "category": "session",
+    "source": "upstream",
+    "availability": {
+      "state": "unavailable",
+      "reason": "Objetivos de sessao upstream ainda nao substituem o historico do CappyCloud."
+    },
+    "requires_confirmation": true,
+    "confirmation_reason": "Altera estado da sessao.",
+    "execution_mode": "unavailable"
+  },
+  {
+    "name": "/update",
+    "description": "Atualizar runtime OpenClaude",
+    "category": "runtime",
+    "source": "upstream",
+    "availability": {
+      "state": "unavailable",
+      "reason": "Atualizacao de runtime em producao esta fora do escopo desta feature."
+    },
+    "requires_confirmation": true,
+    "confirmation_reason": "Pode alterar runtime e custo operacional.",
+    "execution_mode": "unavailable"
+  }
+]

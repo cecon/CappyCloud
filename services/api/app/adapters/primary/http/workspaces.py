@@ -17,7 +17,7 @@ from sqlalchemy.orm import selectinload
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
 from app.domain.entities import User
 from app.infrastructure.encryption import get_encryptor
-from app.infrastructure.orm_models import Repository
+from app.infrastructure.orm_models import Repository, Sandbox
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -32,9 +32,15 @@ def _sandbox_session_base() -> str:
     return f"http://{_SANDBOX_HOST}:{_SANDBOX_SESSION_PORT}"
 
 
-async def _sandbox_post_json(path: str, payload: dict) -> dict | None:
+def _sandbox_session_base_for(sandbox: Sandbox | None) -> str:
+    if sandbox is None:
+        return _sandbox_session_base()
+    return f"http://{sandbox.host}:{sandbox.session_port}"
+
+
+async def _sandbox_post_json(path: str, payload: dict, base_url: str | None = None) -> dict | None:
     """POST JSON ao session_server do sandbox; devolve o corpo JSON ou None em falha."""
-    url = f"{_sandbox_session_base()}{path}"
+    url = f"{(base_url or _sandbox_session_base()).rstrip('/')}{path}"
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
             r = await client.post(url, json=payload)
@@ -53,6 +59,7 @@ class WorkspaceOut(BaseModel):
     slug: str
     name: str
     url: str
+    sandbox_id: str | None = None
     confluence_url: str = ""
     confluence_space: str = ""
     confluence_labels: list[str] = Field(default_factory=list)
@@ -144,6 +151,7 @@ async def list_workspaces(
             slug=r.slug,
             name=r.name,
             url=r.clone_url,
+            sandbox_id=str(r.sandbox_id) if r.sandbox_id else None,
             confluence_url=r.confluence_url,
             confluence_space=r.confluence_space,
             confluence_labels=list(r.confluence_labels or []),
@@ -181,7 +189,9 @@ async def list_branches(
     3. ``default_branch`` do registo no banco
     """
     result = await session.execute(
-        select(Repository).where(Repository.slug == slug).options(selectinload(Repository.provider))
+        select(Repository)
+        .where(Repository.slug == slug)
+        .options(selectinload(Repository.provider), selectinload(Repository.sandbox))
     )
     repo = result.scalar_one_or_none()
     if not repo:
@@ -196,12 +206,19 @@ async def list_branches(
             pass
 
     repo_path = f"/repos/{slug}"
+    sandbox_base = _sandbox_session_base_for(repo.sandbox)
     default_hint = repo.default_branch or ""
-    hint_data = await _sandbox_post_json("/git/origin-head-branch", {"repo_path": repo_path})
+    hint_data = await _sandbox_post_json(
+        "/git/origin-head-branch", {"repo_path": repo_path}, sandbox_base
+    )
     if hint_data and isinstance(hint_data.get("branch"), str) and hint_data["branch"]:
         default_hint = hint_data["branch"]
 
-    remote_data = await _sandbox_post_json("/git/ls-remote-branches", {"url": auth_url})
+    remote_data = await _sandbox_post_json(
+        "/git/ls-remote-branches",
+        {"url": auth_url},
+        sandbox_base,
+    )
     if remote_data:
         branches = _parse_branches(remote_data.get("stdout") or "")
         if branches:
@@ -210,7 +227,7 @@ async def list_branches(
         if err:
             log.warning("git ls-remote (sandbox) slug=%s: %s", slug, err[:400])
 
-    local_data = await _sandbox_post_json("/git/branch-r", {"repo_path": repo_path})
+    local_data = await _sandbox_post_json("/git/branch-r", {"repo_path": repo_path}, sandbox_base)
     if local_data:
         branches = _parse_branches(local_data.get("stdout") or "")
         if branches:

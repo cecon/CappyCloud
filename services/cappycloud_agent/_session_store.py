@@ -31,6 +31,7 @@ class SandboxRecord:
     chat_id: str
     grpc_host: str
     grpc_port: int
+    session_port: int = 8080
     repos: list[dict] = field(default_factory=list)
     session_root: str = ""
     sandbox_id: str = ""
@@ -77,6 +78,7 @@ CREATE TABLE IF NOT EXISTS cappy_sessions (
     sandbox_name   TEXT NOT NULL DEFAULT '',
     grpc_host      TEXT,
     grpc_port      INTEGER,
+    session_port   INTEGER NOT NULL DEFAULT 8080,
     session_root   TEXT NOT NULL DEFAULT '',
     repos          JSONB NOT NULL DEFAULT '[]',
     created_at     TIMESTAMPTZ DEFAULT NOW(),
@@ -91,6 +93,7 @@ ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS sandbox_name TEXT NOT NULL D
 ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS session_root TEXT NOT NULL DEFAULT '';
 ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS repos        JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS grpc_host    TEXT;
+ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS session_port INTEGER NOT NULL DEFAULT 8080;
 ALTER TABLE cappy_sessions DROP COLUMN IF EXISTS repo_url;
 ALTER TABLE cappy_sessions DROP COLUMN IF EXISTS env_slug;
 ALTER TABLE cappy_sessions DROP COLUMN IF EXISTS container_id;
@@ -173,13 +176,14 @@ class SessionStore:
                 """
                 INSERT INTO cappy_sessions
                     (user_id, chat_id, sandbox_id, sandbox_name,
-                     grpc_host, grpc_port, session_root, repos)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+                     grpc_host, grpc_port, session_port, session_root, repos)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
                 ON CONFLICT (user_id, chat_id) DO UPDATE
                     SET sandbox_id   = EXCLUDED.sandbox_id,
                         sandbox_name = EXCLUDED.sandbox_name,
                         grpc_host    = EXCLUDED.grpc_host,
                         grpc_port    = EXCLUDED.grpc_port,
+                        session_port = EXCLUDED.session_port,
                         session_root = EXCLUDED.session_root,
                         repos        = EXCLUDED.repos,
                         last_active  = NOW()
@@ -190,6 +194,7 @@ class SessionStore:
                 record.sandbox_name,
                 record.grpc_host,
                 record.grpc_port,
+                record.session_port,
                 record.session_root,
                 json.dumps(record.repos),
             )

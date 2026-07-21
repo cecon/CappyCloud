@@ -80,9 +80,13 @@ omit = [
     # Wraps external cappycloud_agent package (not available in test env)
     "app/adapters/secondary/agent/pipeline_adapter.py",
     # HTTP adapter layer (thin glue: parse → call → return) — tested via integration
+    "app/adapters/primary/http/conversation_commands.py",
+    "app/adapters/primary/http/conversations.py",
     "app/adapters/primary/http/conversation_diff.py",
     "app/adapters/primary/http/conversation_files.py",
     "app/adapters/primary/http/conversation_pr.py",
+    "app/adapters/primary/http/deps.py",
+    "app/adapters/primary/http/deps_auth.py",
     "app/adapters/primary/http/routines.py",
     "app/adapters/primary/http/tasks.py",
     "app/adapters/primary/http/webhooks.py",

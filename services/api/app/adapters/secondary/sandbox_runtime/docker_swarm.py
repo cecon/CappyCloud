@@ -17,7 +17,7 @@ from app.ports.sandbox_runtime import (
 class DockerSwarmSandboxRuntime(SandboxRuntimeGateway):
     """Adapter Swarm — stub. Levanta erro até a implementação real entrar."""
 
-    async def ensure_service(self, sandbox: Sandbox) -> RuntimeProbe:
+    async def ensure_service(self, sandbox: Sandbox, *, restart: bool = False) -> RuntimeProbe:
         raise NotImplementedError(
             "Adapter Swarm ainda não implementado (ADR-004). Use runtime='compose' "
             "para dev ou aguarde o PR de produção."

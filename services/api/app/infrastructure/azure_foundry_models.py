@@ -12,6 +12,16 @@ log = logging.getLogger(__name__)
 
 _TIMEOUT_SECONDS = 30.0
 _AZURE_FOUNDRY_HOST_SUFFIX = ".services.ai.azure.com"
+_KNOWN_PRICING_PER_1M_USD: dict[str, tuple[float, float]] = {
+    "deepseek-v4-flash": (0.19, 0.51),
+    "deepseek-v4-pro": (1.74, 3.48),
+    "gpt-5-chat": (1.25, 10.0),
+    "gpt-5.4": (2.5, 15.0),
+    "gpt-5.4-mini": (0.75, 4.5),
+    "kimi-k2.6": (0.95, 4.0),
+    "kimi-k2.6-1": (0.95, 4.0),
+    "text-embedding-3-large": (0.143, 0.0),
+}
 
 
 class AzureFoundryDeployment(TypedDict):
@@ -167,17 +177,24 @@ def _normalize_deployment(item: dict[str, Any]) -> AzureFoundryDeployment | None
     model_id = item.get("name")
     if not isinstance(model_id, str) or not model_id.strip():
         return None
+    normalized_model_id = model_id.strip()
     capabilities = _capabilities(item.get("capabilities"))
     if not capabilities:
         return None
+    pricing = _known_pricing(normalized_model_id)
     return AzureFoundryDeployment(
-        model_id=model_id.strip(),
-        display_name=model_id.strip(),
+        model_id=normalized_model_id,
+        display_name=normalized_model_id,
         context_window=200000,
-        input_cost_per_1m_usd=None,
-        output_cost_per_1m_usd=None,
+        input_cost_per_1m_usd=pricing[0] if pricing else None,
+        output_cost_per_1m_usd=pricing[1] if pricing else None,
         capabilities=capabilities,
     )
+
+
+def _known_pricing(model_id: str) -> tuple[float, float] | None:
+    key = model_id.strip().lower().replace("_", "-")
+    return _KNOWN_PRICING_PER_1M_USD.get(key)
 
 
 def _capabilities(raw: Any) -> list[str]:

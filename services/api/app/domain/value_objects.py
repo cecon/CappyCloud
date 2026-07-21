@@ -22,7 +22,7 @@ class PermissionMode(StrEnum):
     BYPASS_PERMISSIONS = "bypass_permissions"
 
 
-DEFAULT_PERMISSION_MODE = PermissionMode.REQUEST_PERMISSIONS.value
+DEFAULT_PERMISSION_MODE = PermissionMode.BYPASS_PERMISSIONS.value
 
 
 class UserWorkspaceStatus(StrEnum):

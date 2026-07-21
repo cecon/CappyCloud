@@ -10,8 +10,12 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.primary.http.conversation_sandbox_guard import (
+    ensure_sandbox_ready_for_chat,
+)
 from app.adapters.primary.http.deps import (
     get_authenticated_user,
+    get_conv_repo,
     get_create_conv_uc,
     get_db_session,
     get_list_convs_uc,
@@ -34,6 +38,7 @@ from app.application.use_cases.conversations import (
 from app.domain.entities import User, UserRole
 from app.infrastructure.orm_models import Repository
 from app.infrastructure.orm_models_platform import AiModel
+from app.ports.repositories import ConversationRepository
 from app.schemas import (
     ConversationCreate,
     ConversationOut,
@@ -52,7 +57,6 @@ async def list_conversations(
     uc: Annotated[ListConversations, Depends(get_list_convs_uc)],
     scope: str = Query(default="own", pattern="^(own|all)$"),
 ) -> list[ConversationOut]:
-    """Lista conversas do utilizador; ADMIN pode pedir ``scope=all``."""
     include_all = current.role is UserRole.ADMIN and scope == "all"
     convs = await uc.execute(current.id, include_all=include_all)
     return [
@@ -80,18 +84,49 @@ async def create_conversation(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     body: ConversationCreate | None = None,
 ) -> ConversationOut:
-    """Cria conversa nova, opcionalmente ligada a um ambiente.
-
-    USERs precisam ter ``UserSandboxAccess`` para o ``sandbox_id`` e
-    ``UserRepositoryAccess`` para cada repositório listado em ``repos``
-    (ADR-005 §5). ADMIN bypassa as duas validações.
-    """
     b = body or ConversationCreate()
 
+    repo_rows: list[Repository] = []
+    if b.repos:
+        slugs = [r.slug for r in b.repos]
+        repo_rows = list(
+            (await session.execute(select(Repository).where(Repository.slug.in_(slugs))))
+            .scalars()
+            .all()
+        )
+        found_slugs = {repo.slug for repo in repo_rows}
+        missing_slugs = [slug for slug in slugs if slug not in found_slugs]
+        if missing_slugs:
+            names = ", ".join(missing_slugs)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Repositórios não encontrados: {names}.",
+            )
+
+    resolved_sandbox_id = b.sandbox_id
+    repo_sandbox_ids = {repo.sandbox_id for repo in repo_rows if repo.sandbox_id is not None}
+    if resolved_sandbox_id is None and len(repo_sandbox_ids) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Repositórios pertencem a sandboxes diferentes.",
+        )
+    if resolved_sandbox_id is None and len(repo_sandbox_ids) == 1:
+        resolved_sandbox_id = next(iter(repo_sandbox_ids))
+    if resolved_sandbox_id is not None:
+        mismatched_repos = [
+            repo.slug for repo in repo_rows if repo.sandbox_id != resolved_sandbox_id
+        ]
+        if mismatched_repos:
+            names = ", ".join(mismatched_repos)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Repositórios fora da sandbox selecionada: {names}.",
+            )
+
     if current.role is not UserRole.ADMIN:
-        if b.sandbox_id is not None:
+        if resolved_sandbox_id is not None:
             ok = await SQLAlchemyUserSandboxAccessRepository(session).has_access(
-                current.id, b.sandbox_id
+                current.id, resolved_sandbox_id
             )
             if not ok:
                 raise HTTPException(
@@ -99,12 +134,6 @@ async def create_conversation(
                     detail="Sem acesso à sandbox solicitada.",
                 )
         if b.repos:
-            slugs = [r.slug for r in b.repos]
-            repo_rows = (
-                (await session.execute(select(Repository).where(Repository.slug.in_(slugs))))
-                .scalars()
-                .all()
-            )
             repo_ids = [r.id for r in repo_rows]
             if repo_ids:
                 allowed = set(
@@ -119,6 +148,9 @@ async def create_conversation(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail=f"Sem acesso aos repositórios: {names}.",
                     )
+
+    if resolved_sandbox_id is not None:
+        await ensure_sandbox_ready_for_chat(session, resolved_sandbox_id)
 
     ai_model_id: uuid.UUID | None = None
     if b.model_id:
@@ -147,7 +179,7 @@ async def create_conversation(
     conv = await uc.execute(
         current.id,
         title=b.title,
-        sandbox_id=b.sandbox_id,
+        sandbox_id=resolved_sandbox_id,
         ai_model_id=ai_model_id,
         repos=repos_dicts,
     )
@@ -170,10 +202,6 @@ async def get_conversation_usage(
     current: Annotated[User, Depends(get_authenticated_user)],
     uc: Annotated[ListMessages, Depends(get_list_msgs_uc)],
 ) -> ConversationUsage:
-    """Totais agregados de tokens e custo da conversa.
-
-    Soma todos os turnos do assistente (mensagens com ``role='assistant'``).
-    """
     try:
         msgs = await uc.execute(conversation_id, current.id)
     except LookupError as exc:
@@ -191,7 +219,6 @@ async def list_messages(
     current: Annotated[User, Depends(get_authenticated_user)],
     uc: Annotated[ListMessages, Depends(get_list_msgs_uc)],
 ) -> list[MessageOut]:
-    """Histórico de mensagens."""
     try:
         msgs = await uc.execute(conversation_id, current.id)
     except LookupError as exc:
@@ -221,18 +248,26 @@ async def stream_message(
     conversation_id: uuid.UUID,
     body: SendMessageBody,
     current: Annotated[User, Depends(get_authenticated_user)],
+    convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
     uc: Annotated[StreamMessage, Depends(get_stream_msg_uc)],
     cursor: int | None = Query(
         default=None,
         description="Último agent_event.id recebido (para reconexão)",
     ),
 ) -> StreamingResponse:
-    """Envia mensagem e devolve resposta do agente em SSE.
-
-    Suporta reconexão via `cursor`: ao passar o último `agent_event.id` recebido,
-    o stream retoma a partir desse ponto sem perder eventos.
-    """
     try:
+        if current.role is UserRole.ADMIN:
+            conv = next(
+                (item for item in await convs.list_all() if item.id == conversation_id),
+                None,
+            )
+        else:
+            conv = await convs.get(conversation_id, current.id)
+        sandbox_id = conv.sandbox_id if conv else None
+        if sandbox_id is not None:
+            await ensure_sandbox_ready_for_chat(session, sandbox_id)
+
         stream = await uc.execute(
             conversation_id,
             current.id,

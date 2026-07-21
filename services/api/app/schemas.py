@@ -128,9 +128,14 @@ class SandboxOut(BaseModel):
     image: str
     env_vars: dict[str, str]
     container_status: ContainerStatus
+    active_sessions: int = 0
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class SandboxAdminOut(SandboxOut):
+    claude_md: str = ""
 
 
 class SandboxRegister(BaseModel):
@@ -149,6 +154,7 @@ class SandboxAdminCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     runtime: SandboxRuntime = SandboxRuntime.COMPOSE
     image: str = Field(default="", max_length=512)
+    claude_md: str = Field(default="", max_length=20000)
     env_vars: dict[str, str] = Field(default_factory=dict)
     host: str | None = Field(default=None, max_length=256)
     grpc_port: int = Field(default=50051, ge=1, le=65535)
@@ -159,6 +165,7 @@ class SandboxAdminUpdate(BaseModel):
     """Patch de campos editáveis. ``name`` é imutável após criação."""
 
     image: str | None = Field(default=None, max_length=512)
+    claude_md: str | None = Field(default=None, max_length=20000)
     env_vars: dict[str, str] | None = None
     host: str | None = Field(default=None, max_length=256)
     grpc_port: int | None = Field(default=None, ge=1, le=65535)

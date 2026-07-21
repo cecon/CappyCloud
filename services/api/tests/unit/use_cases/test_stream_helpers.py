@@ -432,4 +432,4 @@ async def test_build_pipeline_body_defaults_legacy_permission_mode() -> None:
         attachments_payload=None,
     )
 
-    assert body["permission_mode"] == PermissionMode.REQUEST_PERMISSIONS.value
+    assert body["permission_mode"] == PermissionMode.BYPASS_PERMISSIONS.value

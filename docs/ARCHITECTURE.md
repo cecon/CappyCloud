@@ -122,12 +122,13 @@ Fluxo:
    `POST /api/conversations/{id}/messages/stream`.
 2. `StreamMessage` valida o valor no domínio, persiste na conversa e coloca o
    modo resolvido no corpo enviado ao `AgentPort`.
-3. `cappycloud_pipeline.py` sanitiza fallback para `request_permissions`.
+3. `cappycloud_pipeline.py` sanitiza fallback para `bypass_permissions`.
 4. `_grpc_session.py` envia `permission_mode` em cada `ChatRequest`.
 5. O patch gRPC do OpenClaude aplica o modo por request, depois dos guardrails
    de worktree do CappyCloud.
 
-`auto` e `bypass_permissions` só ignoram prompts de permissão do OpenClaude.
+`auto` e `bypass_permissions` só ignoram prompts de permissão do OpenClaude;
+na UI, `bypass_permissions` aparece como **Acesso completo**.
 Autorização de repositório, isolamento do sandbox, guardas de path/worktree,
 redação de segredos e gates explícitos de ações externas continuam ativos.
 
@@ -145,6 +146,26 @@ podem usar LSP/AST sob demanda conforme a
 | Python | `pyright`, `basedpyright`, `ruff`, `libcst` |
 | AST multi-linguagem | `ast-grep`, `tree-sitter` |
 
+### Comandos slash no chat
+
+O chat web expoe comandos `/` por um contrato do CappyCloud, nao por parsing
+livre no frontend. A UI consulta `GET /api/conversations/{id}/commands`,
+renderiza comandos descobertos do runtime e envia execucoes para
+`POST /api/conversations/{id}/commands/execute`.
+
+Regras de fronteira:
+
+1. Regras de disponibilidade, autorizacao, confirmacao e execucao ficam em
+   `services/api/app/application/use_cases/chat_commands.py` e
+   `services/api/app/application/use_cases/chat_command_execution.py`.
+2. O acesso ao runtime usa `ChatCommandRuntimePort` em
+   `services/api/app/ports/chat_commands.py`, com adapter real em
+   `services/api/app/adapters/secondary/sandbox_runtime/chat_commands.py`.
+3. Modelos mostrados por `/model` usam o catalogo autorizado do CappyCloud; o
+   OpenClaude nao vira fonte de verdade para modelo, permissao, historico,
+   tokens ou custo.
+4. Comandos upstream sem caminho headless seguro continuam descobriveis, mas
+   aparecem indisponiveis com motivo em portugues.
 ### Evento ActionRequired
 
 Quando o openclaude precisa de confirmação humana, ele emite `ActionRequired` via gRPC.

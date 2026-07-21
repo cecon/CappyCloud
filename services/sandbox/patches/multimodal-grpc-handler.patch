@@ -54,10 +54,10 @@ index 11e6c66..42ae6dd 100644
 +
 +function cappycloudPermissionMode(value: unknown): string {
 +  if (typeof value !== 'string') {
-+    return 'request_permissions'
++    return 'bypass_permissions'
 +  }
 +  const mode = value.trim()
-+  return CAPPYCLOUD_PERMISSION_MODES.has(mode) ? mode : 'request_permissions'
++  return CAPPYCLOUD_PERMISSION_MODES.has(mode) ? mode : 'bypass_permissions'
 +}
 +
 +function cappycloudPermissionDecision(mode: string, toolName: string): CappycloudPermissionDecision | null {

@@ -4,6 +4,7 @@ de sandbox (ADR-004 §5).
 O bootstrap é idempotente: chamar várias vezes deve produzir o mesmo estado
 final. Cobre 3 destinos dentro de ``~/.claude/``:
 
+- ``CLAUDE.md`` (instruções globais da sandbox headless)
 - ``settings.json`` (MCPs)
 - ``skills/<name>/SKILL.md`` (skills globais por sandbox)
 - ``agents/<name>.md`` (subagents globais por sandbox, com frontmatter YAML)
@@ -21,6 +22,10 @@ from app.domain.entities import Sandbox, SandboxAgent, SandboxSkill
 
 class SandboxBootstrapGateway(ABC):
     """Materializa o cadastro (DB) em arquivos dentro do container."""
+
+    @abstractmethod
+    async def write_claude_md(self, sandbox: Sandbox) -> None:
+        """Escreve ``CLAUDE.md`` base da sandbox no container."""
 
     @abstractmethod
     async def write_settings_json(self, sandbox: Sandbox, settings: dict) -> None:

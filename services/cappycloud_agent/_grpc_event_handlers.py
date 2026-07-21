@@ -73,6 +73,33 @@ def tool_result_event(msg: Any) -> tuple[str, dict]:
     )
 
 
+def command_start_event(msg: Any) -> tuple[str, dict]:
+    command = getattr(msg, "command_start", None)
+    return (
+        "command_start",
+        {
+            "command": _safe_command_name(getattr(command, "command", "")),
+            "label": _safe_summary(getattr(command, "label", "Comando iniciado")),
+        },
+    )
+
+
+def command_result_event(msg: Any) -> tuple[str, dict]:
+    result = getattr(msg, "command_result", None)
+    status = str(getattr(result, "status", "") or "failed")
+    if status not in {"started", "waiting_for_input", "completed", "unavailable", "failed", "cancelled"}:
+        status = "failed"
+    return (
+        "command_result",
+        {
+            "command": _safe_command_name(getattr(result, "command", "")),
+            "status": status,
+            "summary": _safe_summary(getattr(result, "summary", "")),
+            "details_markdown": _safe_summary(getattr(result, "details_markdown", "")),
+        },
+    )
+
+
 def payload_diagnostic_event(msg: Any) -> tuple[str, dict] | None:
     diagnostic = getattr(msg, "payload_diagnostic", None)
     if diagnostic is None:
@@ -241,3 +268,14 @@ def _safe_fallback_reason(value: Any) -> str:
     if _SAFE_DIAGNOSTIC_TEXT.fullmatch(reason):
         return reason
     return ""
+
+
+def _safe_command_name(value: Any) -> str:
+    command = str(value or "").strip()
+    if re.fullmatch(r"/[A-Za-z0-9_.:-]{1,80}", command):
+        return command
+    return ""
+
+
+def _safe_summary(value: Any) -> str:
+    return str(value or "").replace("\x00", "")[:4000]

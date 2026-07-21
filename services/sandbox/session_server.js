@@ -16,6 +16,8 @@
 //   POST   /git/*                  → git_handlers.js (ls-remote, branch-r, ls-files, file)
 //   POST   /worktree/*             → worktree_handlers.js (ls-files, diff, PR, …)
 //   POST   /mcp/configure          → escreve mcpServers em ~/.claude/settings.json
+//   POST   /globals/configure      → escreve skills/agents em ~/.claude/
+//   POST   /runtime/restart-openclaude → reinicia o processo principal do container
 //   GET    /health                 → liveness probe
 // ──────────────────────────────────────────────────────────────
 
@@ -26,14 +28,17 @@ const { execFile, execFileSync } = require('child_process')
 const { promisify } = require('util')
 
 const gitHandlers = require('./git_handlers')
+const globalsHandler = require('./globals_handler')
 const mcpHandler = require('./mcp_handler')
 const confluenceHandler = require('./confluence_handler')
 const repoHandlers = require('./repo_handlers')
+const runtimeHandler = require('./runtime_handler')
 const taskHandler = require('./task_handler')
 const worktreeHandlers = require('./worktree_handlers')
 
 const execFileAsync = promisify(execFile)
 const PORT = parseInt(process.env.SESSION_SERVER_PORT || '8080', 10)
+const activeSessions = new Set()
 
 /**
  * Injeta tokens de autenticação na URL git antes de clonar/fazer fetch.
@@ -114,6 +119,14 @@ function assertSafeUserWorkspacePath(candidate) {
 
 function worktreeExists(worktreePath) {
   return fs.existsSync(path.join(worktreePath, '.git'))
+}
+
+function countSessionRoots() {
+  return activeSessions.size
+}
+
+function clearActiveSessions() {
+  activeSessions.clear()
 }
 
 async function isGitClean(worktreePath) {
@@ -207,7 +220,11 @@ const server = http.createServer(async (req, res) => {
   try {
     // GET /health
     if (req.method === 'GET' && pathname === '/health') {
-      return json(res, 200, { status: 'ok' })
+      return json(res, 200, {
+        status: 'ok',
+        openclaude: await runtimeHandler.openClaudeStatus(),
+        sessions: countSessionRoots(),
+      })
     }
 
     // GET /sessions/:id/status — checagem leve sem criar worktrees.
@@ -230,6 +247,7 @@ const server = http.createServer(async (req, res) => {
         })
         .filter(Boolean)
       const ready = root_exists && repos_status.every(r => r.exists)
+      if (ready) activeSessions.add(session_id)
       return json(res, 200, { session_id, session_root, root_exists, repos: repos_status, ready })
     }
 
@@ -258,12 +276,12 @@ const server = http.createServer(async (req, res) => {
       // CLAUDE.md na raiz da sessão: só se não houver instruções no próprio repo
       // (cada worktree pode ter o seu CLAUDE.md / AGENTS.md). Aqui é a raiz
       // multi-repo, fica como descrição neutra do ambiente.
-      if (
-        !fs.existsSync(path.join(session_root, 'CLAUDE.md')) &&
-        !fs.existsSync(path.join(session_root, 'AGENTS.md')) &&
-        fs.existsSync('/app/CLAUDE.md')
-      ) {
-        fs.copyFileSync('/app/CLAUDE.md', path.join(session_root, 'CLAUDE.md'))
+      if (!fs.existsSync(path.join(session_root, 'CLAUDE.md')) && !fs.existsSync(path.join(session_root, 'AGENTS.md'))) {
+        const sandboxClaude = path.join(process.env.HOME || '/root', '.claude', 'CLAUDE.md')
+        const sourceClaude = fs.existsSync(sandboxClaude) ? sandboxClaude : '/app/CLAUDE.md'
+        if (fs.existsSync(sourceClaude)) {
+          fs.copyFileSync(sourceClaude, path.join(session_root, 'CLAUDE.md'))
+        }
       }
 
       for (const repo of repos) {
@@ -305,6 +323,7 @@ const server = http.createServer(async (req, res) => {
         })
       }
 
+      activeSessions.add(session_id)
       return json(res, 200, {
         session_id,
         session_root,
@@ -364,6 +383,7 @@ const server = http.createServer(async (req, res) => {
       try { repos = JSON.parse(url.searchParams.get('repos') || '[]') } catch {}
 
       await destroySession({ session_root, repos })
+      activeSessions.delete(session_id)
       console.log(`[session_server] removed session ${session_id}`)
       return json(res, 200, { deleted: true, session_id })
     }
@@ -467,6 +487,11 @@ const server = http.createServer(async (req, res) => {
 
     // POST /mcp/configure — delega para mcp_handler.js
     if (await mcpHandler.tryHandle(req, res, { json, readBody })) return
+
+    // POST /globals/configure — materializa skills/agents globais
+    if (await globalsHandler.tryHandle(req, res, { json, readBody })) return
+
+    if (await runtimeHandler.tryHandle(req, res, { json, clearActiveSessions })) return
 
     return json(res, 404, { error: 'Not found' })
   } catch (err) {

@@ -1,4 +1,4 @@
-"""FastAPI dependency injection wiring — composition root for HTTP adapters.
+"""FastAPI dependency injection wiring - composition root for HTTP adapters.
 
 All use case objects are assembled here using FastAPI's Depends() system.
 No business logic lives in this file.
@@ -8,8 +8,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.secondary.persistence.sqlalchemy_ai_model_access_policy import (
@@ -21,12 +20,16 @@ from app.adapters.secondary.persistence.sqlalchemy_mcp_repo import (
 from app.adapters.secondary.persistence.sqlalchemy_message_repo import (
     SQLAlchemyMessageRepository,
 )
+from app.adapters.secondary.persistence.sqlalchemy_model_profiles import (
+    SQLAlchemyModelProfileLookup,
+)
 from app.adapters.secondary.persistence.sqlalchemy_repo_env_repo import (
     SQLAlchemyRepoEnvironmentRepository,
 )
 from app.adapters.secondary.persistence.sqlalchemy_repository_repo import (
     SQLAlchemyRepositoryRepository,
 )
+from app.adapters.secondary.persistence.sqlalchemy_sandbox_repo import SQLAlchemySandboxRepository
 from app.adapters.secondary.persistence.sqlalchemy_user_access_repo import (
     SQLAlchemyUserRepositoryAccessRepository,
 )
@@ -36,18 +39,17 @@ from app.adapters.secondary.persistence.sqlalchemy_user_mcp_repo import (
 from app.adapters.secondary.persistence.sqlalchemy_user_preferences_repo import (
     SQLAlchemyUserPreferencesRepository,
 )
-from app.adapters.secondary.persistence.sqlalchemy_user_repo import (
-    SQLAlchemyUserRepository,
-)
 from app.adapters.secondary.persistence.sqlalchemy_user_workspace_repo import (
     SQLAlchemyUserRepositoryWorkspaceRepository,
 )
 from app.adapters.secondary.repository_mcp_tool_gateway import (
     SQLAlchemyRepositoryMcpToolGateway,
 )
+from app.adapters.secondary.sandbox_runtime.chat_commands import SandboxChatCommandRuntime
 from app.adapters.secondary.sandbox_user_workspace_client import SandboxUserWorkspaceClient
 from app.application.use_cases.ai_models import ListAiModels
-from app.application.use_cases.auth import ChangePassword, GetCurrentUser, LoginUser, RegisterUser
+from app.application.use_cases.chat_command_execution import ExecuteChatCommand
+from app.application.use_cases.chat_commands import ListChatCommands
 from app.application.use_cases.conversations import (
     CreateConversation,
     ListConversations,
@@ -65,9 +67,10 @@ from app.application.use_cases.user_workspaces import (
     EnsureUserRepositoryWorkspace,
     ListUserRepositoryWorkspaces,
 )
-from app.domain.entities import User, UserRole
 from app.ports.agent import AgentPort
+from app.ports.chat_commands import ChatCommandRuntimePort
 from app.ports.mcp_repository import McpServerRepository, UserMcpServerRepository
+from app.ports.model_profiles import ModelProfileLookupPort
 from app.ports.repositories import (
     AiModelCapabilityLookup,
     AttachmentRepository,
@@ -75,18 +78,43 @@ from app.ports.repositories import (
     MessageRepository,
     RepoEnvironmentRepository,
     RepositoryRepository,
-    UserRepository,
+    SandboxRepository,
 )
 from app.ports.repository_mcp import RepositoryMcpToolGateway
-from app.ports.services import AttachmentStorage, ModelCatalogService, PasswordService, TokenService
+from app.ports.services import AttachmentStorage, ModelCatalogService
 from app.ports.user_access import AiModelAccessPolicy, UserRepositoryAccessRepository
 from app.ports.user_preferences import UserPreferencesRepository
 from app.ports.user_workspaces import UserRepositoryWorkspaceRepository
 
 from . import deps_attachments as _attach_deps
+from .deps_auth import (
+    get_authenticated_user as get_authenticated_user,
+)
+from .deps_auth import (
+    get_change_password_uc as get_change_password_uc,
+)
+from .deps_auth import (
+    get_login_uc as get_login_uc,
+)
+from .deps_auth import (
+    get_password_service as get_password_service,
+)
+from .deps_auth import (
+    get_register_uc as get_register_uc,
+)
+from .deps_auth import (
+    get_token_service as get_token_service,
+)
+from .deps_auth import (
+    get_user_repo as get_user_repo,
+)
+from .deps_auth import (
+    require_role as require_role,
+)
+from .deps_auth import (
+    require_super_admin as require_super_admin,
+)
 from .deps_base import get_conv_repo, get_db_session  # re-export
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 # ---------------------------------------------------------------------------
 # Infrastructure dependencies
@@ -96,12 +124,6 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 # ---------------------------------------------------------------------------
 # Repository dependencies
 # ---------------------------------------------------------------------------
-
-
-def get_user_repo(
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-) -> UserRepository:
-    return SQLAlchemyUserRepository(session)
 
 
 def get_user_preferences_repo(
@@ -134,10 +156,26 @@ def get_repository_repo(
     return SQLAlchemyRepositoryRepository(session)
 
 
+def get_sandbox_repo(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> SandboxRepository:
+    return SQLAlchemySandboxRepository(session)
+
+
 def get_ai_model_access_policy(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AiModelAccessPolicy:
     return SQLAlchemyAiModelAccessPolicy(session)
+
+
+def get_model_profile_lookup(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ModelProfileLookupPort:
+    return SQLAlchemyModelProfileLookup(session)
+
+
+def get_chat_command_runtime() -> ChatCommandRuntimePort:
+    return SandboxChatCommandRuntime()
 
 
 def get_user_repository_access_repo(
@@ -169,18 +207,6 @@ def get_repository_mcp_tool_gateway(
 # ---------------------------------------------------------------------------
 
 
-def get_password_service() -> PasswordService:
-    from app.infrastructure.security import BcryptPasswordService
-
-    return BcryptPasswordService()
-
-
-def get_token_service() -> TokenService:
-    from app.infrastructure.security import JWTTokenService
-
-    return JWTTokenService()
-
-
 def get_model_catalog_service() -> ModelCatalogService:
     from app.adapters.secondary.openrouter_catalog import OpenRouterModelCatalog
 
@@ -199,35 +225,6 @@ def get_sandbox_workspace_gateway() -> SandboxUserWorkspaceClient:
 # ---------------------------------------------------------------------------
 # Use case dependencies
 # ---------------------------------------------------------------------------
-
-
-def get_register_uc(
-    users: Annotated[UserRepository, Depends(get_user_repo)],
-    passwords: Annotated[PasswordService, Depends(get_password_service)],
-) -> RegisterUser:
-    return RegisterUser(users, passwords)
-
-
-def get_login_uc(
-    users: Annotated[UserRepository, Depends(get_user_repo)],
-    passwords: Annotated[PasswordService, Depends(get_password_service)],
-    tokens: Annotated[TokenService, Depends(get_token_service)],
-) -> LoginUser:
-    return LoginUser(users, passwords, tokens)
-
-
-def get_current_user_uc(
-    users: Annotated[UserRepository, Depends(get_user_repo)],
-    tokens: Annotated[TokenService, Depends(get_token_service)],
-) -> GetCurrentUser:
-    return GetCurrentUser(users, tokens)
-
-
-def get_change_password_uc(
-    users: Annotated[UserRepository, Depends(get_user_repo)],
-    passwords: Annotated[PasswordService, Depends(get_password_service)],
-) -> ChangePassword:
-    return ChangePassword(users, passwords)
 
 
 def get_user_preferences_uc(
@@ -268,74 +265,6 @@ def get_list_ai_models_uc(
     catalog: Annotated[ModelCatalogService, Depends(get_model_catalog_service)],
 ) -> ListAiModels:
     return ListAiModels(catalog)
-
-
-async def get_authenticated_user(
-    request: Request,
-    token: Annotated[str, Depends(oauth2_scheme)],
-    uc: Annotated[GetCurrentUser, Depends(get_current_user_uc)],
-) -> User:
-    """FastAPI dependency that resolves the current authenticated user."""
-    try:
-        user = await uc.execute(token)
-    except PermissionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(exc),
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
-    if user.must_change_password and request.url.path not in {
-        "/api/auth/me",
-        "/api/auth/change-password",
-    }:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Troque a senha inicial antes de continuar.",
-        )
-    return user
-
-
-def require_role(required: UserRole):
-    """FastAPI dependency factory que exige um papel específico.
-
-    Retorna uma dependência que devolve o utilizador autenticado se o papel
-    bater (ou se for :attr:`UserRole.ADMIN`, que tem acesso a tudo). Caso
-    contrário levanta 403. ADR-005 documenta a regra: ``ADMIN`` ignora o
-    requisito e sempre passa.
-
-    Uso::
-
-        @router.post("/admin/...", dependencies=[Depends(require_role(UserRole.ADMIN))])
-        async def admin_only(...): ...
-
-    Ou para receber o utilizador resolvido::
-
-        async def admin_only(user: Annotated[User, Depends(require_role(UserRole.ADMIN))]): ...
-    """
-
-    async def _dep(
-        current: Annotated[User, Depends(get_authenticated_user)],
-    ) -> User:
-        if current.role is UserRole.ADMIN or current.role is required:
-            return current
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permissão insuficiente.",
-        )
-
-    return _dep
-
-
-async def require_super_admin(
-    current: Annotated[User, Depends(get_authenticated_user)],
-) -> User:
-    """Exige ADMIN com marcação ``is_super_admin`` para configuração sistêmica."""
-    if current.role is UserRole.ADMIN and current.is_super_admin:
-        return current
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Permissão de super admin necessária.",
-    )
 
 
 def get_list_convs_uc(
@@ -383,6 +312,24 @@ def get_stream_msg_uc(
         model_access=model_access,
         user_workspaces=user_workspaces,
     )
+
+
+def get_list_chat_commands_uc(
+    convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
+    runtime: Annotated[ChatCommandRuntimePort, Depends(get_chat_command_runtime)],
+    model_profiles: Annotated[ModelProfileLookupPort, Depends(get_model_profile_lookup)],
+    sandboxes: Annotated[SandboxRepository, Depends(get_sandbox_repo)],
+) -> ListChatCommands:
+    return ListChatCommands(convs, runtime, model_profiles, sandboxes=sandboxes)
+
+
+def get_execute_chat_command_uc(
+    convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
+    msgs: Annotated[MessageRepository, Depends(get_msg_repo)],
+    runtime: Annotated[ChatCommandRuntimePort, Depends(get_chat_command_runtime)],
+    catalog: Annotated[ListChatCommands, Depends(get_list_chat_commands_uc)],
+) -> ExecuteChatCommand:
+    return ExecuteChatCommand(convs, msgs, runtime, catalog)
 
 
 def get_list_repo_envs_uc(

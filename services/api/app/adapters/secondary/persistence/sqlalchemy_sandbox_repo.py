@@ -51,6 +51,7 @@ class SQLAlchemySandboxRepository(SandboxRepository):
             runtime=sandbox.runtime.value,
             image=sandbox.image,
             env_vars=dict(sandbox.env_vars),
+            claude_md=sandbox.claude_md,
             container_status=sandbox.container_status.value,
             register_token=sandbox.register_token,
         )
@@ -72,6 +73,7 @@ class SQLAlchemySandboxRepository(SandboxRepository):
         row.runtime = sandbox.runtime.value
         row.image = sandbox.image
         row.env_vars = dict(sandbox.env_vars)
+        row.claude_md = sandbox.claude_md
         row.container_status = sandbox.container_status.value
         row.register_token = sandbox.register_token
         await self._session.commit()
@@ -108,6 +110,7 @@ class SQLAlchemySandboxRepository(SandboxRepository):
             runtime=_runtime_from_str(row.runtime),
             image=row.image or "",
             env_vars=dict(row.env_vars or {}),
+            claude_md=row.claude_md or "",
             container_status=_container_status_from_str(row.container_status),
             register_token=row.register_token,
             created_at=row.created_at,

@@ -25,11 +25,13 @@ from app.adapters.primary.http.admin_user_access import (
 from app.adapters.primary.http.deps import (
     get_agent,
     get_ai_model_access_policy,
+    get_chat_command_runtime,
     get_conv_repo,
     get_delete_user_workspace_uc,
     get_ensure_user_workspace_uc,
     get_list_user_workspaces_uc,
     get_mcp_repo,
+    get_model_profile_lookup,
     get_msg_repo,
     get_password_service,
     get_repository_mcp_tool_gateway,
@@ -48,8 +50,10 @@ from app.application.use_cases.user_workspaces import (
     EnsureUserRepositoryWorkspace,
     ListUserRepositoryWorkspaces,
 )
+from app.domain.chat_commands import CommandCategory, CommandExecutionMode, SlashCommand
 from app.domain.entities import ContainerStatus, ModelTier, SandboxRuntime, User, UserRole
 from app.main import app
+from app.ports.model_profiles import AuthorizedModelProfile
 from app.ports.repository_mcp import RepositoryMcpToolGateway
 from app.ports.sandbox_bootstrap import SandboxBootstrapGateway
 from app.ports.sandbox_runtime import RuntimeProbe, SandboxRuntimeGateway
@@ -76,6 +80,7 @@ from tests.conftest import (
     InMemoryUserSandboxAccessRepository,
     InMemoryUserWorkspaceRepository,
 )
+from tests.fakes_chat_commands import FakeChatCommandRuntime, FakeModelProfileLookup
 
 
 class _StubModelsByTierLookup(ModelsByTierLookup):
@@ -91,7 +96,7 @@ class _StubModelsByTierLookup(ModelsByTierLookup):
 class _StubRuntimeGateway(SandboxRuntimeGateway):
     """Runtime sintético para os testes HTTP — simula transições sem Docker."""
 
-    async def ensure_service(self, sandbox) -> RuntimeProbe:  # type: ignore[no-untyped-def]
+    async def ensure_service(self, sandbox, *, restart: bool = False) -> RuntimeProbe:  # type: ignore[no-untyped-def]
         return RuntimeProbe(status=ContainerStatus.RUNNING, runtime_ref="stub-cid")
 
     async def stop(self, sandbox) -> RuntimeProbe:  # type: ignore[no-untyped-def]
@@ -247,6 +252,29 @@ async def client(
     app.dependency_overrides[get_password_service] = lambda: FakePasswordService()
     app.dependency_overrides[get_token_service] = lambda: FakeTokenService()
     app.dependency_overrides[get_agent] = lambda: FakeAgent()
+    app.dependency_overrides[get_chat_command_runtime] = lambda: FakeChatCommandRuntime(
+        [
+            SlashCommand(
+                name="/ctx",
+                description="Ver contexto",
+                category=CommandCategory.CONTEXT,
+                execution_mode=CommandExecutionMode.CHAT_ACTION,
+            )
+        ]
+    )
+    app.dependency_overrides[get_model_profile_lookup] = lambda: FakeModelProfileLookup(
+        [
+            AuthorizedModelProfile(
+                model_id="openrouter/free",
+                display_name="Free",
+                provider="OpenRouter",
+                active=True,
+                provider_active=True,
+                capabilities=["text"],
+                context_window=128000,
+            )
+        ]
+    )
     app.dependency_overrides[get_ai_model_access_policy] = lambda: _AllowAllAiModelAccessPolicy()
     app.dependency_overrides[get_sandbox_repo] = lambda: sandbox_repo
     app.dependency_overrides[get_runtime_gateways] = lambda: runtimes

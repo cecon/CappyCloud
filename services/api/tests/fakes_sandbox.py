@@ -42,27 +42,43 @@ class FakeRuntimeGateway(SandboxRuntimeGateway):
         *,
         ensure_status: ContainerStatus = ContainerStatus.RUNNING,
         stop_status: ContainerStatus = ContainerStatus.STOPPED,
+        active_sessions: int = 0,
         fail_on: str | None = None,
     ) -> None:
         self.ensure_status = ensure_status
         self.stop_status = stop_status
+        self.active_sessions = active_sessions
         self.fail_on = fail_on
         self.calls: list[str] = []
+        self.restart_flags: list[bool] = []
 
-    async def ensure_service(self, sandbox: Sandbox) -> RuntimeProbe:
+    async def ensure_service(self, sandbox: Sandbox, *, restart: bool = False) -> RuntimeProbe:
         self.calls.append("ensure")
+        self.restart_flags.append(restart)
         if self.fail_on == "ensure":
             raise RuntimeFailureError("Boom", sandbox_id=sandbox.id)
-        return RuntimeProbe(status=self.ensure_status, runtime_ref="fake-cid")
+        return RuntimeProbe(
+            status=self.ensure_status,
+            runtime_ref="fake-cid",
+            active_sessions=self.active_sessions,
+        )
 
     async def stop(self, sandbox: Sandbox) -> RuntimeProbe:
         self.calls.append("stop")
         if self.fail_on == "stop":
             raise RuntimeFailureError("Boom", sandbox_id=sandbox.id)
-        return RuntimeProbe(status=self.stop_status, runtime_ref="fake-cid")
+        return RuntimeProbe(
+            status=self.stop_status,
+            runtime_ref="fake-cid",
+            active_sessions=self.active_sessions,
+        )
 
     async def status(self, sandbox: Sandbox) -> RuntimeProbe:
-        return RuntimeProbe(status=self.ensure_status, runtime_ref="fake-cid")
+        return RuntimeProbe(
+            status=self.ensure_status,
+            runtime_ref="fake-cid",
+            active_sessions=self.active_sessions,
+        )
 
     async def remove(self, sandbox: Sandbox) -> None:
         self.calls.append("remove")
@@ -73,8 +89,12 @@ class FakeSandboxBootstrap(SandboxBootstrapGateway):
 
     def __init__(self) -> None:
         self.calls: list[tuple[uuid.UUID, dict]] = []
+        self.claude_calls: list[tuple[uuid.UUID, str]] = []
         self.skill_calls: list[tuple[uuid.UUID, list]] = []
         self.agent_calls: list[tuple[uuid.UUID, list]] = []
+
+    async def write_claude_md(self, sandbox: Sandbox) -> None:
+        self.claude_calls.append((sandbox.id, sandbox.claude_md))
 
     async def write_settings_json(self, sandbox: Sandbox, settings: dict) -> None:
         self.calls.append((sandbox.id, settings))

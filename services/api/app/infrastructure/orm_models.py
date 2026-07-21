@@ -50,6 +50,7 @@ class Sandbox(Base):
     )
     image: Mapped[str] = mapped_column(String(512), nullable=False, server_default="", default="")
     env_vars: Mapped[dict] = mapped_column(JSONBType, nullable=False, server_default="{}")
+    claude_md: Mapped[str] = mapped_column(Text, nullable=False, server_default="", default="")
     container_status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
@@ -144,8 +145,8 @@ class Conversation(Base):
     permission_mode: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
-        server_default="request_permissions",
-        default="request_permissions",
+        server_default="bypass_permissions",
+        default="bypass_permissions",
     )
     # Worktree state
     worktree_exists: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

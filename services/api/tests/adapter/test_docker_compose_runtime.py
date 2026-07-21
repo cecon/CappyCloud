@@ -141,17 +141,21 @@ class TestEnsureService:
             def __exit__(self, *args: object) -> None:
                 return None
 
+            def read(self) -> bytes:
+                return b'{"status":"ok","openclaude":"running","sessions":3}'
+
         sb = _sandbox(name="cappycloud-sandbox", image="")
         docker_client.containers.get.side_effect = DockerException("no docker socket")
         monkeypatch.setattr(
-            "app.adapters.secondary.sandbox_runtime.docker_compose.urllib.request.urlopen",
+            "app.adapters.secondary.sandbox_runtime.docker_sidecar.urllib.request.urlopen",
             lambda *_args, **_kwargs: Response(),
         )
 
         probe = await runtime.ensure_service(sb)
 
         assert probe.status is ContainerStatus.RUNNING
-        assert probe.runtime_ref == "http://cappycloud-sandbox:8080/repos/list"
+        assert probe.runtime_ref == "http://cappycloud-sandbox:8080/health"
+        assert probe.active_sessions == 3
         docker_client.containers.run.assert_not_called()
 
     async def test_raises_runtime_failure_on_image_not_found(
@@ -161,7 +165,7 @@ class TestEnsureService:
         docker_client.containers.get.side_effect = NotFound("nope")
         docker_client.containers.run.side_effect = ImageNotFound("missing")
 
-        with pytest.raises(RuntimeFailureError, match="não encontrada"):
+        with pytest.raises(RuntimeFailureError, match="nao encontrada"):
             await runtime.ensure_service(sb)
 
     async def test_raises_runtime_failure_on_api_error(

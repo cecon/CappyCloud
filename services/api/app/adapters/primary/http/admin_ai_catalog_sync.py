@@ -50,7 +50,7 @@ async def sync_azure_foundry_provider(
         provider,
         catalog,
         default_active=True,
-        tier=ModelTier.UNKNOWN.value,
+        tier=None,
     )
 
 
@@ -60,7 +60,7 @@ async def upsert_provider_models(
     catalog: list[AzureFoundryDeployment],
     *,
     default_active: bool,
-    tier: str,
+    tier: str | None,
 ) -> AiModelSyncResult:
     existing = (
         (await session.execute(select(AiModel).where(AiModel.provider_id == provider.id)))
@@ -74,6 +74,10 @@ async def upsert_provider_models(
 
     for entry in catalog:
         fetched_ids.add(entry["model_id"])
+        entry_tier = tier or _derive_tier(
+            entry["input_cost_per_1m_usd"],
+            entry["output_cost_per_1m_usd"],
+        )
         current = existing_by_model_id.get(entry["model_id"])
         if current is None:
             session.add(
@@ -87,7 +91,7 @@ async def upsert_provider_models(
                     context_window=entry["context_window"],
                     input_cost_per_1m_usd=entry["input_cost_per_1m_usd"],
                     output_cost_per_1m_usd=entry["output_cost_per_1m_usd"],
-                    tier=tier,
+                    tier=entry_tier,
                     active=default_active,
                 )
             )
@@ -98,7 +102,7 @@ async def upsert_provider_models(
             current.capabilities = entry["capabilities"]
             current.input_cost_per_1m_usd = entry["input_cost_per_1m_usd"]
             current.output_cost_per_1m_usd = entry["output_cost_per_1m_usd"]
-            current.tier = tier
+            current.tier = entry_tier
             current.active = True
             updated += 1
 
@@ -122,3 +126,11 @@ def _decrypt_provider_key(provider: AiProvider) -> str:
     if not ciphertext:
         return ""
     return get_encryptor().decrypt(ciphertext)
+
+
+def _derive_tier(input_cost: float | None, output_cost: float | None) -> str:
+    if input_cost is None and output_cost is None:
+        return ModelTier.UNKNOWN.value
+    if (input_cost or 0.0) == 0.0 and (output_cost or 0.0) == 0.0:
+        return ModelTier.FREE.value
+    return ModelTier.PAID.value
