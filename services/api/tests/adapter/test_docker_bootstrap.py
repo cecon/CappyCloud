@@ -21,15 +21,15 @@ from app.domain.entities import Sandbox, SandboxAgent, SandboxRuntime, SandboxSk
 from app.ports.sandbox_bootstrap import BootstrapFailureError
 from docker.errors import APIError, NotFound
 
-OPENCLAUDE_V017_SHA = "1b7e55058cca57f2f83d7e229441631794286c1a"
+OPENCLAUDE_V024_SHA = "2ff93a10bf88ab6d7030fc4ade5316a7424fa2f9"
 
 
-def test_sandbox_dockerfile_pins_openclaude_v017_sha() -> None:
+def test_sandbox_dockerfile_pins_openclaude_v024_sha() -> None:
     dockerfile = Path(__file__).resolve().parents[4] / "services" / "sandbox" / "Dockerfile"
 
     content = dockerfile.read_text(encoding="utf-8")
 
-    assert f"ARG OPENCLAUDE_REF={OPENCLAUDE_V017_SHA}" in content
+    assert f"ARG OPENCLAUDE_REF={OPENCLAUDE_V024_SHA}" in content
 
 
 def _sandbox(name: str = "alpha") -> Sandbox:

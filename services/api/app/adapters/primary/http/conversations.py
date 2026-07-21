@@ -15,6 +15,7 @@ from app.adapters.primary.http.conversation_sandbox_guard import (
 )
 from app.adapters.primary.http.deps import (
     get_authenticated_user,
+    get_conv_repo,
     get_create_conv_uc,
     get_db_session,
     get_list_convs_uc,
@@ -35,9 +36,9 @@ from app.application.use_cases.conversations import (
     StreamMessage,
 )
 from app.domain.entities import User, UserRole
-from app.infrastructure.orm_models import Conversation as ConversationORM
 from app.infrastructure.orm_models import Repository
 from app.infrastructure.orm_models_platform import AiModel
+from app.ports.repositories import ConversationRepository
 from app.schemas import (
     ConversationCreate,
     ConversationOut,
@@ -247,6 +248,7 @@ async def stream_message(
     conversation_id: uuid.UUID,
     body: SendMessageBody,
     current: Annotated[User, Depends(get_authenticated_user)],
+    convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     uc: Annotated[StreamMessage, Depends(get_stream_msg_uc)],
     cursor: int | None = Query(
@@ -255,10 +257,14 @@ async def stream_message(
     ),
 ) -> StreamingResponse:
     try:
-        stmt = select(ConversationORM.sandbox_id).where(ConversationORM.id == conversation_id)
-        if current.role is not UserRole.ADMIN:
-            stmt = stmt.where(ConversationORM.user_id == current.id)
-        sandbox_id = (await session.execute(stmt)).scalar_one_or_none()
+        if current.role is UserRole.ADMIN:
+            conv = next(
+                (item for item in await convs.list_all() if item.id == conversation_id),
+                None,
+            )
+        else:
+            conv = await convs.get(conversation_id, current.id)
+        sandbox_id = conv.sandbox_id if conv else None
         if sandbox_id is not None:
             await ensure_sandbox_ready_for_chat(session, sandbox_id)
 

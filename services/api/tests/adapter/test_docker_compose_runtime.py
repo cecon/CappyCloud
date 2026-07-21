@@ -165,7 +165,7 @@ class TestEnsureService:
         docker_client.containers.get.side_effect = NotFound("nope")
         docker_client.containers.run.side_effect = ImageNotFound("missing")
 
-        with pytest.raises(RuntimeFailureError, match="não encontrada"):
+        with pytest.raises(RuntimeFailureError, match="nao encontrada"):
             await runtime.ensure_service(sb)
 
     async def test_raises_runtime_failure_on_api_error(

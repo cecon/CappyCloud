@@ -98,7 +98,7 @@ def require_role(required: UserRole):
             return current
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permissao insuficiente.",
+            detail="Permissão insuficiente.",
         )
 
     return _dep
@@ -111,5 +111,5 @@ async def require_super_admin(
         return current
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail="Permissao de super admin necessaria.",
+        detail="Permissão de super admin necessária.",
     )
