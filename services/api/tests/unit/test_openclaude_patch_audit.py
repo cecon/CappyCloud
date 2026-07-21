@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from tests.unit.agent_runtime_test_loader import ROOT
 
-RUNTIME_AUDIT = (
-    ROOT / "specs/008-openclaude-v024-chat-commands/runtime-audit.md"
-).read_text(encoding="utf-8")
+RUNTIME_AUDIT = (ROOT / "specs/008-openclaude-v024-chat-commands/runtime-audit.md").read_text(
+    encoding="utf-8"
+)
 
 
 def test_patch_audit_records_retained_and_rebased_patches() -> None:

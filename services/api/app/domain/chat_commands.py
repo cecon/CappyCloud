@@ -109,7 +109,7 @@ class CommandCatalog:
         runtime_version: str,
         runtime_commit: str,
         commands: list[SlashCommand],
-    ) -> "CommandCatalog":
+    ) -> CommandCatalog:
         return cls(
             conversation_id=conversation_id,
             runtime_version=runtime_version,
@@ -136,4 +136,3 @@ class CommandExecutionDecision:
     event: CommandExecutionEvent | None = None
     confirmation: dict[str, str] | None = None
     client_request_id: str | None = None
-

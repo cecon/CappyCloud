@@ -20,7 +20,9 @@ class SQLAlchemyModelProfileLookup(ModelProfileLookupPort):
     async def list_for_user(
         self, user_id: uuid.UUID, role: UserRole
     ) -> list[AuthorizedModelProfile]:
-        stmt = select(AiModel, AiProvider).join(AiProvider).order_by(AiProvider.name, AiModel.model_id)
+        stmt = (
+            select(AiModel, AiProvider).join(AiProvider).order_by(AiProvider.name, AiModel.model_id)
+        )
         rows = (await self._session.execute(stmt)).all()
         allowed_ids: set[uuid.UUID] | None = None
         if role is not UserRole.ADMIN:
@@ -68,4 +70,3 @@ class SQLAlchemyModelProfileLookup(ModelProfileLookupPort):
                 )
             )
         return profiles
-

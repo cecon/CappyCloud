@@ -92,6 +92,7 @@ COPY services/sandbox/patches/multimodal-grpc-handler.patch /tmp/multimodal-grpc
 COPY services/sandbox/patches/read-empty-pages.patch /tmp/read-empty-pages.patch
 COPY services/sandbox/patch_openclaude_grpc_v024.js /tmp/patch_openclaude_grpc_v024.js
 COPY services/sandbox/cappycloud_grpc_helpers_v024.ts /tmp/cappycloud_grpc_helpers_v024.ts
+COPY services/sandbox/cappycloud_grpc_diagnostics_v024.ts /tmp/cappycloud_grpc_diagnostics_v024.ts
 RUN sed -i 's/\r$//' /tmp/*.patch
 WORKDIR /openclaude
 RUN git init . \
@@ -115,7 +116,7 @@ RUN git init . \
     && rm -f /tmp/grep-tool-n-alias.patch \
             /tmp/multimodal-proto.patch /tmp/multimodal-grpc-handler.patch \
             /tmp/read-empty-pages.patch /tmp/patch_openclaude_grpc_v024.js \
-            /tmp/cappycloud_grpc_helpers_v024.ts \
+            /tmp/cappycloud_grpc_helpers_v024.ts /tmp/cappycloud_grpc_diagnostics_v024.ts \
     && bun install \
     && bun run build
 

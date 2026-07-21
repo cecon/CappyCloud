@@ -52,8 +52,6 @@ class FakeModelProfileLookup(ModelProfileLookupPort):
     def __init__(self, profiles: list[AuthorizedModelProfile]) -> None:
         self.profiles = profiles
 
-    async def list_for_user(
-        self, user_id: UUID, role: UserRole
-    ) -> list[AuthorizedModelProfile]:
+    async def list_for_user(self, user_id: UUID, role: UserRole) -> list[AuthorizedModelProfile]:
         del user_id, role
         return self.profiles

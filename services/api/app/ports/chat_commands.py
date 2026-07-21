@@ -35,4 +35,3 @@ class ChatCommandRuntimeError(Exception):
     def __init__(self, message: str, *, conversation_id: uuid.UUID | None = None) -> None:
         super().__init__(message)
         self.conversation_id = conversation_id
-

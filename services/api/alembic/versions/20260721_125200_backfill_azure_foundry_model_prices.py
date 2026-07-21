@@ -5,14 +5,15 @@ Revises: 861952b7c568
 Create Date: 2026-07-21 12:52:00.725262
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'f828a0d8fff6'
-down_revision: Union[str, Sequence[str], None] = '861952b7c568'
+revision: str = "f828a0d8fff6"
+down_revision: Union[str, Sequence[str], None] = "861952b7c568"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -35,9 +36,10 @@ def upgrade() -> None:
                 ('gpt-5-chat', 1.250000, 10.000000),
                 ('Kimi-K2.6-1', 0.950000, 4.000000),
                 ('text-embedding-3-large', 0.143000, 0.000000)
-        ) AS price(model_id, input_cost, output_cost)
-        JOIN ai_providers AS provider ON provider.id = model.provider_id
+        ) AS price(model_id, input_cost, output_cost),
+        ai_providers AS provider
         WHERE model.model_id = price.model_id
+          AND provider.id = model.provider_id
           AND (
               lower(provider.name) LIKE '%azure%'
               OR lower(provider.base_url) LIKE '%azure%'

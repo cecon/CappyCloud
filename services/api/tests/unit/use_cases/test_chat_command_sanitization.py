@@ -33,8 +33,7 @@ def test_sanitizes_sensitive_arguments_by_key() -> None:
 
 def test_sanitizes_unauthorized_repository_content_and_nested_secret_text() -> None:
     text = (
-        "Erro lendo /repos/users/tenant/private/.env "
-        "secret = top-secret authorization: Basic raw"
+        "Erro lendo /repos/users/tenant/private/.env secret = top-secret authorization: Basic raw"
     )
 
     sanitized = sanitize_command_text(text)

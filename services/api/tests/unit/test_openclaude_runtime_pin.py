@@ -7,9 +7,9 @@ import re
 from tests.unit.agent_runtime_test_loader import ROOT
 
 DOCKERFILE = (ROOT / "services/sandbox/Dockerfile").read_text(encoding="utf-8")
-RUNTIME_AUDIT = (
-    ROOT / "specs/008-openclaude-v024-chat-commands/runtime-audit.md"
-).read_text(encoding="utf-8")
+RUNTIME_AUDIT = (ROOT / "specs/008-openclaude-v024-chat-commands/runtime-audit.md").read_text(
+    encoding="utf-8"
+)
 
 TARGET_COMMIT = "2ff93a10bf88ab6d7030fc4ade5316a7424fa2f9"
 

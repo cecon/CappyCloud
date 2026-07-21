@@ -148,25 +148,24 @@ podem usar LSP/AST sob demanda conforme a
 
 ### Comandos slash no chat
 
-O chat web expÃµe comandos `/` por um contrato do CappyCloud, nÃ£o por parsing
+O chat web expoe comandos `/` por um contrato do CappyCloud, nao por parsing
 livre no frontend. A UI consulta `GET /api/conversations/{id}/commands`,
-renderiza comandos descobertos do runtime e envia execuÃ§Ãµes para
+renderiza comandos descobertos do runtime e envia execucoes para
 `POST /api/conversations/{id}/commands/execute`.
 
 Regras de fronteira:
 
-1. Regras de disponibilidade, autorizaÃ§Ã£o, confirmaÃ§Ã£o e execuÃ§Ã£o ficam em
+1. Regras de disponibilidade, autorizacao, confirmacao e execucao ficam em
    `services/api/app/application/use_cases/chat_commands.py` e
    `services/api/app/application/use_cases/chat_command_execution.py`.
 2. O acesso ao runtime usa `ChatCommandRuntimePort` em
    `services/api/app/ports/chat_commands.py`, com adapter real em
    `services/api/app/adapters/secondary/sandbox_runtime/chat_commands.py`.
-3. Modelos mostrados por `/model` usam o catÃ¡logo autorizado do CappyCloud; o
-   OpenClaude nÃ£o vira fonte de verdade para modelo, permissÃ£o, histÃ³rico,
+3. Modelos mostrados por `/model` usam o catalogo autorizado do CappyCloud; o
+   OpenClaude nao vira fonte de verdade para modelo, permissao, historico,
    tokens ou custo.
-4. Comandos upstream sem caminho headless seguro continuam descobrÃ­veis, mas
-   aparecem indisponÃ­veis com motivo em portuguÃªs.
-
+4. Comandos upstream sem caminho headless seguro continuam descobriveis, mas
+   aparecem indisponiveis com motivo em portugues.
 ### Evento ActionRequired
 
 Quando o openclaude precisa de confirmação humana, ele emite `ActionRequired` via gRPC.

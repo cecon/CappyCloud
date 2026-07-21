@@ -82,8 +82,9 @@ def _load_seed_commands() -> list[SlashCommand]:
                 ),
                 requires_confirmation=bool(item.get("requires_confirmation")),
                 confirmation_reason=item.get("confirmation_reason"),
-                execution_mode=CommandExecutionMode(str(item.get("execution_mode") or "unavailable")),
+                execution_mode=CommandExecutionMode(
+                    str(item.get("execution_mode") or "unavailable")
+                ),
             )
         )
     return commands
-

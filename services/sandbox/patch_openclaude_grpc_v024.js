@@ -25,7 +25,12 @@ if (!source.includes("import { getMcpToolsCommandsAndResources }")) {
   )
 }
 
-const helperBlock = fs.readFileSync('/tmp/cappycloud_grpc_helpers_v024.ts', 'utf8')
+const helperBlock = [
+  '/tmp/cappycloud_grpc_helpers_v024.ts',
+  '/tmp/cappycloud_grpc_diagnostics_v024.ts',
+]
+  .map(path => fs.readFileSync(path, 'utf8'))
+  .join('\n')
 
 if (!source.includes('function cappycloudValidateToolScope')) {
   replaceOnce(

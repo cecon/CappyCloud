@@ -32,4 +32,3 @@ class ModelProfileLookupPort(ABC):
         self, user_id: uuid.UUID, role: UserRole
     ) -> list[AuthorizedModelProfile]:
         """Return active and explanatory inactive profiles visible to the user."""
-

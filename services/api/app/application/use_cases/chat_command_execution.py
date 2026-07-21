@@ -49,8 +49,13 @@ class ExecuteChatCommand:
         if command is None:
             return _unavailable(command_name, "Comando nao encontrado no catalogo desta conversa.")
         if command.execution_mode is CommandExecutionMode.UNAVAILABLE:
-            return _unavailable(command.name, command.availability.reason or "Comando indisponivel.")
-        missing = [arg.label for arg in command.arguments if arg.required and arg.name not in arguments]
+            return _unavailable(
+                command.name,
+                command.availability.reason or "Comando indisponivel.",
+            )
+        missing = [
+            arg.label for arg in command.arguments if arg.required and arg.name not in arguments
+        ]
         if missing:
             return CommandExecutionDecision(
                 status=CommandExecutionStatus.FAILED,

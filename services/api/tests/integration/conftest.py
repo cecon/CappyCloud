@@ -25,11 +25,11 @@ from app.adapters.primary.http.admin_user_access import (
 from app.adapters.primary.http.deps import (
     get_agent,
     get_ai_model_access_policy,
+    get_chat_command_runtime,
     get_conv_repo,
     get_delete_user_workspace_uc,
     get_ensure_user_workspace_uc,
     get_list_user_workspaces_uc,
-    get_chat_command_runtime,
     get_mcp_repo,
     get_model_profile_lookup,
     get_msg_repo,

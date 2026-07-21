@@ -10,7 +10,6 @@ from app.domain.chat_commands import (
     SlashCommand,
 )
 from app.domain.entities import Conversation
-
 from tests.fakes_chat_commands import FakeChatCommandRuntime
 
 
@@ -64,4 +63,3 @@ async def test_runtime_port_executes_safe_command_event() -> None:
     assert event.command_name == "/ctx"
     assert event.request_id == "req-1"
     assert runtime.executed == ["/ctx"]
-

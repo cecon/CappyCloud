@@ -45,9 +45,7 @@ class ListChatCommands:
         )
 
 
-def _apply_availability(
-    command: SlashCommand, profiles: object, role: UserRole
-) -> SlashCommand:
+def _apply_availability(command: SlashCommand, profiles: object, role: UserRole) -> SlashCommand:
     del profiles
     if command.name == "/update" and role is not UserRole.ADMIN:
         return _blocked(command, "Atualizacao de runtime exige administrador.")
@@ -94,4 +92,3 @@ async def command_usage_summary(messages: MessageRepository, conversation_id: uu
         f"Contexto usado na conversa: {prompt} tokens de entrada, "
         f"{completion} tokens de saida. Custo registrado: US$ {cost:.6f}."
     )
-

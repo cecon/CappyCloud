@@ -214,7 +214,11 @@ async def list_branches(
     if hint_data and isinstance(hint_data.get("branch"), str) and hint_data["branch"]:
         default_hint = hint_data["branch"]
 
-    remote_data = await _sandbox_post_json("/git/ls-remote-branches", {"url": auth_url}, sandbox_base)
+    remote_data = await _sandbox_post_json(
+        "/git/ls-remote-branches",
+        {"url": auth_url},
+        sandbox_base,
+    )
     if remote_data:
         branches = _parse_branches(remote_data.get("stdout") or "")
         if branches:

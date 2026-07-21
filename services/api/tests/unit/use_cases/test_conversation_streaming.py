@@ -8,12 +8,12 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from cappycloud_agent import _grpc_event_handlers as grpc_handlers
 from app.application.use_cases import conversations as conversations_module
 from app.application.use_cases.conversations import CreateConversation, StreamMessage
 from app.domain.entities import UserRole
 from app.domain.value_objects import PermissionMode
 from app.ports.user_access import AiModelAccessPolicy
+from cappycloud_agent import _grpc_event_handlers as grpc_handlers
 
 from tests.conftest import (
     FakeAgent,
@@ -128,7 +128,7 @@ async def test_starts_stream_with_flush_comment(
 ) -> None:
     conv = await CreateConversation(conv_repo).execute(user_id, "Chat")
     stream = await StreamMessage(conv_repo, msg_repo, FakeAgent()).execute(
-        conv.id, user_id, "Olá agente"
+        conv.id, user_id, "Ola agente"
     )
 
     first = await anext(stream)
@@ -150,7 +150,7 @@ async def test_sends_heartbeat_while_waiting_for_agent_chunk(
     monkeypatch.setattr(conversations_module, "_SSE_HEARTBEAT_INTERVAL_S", 0.01)
     conv = await CreateConversation(conv_repo).execute(user_id, "Chat")
     stream = await StreamMessage(conv_repo, msg_repo, _SlowAgent(delay_s=0.05)).execute(
-        conv.id, user_id, "Olá agente"
+        conv.id, user_id, "Ola agente"
     )
 
     chunks = [c async for c in stream]
@@ -169,7 +169,7 @@ async def test_resolves_effective_model_before_streaming(
     stream = await StreamMessage(conv_repo, msg_repo, agent, model_access=policy).execute(
         conv.id,
         user_id,
-        "Olá agente",
+        "Ola agente",
         user_role=UserRole.USER,
         override_model="anthropic/paid",
     )
@@ -192,7 +192,7 @@ async def test_stream_defaults_permission_mode_to_bypass_permissions(
     stream = await StreamMessage(conv_repo, msg_repo, agent).execute(
         conv.id,
         user_id,
-        "Olá agente",
+        "Ola agente",
     )
     chunks = [c async for c in stream]
     saved_conv = await conv_repo.get(conv.id, user_id)
@@ -215,7 +215,7 @@ async def test_stream_persists_and_dispatches_explicit_permission_mode(
     stream = await StreamMessage(conv_repo, msg_repo, agent).execute(
         conv.id,
         user_id,
-        "Olá agente",
+        "Ola agente",
         permission_mode=PermissionMode.AUTO.value,
     )
     chunks = [c async for c in stream]
@@ -241,7 +241,7 @@ async def test_stream_uses_persisted_permission_mode_when_omitted(
     stream = await StreamMessage(conv_repo, msg_repo, agent).execute(
         conv.id,
         user_id,
-        "Olá agente",
+        "Ola agente",
     )
     chunks = [c async for c in stream]
 
@@ -267,7 +267,7 @@ async def test_blocks_message_when_model_policy_denies(
         await uc.execute(
             conv.id,
             user_id,
-            "Olá agente",
+            "Ola agente",
             user_role=UserRole.USER,
             override_model="anthropic/paid",
         )
@@ -305,7 +305,7 @@ async def test_authorized_runtime_fallback_persists_final_model_and_cost(
     ).execute(
         conv.id,
         user_id,
-        "OlÃ¡ agente",
+        "Ola agente",
         user_role=UserRole.USER,
         override_model="openrouter/selected",
     )
@@ -347,7 +347,7 @@ async def test_unauthorized_runtime_fallback_is_blocked(
     ).execute(
         conv.id,
         user_id,
-        "OlÃ¡ agente",
+        "Ola agente",
         user_role=UserRole.USER,
         override_model="openrouter/selected",
     )
@@ -379,7 +379,7 @@ async def test_error_event_saves_single_assistant_error_message(
                 {"type": "done"},
             ]
         ),
-    ).execute(conv.id, user_id, "Olá agente")
+    ).execute(conv.id, user_id, "Ola agente")
 
     chunks = [c async for c in stream]
     saved = await msg_repo.list_by_conversation(conv.id)
@@ -414,7 +414,7 @@ async def test_action_timeout_done_and_tool_stdout_events_pass_through(
                 {"type": "done"},
             ]
         ),
-    ).execute(conv.id, user_id, "Olá agente")
+    ).execute(conv.id, user_id, "Ola agente")
 
     chunks = [c async for c in stream]
     payloads = _json_payloads(chunks)
