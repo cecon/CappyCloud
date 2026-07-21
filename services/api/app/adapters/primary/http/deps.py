@@ -20,6 +20,9 @@ from app.adapters.secondary.persistence.sqlalchemy_mcp_repo import (
 from app.adapters.secondary.persistence.sqlalchemy_message_repo import (
     SQLAlchemyMessageRepository,
 )
+from app.adapters.secondary.persistence.sqlalchemy_model_profiles import (
+    SQLAlchemyModelProfileLookup,
+)
 from app.adapters.secondary.persistence.sqlalchemy_repo_env_repo import (
     SQLAlchemyRepoEnvironmentRepository,
 )
@@ -42,8 +45,11 @@ from app.adapters.secondary.persistence.sqlalchemy_user_workspace_repo import (
 from app.adapters.secondary.repository_mcp_tool_gateway import (
     SQLAlchemyRepositoryMcpToolGateway,
 )
+from app.adapters.secondary.sandbox_runtime.chat_commands import SandboxChatCommandRuntime
 from app.adapters.secondary.sandbox_user_workspace_client import SandboxUserWorkspaceClient
 from app.application.use_cases.ai_models import ListAiModels
+from app.application.use_cases.chat_command_execution import ExecuteChatCommand
+from app.application.use_cases.chat_commands import ListChatCommands
 from app.application.use_cases.conversations import (
     CreateConversation,
     ListConversations,
@@ -62,7 +68,9 @@ from app.application.use_cases.user_workspaces import (
     ListUserRepositoryWorkspaces,
 )
 from app.ports.agent import AgentPort
+from app.ports.chat_commands import ChatCommandRuntimePort
 from app.ports.mcp_repository import McpServerRepository, UserMcpServerRepository
+from app.ports.model_profiles import ModelProfileLookupPort
 from app.ports.repositories import (
     AiModelCapabilityLookup,
     AttachmentRepository,
@@ -89,7 +97,13 @@ from .deps_auth import (
     get_login_uc as get_login_uc,
 )
 from .deps_auth import (
+    get_password_service as get_password_service,
+)
+from .deps_auth import (
     get_register_uc as get_register_uc,
+)
+from .deps_auth import (
+    get_token_service as get_token_service,
 )
 from .deps_auth import (
     get_user_repo as get_user_repo,
@@ -152,6 +166,16 @@ def get_ai_model_access_policy(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AiModelAccessPolicy:
     return SQLAlchemyAiModelAccessPolicy(session)
+
+
+def get_model_profile_lookup(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ModelProfileLookupPort:
+    return SQLAlchemyModelProfileLookup(session)
+
+
+def get_chat_command_runtime() -> ChatCommandRuntimePort:
+    return SandboxChatCommandRuntime()
 
 
 def get_user_repository_access_repo(
@@ -288,6 +312,24 @@ def get_stream_msg_uc(
         model_access=model_access,
         user_workspaces=user_workspaces,
     )
+
+
+def get_list_chat_commands_uc(
+    convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
+    runtime: Annotated[ChatCommandRuntimePort, Depends(get_chat_command_runtime)],
+    model_profiles: Annotated[ModelProfileLookupPort, Depends(get_model_profile_lookup)],
+    sandboxes: Annotated[SandboxRepository, Depends(get_sandbox_repo)],
+) -> ListChatCommands:
+    return ListChatCommands(convs, runtime, model_profiles, sandboxes=sandboxes)
+
+
+def get_execute_chat_command_uc(
+    convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
+    msgs: Annotated[MessageRepository, Depends(get_msg_repo)],
+    runtime: Annotated[ChatCommandRuntimePort, Depends(get_chat_command_runtime)],
+    catalog: Annotated[ListChatCommands, Depends(get_list_chat_commands_uc)],
+) -> ExecuteChatCommand:
+    return ExecuteChatCommand(convs, msgs, runtime, catalog)
 
 
 def get_list_repo_envs_uc(

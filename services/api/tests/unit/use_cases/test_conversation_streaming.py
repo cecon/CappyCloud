@@ -13,13 +13,13 @@ from app.application.use_cases.conversations import CreateConversation, StreamMe
 from app.domain.entities import UserRole
 from app.domain.value_objects import PermissionMode
 from app.ports.user_access import AiModelAccessPolicy
-from cappycloud_agent import _grpc_event_handlers as grpc_handlers
 
 from tests.conftest import (
     FakeAgent,
     InMemoryConversationRepository,
     InMemoryMessageRepository,
 )
+from tests.unit.agent_runtime_test_loader import grpc_event_handlers as grpc_handlers
 
 
 class _FakeModelAccessPolicy(AiModelAccessPolicy):

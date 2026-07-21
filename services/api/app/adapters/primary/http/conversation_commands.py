@@ -6,26 +6,16 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.primary.http.deps import (
     get_authenticated_user,
-    get_conv_repo,
-    get_db_session,
-    get_msg_repo,
-    get_sandbox_repo,
+    get_execute_chat_command_uc,
+    get_list_chat_commands_uc,
 )
-from app.adapters.secondary.persistence.sqlalchemy_model_profiles import (
-    SQLAlchemyModelProfileLookup,
-)
-from app.adapters.secondary.sandbox_runtime.chat_commands import SandboxChatCommandRuntime
 from app.application.use_cases.chat_command_execution import ExecuteChatCommand
 from app.application.use_cases.chat_commands import ListChatCommands
 from app.domain.chat_commands import CommandExecutionStatus
 from app.domain.entities import User
-from app.ports.chat_commands import ChatCommandRuntimePort
-from app.ports.model_profiles import ModelProfileLookupPort
-from app.ports.repositories import ConversationRepository, MessageRepository, SandboxRepository
 from app.schemas_chat_commands import (
     CommandArgumentOut,
     CommandAvailabilityOut,
@@ -38,34 +28,6 @@ from app.schemas_chat_commands import (
 )
 
 router = APIRouter(prefix="/conversations", tags=["conversation-commands"])
-
-
-def get_model_profile_lookup(
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-) -> ModelProfileLookupPort:
-    return SQLAlchemyModelProfileLookup(session)
-
-
-def get_chat_command_runtime() -> ChatCommandRuntimePort:
-    return SandboxChatCommandRuntime()
-
-
-def get_list_chat_commands_uc(
-    convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
-    runtime: Annotated[ChatCommandRuntimePort, Depends(get_chat_command_runtime)],
-    model_profiles: Annotated[ModelProfileLookupPort, Depends(get_model_profile_lookup)],
-    sandboxes: Annotated[SandboxRepository, Depends(get_sandbox_repo)],
-) -> ListChatCommands:
-    return ListChatCommands(convs, runtime, model_profiles, sandboxes=sandboxes)
-
-
-def get_execute_chat_command_uc(
-    convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
-    msgs: Annotated[MessageRepository, Depends(get_msg_repo)],
-    runtime: Annotated[ChatCommandRuntimePort, Depends(get_chat_command_runtime)],
-    catalog: Annotated[ListChatCommands, Depends(get_list_chat_commands_uc)],
-) -> ExecuteChatCommand:
-    return ExecuteChatCommand(convs, msgs, runtime, catalog)
 
 
 @router.get("/{conversation_id}/commands", response_model=CommandCatalogOut)
