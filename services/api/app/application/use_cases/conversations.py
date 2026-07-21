@@ -116,6 +116,8 @@ class StreamMessage:
             conv.permission_mode = resolved_permission_mode
             should_update_conversation = True
 
+        reconnecting_stream = cursor is not None and not action_reply
+
         attachments_payload: list[dict] | None = None
         injected_prompt = await inject_diff_comments(conversation_id, content)
         effective_model = await self._resolve_model(user_id, user_role, override_model)
@@ -138,7 +140,7 @@ class StreamMessage:
                 conversation_id, attachment_ids, content, injected_prompt
             )
 
-        if not action_reply:
+        if not action_reply and not reconnecting_stream:
             await self._messages.save(
                 Message(
                     id=uuid.uuid4(),
@@ -148,7 +150,7 @@ class StreamMessage:
                 )
             )
 
-        if not action_reply and conv.title == DEFAULT_TITLE:
+        if not action_reply and not reconnecting_stream and conv.title == DEFAULT_TITLE:
             conv.title = content[:TITLE_MAX_LEN] + ("…" if len(content) > TITLE_MAX_LEN else "")
             should_update_conversation = True
 

@@ -497,6 +497,31 @@ async def test_command_events_are_sanitized_and_forwarded(
     assert result["details_markdown"] == "C:\\Users\\***\\repo"
 
 
+async def test_cursor_reconnect_does_not_save_duplicate_user_message(
+    conv_repo: InMemoryConversationRepository,
+    msg_repo: InMemoryMessageRepository,
+    user_id: uuid.UUID,
+) -> None:
+    conv = await CreateConversation(conv_repo).execute(user_id, "Chat")
+    await StreamMessage(conv_repo, msg_repo, FakeAgent()).execute(
+        conv.id,
+        user_id,
+        "Ola agente",
+    )
+
+    stream = await StreamMessage(conv_repo, msg_repo, FakeAgent()).execute(
+        conv.id,
+        user_id,
+        "Ola agente",
+        cursor=42,
+    )
+    payloads = _json_payloads([c async for c in stream])
+    saved = await msg_repo.list_by_conversation(conv.id)
+
+    assert [m.content for m in saved if m.role == "user"] == ["Ola agente"]
+    assert payloads[-1]["type"] == "done"
+
+
 def _json_payloads(chunks: list[bytes]) -> list[dict[str, Any]]:
     payloads: list[dict[str, Any]] = []
     for chunk in chunks:
