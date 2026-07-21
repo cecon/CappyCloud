@@ -89,7 +89,7 @@ class TestConversationEndpoints:
         )
         assert r.status_code == 201
         assert r.json()["title"] == "Meu chat"
-        assert r.json()["permission_mode"] == "request_permissions"
+        assert r.json()["permission_mode"] == "bypass_permissions"
 
     async def test_list_messages_not_found(
         self, client: AsyncClient, auth_headers: dict[str, str]

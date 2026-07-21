@@ -24,6 +24,7 @@ from app.adapters.primary.http import ai_models as ai_models_router
 from app.adapters.primary.http import attachments as attachments_router
 from app.adapters.primary.http import auth as auth_router
 from app.adapters.primary.http import conversation_diff as conv_diff_router
+from app.adapters.primary.http import conversation_commands as conv_commands_router
 from app.adapters.primary.http import conversation_files as conv_files_router
 from app.adapters.primary.http import conversation_pr as conv_pr_router
 from app.adapters.primary.http import conversations as conv_router
@@ -191,6 +192,7 @@ app.include_router(admin_user_access_router.router, prefix="/api")
 app.include_router(admin_ai_catalog_router.router, prefix="/api")
 app.include_router(attachments_router.router)
 app.include_router(conv_router.router, prefix="/api")
+app.include_router(conv_commands_router.router, prefix="/api")
 app.include_router(conv_diff_router.router, prefix="/api")
 app.include_router(conv_files_router.router, prefix="/api")
 app.include_router(conv_pr_router.router, prefix="/api")

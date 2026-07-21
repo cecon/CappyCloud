@@ -18,6 +18,8 @@ from app.application.use_cases._conversation_titles import DEFAULT_TITLE, TITLE_
 from app.application.use_cases._payload_diagnostics import sanitize_payload_diagnostics
 from app.application.use_cases._stream_helpers import (
     build_pipeline_body,
+    command_result_payload,
+    command_start_payload,
     compute_cost,
     enrich_repos_for_pipeline,
     ensure_repo_ids,
@@ -380,6 +382,10 @@ class StreamMessage:
                                 "diagnostics": diagnostics,
                             }
                         ).decode("utf-8")
+                    elif evt_type == "command_start":
+                        output_chunk = _sse_payload(command_start_payload(evt)).decode("utf-8")
+                    elif evt_type == "command_result":
+                        output_chunk = _sse_payload(command_result_payload(evt)).decode("utf-8")
                     elif evt_type == "done":
                         # O TaskRunner enriquece o evento done com tokens/modelo
                         # para que possamos persistir o uso na mensagem assistant.

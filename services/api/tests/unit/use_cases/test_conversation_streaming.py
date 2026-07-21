@@ -4,9 +4,11 @@ import json
 import time
 import uuid
 from collections.abc import Generator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from cappycloud_agent import _grpc_event_handlers as grpc_handlers
 from app.application.use_cases import conversations as conversations_module
 from app.application.use_cases.conversations import CreateConversation, StreamMessage
 from app.domain.entities import UserRole
@@ -179,7 +181,7 @@ async def test_resolves_effective_model_before_streaming(
     assert agent.last_body["override_model"] == "openrouter/free"
 
 
-async def test_stream_defaults_permission_mode_to_request_permissions(
+async def test_stream_defaults_permission_mode_to_bypass_permissions(
     conv_repo: InMemoryConversationRepository,
     msg_repo: InMemoryMessageRepository,
     user_id: uuid.UUID,
@@ -197,9 +199,9 @@ async def test_stream_defaults_permission_mode_to_request_permissions(
 
     assert chunks
     assert agent.last_body is not None
-    assert agent.last_body["permission_mode"] == PermissionMode.REQUEST_PERMISSIONS.value
+    assert agent.last_body["permission_mode"] == PermissionMode.BYPASS_PERMISSIONS.value
     assert saved_conv is not None
-    assert saved_conv.permission_mode == PermissionMode.REQUEST_PERMISSIONS.value
+    assert saved_conv.permission_mode == PermissionMode.BYPASS_PERMISSIONS.value
 
 
 async def test_stream_persists_and_dispatches_explicit_permission_mode(
@@ -456,6 +458,45 @@ async def test_tool_start_arguments_remain_available_through_stream_done(
     assert payloads[-1]["type"] == "done"
 
 
+async def test_command_events_are_sanitized_and_forwarded(
+    conv_repo: InMemoryConversationRepository,
+    msg_repo: InMemoryMessageRepository,
+    user_id: uuid.UUID,
+) -> None:
+    conv = await CreateConversation(conv_repo).execute(user_id, "Chat")
+    stream = await StreamMessage(
+        conv_repo,
+        msg_repo,
+        _EventAgent(
+            [
+                {
+                    "type": "command_start",
+                    "command": "/doctor",
+                    "label": "Diagnostico api_key=secret",
+                },
+                {
+                    "type": "command_result",
+                    "command": "/doctor",
+                    "status": "completed",
+                    "summary": "OK token: hidden",
+                    "details_markdown": "C:\\Users\\cecon\\repo",
+                },
+                {"type": "done"},
+            ]
+        ),
+    ).execute(conv.id, user_id, "Rode /doctor")
+
+    payloads = _json_payloads([c async for c in stream])
+    start = next(p for p in payloads if p["type"] == "command_start")
+    result = next(p for p in payloads if p["type"] == "command_result")
+
+    assert start["command"] == "/doctor"
+    assert start["label"] == "Diagnostico api_key=***"
+    assert result["status"] == "completed"
+    assert result["summary"] == "OK token: ***"
+    assert result["details_markdown"] == "C:\\Users\\***\\repo"
+
+
 def _json_payloads(chunks: list[bytes]) -> list[dict[str, Any]]:
     payloads: list[dict[str, Any]] = []
     for chunk in chunks:
@@ -463,3 +504,23 @@ def _json_payloads(chunks: list[bytes]) -> list[dict[str, Any]]:
             continue
         payloads.append(json.loads(chunk[6:]))
     return payloads
+
+
+def test_command_stream_event_handlers_sanitize_payloads() -> None:
+    start = grpc_handlers.command_start_event(
+        SimpleNamespace(command_start=SimpleNamespace(command="/doctor", label="Diagnostico"))
+    )
+    result = grpc_handlers.command_result_event(
+        SimpleNamespace(
+            command_result=SimpleNamespace(
+                command="/doctor",
+                status="completed",
+                summary="WebSearch disponivel",
+                details_markdown="ok",
+            )
+        )
+    )
+
+    assert start == ("command_start", {"command": "/doctor", "label": "Diagnostico"})
+    assert result[0] == "command_result"
+    assert result[1]["status"] == "completed"

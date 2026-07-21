@@ -15,6 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.adapters.secondary.persistence.sqlalchemy_ai_model_access_policy import (
     SQLAlchemyAiModelAccessPolicy,
 )
+from app.adapters.secondary.persistence.sqlalchemy_model_profiles import (
+    SQLAlchemyModelProfileLookup,
+)
 from app.adapters.secondary.persistence.sqlalchemy_mcp_repo import (
     SQLAlchemyMcpRepository,
 )
@@ -27,6 +30,7 @@ from app.adapters.secondary.persistence.sqlalchemy_repo_env_repo import (
 from app.adapters.secondary.persistence.sqlalchemy_repository_repo import (
     SQLAlchemyRepositoryRepository,
 )
+from app.adapters.secondary.persistence.sqlalchemy_sandbox_repo import SQLAlchemySandboxRepository
 from app.adapters.secondary.persistence.sqlalchemy_user_access_repo import (
     SQLAlchemyUserRepositoryAccessRepository,
 )
@@ -45,9 +49,12 @@ from app.adapters.secondary.persistence.sqlalchemy_user_workspace_repo import (
 from app.adapters.secondary.repository_mcp_tool_gateway import (
     SQLAlchemyRepositoryMcpToolGateway,
 )
+from app.adapters.secondary.sandbox_runtime.chat_commands import SandboxChatCommandRuntime
 from app.adapters.secondary.sandbox_user_workspace_client import SandboxUserWorkspaceClient
 from app.application.use_cases.ai_models import ListAiModels
 from app.application.use_cases.auth import ChangePassword, GetCurrentUser, LoginUser, RegisterUser
+from app.application.use_cases.chat_command_execution import ExecuteChatCommand
+from app.application.use_cases.chat_commands import ListChatCommands
 from app.application.use_cases.conversations import (
     CreateConversation,
     ListConversations,
@@ -67,7 +74,9 @@ from app.application.use_cases.user_workspaces import (
 )
 from app.domain.entities import User, UserRole
 from app.ports.agent import AgentPort
+from app.ports.chat_commands import ChatCommandRuntimePort
 from app.ports.mcp_repository import McpServerRepository, UserMcpServerRepository
+from app.ports.model_profiles import ModelProfileLookupPort
 from app.ports.repositories import (
     AiModelCapabilityLookup,
     AttachmentRepository,
@@ -75,6 +84,7 @@ from app.ports.repositories import (
     MessageRepository,
     RepoEnvironmentRepository,
     RepositoryRepository,
+    SandboxRepository,
     UserRepository,
 )
 from app.ports.repository_mcp import RepositoryMcpToolGateway
@@ -134,10 +144,26 @@ def get_repository_repo(
     return SQLAlchemyRepositoryRepository(session)
 
 
+def get_sandbox_repo(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> SandboxRepository:
+    return SQLAlchemySandboxRepository(session)
+
+
 def get_ai_model_access_policy(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AiModelAccessPolicy:
     return SQLAlchemyAiModelAccessPolicy(session)
+
+
+def get_model_profile_lookup(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ModelProfileLookupPort:
+    return SQLAlchemyModelProfileLookup(session)
+
+
+def get_chat_command_runtime() -> ChatCommandRuntimePort:
+    return SandboxChatCommandRuntime()
 
 
 def get_user_repository_access_repo(
@@ -383,6 +409,24 @@ def get_stream_msg_uc(
         model_access=model_access,
         user_workspaces=user_workspaces,
     )
+
+
+def get_list_chat_commands_uc(
+    convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
+    runtime: Annotated[ChatCommandRuntimePort, Depends(get_chat_command_runtime)],
+    model_profiles: Annotated[ModelProfileLookupPort, Depends(get_model_profile_lookup)],
+    sandboxes: Annotated[SandboxRepository, Depends(get_sandbox_repo)],
+) -> ListChatCommands:
+    return ListChatCommands(convs, runtime, model_profiles, sandboxes=sandboxes)
+
+
+def get_execute_chat_command_uc(
+    convs: Annotated[ConversationRepository, Depends(get_conv_repo)],
+    msgs: Annotated[MessageRepository, Depends(get_msg_repo)],
+    runtime: Annotated[ChatCommandRuntimePort, Depends(get_chat_command_runtime)],
+    catalog: Annotated[ListChatCommands, Depends(get_list_chat_commands_uc)],
+) -> ExecuteChatCommand:
+    return ExecuteChatCommand(convs, msgs, runtime, catalog)
 
 
 def get_list_repo_envs_uc(

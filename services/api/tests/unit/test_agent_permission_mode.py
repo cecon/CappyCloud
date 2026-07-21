@@ -56,10 +56,10 @@ _grpc_session = load_agent_module(
 )
 
 
-def test_sanitize_permission_mode_falls_back_to_request_permissions() -> None:
+def test_sanitize_permission_mode_falls_back_to_bypass_permissions() -> None:
     assert _grpc_helpers.sanitize_permission_mode("auto") == "auto"
-    assert _grpc_helpers.sanitize_permission_mode("unknown") == "request_permissions"
-    assert _grpc_helpers.sanitize_permission_mode(None) == "request_permissions"
+    assert _grpc_helpers.sanitize_permission_mode("unknown") == "bypass_permissions"
+    assert _grpc_helpers.sanitize_permission_mode(None) == "bypass_permissions"
 
 
 def test_openclaude_startup_permission_warning_becomes_sanitized_status() -> None:
@@ -108,7 +108,7 @@ def test_grpc_session_chat_request_falls_back_for_unknown_permission_mode() -> N
 
     request = session._chat_request("Olá")
 
-    assert request.permission_mode == "request_permissions"
+    assert request.permission_mode == "bypass_permissions"
 
 
 def test_grpc_session_chat_request_keeps_session_ids_isolated() -> None:

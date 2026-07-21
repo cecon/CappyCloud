@@ -85,11 +85,13 @@ RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 
 # Clone and build openclaude from source
-ARG OPENCLAUDE_REF=1b7e55058cca57f2f83d7e229441631794286c1a
+ARG OPENCLAUDE_REF=2ff93a10bf88ab6d7030fc4ade5316a7424fa2f9
 COPY services/sandbox/patches/grep-tool-n-alias.patch /tmp/grep-tool-n-alias.patch
 COPY services/sandbox/patches/multimodal-proto.patch /tmp/multimodal-proto.patch
 COPY services/sandbox/patches/multimodal-grpc-handler.patch /tmp/multimodal-grpc-handler.patch
 COPY services/sandbox/patches/read-empty-pages.patch /tmp/read-empty-pages.patch
+COPY services/sandbox/patch_openclaude_grpc_v024.js /tmp/patch_openclaude_grpc_v024.js
+COPY services/sandbox/cappycloud_grpc_helpers_v024.ts /tmp/cappycloud_grpc_helpers_v024.ts
 RUN sed -i 's/\r$//' /tmp/*.patch
 WORKDIR /openclaude
 RUN git init . \
@@ -109,9 +111,11 @@ RUN git init . \
     && perl -0pi -e "s/tool_name: tool\\.name,/tool_name: cappycloudGrpcString(tool.name),/g; s/arguments_json: JSON\\.stringify\\(input\\),/arguments_json: cappycloudGrpcString(JSON.stringify(input)),/g; s/tool_use_id: toolUseID/tool_use_id: cappycloudGrpcString(toolUseID)/g; s/prompt_id: promptId,/prompt_id: cappycloudGrpcString(promptId),/g; s/question,/question: cappycloudGrpcString(question),/g; s/text: msg\\.event\\.delta\\.text/text: cappycloudGrpcString(msg.event.delta.text)/g; s/tool_name: toolNameById\\.get\\(block\\.tool_use_id\\) \\?\\? block\\.tool_use_id,/tool_name: cappycloudGrpcString(toolNameById.get(block.tool_use_id) ?? block.tool_use_id),/g; s/tool_use_id: block\\.tool_use_id,/tool_use_id: cappycloudGrpcString(block.tool_use_id),/g; s/full_text: fullText,/full_text: cappycloudGrpcString(fullText),/g; s/message: err\\.message \\|\\| \"Internal server error\",/message: cappycloudGrpcString(err.message || \"Internal server error\"),/g" src/grpc/server.ts \
     && perl -0pi -e "s/type: 'CONFIRM_COMMAND'/type: 1/g; s/if \(reply\.toLowerCase\(\) === 'yes' \|\| reply\.toLowerCase\(\) === 'y'\) \{/if (['yes', 'y', 'sim', 's'].includes(reply.toLowerCase().trim())) {/g" src/grpc/server.ts \
     && sed -i 's/^detectStubLeaks()$/setImmediate(() => detectStubLeaks())/' src/entrypoints/sdk/index.ts \
+    && node /tmp/patch_openclaude_grpc_v024.js \
     && rm -f /tmp/grep-tool-n-alias.patch \
             /tmp/multimodal-proto.patch /tmp/multimodal-grpc-handler.patch \
-            /tmp/read-empty-pages.patch \
+            /tmp/read-empty-pages.patch /tmp/patch_openclaude_grpc_v024.js \
+            /tmp/cappycloud_grpc_helpers_v024.ts \
     && bun install \
     && bun run build
 

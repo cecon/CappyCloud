@@ -63,7 +63,7 @@ class GrpcSession:
         provider_base_url: str = "",
         provider_api_key: str = "",
         provider_api_format: str = "",
-        permission_mode: str = "request_permissions",
+        permission_mode: str = "bypass_permissions",
     ) -> None:
         self._ip = container_ip
         self._port = grpc_port
@@ -182,7 +182,13 @@ class GrpcSession:
                 if event_type == "text":
                     out_q.put(("text", data))
 
-                elif event_type in ("status", "tool_start", "tool_result"):
+                elif event_type in (
+                    "status",
+                    "tool_start",
+                    "tool_result",
+                    "command_start",
+                    "command_result",
+                ):
                     out_q.put((event_type, data))
 
                 elif event_type == "payload_diagnostic":
@@ -247,6 +253,12 @@ class GrpcSession:
 
                 elif event == "tool_result":
                     await self._out_queue.put(handlers.tool_result_event(msg))
+
+                elif event == "command_start":
+                    await self._out_queue.put(handlers.command_start_event(msg))
+
+                elif event == "command_result":
+                    await self._out_queue.put(handlers.command_result_event(msg))
 
                 elif event == "action_required":
                     out, pending = handlers.action_required_event(msg)

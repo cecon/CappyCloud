@@ -274,7 +274,7 @@ export type PermissionMode =
   | 'auto'
   | 'bypass_permissions'
 
-export const DEFAULT_PERMISSION_MODE: PermissionMode = 'request_permissions'
+export const DEFAULT_PERMISSION_MODE: PermissionMode = 'bypass_permissions'
 
 export interface UserPreferences {
   default_permission_mode: PermissionMode
@@ -386,6 +386,26 @@ export interface ToolResultEvent {
   id: string
 }
 
+export interface CommandStartEvent {
+  command: string
+  label: string
+}
+
+export type CommandResultStatus =
+  | 'started'
+  | 'waiting_for_input'
+  | 'completed'
+  | 'unavailable'
+  | 'failed'
+  | 'cancelled'
+
+export interface CommandResultEvent {
+  command: string
+  status: CommandResultStatus
+  summary: string
+  details_markdown?: string | null
+}
+
 export interface ActionRequiredEvent {
   prompt_id: string
   question: string
@@ -410,6 +430,8 @@ export interface StreamHandlers {
   onText(accumulated: string): void
   onToolStart(tool: ToolStartEvent): void
   onToolResult(tool: ToolResultEvent): void
+  onCommandStart? (event: CommandStartEvent): void
+  onCommandResult? (event: CommandResultEvent): void
   onActionRequired(action: ActionRequiredEvent): void
   onStatus(status: StatusEvent): void
   onError(message: string): void
@@ -574,6 +596,93 @@ export async function fetchMessages(token: string, conversationId: string): Prom
   return res.json()
 }
 
+export type SlashCommandArgument = {
+  name: string
+  label: string
+  required: boolean
+  value_hint: string
+  allowed_values: string[]
+  sensitive: boolean
+}
+
+export type SlashCommandAvailability = {
+  state: 'available' | 'needs_arguments' | 'needs_confirmation' | 'blocked' | 'unavailable'
+  reason?: string | null
+  required_role?: string | null
+  required_capability?: string | null
+}
+
+export type SlashCommand = {
+  name: string
+  description: string
+  source: 'upstream' | 'cappycloud' | 'runtime' | string
+  category: string
+  arguments: SlashCommandArgument[]
+  availability: SlashCommandAvailability
+  requires_confirmation: boolean
+  confirmation_reason?: string | null
+  execution_mode: 'chat_action' | 'runtime_command' | 'unavailable' | string
+}
+
+export type SlashCommandCatalog = {
+  runtime_version: string
+  runtime_commit: string
+  generated_at: string
+  commands: SlashCommand[]
+}
+
+export type SlashCommandExecutionResponse = {
+  status: 'needs_confirmation' | 'accepted' | 'unavailable' | 'failed' | 'completed'
+  message?: string | null
+  confirmation?: {
+    message: string
+    confirm_label: string
+    cancel_label: string
+  } | null
+  stream?: {
+    conversation_id: string
+    client_request_id: string
+  } | null
+}
+
+export async function listSlashCommands(
+  token: string,
+  conversationId: string,
+): Promise<SlashCommandCatalog> {
+  const res = await apiFetch(`/api/conversations/${conversationId}/commands`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error('Nao foi possivel carregar comandos')
+  return res.json()
+}
+
+export async function executeSlashCommand(
+  token: string,
+  conversationId: string,
+  payload: {
+    command: string
+    arguments?: Record<string, unknown>
+    confirmed?: boolean
+    client_request_id: string
+  },
+): Promise<SlashCommandExecutionResponse> {
+  const res = await apiFetch(`/api/conversations/${conversationId}/commands/execute`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      command: payload.command,
+      arguments: payload.arguments ?? {},
+      confirmed: payload.confirmed ?? false,
+      client_request_id: payload.client_request_id,
+    }),
+  })
+  if (!res.ok) throw new Error((await res.text()) || 'Nao foi possivel executar comando')
+  return res.json()
+}
+
 /**
  * Envia mensagem e processa o stream SSE JSON com handlers tipados.
  * O backend envia eventos no formato: data: {"type":"...","..."}\n\n
@@ -651,6 +760,30 @@ export async function streamAssistantReply(
               id: evt.id as string,
             })
             break
+          case 'command_start':
+            eventHandlers.onCommandStart?.({
+              command: (evt.command as string) ?? '',
+              label: (evt.label as string) ?? 'Comando iniciado',
+            })
+            break
+          case 'command_result': {
+            const status = evt.status
+            eventHandlers.onCommandResult?.({
+              command: (evt.command as string) ?? '',
+              status:
+                status === 'started' ||
+                status === 'waiting_for_input' ||
+                status === 'completed' ||
+                status === 'unavailable' ||
+                status === 'failed' ||
+                status === 'cancelled'
+                  ? status
+                  : 'failed',
+              summary: (evt.summary as string) ?? 'Comando finalizado.',
+              details_markdown: (evt.details_markdown as string | null) ?? null,
+            })
+            break
+          }
           case 'action_required':
             eventHandlers.onActionRequired({
               prompt_id: evt.prompt_id as string,

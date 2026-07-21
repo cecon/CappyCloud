@@ -145,8 +145,8 @@ class Conversation(Base):
     permission_mode: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
-        server_default="request_permissions",
-        default="request_permissions",
+        server_default="bypass_permissions",
+        default="bypass_permissions",
     )
     # Worktree state
     worktree_exists: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

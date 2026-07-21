@@ -36,13 +36,35 @@ def test_request_permissions_keeps_mutating_tools_interactive() -> None:
     assert "? { behavior: 'allow' } : null" in match.group("body")
 
 
+def test_unknown_permission_mode_defaults_to_bypass_permissions() -> None:
+    assert "+    return 'bypass_permissions'" in PATCH_TEXT
+    assert (
+        "+  return CAPPYCLOUD_PERMISSION_MODES.has(mode) ? mode : 'bypass_permissions'"
+        in PATCH_TEXT
+    )
+
+
 def test_sandbox_bootstrap_does_not_require_opengateway_key() -> None:
     assert 'OPENGATEWAY_API_KEY="${OPENGATEWAY_API_KEY' not in ENV_INIT_TEXT
     assert 'OPENAI_API_KEY="${OPENAI_API_KEY:-cappycloud-runtime-bootstrap-key}"' in ENV_INIT_TEXT
     assert "provider_api_key" in ENV_INIT_TEXT
+    assert "requestedProviderApiKey" in ENV_INIT_TEXT
+    assert "provider override:" in ENV_INIT_TEXT
+    assert "${requestedProviderApiKey}" not in ENV_INIT_TEXT
 
 
 def test_sandbox_startup_provider_uses_openai_compatible_fallback() -> None:
     assert "CappyCloud default startup provider" in ENV_INIT_TEXT
     assert "env[DEFAULT_STARTUP_PROVIDER_ENV_VAR] = 'custom'" in ENV_INIT_TEXT
     assert "getRouteDefaultBaseUrl('custom')" in ENV_INIT_TEXT
+
+
+def test_dynamic_model_and_provider_overrides_are_reset_after_request() -> None:
+    assert "CappyCloud dynamic model override" in ENV_INIT_TEXT
+    assert "CappyCloud provider override" in ENV_INIT_TEXT
+    assert "process.env.OPENAI_MODEL = requestedModel" in ENV_INIT_TEXT
+    assert "process.env.OPENAI_BASE_URL = requestedProviderBaseUrl" in ENV_INIT_TEXT
+    assert "process.env.OPENAI_API_KEY = requestedProviderApiKey" in ENV_INIT_TEXT
+    assert "process.env.OPENAI_MODEL = previousOpenAIModel" in ENV_INIT_TEXT
+    assert "process.env.OPENAI_BASE_URL = previousOpenAIBaseUrl" in ENV_INIT_TEXT
+    assert "process.env.OPENAI_API_KEY = previousOpenAIApiKey" in ENV_INIT_TEXT

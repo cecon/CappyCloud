@@ -21,11 +21,13 @@ import {
   fetchConversations,
   fetchConversationUsage,
   fetchMessages,
+  executeSlashCommand,
   fetchSandboxes,
   fetchUserPreferences,
   fetchWorkspaces,
   DEFAULT_PERMISSION_MODE,
   getToken,
+  listSlashCommands,
   setToken,
   streamAssistantReply,
   updateUserPreferences,
@@ -34,6 +36,8 @@ import {
   type ActionRequiredEvent,
   type AiModel,
   type ChatMessage,
+  type CommandResultEvent,
+  type CommandStartEvent,
   type Conversation,
   type ConversationUsage,
   type CurrentUser,
@@ -41,6 +45,7 @@ import {
   type PayloadSizeBreakdown,
   type PermissionMode,
   type Sandbox,
+  type SlashCommand,
   type StatusEvent,
   type Workspace,
 } from '../api'
@@ -49,6 +54,9 @@ import { AttachmentTray, type TrayItem } from '../components/AttachmentTray'
 import { ModelPicker } from '../components/ModelPicker'
 import { ThinkingIndicator } from '../components/ThinkingIndicator'
 import { ThinkingStream, type ThoughtStep } from '../components/ThinkingStream'
+import { CommandConfirmation } from '../components/chat/CommandConfirmation'
+import { SlashCommandMenu } from '../components/chat/SlashCommandMenu'
+import { slashCommandQuery, shouldOpenSlashCommands } from '../components/chat/SlashCommandMenu.utils'
 import { CappyIcon } from '../components/layout/icons'
 import { roleFromUser, visibleNavigationItems, type NavigationItem } from '../components/layout/navigation'
 import {
@@ -152,9 +160,9 @@ const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
   },
   {
     value: 'bypass_permissions',
-    label: 'Ignorar permissões',
+    label: 'Acesso completo',
     icon: 'warning',
-    description: 'Permite ações amplas durante a execução',
+    description: 'Permite executar ações sem pedir confirmação',
     tone: 'danger',
   },
 ]
@@ -627,6 +635,54 @@ function applyToolResultToThoughts(
       ? { ...step, output: result.output, isError: result.is_error, done: true }
       : step,
   )
+}
+
+function commandThoughtId(command: string): string {
+  return `command:${command || 'unknown'}`
+}
+
+function appendCommandStartToThoughts(prev: ThoughtStep[], event: CommandStartEvent): ThoughtStep[] {
+  const id = commandThoughtId(event.command)
+  if (prev.some((step) => step.kind === 'tool' && step.id === id)) return prev
+  return [
+    ...prev,
+    {
+      kind: 'tool',
+      id,
+      name: event.command || 'comando',
+      input: event.label,
+      done: false,
+    },
+  ]
+}
+
+function applyCommandResultToThoughts(prev: ThoughtStep[], event: CommandResultEvent): ThoughtStep[] {
+  const id = commandThoughtId(event.command)
+  const isError =
+    event.status === 'failed' ||
+    event.status === 'cancelled' ||
+    event.status === 'unavailable'
+  const output = event.details_markdown || event.summary
+  const updated = prev.map((step) =>
+    step.kind === 'tool' && step.id === id
+      ? { ...step, output, isError, done: true }
+      : step,
+  )
+  if (updated !== prev && updated.some((step) => step.kind === 'tool' && step.id === id)) {
+    return updated
+  }
+  return [
+    ...prev,
+    {
+      kind: 'tool',
+      id,
+      name: event.command || 'comando',
+      input: 'Comando do chat',
+      output,
+      isError,
+      done: true,
+    },
+  ]
 }
 
 function finishPendingThoughtTools(prev: ThoughtStep[], isError = false): ThoughtStep[] {
@@ -1374,6 +1430,20 @@ export function ChatPage() {
               updateActivityTrace(prev, userMsg, (steps) => applyToolResultToThoughts(steps, result)),
             )
           },
+          onCommandStart(event) {
+            setStreamActivityAt(Date.now())
+            setThoughtSteps((prev) => appendCommandStartToThoughts(prev, event))
+            setActivityTraces((prev) =>
+              updateActivityTrace(prev, userMsg, (steps) => appendCommandStartToThoughts(steps, event)),
+            )
+          },
+          onCommandResult(event) {
+            setStreamActivityAt(Date.now())
+            setThoughtSteps((prev) => applyCommandResultToThoughts(prev, event))
+            setActivityTraces((prev) =>
+              updateActivityTrace(prev, userMsg, (steps) => applyCommandResultToThoughts(steps, event)),
+            )
+          },
           onActionRequired(action) {
             setStreamActivityAt(Date.now())
             setPendingAction(action)
@@ -1592,6 +1662,24 @@ export function ChatPage() {
             if (!isActionResume) {
               setActivityTraces((prev) =>
                 updateActivityTrace(prev, userMsg, (steps) => applyToolResultToThoughts(steps, result)),
+              )
+            }
+          },
+          onCommandStart(event) {
+            setStreamActivityAt(Date.now())
+            setThoughtSteps((prev) => appendCommandStartToThoughts(prev, event))
+            if (!isActionResume) {
+              setActivityTraces((prev) =>
+                updateActivityTrace(prev, userMsg, (steps) => appendCommandStartToThoughts(steps, event)),
+              )
+            }
+          },
+          onCommandResult(event) {
+            setStreamActivityAt(Date.now())
+            setThoughtSteps((prev) => applyCommandResultToThoughts(prev, event))
+            if (!isActionResume) {
+              setActivityTraces((prev) =>
+                updateActivityTrace(prev, userMsg, (steps) => applyCommandResultToThoughts(steps, event)),
               )
             }
           },
@@ -2515,6 +2603,16 @@ function ActiveChat({
   const shouldStickToBottomRef = useRef(true)
   const [elapsedSecs, setElapsedSecs] = useState(0)
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
+  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([])
+  const [slashOpen, setSlashOpen] = useState(false)
+  const [slashQuery, setSlashQuery] = useState('')
+  const [commandNotice, setCommandNotice] = useState<string | null>(null)
+  const [confirmCommand, setConfirmCommand] = useState<{
+    command: SlashCommand
+    message: string
+    confirmLabel: string
+    cancelLabel: string
+  } | null>(null)
 
   /** Mantém o auto-scroll apenas quando o usuário já está no fim da conversa. */
   const updateStickyScroll = useCallback(() => {
@@ -2544,6 +2642,81 @@ function ActiveChat({
       setElapsedSecs(0)
     }
   }, [streaming])
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      setSlashOpen(false)
+      setSlashQuery('')
+      setSlashCommands([])
+      setCommandNotice(null)
+      setConfirmCommand(null)
+    })
+  }, [conversationId, selectedModelId, permissionMode])
+
+  const openSlashCommands = useCallback((draft: string, caret: number) => {
+    if (!shouldOpenSlashCommands(draft, caret) && !slashOpen) return
+    setSlashQuery(slashCommandQuery(draft, caret))
+    setSlashOpen(true)
+    if (slashCommands.length === 0) {
+      listSlashCommands(token, conversationId)
+        .then((catalog) => setSlashCommands(catalog.commands))
+        .catch(() => setCommandNotice('Nao foi possivel carregar comandos agora.'))
+    }
+  }, [conversationId, slashCommands.length, slashOpen, token])
+
+  const runSlashCommand = useCallback(async (command: SlashCommand, confirmed = false) => {
+    const unavailable =
+      command.execution_mode === 'unavailable' ||
+      command.availability.state === 'unavailable' ||
+      command.availability.state === 'blocked'
+    if (unavailable) {
+      setCommandNotice(command.availability.reason || 'Comando indisponivel nesta conversa.')
+      return
+    }
+    try {
+      const response = await executeSlashCommand(token, conversationId, {
+        command: command.name,
+        confirmed,
+        client_request_id: crypto.randomUUID(),
+      })
+      if (response.status === 'needs_confirmation' && response.confirmation) {
+        setConfirmCommand({
+          command,
+          message: response.confirmation.message,
+          confirmLabel: response.confirmation.confirm_label,
+          cancelLabel: response.confirmation.cancel_label,
+        })
+        return
+      }
+      setCommandNotice(response.message || 'Comando enviado.')
+      setConfirmCommand(null)
+      setSlashOpen(false)
+    } catch (error) {
+      setCommandNotice(errorToUserMessage(error))
+    }
+  }, [conversationId, token])
+
+  const pickSlashCommand = useCallback((command: SlashCommand) => {
+    setSlashOpen(false)
+    const unavailable =
+      command.execution_mode === 'unavailable' ||
+      command.availability.state === 'unavailable' ||
+      command.availability.state === 'blocked'
+    if (unavailable) {
+      void runSlashCommand(command)
+      return
+    }
+    if (command.requires_confirmation) {
+      setConfirmCommand({
+        command,
+        message: command.confirmation_reason || 'Confirme a execucao do comando.',
+        confirmLabel: 'Executar',
+        cancelLabel: 'Cancelar',
+      })
+      return
+    }
+    void runSlashCommand(command)
+  }, [runSlashCommand])
 
   useEffect(() => {
     shouldStickToBottomRef.current = true
@@ -2853,6 +3026,16 @@ function ActiveChat({
           >
             <span className={styles.icon}>attachment</span>
           </button>
+          {slashOpen && (
+            <div className={styles.slashCommandOverlay}>
+              <SlashCommandMenu
+                commands={slashCommands}
+                query={slashQuery}
+                onPick={pickSlashCommand}
+                onDismiss={() => setSlashOpen(false)}
+              />
+            </div>
+          )}
           <textarea
             ref={inputRef}
             className={styles.chatTextarea}
@@ -2863,7 +3046,11 @@ function ActiveChat({
             }
             rows={2}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value
+              setInput(next)
+              openSlashCommands(next, e.target.selectionStart ?? next.length)
+            }}
             onPaste={onPasteFiles}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !streaming) {
@@ -2899,6 +3086,23 @@ function ActiveChat({
           </button>
           )}
           </div>
+
+          {confirmCommand && (
+            <div className={styles.commandFeedback}>
+              <CommandConfirmation
+                message={confirmCommand.message}
+                confirmLabel={confirmCommand.confirmLabel}
+                cancelLabel={confirmCommand.cancelLabel}
+                onCancel={() => setConfirmCommand(null)}
+                onConfirm={() => void runSlashCommand(confirmCommand.command, true)}
+              />
+            </div>
+          )}
+          {commandNotice && (
+            <div className={styles.commandFeedback} role="status">
+              {commandNotice}
+            </div>
+          )}
 
           <div className={styles.chatContextBar}>
             <PermissionModeControl

@@ -32,7 +32,7 @@ async def launch_runner(
     session_root: str = "",
     sandbox_id: str = "",
     override_model: str | None = None,
-    permission_mode: str = "request_permissions",
+    permission_mode: str = "bypass_permissions",
     sandbox_session_url: str = "",
     attachments: list[dict] | None = None,
 ) -> None:

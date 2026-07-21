@@ -222,7 +222,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && pathname === '/health') {
       return json(res, 200, {
         status: 'ok',
-        openclaude: runtimeHandler.isStopped() ? 'stopped' : 'running',
+        openclaude: await runtimeHandler.openClaudeStatus(),
         sessions: countSessionRoots(),
       })
     }

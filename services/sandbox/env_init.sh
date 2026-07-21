@@ -17,7 +17,7 @@
 set -euo pipefail
 
 OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}"
-# OpenClaude 0.17 initializes its provider registry before CappyCloud injects
+# OpenClaude initializes its provider registry before CappyCloud injects
 # the per-request provider credentials. Keep startup independent from
 # OPENGATEWAY_API_KEY; real requests replace this with ChatRequest.provider_api_key.
 OPENAI_API_KEY="${OPENAI_API_KEY:-cappycloud-runtime-bootstrap-key}"
@@ -43,7 +43,7 @@ EOF
 echo "Provider: OpenRouter  model=${OPENAI_MODEL}"
 
 # Patch openclaude startup provider fallback for headless CappyCloud.
-# OpenClaude 0.17 defaults a first-run profile to Gitlawb Opengateway, which
+# OpenClaude can default a first-run profile to Gitlawb Opengateway, which
 # requires OPENGATEWAY_API_KEY before CappyCloud can inject per-request provider
 # credentials. The sandbox is an OpenAI-compatible runtime; use the generic
 # custom provider and keep the real provider credentials request-scoped.

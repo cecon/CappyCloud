@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from app.domain.entities import Conversation
     from app.ports.repositories import MessageRepository, RepositoryRepository
 
+from app.application.use_cases.chat_command_sanitization import sanitize_command_text
 from app.domain.value_objects import validate_permission_mode
 
 
@@ -161,3 +162,33 @@ async def inject_diff_comments(conversation_id: uuid.UUID, content: str) -> str:
             return "\n".join(lines) + "\n\n" + content
     except Exception:
         return content
+
+
+def command_start_payload(event: dict) -> dict:
+    """Build a sanitized SSE payload for command start events."""
+    return {
+        "type": "command_start",
+        "command": sanitize_command_text(event.get("command", "")),
+        "label": sanitize_command_text(event.get("label", "Comando iniciado")),
+    }
+
+
+def command_result_payload(event: dict) -> dict:
+    """Build a sanitized SSE payload for command result events."""
+    status = str(event.get("status") or "failed")
+    if status not in {
+        "started",
+        "waiting_for_input",
+        "completed",
+        "unavailable",
+        "failed",
+        "cancelled",
+    }:
+        status = "failed"
+    return {
+        "type": "command_result",
+        "command": sanitize_command_text(event.get("command", "")),
+        "status": status,
+        "summary": sanitize_command_text(event.get("summary", "Comando finalizado.")),
+        "details_markdown": sanitize_command_text(event.get("details_markdown", "")) or None,
+    }

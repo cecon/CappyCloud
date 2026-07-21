@@ -5258,3 +5258,32 @@
     margin-top: 0.75rem;
   }
 }
+
+.slashCommandOverlay {
+  position: absolute;
+  left: 48px;
+  right: 48px;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+}
+
+.chatInputWrapper {
+  position: relative;
+}
+
+.commandFeedback {
+  margin: 8px 10px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  padding: 8px 10px;
+  font-size: 0.82rem;
+}
+
+@media (max-width: 720px) {
+  .slashCommandOverlay {
+    left: 8px;
+    right: 8px;
+  }
+}

@@ -105,8 +105,16 @@ async def test_fetch_azure_foundry_deployments_normalises_payload(monkeypatch) -
                         "capabilities": {"chat_completion": "true"},
                     },
                     {
-                        "name": "embed",
+                        "name": "text-embedding-3-large",
                         "capabilities": {"embeddings": "true"},
+                    },
+                    {
+                        "name": "DeepSeek-V4-Pro",
+                        "capabilities": {"chat_completion": "true"},
+                    },
+                    {
+                        "name": "Kimi-K2.6-1",
+                        "capabilities": {"chat_completion": "true"},
                     },
                 ]
             }
@@ -141,16 +149,32 @@ async def test_fetch_azure_foundry_deployments_normalises_payload(monkeypatch) -
             "model_id": "gpt-5.4-mini",
             "display_name": "gpt-5.4-mini",
             "context_window": 200000,
-            "input_cost_per_1m_usd": None,
-            "output_cost_per_1m_usd": None,
+            "input_cost_per_1m_usd": 0.75,
+            "output_cost_per_1m_usd": 4.5,
             "capabilities": ["text"],
         },
         {
-            "model_id": "embed",
-            "display_name": "embed",
+            "model_id": "text-embedding-3-large",
+            "display_name": "text-embedding-3-large",
             "context_window": 200000,
-            "input_cost_per_1m_usd": None,
-            "output_cost_per_1m_usd": None,
+            "input_cost_per_1m_usd": 0.143,
+            "output_cost_per_1m_usd": 0.0,
             "capabilities": ["embedding"],
+        },
+        {
+            "model_id": "DeepSeek-V4-Pro",
+            "display_name": "DeepSeek-V4-Pro",
+            "context_window": 200000,
+            "input_cost_per_1m_usd": 1.74,
+            "output_cost_per_1m_usd": 3.48,
+            "capabilities": ["text"],
+        },
+        {
+            "model_id": "Kimi-K2.6-1",
+            "display_name": "Kimi-K2.6-1",
+            "context_window": 200000,
+            "input_cost_per_1m_usd": 0.95,
+            "output_cost_per_1m_usd": 4.0,
+            "capabilities": ["text"],
         },
     ]

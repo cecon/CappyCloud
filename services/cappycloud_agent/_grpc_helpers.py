@@ -12,7 +12,7 @@ import grpc.aio
 
 log = logging.getLogger(__name__)
 
-DEFAULT_PERMISSION_MODE = "request_permissions"
+DEFAULT_PERMISSION_MODE = "bypass_permissions"
 PERMISSION_MODES = {
     DEFAULT_PERMISSION_MODE,
     "accept_edits",

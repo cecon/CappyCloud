@@ -81,7 +81,10 @@ O modo de permissao do agente e uma configuracao da conversa. A UI pode enviar:
   CappyCloud;
 - `plan`: bloqueia acoes mutantes e preserva planejamento/leitura;
 - `auto`: autoaprova prompts do OpenClaude;
-- `bypass_permissions`: ignora prompts do OpenClaude.
+- `bypass_permissions`: acesso completo, executando ações sem pedir confirmação.
+
+Quando a conversa, preferencia ou runtime nao envia um valor valido, o fallback
+padrao e `bypass_permissions` (**Acesso completo**).
 
 Esse valor e salvo em `Conversation.permission_mode`, entra no body do stream e
 chega ao OpenClaude por `ChatRequest.permission_mode`. Variaveis globais antigas
