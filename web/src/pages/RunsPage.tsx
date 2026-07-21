@@ -5,7 +5,7 @@ import {
   fetchAgentTaskEvents,
   fetchAgentTasks,
   getToken,
-  setToken,
+  redirectToLogin,
   type AgentTask,
   type AgentTaskEvent,
 } from '../api'
@@ -71,8 +71,7 @@ export function RunsPage() {
       }
     } catch (err) {
       if (err instanceof AuthError) {
-        setToken(null)
-        window.location.href = '/login'
+        redirectToLogin()
         return
       }
       setError(err instanceof Error ? err.message : 'Não foi possível carregar execuções.')
@@ -88,8 +87,7 @@ export function RunsPage() {
       setEvents(list)
     } catch (err) {
       if (err instanceof AuthError) {
-        setToken(null)
-        window.location.href = '/login'
+        redirectToLogin()
         return
       }
       setError(err instanceof Error ? err.message : 'Não foi possível carregar eventos.')

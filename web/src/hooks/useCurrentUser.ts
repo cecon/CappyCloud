@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { type CurrentUser, fetchCurrentUser, getToken } from '../api'
+import { AuthError, type CurrentUser, fetchCurrentUser, getToken, setToken } from '../api'
 
 type State =
   | { status: 'loading' }
@@ -27,6 +27,11 @@ export function useCurrentUser(): State {
       })
       .catch((err: unknown) => {
         if (cancelled) return
+        if (err instanceof AuthError) {
+          setToken(null)
+          setState({ status: 'anonymous' })
+          return
+        }
         const message = err instanceof Error ? err.message : 'Falha ao carregar utilizador'
         setState({ status: 'error', message })
       })

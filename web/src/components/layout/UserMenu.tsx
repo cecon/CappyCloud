@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import type { CurrentUser } from '@/api'
-import { setToken } from '@/api'
+import { redirectToLogin } from '@/api'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -46,8 +46,7 @@ export function UserMenu({ user }: UserMenuProps) {
   const account = visibleNavigationItems(role, 'account')
 
   function logout() {
-    setToken(null)
-    window.location.href = '/login'
+    redirectToLogin()
   }
 
   return (

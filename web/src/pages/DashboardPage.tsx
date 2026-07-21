@@ -5,7 +5,7 @@ import {
   fetchSkills,
   fetchWorkspaces,
   getToken,
-  setToken,
+  redirectToLogin,
   type Conversation,
   type Skill,
   type Workspace,
@@ -64,8 +64,7 @@ export function DashboardPage() {
         }
       } catch (err) {
         if (err instanceof AuthError) {
-          setToken(null)
-          window.location.href = '/login'
+          redirectToLogin()
           return
         }
         if (!cancelled) {
