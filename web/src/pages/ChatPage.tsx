@@ -28,7 +28,7 @@ import {
   DEFAULT_PERMISSION_MODE,
   getToken,
   listSlashCommands,
-  setToken,
+  redirectToLogin,
   streamAssistantReply,
   updateUserPreferences,
   uploadAttachment,
@@ -231,8 +231,7 @@ function SidebarUserMenu({ user }: { user: CurrentUser | null }) {
   const account = visibleNavigationItems(role, 'account')
 
   function logout() {
-    setToken(null)
-    window.location.href = '/login'
+    redirectToLogin()
   }
 
   return (
@@ -1068,8 +1067,7 @@ export function ChatPage() {
           setUserDefaultPermissionMode(mode)
           setPermissionModeState(mode)
         } else if (userPrefsResult.reason instanceof AuthError) {
-          setToken(null)
-          window.location.href = '/login'
+          redirectToLogin()
           return
         }
 
@@ -1083,8 +1081,7 @@ export function ChatPage() {
             setSelectedBranch(prefs.byRepo?.[preferredSlug]?.branch || '')
           }
         } else if (wsList.reason instanceof AuthError) {
-          setToken(null)
-          window.location.href = '/login'
+          redirectToLogin()
           return
         }
 
@@ -1102,16 +1099,14 @@ export function ChatPage() {
           setConversations(convsResult.value)
           if (convsResult.value.length > 0) setActiveId((prev) => prev ?? convsResult.value[0].id)
         } else if (convsResult.reason instanceof AuthError) {
-          setToken(null)
-          window.location.href = '/login'
+          redirectToLogin()
           return
         }
 
         if (sandboxesResult.status === 'fulfilled') {
           setSandboxes(sandboxesResult.value)
         } else if (sandboxesResult.reason instanceof AuthError) {
-          setToken(null)
-          window.location.href = '/login'
+          redirectToLogin()
           return
         }
       } finally {
@@ -1214,8 +1209,7 @@ export function ChatPage() {
         }
       } catch (e) {
         if (e instanceof AuthError) {
-          setToken(null)
-          window.location.href = '/login'
+          redirectToLogin()
           return
         }
         if (!cancelled) setMessagesError(errorToUserMessage(e))
@@ -1523,7 +1517,7 @@ export function ChatPage() {
       setSessionProgress([])
     } catch (e) {
       if (e instanceof AuthError) {
-        setToken(null); window.location.href = '/login'; return
+        redirectToLogin(); return
       } else if (e instanceof Error && e.name === 'AbortError') {
         // Cancelled by user — silently finalize
       } else {
@@ -1766,7 +1760,7 @@ export function ChatPage() {
       setLiveUsage(null)
     } catch (e) {
       if (e instanceof AuthError) {
-        setToken(null); window.location.href = '/login'; return
+        redirectToLogin(); return
       } else if (e instanceof Error && e.name === 'AbortError') {
         // Cancelled by user — silently finalize
       } else {

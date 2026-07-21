@@ -3,6 +3,7 @@
  */
 
 const TOKEN_KEY = 'cappycloud_token'
+let loginRedirectInFlight = false
 
 /**
  * Extrai texto legível do corpo JSON de erro da FastAPI (422, etc.).
@@ -97,6 +98,14 @@ export function getToken(): string | null {
 export function setToken(token: string | null): void {
   if (token) localStorage.setItem(TOKEN_KEY, token)
   else localStorage.removeItem(TOKEN_KEY)
+}
+
+export function redirectToLogin(): void {
+  setToken(null)
+  if (loginRedirectInFlight) return
+  loginRedirectInFlight = true
+  if (window.location.pathname === '/login') return
+  window.location.replace('/login')
 }
 
 /** Lançado quando a API responde 401. Sinaliza que o token expirou ou é inválido. */

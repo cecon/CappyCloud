@@ -1,6 +1,6 @@
-import { lazy, Suspense, type ReactNode, useEffect } from 'react'
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import { getToken, setToken } from './api'
+import { lazy, Suspense, type ReactNode } from 'react'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { getToken } from './api'
 import { AppLayout } from './components/AppLayout'
 import { AdminOverlayRouter } from './components/admin/AdminOverlayRouter'
 import { RequireAdmin } from './components/RequireAdmin'
@@ -51,12 +51,6 @@ function ProtectedPage({ children }: { children: ReactNode }) {
   const location = useLocation()
   const state = useCurrentUser()
 
-  useEffect(() => {
-    if (state.status === 'error') {
-      setToken(null)
-    }
-  }, [state.status])
-
   if (state.status === 'loading') {
     return <PageLoader />
   }
@@ -101,6 +95,7 @@ function SuperAdminPage({ children }: { children: ReactNode }) {
 
 export default function App() {
   const token = getToken()
+  const navigate = useNavigate()
 
   return (
     <Suspense fallback={<PageLoader />}>
@@ -155,7 +150,7 @@ export default function App() {
             token ? (
               <Navigate to="/" replace />
             ) : (
-              <LoginPage onLoggedIn={() => (window.location.href = '/')} />
+              <LoginPage onLoggedIn={() => navigate('/', { replace: true })} />
             )
           }
         />

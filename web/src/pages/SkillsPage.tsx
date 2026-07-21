@@ -10,7 +10,7 @@ import {
   fetchSkills,
   fetchWorkspaces,
   getToken,
-  setToken,
+  redirectToLogin,
   updateSkill,
   type Skill,
   type SkillCreate,
@@ -70,8 +70,7 @@ export function SkillsPage() {
       }))
     } catch (err) {
       if (err instanceof AuthError) {
-        setToken(null)
-        window.location.href = '/login'
+        redirectToLogin()
         return
       }
       setError(err instanceof Error ? err.message : 'Erro ao carregar skills')

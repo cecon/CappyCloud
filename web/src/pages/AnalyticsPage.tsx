@@ -6,7 +6,7 @@ import {
   fetchAiModels,
   fetchConversations,
   getToken,
-  setToken,
+  redirectToLogin,
   type AgentTask,
   type AiModel,
   type Conversation,
@@ -49,8 +49,7 @@ export function AnalyticsPage() {
         if (!cancelled) setData({ tasks, conversations, models })
       } catch (err) {
         if (err instanceof AuthError) {
-          setToken(null)
-          window.location.href = '/login'
+          redirectToLogin()
           return
         }
         if (!cancelled) {
