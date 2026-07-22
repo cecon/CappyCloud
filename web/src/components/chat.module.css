@@ -5135,6 +5135,16 @@
   cursor: pointer;
 }
 
+.quickCardButton:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.quickCardButton:disabled .quickCard:hover {
+  background: color-mix(in srgb, var(--card) 82%, transparent);
+  border-color: var(--border);
+}
+
 .quickCard {
   min-height: 88px;
   padding: 16px 18px;

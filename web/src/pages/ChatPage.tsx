@@ -22,6 +22,7 @@ import {
   fetchConversationUsage,
   fetchMessages,
   executeSlashCommand,
+  fetchProjectSuggestions,
   fetchSandboxes,
   fetchUserPreferences,
   fetchWorkspaces,
@@ -44,6 +45,7 @@ import {
   type DoneEvent,
   type PayloadSizeBreakdown,
   type PermissionMode,
+  type ProjectSuggestionCard,
   type Sandbox,
   type SlashCommand,
   type StatusEvent,
@@ -2180,7 +2182,13 @@ function EmptyState({
 }: EmptyStateProps) {
   const [branches, setBranches] = useState<string[]>([])
   const [loadedSlug, setLoadedSlug] = useState('')
+  const [suggestions, setSuggestions] = useState<ProjectSuggestionCard[]>([])
+  const [suggestionsSlug, setSuggestionsSlug] = useState('')
   const branchesLoading = !!selectedSlug && loadedSlug !== selectedSlug
+  const selectedWorkspace = useMemo(
+    () => selectableWorkspaces.find((workspace) => workspace.slug === selectedSlug) ?? null,
+    [selectableWorkspaces, selectedSlug],
+  )
 
   // auto-clone trata o caso de repo não clonado
   const hasSendableAttachment = trayItems.some(isSendableTrayItem)
@@ -2206,6 +2214,25 @@ function EmptyState({
     return () => { cancelled = true }
   }, [selectedSlug, token, setSelectedBranch])
 
+  useEffect(() => {
+    if (!selectedSlug) {
+      return
+    }
+    let cancelled = false
+    fetchProjectSuggestions(token, selectedSlug, 4)
+      .then((result) => {
+        if (cancelled) return
+        setSuggestions(result.cards)
+        setSuggestionsSlug(selectedSlug)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setSuggestions([])
+        setSuggestionsSlug(selectedSlug)
+      })
+    return () => { cancelled = true }
+  }, [selectedSlug, token])
+
   function handleKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey && !streaming) {
       e.preventDefault()
@@ -2215,6 +2242,11 @@ function EmptyState({
 
   const repoRequired = selectableWorkspaces.length > 0 && !selectedSlug
   const branchRequired = !!selectedSlug && !selectedBranch
+  const quickActions = buildProjectQuickActions({
+    repoName: selectedWorkspace?.name || selectedSlug || 'seu projeto',
+    suggestions: selectedSlug && suggestionsSlug === selectedSlug ? suggestions : [],
+    hasSelection: !!selectedSlug,
+  })
 
   return (
     <div className={styles.emptyState}>
@@ -2224,43 +2256,29 @@ function EmptyState({
           <div className={styles.mascotGlow} />
         </div>
         <div className={styles.welcomeCopy}>
-          <h1 className={styles.welcomeTitle}>O que você quer descobrir hoje? </h1>
+          <h1 className={styles.welcomeTitle}>
+            O que devemos criar em {selectedWorkspace?.name || 'CappyCloud'}?
+          </h1>
           <p className={styles.welcomeText}>
-            Pergunte em português. O agente lê o <strong>repositório selecionado</strong> na sua cópia isolada
-            e responde com passos, consultas e evidências.
+            {selectedSlug
+              ? 'Sugestões ajustadas ao projeto selecionado e recalibradas conforme o uso.'
+              : 'Escolha um projeto para receber sugestões específicas antes de começar.'}
           </p>
         </div>
       </section>
 
       <div className={styles.quickActions}>
-        <QuickActionCard
-          icon="search"
-          iconColor="var(--cc-primary)"
-          title="Consultar dados"
-          desc="Me mostra o faturamento de ontem por forma de pagamento"
-          onPick={setInput}
-        />
-        <QuickActionCard
-          icon="bug_report"
-          iconColor="var(--cc-error)"
-          title="Investigar um bug"
-          desc="O desconto não está batendo no cupom fiscal, por quê?? "
-          onPick={setInput}
-        />
-        <QuickActionCard
-          icon="library_books"
-          iconColor="var(--cc-secondary)"
-          title="Entender uma rotina"
-          desc="Como funciona o fechamento de caixa no fim do dia?? "
-          onPick={setInput}
-        />
-        <QuickActionCard
-          icon="support_agent"
-          iconColor="var(--muted-foreground)"
-          title="Ajudar no suporte"
-          desc="Cliente diz que a comanda sumiu, o que verifico?? "
-          onPick={setInput}
-        />
+        {quickActions.map((action) => (
+          <QuickActionCard
+            key={action.key}
+            icon={action.icon}
+            iconColor={action.iconColor}
+            title={action.title}
+            desc={action.desc}
+            disabled={action.disabled}
+            onPick={action.disabled ? undefined : setInput}
+          />
+        ))}
       </div>
 
       <div
@@ -2496,9 +2514,85 @@ function EmptyState({
   )
 }
 
+type QuickAction = {
+  key: string
+  icon: string
+  iconColor: string
+  title: string
+  desc: string
+  disabled?: boolean
+}
+
+function buildProjectQuickActions({
+  repoName,
+  suggestions,
+  hasSelection,
+}: {
+  repoName: string
+  suggestions: ProjectSuggestionCard[]
+  hasSelection: boolean
+}): QuickAction[] {
+  if (suggestions.length > 0) {
+    return suggestions.slice(0, 4).map((suggestion) => ({
+      key: suggestion.id,
+      icon: iconForSuggestion(suggestion.category),
+      iconColor: colorForSuggestion(suggestion.category),
+      title: suggestion.title,
+      desc: suggestion.prompt,
+    }))
+  }
+  const subject = hasSelection ? repoName : 'o projeto escolhido'
+  return [
+    {
+      key: 'fallback-explore',
+      icon: 'travel_explore',
+      iconColor: 'var(--cc-primary)',
+      title: 'Explore e entenda',
+      desc: `Analise ${subject} e explique arquitetura, fluxos principais e pontos de atenção.`,
+    },
+    {
+      key: 'fallback-build',
+      icon: 'construction',
+      iconColor: 'var(--cc-secondary)',
+      title: 'Crie algo útil',
+      desc: `Sugira uma melhoria pequena para ${subject} e implemente com testes focados.`,
+    },
+    {
+      key: 'fallback-review',
+      icon: 'published_with_changes',
+      iconColor: 'var(--cc-success)',
+      title: 'Revise o código',
+      desc: `Revise ${subject} procurando bugs, riscos e mudanças importantes.`,
+    },
+    {
+      key: 'fallback-fix',
+      icon: 'bug_report',
+      iconColor: 'var(--cc-error)',
+      title: 'Corrija problemas',
+      desc: `Investigue os problemas mais prováveis em ${subject} e proponha validações.`,
+    },
+  ]
+}
+
+function iconForSuggestion(category: string): string {
+  if (category === 'build') return 'construction'
+  if (category === 'review') return 'published_with_changes'
+  if (category === 'fix') return 'bug_report'
+  if (category === 'support') return 'support_agent'
+  return 'travel_explore'
+}
+
+function colorForSuggestion(category: string): string {
+  if (category === 'build') return 'var(--cc-secondary)'
+  if (category === 'review') return 'var(--cc-success)'
+  if (category === 'fix') return 'var(--cc-error)'
+  if (category === 'support') return 'var(--muted-foreground)'
+  return 'var(--cc-primary)'
+}
+
 /** Renderiza um atalho contextual da tela inicial do agente. */
-function QuickActionCard({ icon, iconColor, title, desc, href, onPick }: {
-  icon: string; iconColor: string; title: string; desc: string; href?: string; onPick?: (value: string) => void
+function QuickActionCard({ icon, iconColor, title, desc, href, onPick, disabled = false }: {
+  icon: string; iconColor: string; title: string; desc: string; href?: string; onPick?: (value: string) => void; disabled?: boolean
 }) {
   const content = (
     <div className={styles.quickCard}>
@@ -2512,7 +2606,12 @@ function QuickActionCard({ icon, iconColor, title, desc, href, onPick }: {
 
   if (onPick) {
     return (
-      <button type="button" className={styles.quickCardButton} onClick={() => onPick(desc)}>
+      <button
+        type="button"
+        className={styles.quickCardButton}
+        disabled={disabled}
+        onClick={() => onPick(desc)}
+      >
         {content}
       </button>
     )
