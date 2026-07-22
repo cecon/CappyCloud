@@ -33,6 +33,7 @@ from app.adapters.primary.http import documents as documents_router
 from app.adapters.primary.http import environments as env_router
 from app.adapters.primary.http import git_providers as git_providers_router
 from app.adapters.primary.http import mcp_oauth as mcp_oauth_router
+from app.adapters.primary.http import project_suggestions as project_suggestions_router
 from app.adapters.primary.http import repositories_admin as repos_admin_router
 from app.adapters.primary.http import repository_mcp as repository_mcp_router
 from app.adapters.primary.http import routines as routines_router
@@ -47,6 +48,7 @@ from app.adapters.primary.http import webhooks as webhooks_router
 from app.adapters.primary.http import workspaces as workspaces_router
 from app.infrastructure.config import cors_origins_list, get_settings
 from app.infrastructure.database import init_db
+from app.infrastructure.project_suggestion_scheduler import register_project_suggestion_jobs
 
 logging.basicConfig(
     level=logging.INFO,
@@ -80,6 +82,7 @@ async def lifespan(app: FastAPI):
     scheduler = AsyncIOScheduler()
     watchdog = SandboxWatchdog(async_session_factory)
     scheduler.add_job(watchdog.run_once, "interval", seconds=10, id="sandbox_watchdog")
+    register_project_suggestion_jobs(scheduler, async_session_factory)
     scheduler.add_job(
         prune_mcp_invocations,
         "interval",
@@ -209,6 +212,7 @@ app.include_router(user_preferences_router.router, prefix="/api")
 app.include_router(user_workspaces_router.router, prefix="/api")
 app.include_router(user_mcp_servers_router.router, prefix="/api")
 app.include_router(repository_mcp_router.router, prefix="/api")
+app.include_router(project_suggestions_router.router, prefix="/api")
 app.include_router(documents_router.router, prefix="/api")
 app.include_router(document_graph_router.router, prefix="/api")
 app.include_router(skills_router.router, prefix="/api")

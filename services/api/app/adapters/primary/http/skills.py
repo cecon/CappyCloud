@@ -14,8 +14,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.primary.http._project_suggestion_events import (
+    schedule_project_suggestion_refresh,
+)
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
 from app.domain.entities import User
+from app.domain.project_suggestions import CalibrationTrigger
 from app.infrastructure.embeddings import embed_text
 from app.infrastructure.orm_models import Skill
 from app.infrastructure.skill_importer import ImporterError, import_url
@@ -132,6 +136,11 @@ async def create_skill(
     session.add(skill)
     await session.commit()
     await session.refresh(skill)
+    await schedule_project_suggestion_refresh(
+        session,
+        skill.repository_id,
+        CalibrationTrigger.SKILL_CHANGED,
+    )
     return _to_out(skill)
 
 
@@ -152,6 +161,11 @@ async def update_skill(
         await _set_embedding(skill)
     await session.commit()
     await session.refresh(skill)
+    await schedule_project_suggestion_refresh(
+        session,
+        skill.repository_id,
+        CalibrationTrigger.SKILL_CHANGED,
+    )
     return _to_out(skill)
 
 
@@ -164,8 +178,14 @@ async def delete_skill(
     skill = await session.get(Skill, skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail="Skill não encontrada")
+    repository_id = skill.repository_id
     await session.delete(skill)
     await session.commit()
+    await schedule_project_suggestion_refresh(
+        session,
+        repository_id,
+        CalibrationTrigger.SKILL_CHANGED,
+    )
 
 
 @router.post("/import-url", response_model=SkillOut, status_code=201)
@@ -194,4 +214,9 @@ async def import_skill_from_url(
     session.add(skill)
     await session.commit()
     await session.refresh(skill)
+    await schedule_project_suggestion_refresh(
+        session,
+        skill.repository_id,
+        CalibrationTrigger.SKILL_CHANGED,
+    )
     return _to_out(skill)
