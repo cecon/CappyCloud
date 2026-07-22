@@ -185,6 +185,25 @@ services:
       retries: 5
       start_period: 30s
 
+  shepherd:
+    image: containrrr/shepherd:latest
+    environment:
+      SLEEP_TIME: ${SHEPHERD_SLEEP_TIME:-5m}
+      FILTER_SERVICES: name=cappycloud
+      IGNORELIST_SERVICES: cappycloud_postgres cappycloud_postgres-backup cappycloud_redis cappycloud_shepherd
+      WITH_REGISTRY_AUTH: "true"
+      ROLLBACK_ON_FAILURE: "true"
+      UPDATE_OPTIONS: --with-registry-auth
+      TZ: ${TZ:-America/Sao_Paulo}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: on-failure
+
   postgres-backup:
     image: postgres:16-alpine
     environment:
