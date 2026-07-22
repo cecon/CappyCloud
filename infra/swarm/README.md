@@ -38,6 +38,14 @@ webhooks separados por serviço, registre todos no secret multi-linha
 `PORTAINER_WEBHOOK_URLS`. Ao terminar o push das imagens, o workflow chama cada
 webhook configurado para o Portainer redeployar e puxar a imagem nova.
 
+O Swarm fixa o digest resolvido para uma tag como `latest`, entao um redeploy que
+mantem a mesma definicao de imagem pode nao trocar os containers quando o digest
+remoto muda. Para evitar dar acesso SSH da VM ao GitHub Actions, a stack inclui o
+servico `shepherd`, que roda dentro da VM, observa os servicos `cappycloud_*` e
+forca `docker service update --with-registry-auth` quando as imagens `latest`
+mudam. A ignorelist preserva `postgres`, `redis`, `postgres-backup` e o proprio
+`shepherd`; somente `api`, `web` e `sandbox` sao atualizados automaticamente.
+
 Se os packages GHCR estiverem privados, configure tambem a credencial do registry
 `ghcr.io` no Portainer com permissao de leitura desses packages. Como alternativa,
 deixe os packages publicos.
