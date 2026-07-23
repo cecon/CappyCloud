@@ -22,19 +22,19 @@ export type ChatNavigationMarker = {
   groupedCount?: number
 }
 
-export const CHAT_NAVIGATION_MIN_MARKERS = 4
+export const CHAT_NAVIGATION_MIN_MARKERS = 2
 const MAX_VISIBLE_MARKERS = 48
 const PREVIEW_LIMIT = 116
 const TITLE_LIMIT = 42
 
 const hiddenContentPatterns = [
   /\b(redigido|restrito|restricted|redacted|deleted|removido)\b/i,
-  /\b(failed upload|upload failed|falha no upload)\b/i,
 ]
 
 const resultPatterns = [
   /\b(editou|criou|alterou|arquivos?|files?|resultado|result|diff|pr #?\d+)\b/i,
   /\b(pnpm|npm|pytest|ruff|mypy|docker compose|build|lint)\b/i,
+  /\b(erro|error|failed|falhou|falha)\b/i,
 ]
 
 const decisionPatterns = [

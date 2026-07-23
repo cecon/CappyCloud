@@ -54,7 +54,7 @@
 - [x] T012 [US1] Render `ChatVerticalNavigation` beside the chat message viewport when derived markers meet the threshold in `web/src/pages/ChatPage.tsx`
 - [x] T013 [US1] Implement marker activation with `scrollIntoView` or equivalent viewport scrolling in `web/src/pages/ChatPage.tsx`
 - [x] T014 [US1] Implement active marker synchronization from manual scroll position in `web/src/pages/ChatPage.tsx`
-- [x] T015 [US1] Enforce the initial four-marker render threshold in `web/src/components/chat/chatNavigationMarkers.ts`
+- [x] T015 [US1] Enforce the initial two-marker render threshold in `web/src/components/chat/chatNavigationMarkers.ts`
 - [x] T016 [US1] Style normal, active, and selected marker states in `web/src/components/chat/ChatVerticalNavigation.module.css`
 - [x] T017 [US1] Validate the P1 manual scenarios from `specs/010-chat-vertical-navigation/quickstart.md`
 

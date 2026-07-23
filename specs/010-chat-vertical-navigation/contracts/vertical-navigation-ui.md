@@ -27,7 +27,7 @@ This contract defines the frontend behavior between the active chat page, marker
 
 ## Required Behaviors
 
-1. The rail renders only when the conversation has at least four meaningful markers and the viewport has comfortable desktop width.
+1. The rail renders only when the conversation has at least two meaningful markers and the viewport has comfortable desktop width.
 2. Each rendered marker is a keyboard-focusable control with an accessible name.
 3. Clicking a marker or pressing Enter/Space while focused scrolls the chat viewport to the target location.
 4. Manual chat scrolling updates the active marker to the most relevant visible milestone.
@@ -66,6 +66,6 @@ This contract defines the frontend behavior between the active chat page, marker
 
 ## Responsive Baseline
 
-- Initial marker threshold: four meaningful markers.
+- Initial marker threshold: two meaningful markers.
 - Initial desktop breakpoint: `1024px`, unless implementation discovers an existing chat breakpoint that should be reused for consistency.
 - Narrow viewport behavior: hide the rail completely instead of showing a drawer, overlay, or collapsed control.
