@@ -1,0 +1,145 @@
+.rail {
+  position: absolute;
+  top: 5rem;
+  bottom: 7.5rem;
+  left: 1.25rem;
+  z-index: 2;
+  width: 3rem;
+  pointer-events: none;
+}
+
+.track {
+  position: absolute;
+  top: 0.25rem;
+  bottom: 0.25rem;
+  left: 1.45rem;
+  width: 1px;
+  background: color-mix(in srgb, var(--border) 75%, transparent);
+}
+
+.markers {
+  position: relative;
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.18rem;
+}
+
+.marker {
+  position: relative;
+  display: grid;
+  width: 2rem;
+  height: 0.72rem;
+  flex: 0 1 auto;
+  min-height: 0.42rem;
+  place-items: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.markerDot {
+  display: block;
+  width: 0.42rem;
+  height: 1px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted-foreground) 55%, transparent);
+  transition: width 0.16s ease, height 0.16s ease, background 0.16s ease;
+}
+
+.marker:hover .markerDot,
+.marker:focus-visible .markerDot {
+  width: 1.2rem;
+  height: 2px;
+  background: var(--foreground);
+}
+
+.marker:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.markerActive .markerDot {
+  width: 1.65rem;
+  height: 2px;
+  background: var(--foreground);
+}
+
+.user_request .markerDot {
+  background: color-mix(in srgb, var(--success) 70%, var(--muted-foreground));
+}
+
+.assistant_final .markerDot {
+  background: color-mix(in srgb, var(--primary) 70%, var(--muted-foreground));
+}
+
+.result_block .markerDot {
+  background: color-mix(in srgb, var(--warning) 70%, var(--muted-foreground));
+}
+
+.decision .markerDot {
+  background: color-mix(in srgb, var(--destructive) 62%, var(--muted-foreground));
+}
+
+.markerGrouped .markerDot {
+  width: 0.8rem;
+}
+
+.preview {
+  position: absolute;
+  top: 50%;
+  left: 3.1rem;
+  display: grid;
+  width: min(18rem, 32vw);
+  gap: 0.16rem;
+  transform: translateY(-50%);
+  padding: 0.7rem 0.78rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--popover) 96%, transparent);
+  color: var(--popover-foreground);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+  pointer-events: none;
+}
+
+.previewActor {
+  color: var(--muted-foreground);
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.previewTitle {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.previewText {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+@media (max-width: 1023px) {
+  .rail {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markerDot {
+    transition: none;
+  }
+}
