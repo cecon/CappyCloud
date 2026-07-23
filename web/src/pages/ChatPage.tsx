@@ -57,8 +57,10 @@ import { ModelPicker } from '../components/ModelPicker'
 import { ThinkingIndicator } from '../components/ThinkingIndicator'
 import { ThinkingStream, type ThoughtStep } from '../components/ThinkingStream'
 import { CommandConfirmation } from '../components/chat/CommandConfirmation'
+import { ChatVerticalNavigation } from '../components/chat/ChatVerticalNavigation'
 import { SlashCommandMenu } from '../components/chat/SlashCommandMenu'
 import { slashCommandQuery, shouldOpenSlashCommands } from '../components/chat/SlashCommandMenu.utils'
+import { deriveChatNavigationMarkers, type ChatNavigationMarker } from '../components/chat/chatNavigationMarkers'
 import { CappyIcon } from '../components/layout/icons'
 import { roleFromUser, visibleNavigationItems, type NavigationItem } from '../components/layout/navigation'
 import {
@@ -2693,9 +2695,12 @@ function ActiveChat({
   trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
 }: ActiveChatProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const messageTargetRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const activeMarkerFrameRef = useRef<number | null>(null)
   const shouldStickToBottomRef = useRef(true)
   const [elapsedSecs, setElapsedSecs] = useState(0)
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
+  const [activeMarkerId, setActiveMarkerId] = useState<string | null>(null)
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([])
   const [slashOpen, setSlashOpen] = useState(false)
   const [slashQuery, setSlashQuery] = useState('')
@@ -2716,6 +2721,62 @@ function ActiveChat({
     shouldStickToBottomRef.current = isNearBottom
     if (isNearBottom) setShowJumpToLatest(false)
     return isNearBottom
+  }, [])
+
+  const navigationMarkers = useMemo(() => deriveChatNavigationMarkers(messages), [messages])
+  const resolvedActiveMarkerId = (
+    activeMarkerId && navigationMarkers.some((marker) => marker.id === activeMarkerId)
+      ? activeMarkerId
+      : navigationMarkers[navigationMarkers.length - 1]?.id ?? null
+  )
+
+  const updateActiveMarker = useCallback(() => {
+    if (activeMarkerFrameRef.current !== null) return
+    activeMarkerFrameRef.current = requestAnimationFrame(() => {
+      activeMarkerFrameRef.current = null
+      const viewport = scrollRef.current
+      if (!viewport || navigationMarkers.length === 0) {
+        setActiveMarkerId(null)
+        return
+      }
+      const viewportTop = viewport.getBoundingClientRect().top
+      const anchorLine = viewportTop + Math.min(180, viewport.clientHeight * 0.32)
+      let bestMarker = navigationMarkers[0]
+      let bestDistance = Number.POSITIVE_INFINITY
+      for (const marker of navigationMarkers) {
+        const node = messageTargetRefs.current[marker.targetId]
+        if (!node) continue
+        const distance = Math.abs(node.getBoundingClientRect().top - anchorLine)
+        if (distance < bestDistance) {
+          bestDistance = distance
+          bestMarker = marker
+        }
+      }
+      setActiveMarkerId(bestMarker.id)
+    })
+  }, [navigationMarkers])
+
+  const handleScrollPositionChange = useCallback(() => {
+    updateStickyScroll()
+    updateActiveMarker()
+  }, [updateActiveMarker, updateStickyScroll])
+
+  const setMessageTargetRef = useCallback((targetId: string) => (node: HTMLDivElement | null) => {
+    if (node) {
+      messageTargetRefs.current[targetId] = node
+    } else {
+      delete messageTargetRefs.current[targetId]
+    }
+  }, [])
+
+  const activateNavigationMarker = useCallback((marker: ChatNavigationMarker) => {
+    const node = messageTargetRefs.current[marker.targetId]
+    if (!node) return
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    shouldStickToBottomRef.current = false
+    setShowJumpToLatest(true)
+    setActiveMarkerId(marker.id)
+    node.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
   }, [])
 
   /** Volta para as mensagens novas e reativa o acompanhamento do streaming. */
@@ -2815,6 +2876,10 @@ function ActiveChat({
     shouldStickToBottomRef.current = true
     requestAnimationFrame(() => scrollToLatest())
   }, [conversationId, scrollToLatest])
+
+  useEffect(() => () => {
+    if (activeMarkerFrameRef.current !== null) cancelAnimationFrame(activeMarkerFrameRef.current)
+  }, [])
 
   useEffect(() => {
     if (shouldStickToBottomRef.current) {
@@ -2960,11 +3025,16 @@ function ActiveChat({
       <div className={styles.chatBody}>
         {/* Messages column */}
         <div className={styles.chatMessages}>
+          <ChatVerticalNavigation
+            markers={navigationMarkers}
+            activeMarkerId={resolvedActiveMarkerId}
+            onMarkerActivate={activateNavigationMarker}
+          />
           <ScrollArea
             className={styles.messageArea}
             viewportRef={scrollRef}
             type="auto"
-            onScrollPositionChange={updateStickyScroll}
+            onScrollPositionChange={handleScrollPositionChange}
           >
             <div className={styles.chatScrollInner}>
               <div className={styles.chatThread}>
@@ -3005,16 +3075,22 @@ function ActiveChat({
                       />
                     </AgentBubble>
                   )}
-                  <PaperMessage
-                    key={m.id}
-                    role={m.role}
-                    content={m.content}
-                    modelUsed={m.model_used ?? null}
-                    promptTokens={m.prompt_tokens ?? 0}
-                    completionTokens={m.completion_tokens ?? 0}
-                    costUsd={m.cost_usd ?? 0}
-                    payloadDiagnostics={m.payload_diagnostics ?? null}
-                  />
+                  <div
+                    ref={setMessageTargetRef(`message-${m.id}`)}
+                    className={styles.messageAnchor}
+                    data-chat-marker-target={`message-${m.id}`}
+                  >
+                    <PaperMessage
+                      key={m.id}
+                      role={m.role}
+                      content={m.content}
+                      modelUsed={m.model_used ?? null}
+                      promptTokens={m.prompt_tokens ?? 0}
+                      completionTokens={m.completion_tokens ?? 0}
+                      costUsd={m.cost_usd ?? 0}
+                      payloadDiagnostics={m.payload_diagnostics ?? null}
+                    />
+                  </div>
                   {activityTraceFor(m)?.steps.length ? (
                     <AgentBubble compact>
                       <ThinkingStream

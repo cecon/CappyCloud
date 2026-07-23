@@ -3444,6 +3444,10 @@
   overflow: hidden;
 }
 
+.messageAnchor {
+  scroll-margin-block-start: 5rem;
+}
+
 .jumpToLatestBtn {
   position: absolute;
   left: 50%;
