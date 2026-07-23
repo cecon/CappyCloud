@@ -11,7 +11,7 @@
 1. Add marker derivation and compaction helpers under `web/src/components/chat/`.
 2. Add `ChatVerticalNavigation` and its CSS module under `web/src/components/chat/`.
 3. Wire the rail into `ActiveChat` in `web/src/pages/ChatPage.tsx` using stable target refs for milestone locations.
-4. Keep the rail hidden for conversations with fewer than four meaningful markers and for viewports below the selected desktop breakpoint.
+4. Keep the rail hidden for conversations with fewer than two meaningful markers and for viewports below the selected desktop breakpoint.
 5. Ensure marker buttons support hover, focus, Enter, and Space.
 6. Verify preview text is derived only from content already visible in the chat, excluding deleted, failed, redacted, or restricted details.
 
@@ -28,7 +28,7 @@ If the Docker web service is used for review, rebuild and start it with the repo
 
 ## Manual Test Scenarios
 
-1. Open a short conversation with fewer than four meaningful milestones. The rail should not render.
+1. Open a short conversation with fewer than two meaningful milestones. The rail should not render.
 2. Open or seed a long conversation with at least 20 meaningful milestones. On desktop width, the rail should be visible.
 3. Click a marker near the top while currently viewing the newest response. The intended turn should become visible in under 5 seconds.
 4. Scroll manually through the chat. The active marker should update as different milestones become primary in view.

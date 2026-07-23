@@ -26,7 +26,7 @@ Implement a compact desktop-only vertical navigation rail for long chat conversa
 
 **Performance Goals**: Smooth scroll and active-marker updates for conversations with at least 60 meaningful milestones; avoid expensive full-message recomputation during scroll.
 
-**Constraints**: Preserve existing chat behavior when hidden or unavailable; show the rail only when at least four meaningful markers exist; hide the rail below the desktop breakpoint selected during implementation, initially planned at `1024px`; expose only content already visible to the current user; keep new code files within the 300 effective line repository limit.
+**Constraints**: Preserve existing chat behavior when hidden or unavailable; show the rail only when at least two meaningful markers exist; hide the rail below the desktop breakpoint selected during implementation, initially planned at `1024px`; expose only content already visible to the current user; keep new code files within the 300 effective line repository limit.
 
 **Scale/Scope**: One authenticated chat screen, with long conversations containing 20+ meaningful turns and very long conversations containing 60+ milestones.
 
