@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.use_cases.admin_ai_provider_auth import DeriveProviderAuthState
 from app.domain.entities import ModelTier
 from app.infrastructure.azure_foundry_models import is_azure_foundry_endpoint
 from app.infrastructure.orm_models import AiModel, AiProvider
@@ -62,6 +63,25 @@ class AdminProviderOut(BaseModel):
     active: bool
     last_synced_at: str | None = None
     models_count: int = 0
+    auth_state: str = "missing-key"
+    auth_label: str = "Chave pendente"
+    auth_next_action: str = "Cadastre a chave do provider para liberar execução no runtime."
+
+
+def admin_provider_out(provider: AiProvider, models_count: int) -> AdminProviderOut:
+    auth_state = DeriveProviderAuthState().execute(provider)
+    return AdminProviderOut(
+        id=provider.id,
+        name=provider.name,
+        base_url=provider.base_url,
+        api_format=provider.api_format,
+        active=provider.active,
+        last_synced_at=provider.last_synced_at.isoformat() if provider.last_synced_at else None,
+        models_count=models_count,
+        auth_state=auth_state.state,
+        auth_label=auth_state.label,
+        auth_next_action=auth_state.next_action,
+    )
 
 
 class AdminProviderCreate(BaseModel):

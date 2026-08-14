@@ -44,6 +44,13 @@ function formatTimestamp(iso: string | null): string {
   }
 }
 
+function authStateColor(state: AdminAiProvider['auth_state']): string {
+  if (state === 'configured') return 'green'
+  if (state === 'catalog-only') return 'blue'
+  if (state === 'inactive') return 'gray'
+  return 'yellow'
+}
+
 type ProviderFormState = {
   name: string
   base_url: string
@@ -261,6 +268,7 @@ export function AdminProvidersPage() {
                   <Table.Th style={{ width: 140 }}>Formato</Table.Th>
                   <Table.Th style={{ width: 90 }}>Modelos</Table.Th>
                   <Table.Th style={{ width: 90 }}>Estado</Table.Th>
+                  <Table.Th style={{ width: 190 }}>Autenticação</Table.Th>
                   <Table.Th style={{ width: 180 }}>Último sync</Table.Th>
                   <ActionsHeader width={112} />
                 </Table.Tr>
@@ -290,6 +298,16 @@ export function AdminProvidersPage() {
                       <Badge color={p.active ? 'green' : 'gray'} variant={p.active ? 'filled' : 'light'}>
                         {p.active ? 'ativo' : 'inativo'}
                       </Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Stack gap={2}>
+                        <Badge color={authStateColor(p.auth_state)} variant="light">
+                          {p.auth_label}
+                        </Badge>
+                        <Text size="xs" c="dimmed">
+                          {p.auth_next_action}
+                        </Text>
+                      </Stack>
                     </Table.Td>
                     <Table.Td>
                       <Text size="xs">{formatTimestamp(p.last_synced_at)}</Text>

@@ -2,9 +2,12 @@
 
 import pytest
 from app.domain.value_objects import (
+    DEFAULT_EXECUTION_PROFILE,
     DEFAULT_PERMISSION_MODE,
+    ExecutionProfile,
     PermissionMode,
     validate_email,
+    validate_execution_profile,
     validate_password,
     validate_permission_mode,
 )
@@ -71,3 +74,19 @@ class TestValidatePermissionMode:
     def test_rejects_unknown_permission_mode(self) -> None:
         with pytest.raises(ValueError, match="modo de permissão"):
             validate_permission_mode("dangerously_free")
+
+
+class TestValidateExecutionProfile:
+    def test_default_execution_profile_is_medium(self) -> None:
+        assert ExecutionProfile.MEDIUM.value == DEFAULT_EXECUTION_PROFILE
+
+    @pytest.mark.parametrize("profile", [profile.value for profile in ExecutionProfile])
+    def test_accepts_supported_execution_profiles(self, profile: str) -> None:
+        assert validate_execution_profile(profile) == profile
+
+    def test_omitted_execution_profile_uses_default(self) -> None:
+        assert validate_execution_profile(None) == ExecutionProfile.MEDIUM.value
+
+    def test_rejects_unknown_execution_profile(self) -> None:
+        with pytest.raises(ValueError, match="perfil de execucao"):
+            validate_execution_profile("turbo")

@@ -20,7 +20,13 @@ import remarkGfm from 'remark-gfm'
 import { ThinkingIndicator } from './ThinkingIndicator'
 import { ToolCallCard, type ToolCallState } from './ToolCallCard'
 import { ActionRequiredCard } from './ActionRequiredCard'
-import type { ChatMessage, ActionRequiredEvent } from '../api'
+import type {
+  ActionRequiredEvent,
+  ChatMessage,
+  ContextProgressEvent,
+  RuntimeStateEvent,
+  SubagentGroupEvent,
+} from '../api'
 import styles from './MessageTimeline.module.css'
 
 export type MessageRating = 'up' | 'down'
@@ -31,6 +37,9 @@ interface MessageTimelineProps {
   pendingTools: ToolCallState[]
   sessionProgress: SessionStageState[]
   pendingAction: ActionRequiredEvent | null
+  contextProgress?: ContextProgressEvent | null
+  subagentGroups?: SubagentGroupEvent[]
+  runtimeStates?: RuntimeStateEvent[]
   showThinking: boolean
   streaming: boolean
   ratings: Record<string, MessageRating>
@@ -52,6 +61,9 @@ export function MessageTimeline({
   pendingTools,
   sessionProgress,
   pendingAction,
+  contextProgress,
+  subagentGroups = [],
+  runtimeStates = [],
   showThinking,
   streaming,
   ratings,
@@ -96,6 +108,28 @@ export function MessageTimeline({
           )}
           {sessionProgress.length > 0 && (
             <SessionProgressInline stages={sessionProgress} />
+          )}
+          {(contextProgress || subagentGroups.length > 0 || runtimeStates.length > 0) && (
+            <div className={styles.activityList}>
+              {contextProgress && (
+                <div className={styles.activityNotice}>
+                  <strong>{contextProgress.label}</strong>
+                  {contextProgress.percent != null && <span>{contextProgress.percent}%</span>}
+                </div>
+              )}
+              {subagentGroups.map((group) => (
+                <div key={group.parent_turn_id ?? group.label} className={styles.activityNotice}>
+                  <strong>{group.label}</strong>
+                  <span>{group.activities.length} atividades</span>
+                </div>
+              ))}
+              {runtimeStates.map((state, index) => (
+                <div key={`${state.state}-${index}`} className={styles.activityNotice}>
+                  <strong>{state.label}</strong>
+                  {state.detail && <span>{state.detail}</span>}
+                </div>
+              ))}
+            </div>
           )}
           {showThinking && (
             <ThinkingIndicator />

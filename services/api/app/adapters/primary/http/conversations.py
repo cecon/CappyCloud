@@ -277,6 +277,7 @@ async def stream_message(
             override_model=body.model_id,
             attachment_ids=body.attachment_ids,
             permission_mode=body.permission_mode,
+            execution_profile=body.execution_profile,
             action_reply=body.action_reply,
         )
     except LookupError as exc:

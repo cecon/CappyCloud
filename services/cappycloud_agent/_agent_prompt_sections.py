@@ -31,6 +31,8 @@ def render_repo_skills(skills: list[dict]) -> str:
         "Use título e descrição como contexto operacional antes de responder ou alterar código. "
         "Não use skills globais do sandbox como substitutas das skills do repositório."
     )
+
+
     for skill in skills:
         line = f"- **{skill['title']}**"
         if skill.get("summary"):
@@ -41,6 +43,33 @@ def render_repo_skills(skills: list[dict]) -> str:
         if skill.get("content"):
             lines.append(f"\n{skill['content']}")
     return "\n".join(lines)
+
+
+def render_execution_profile(profile: str) -> str:
+    normalized = profile if profile in {"fast", "medium", "deep"} else "medium"
+    if normalized == "fast":
+        return (
+            "## Perfil de execucao\n\n"
+            "Perfil selecionado: Rapido. Priorize resposta objetiva e alteracoes pequenas. "
+            "Use no maximo 2 buscas/listagens amplas (`Grep`, `Glob`, `find`, `git ls-files`) "
+            "antes de ler arquivos concretos. Se a evidencia ainda estiver incerta, entregue "
+            "diagnostico parcial e peca o dado que destrava em vez de continuar explorando."
+        )
+    if normalized == "deep":
+        return (
+            "## Perfil de execucao\n\n"
+            "Perfil selecionado: Profundo. Pode investigar mais quando o risco justificar, "
+            "mas agrupe buscas por hipotese e evite repetir variacoes equivalentes. Depois de "
+            "6 buscas/listagens amplas, pare para sintetizar o que ja foi encontrado antes de "
+            "abrir uma nova frente."
+        )
+    return (
+        "## Perfil de execucao\n\n"
+        "Perfil selecionado: Medio. Equilibre velocidade e confianca. Comece com no maximo "
+        "3 buscas/listagens amplas (`Grep`, `Glob`, `find`, `git ls-files`) por turno; depois "
+        "leia arquivos concretos ja encontrados e avance. So faca novas buscas amplas quando "
+        "a evidencia contradisser a hipotese ou quando o usuario pedir investigacao exaustiva."
+    )
 
 
 def render_repo_agents(agent_profiles: list[dict]) -> str:

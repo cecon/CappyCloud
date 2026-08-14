@@ -130,9 +130,7 @@ class GrpcSession:
         """Reply to the pending ActionRequired event and resume the stream."""
         pending = self.pending_action
         if not pending:
-            log.warning(
-                "[%s] send_input called but no pending action", self._session_id
-            )
+            log.warning("[%s] send_input called but no pending action", self._session_id)
             return
         self.pending_action = None
         await self._req_queue.put(
@@ -188,10 +186,10 @@ class GrpcSession:
                     "tool_result",
                     "command_start",
                     "command_result",
+                    "payload_diagnostic",
+                    "context_progress",
+                    "subagent_group",
                 ):
-                    out_q.put((event_type, data))
-
-                elif event_type == "payload_diagnostic":
                     out_q.put((event_type, data))
 
                 elif event_type == "action_required":
@@ -247,9 +245,7 @@ class GrpcSession:
                         return
 
                 elif event == "tool_start":
-                    await self._out_queue.put(
-                        handlers.tool_start_event(msg, self._session_id)
-                    )
+                    await self._out_queue.put(handlers.tool_start_event(msg, self._session_id))
 
                 elif event == "tool_result":
                     await self._out_queue.put(handlers.tool_result_event(msg))
@@ -267,6 +263,16 @@ class GrpcSession:
 
                 elif event == "payload_diagnostic":
                     out = handlers.payload_diagnostic_event(msg)
+                    if out:
+                        await self._out_queue.put(out)
+
+                elif event == "context_progress":
+                    out = handlers.context_progress_event(msg)
+                    if out:
+                        await self._out_queue.put(out)
+
+                elif event == "subagent_group":
+                    out = handlers.subagent_group_event(msg)
                     if out:
                         await self._out_queue.put(out)
 
@@ -291,16 +297,12 @@ class GrpcSession:
 
                 elif event == "error":
                     received_done = True
-                    await self._out_queue.put(
-                        handlers.error_event(msg, self._session_id)
-                    )
+                    await self._out_queue.put(handlers.error_event(msg, self._session_id))
                     return
 
             # gRPC stream closed without a done/error event (e.g. rate limit ou crash)
             if not received_done:
-                log.warning(
-                    "[%s] gRPC stream ended without done/error event", self._session_id
-                )
+                log.warning("[%s] gRPC stream ended without done/error event", self._session_id)
                 await self._out_queue.put(("error", GRPC_UNEXPECTED_END))
 
         except grpc.aio.AioRpcError as exc:

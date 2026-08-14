@@ -48,6 +48,10 @@ class GitProviderCreate(BaseModel):
     token: str = Field(default="", description="PAT em texto plano — será criptografado")
 
 
+class GitProviderTokenUpdate(BaseModel):
+    token: str = Field(min_length=1, max_length=4096)
+
+
 class GitProviderOut(BaseModel):
     id: uuid.UUID
     name: str

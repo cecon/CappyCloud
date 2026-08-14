@@ -8,33 +8,33 @@ handler devolve a tupla ``(event_type, payload)`` que vai directa para a
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
+from ._grpc_event_safety import (
+    SAFE_PAYLOAD_CATEGORY_LABELS,
+    safe_activity_state,
+    safe_category_key,
+    safe_command_name,
+    safe_fallback_reason,
+    safe_generated_at,
+    safe_identifier,
+    safe_int,
+    safe_model_id,
+    safe_optional_int,
+    safe_optional_percent,
+    safe_source,
+    safe_summary,
+    safe_user_text,
+)
 from ._grpc_helpers import (
     PendingAction,
     build_done_empty_error,
     parse_choices,
     permission_warning_status_from_text,
+    provider_api_error_message,
 )
-from ._grpc_helpers import provider_api_error_message
 
 log = logging.getLogger(__name__)
-
-SAFE_PAYLOAD_CATEGORY_LABELS = {
-    "user_message": "Mensagem do usuario",
-    "conversation_history": "Historico da conversa",
-    "repository_context": "Contexto do repositorio",
-    "attachments": "Anexos",
-    "tool_results": "Resultados de ferramentas",
-    "tool_schemas": "Ferramentas",
-    "mcp_tool_schemas": "Ferramentas MCP",
-    "runtime_context": "Contexto de runtime",
-    "other": "Outros",
-}
-
-_SAFE_DIAGNOSTIC_TEXT = re.compile(r"^[A-Za-z0-9_.:+-]{1,64}$")
-_SAFE_MODEL_ID = re.compile(r"^[A-Za-z0-9_.:/@+-]{1,256}$")
 
 
 def text_chunk_event(msg: Any) -> tuple[str, dict]:
@@ -78,8 +78,8 @@ def command_start_event(msg: Any) -> tuple[str, dict]:
     return (
         "command_start",
         {
-            "command": _safe_command_name(getattr(command, "command", "")),
-            "label": _safe_summary(getattr(command, "label", "Comando iniciado")),
+            "command": safe_command_name(getattr(command, "command", "")),
+            "label": safe_summary(getattr(command, "label", "Comando iniciado")),
         },
     )
 
@@ -87,15 +87,22 @@ def command_start_event(msg: Any) -> tuple[str, dict]:
 def command_result_event(msg: Any) -> tuple[str, dict]:
     result = getattr(msg, "command_result", None)
     status = str(getattr(result, "status", "") or "failed")
-    if status not in {"started", "waiting_for_input", "completed", "unavailable", "failed", "cancelled"}:
+    if status not in {
+        "started",
+        "waiting_for_input",
+        "completed",
+        "unavailable",
+        "failed",
+        "cancelled",
+    }:
         status = "failed"
     return (
         "command_result",
         {
-            "command": _safe_command_name(getattr(result, "command", "")),
+            "command": safe_command_name(getattr(result, "command", "")),
             "status": status,
-            "summary": _safe_summary(getattr(result, "summary", "")),
-            "details_markdown": _safe_summary(getattr(result, "details_markdown", "")),
+            "summary": safe_summary(getattr(result, "summary", "")),
+            "details_markdown": safe_summary(getattr(result, "details_markdown", "")),
         },
     )
 
@@ -107,8 +114,8 @@ def payload_diagnostic_event(msg: Any) -> tuple[str, dict] | None:
 
     categories: dict[str, dict[str, float | int | str]] = {}
     for category in getattr(diagnostic, "categories", []) or []:
-        key = _safe_category_key(getattr(category, "key", ""))
-        size_bytes = _safe_int(getattr(category, "size_bytes", 0))
+        key = safe_category_key(getattr(category, "key", ""))
+        size_bytes = safe_int(getattr(category, "size_bytes", 0))
         if size_bytes <= 0:
             continue
         current = categories.setdefault(
@@ -122,15 +129,13 @@ def payload_diagnostic_event(msg: Any) -> tuple[str, dict] | None:
         )
         current["size_bytes"] = int(current["size_bytes"]) + size_bytes
 
-    total_size_bytes = _safe_int(getattr(diagnostic, "total_size_bytes", 0))
+    total_size_bytes = safe_int(getattr(diagnostic, "total_size_bytes", 0))
     if not categories and total_size_bytes <= 0:
         return None
     if categories:
         total_size_bytes = sum(int(item["size_bytes"]) for item in categories.values())
 
-    ordered = sorted(
-        categories.values(), key=lambda item: int(item["size_bytes"]), reverse=True
-    )
+    ordered = sorted(categories.values(), key=lambda item: int(item["size_bytes"]), reverse=True)
     for item in ordered:
         item["percentage"] = (
             round((int(item["size_bytes"]) / total_size_bytes) * 1000) / 10
@@ -144,11 +149,55 @@ def payload_diagnostic_event(msg: Any) -> tuple[str, dict] | None:
             "diagnostics": {
                 "total_size_bytes": total_size_bytes,
                 "categories": ordered,
-                "source": _safe_source(getattr(diagnostic, "source", "")),
-                "generated_at": _safe_generated_at(
-                    getattr(diagnostic, "generated_at", "")
-                ),
+                "source": safe_source(getattr(diagnostic, "source", "")),
+                "generated_at": safe_generated_at(getattr(diagnostic, "generated_at", "")),
             }
+        },
+    )
+
+
+def context_progress_event(msg: Any) -> tuple[str, dict] | None:
+    progress = getattr(msg, "context_progress", None)
+    if progress is None:
+        return None
+    current_value = safe_optional_int(getattr(progress, "current_value", None))
+    limit_value = safe_optional_int(getattr(progress, "limit_value", None))
+    percent = safe_optional_percent(getattr(progress, "percent", None))
+    if percent is None and current_value is not None and limit_value:
+        percent = round((current_value / limit_value) * 1000) / 10
+    return (
+        "context_progress",
+        {
+            "label": safe_user_text(getattr(progress, "label", ""), "Processando contexto"),
+            "current_value": current_value,
+            "limit_value": limit_value,
+            "percent": percent,
+            "financial": False,
+        },
+    )
+
+
+def subagent_group_event(msg: Any) -> tuple[str, dict] | None:
+    group = getattr(msg, "subagent_group", None)
+    if group is None:
+        return None
+    activities = []
+    for activity in getattr(group, "activities", []) or []:
+        activities.append(
+            {
+                "id": safe_identifier(getattr(activity, "id", "")) or "subagent",
+                "name": safe_user_text(getattr(activity, "name", ""), "Subagente"),
+                "state": safe_activity_state(getattr(activity, "state", "")),
+                "detail": safe_user_text(getattr(activity, "detail", ""), ""),
+            }
+        )
+    return (
+        "subagent_group",
+        {
+            "parent_turn_id": safe_identifier(getattr(group, "parent_turn_id", "")),
+            "label": safe_user_text(getattr(group, "label", ""), "Atividade auxiliar"),
+            "collapsible": getattr(group, "collapsible", True) is not False,
+            "activities": activities,
         },
     )
 
@@ -179,17 +228,15 @@ def done_event(
         )
         return (
             "error",
-            build_done_empty_error(
-                model=model, session_id=session_id, working_directory=wd
-            ),
+            build_done_empty_error(model=model, session_id=session_id, working_directory=wd),
         )
-    final_model = _safe_model_id(
+    final_model = safe_model_id(
         getattr(done, "model_used", "")
         or getattr(done, "final_model", "")
         or getattr(done, "provider_model", "")
         or model
     )
-    fallback_reason = _safe_fallback_reason(
+    fallback_reason = safe_fallback_reason(
         getattr(done, "fallback_reason", "") or getattr(done, "fallback", "")
     )
     log.info(
@@ -213,9 +260,7 @@ def done_event(
     return ("done", payload)
 
 
-def final_text_fallback_event(
-    msg: Any, *, streamed_text: bool
-) -> tuple[str, dict] | None:
+def final_text_fallback_event(msg: Any, *, streamed_text: bool) -> tuple[str, dict] | None:
     """Converte ``done.full_text`` em texto quando não houve chunks no stream."""
     full_text = str(getattr(msg.done, "full_text", "") or "")
     if not full_text or streamed_text:
@@ -226,56 +271,3 @@ def final_text_fallback_event(
 def error_event(msg: Any, session_id: str) -> tuple[str, str]:
     log.error("[%s] Error [%s]: %s", session_id, msg.error.code, msg.error.message)
     return ("error", msg.error.message)
-
-
-def _safe_category_key(value: Any) -> str:
-    key = str(value or "").strip().lower()
-    if key in SAFE_PAYLOAD_CATEGORY_LABELS:
-        return key
-    return "other"
-
-
-def _safe_int(value: Any) -> int:
-    try:
-        return max(0, int(value))
-    except (TypeError, ValueError, OverflowError):
-        return 0
-
-
-def _safe_source(value: Any) -> str:
-    source = str(value or "openclaude").strip().lower()
-    if source in {"openclaude", "cappycloud", "agent"}:
-        return source
-    return "openclaude"
-
-
-def _safe_generated_at(value: Any) -> str:
-    generated_at = str(value or "").strip()
-    if _SAFE_DIAGNOSTIC_TEXT.fullmatch(generated_at):
-        return generated_at
-    return ""
-
-
-def _safe_model_id(value: Any) -> str:
-    model_id = str(value or "").strip()
-    if _SAFE_MODEL_ID.fullmatch(model_id):
-        return model_id
-    return ""
-
-
-def _safe_fallback_reason(value: Any) -> str:
-    reason = str(value or "").strip().lower().replace(" ", "_")
-    if _SAFE_DIAGNOSTIC_TEXT.fullmatch(reason):
-        return reason
-    return ""
-
-
-def _safe_command_name(value: Any) -> str:
-    command = str(value or "").strip()
-    if re.fullmatch(r"/[A-Za-z0-9_.:-]{1,80}", command):
-        return command
-    return ""
-
-
-def _safe_summary(value: Any) -> str:
-    return str(value or "").replace("\x00", "")[:4000]

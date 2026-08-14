@@ -61,7 +61,9 @@ Não pergunte só "o que você quer?" — apresente caminhos.
    reporta**: "o worktree não foi provisionado correctamente". **Não inventes
    que o repo não tem a feature.**
 
-2. Fazer **pelo menos 3 buscas** com termos diferentes (singular/plural,
+2. Fazer buscas amplas apenas para localizar candidatos. Por padrao, limite a
+   investigacao inicial a **3 buscas/listagens amplas** (`Grep`, `Glob`,
+   `find`, `git ls-files`) com termos realmente distintos (singular/plural,
    pt/en, sinônimos, abreviações). Ex.: para "venda com PIX no caixa":
    ```bash
    grep -ril 'pix' .
@@ -74,6 +76,10 @@ Não pergunte só "o que você quer?" — apresente caminhos.
    não tens a certeza da stack, **omite o `glob`** ou usa `**/*` para
    procurar em tudo. Confere a estrutura top-level e olha para extensões
    reais (`*.py`, `*.go`, `*.java`, `*.rb`, etc.) antes de filtrar.
+
+   Depois desse orcamento, leia os arquivos concretos encontrados e avance.
+   So abra novas buscas amplas quando a evidencia contradisser a hipotese ou
+   quando o utilizador pedir investigacao exaustiva.
 
 3. Inspeccionar pastas óbvias para o tema com `ls` antes de afirmar que
    não há nada (ex.: `caixa/`, `financeiro/`, `driver/tef/`).

@@ -77,11 +77,18 @@ def _run_with_fallback(
     subprocess.run(fallback, cwd=cwd, env=os.environ.copy(), check=True)
 
 
-def _frontend_lint_command() -> list[str]:
-    for executable in ("npm", "npm.cmd", "pnpm", "pnpm.cmd"):
+def _frontend_package_manager() -> tuple[str, str]:
+    preferred = (
+        ("pnpm", "pnpm.cmd") if (WEB_DIR / "pnpm-lock.yaml").exists() else ("npm", "npm.cmd")
+    )
+    fallbacks = tuple(
+        item for item in ("pnpm", "pnpm.cmd", "npm", "npm.cmd") if item not in preferred
+    )
+    for executable in preferred + fallbacks:
         resolved = shutil.which(executable)
         if resolved:
-            return [resolved, "run", "lint"]
+            name = "pnpm" if "pnpm" in executable else "npm"
+            return resolved, name
     raise SystemExit("Neither npm nor pnpm was found on PATH.")
 
 
@@ -105,15 +112,23 @@ def run_api_ci(dry_run: bool) -> None:
 
 
 def run_frontend_ci(dry_run: bool) -> None:
-    npm = _frontend_lint_command()[0]
-    _run_with_fallback(
-        "Frontend dependencies",
-        [npm, "ci", "--prefer-offline"],
-        [npm, "install"],
-        cwd=WEB_DIR,
-        dry_run=dry_run,
-    )
-    _run("Frontend ESLint", [npm, "run", "lint"], cwd=WEB_DIR, dry_run=dry_run)
+    manager, name = _frontend_package_manager()
+    if name == "pnpm":
+        _run(
+            "Frontend dependencies",
+            [manager, "install", "--frozen-lockfile"],
+            cwd=WEB_DIR,
+            dry_run=dry_run,
+        )
+    else:
+        _run_with_fallback(
+            "Frontend dependencies",
+            [manager, "ci", "--prefer-offline"],
+            [manager, "install"],
+            cwd=WEB_DIR,
+            dry_run=dry_run,
+        )
+    _run("Frontend ESLint", [manager, "run", "lint"], cwd=WEB_DIR, dry_run=dry_run)
 
 
 def parse_args() -> argparse.Namespace:
@@ -123,7 +138,9 @@ def parse_args() -> argparse.Namespace:
         default=os.environ.get("CAPPYCLOUD_CI_BASE_REF", "origin/main"),
         help="Base ref for pre-commit changed-file checks. Default: origin/main.",
     )
-    parser.add_argument("--dry-run", action="store_true", help="Print commands without running them.")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print commands without running them."
+    )
     parser.add_argument("--skip-pre-commit", action="store_true", help="Skip pre-commit gate.")
     parser.add_argument("--skip-api", action="store_true", help="Skip API CI gate.")
     parser.add_argument("--skip-frontend", action="store_true", help="Skip frontend CI gate.")

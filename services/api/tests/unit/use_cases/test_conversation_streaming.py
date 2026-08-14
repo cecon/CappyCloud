@@ -426,6 +426,50 @@ async def test_action_timeout_done_and_tool_stdout_events_pass_through(
     assert len([m for m in saved if m.role == "assistant"]) == 1
 
 
+async def test_context_and_subagent_events_pass_through_without_persistence_side_effects(
+    conv_repo: InMemoryConversationRepository,
+    msg_repo: InMemoryMessageRepository,
+    user_id: uuid.UUID,
+) -> None:
+    conv = await CreateConversation(conv_repo).execute(user_id, "Chat")
+    stream = await StreamMessage(
+        conv_repo,
+        msg_repo,
+        _EventAgent(
+            [
+                {
+                    "type": "context_progress",
+                    "label": "Contexto usado",
+                    "current_value": 10,
+                    "limit_value": 100,
+                    "percent": 10,
+                    "financial": False,
+                },
+                {
+                    "type": "subagent_group",
+                    "parent_turn_id": "turn_1",
+                    "label": "Auxiliares",
+                    "collapsible": True,
+                    "activities": [
+                        {"id": "agent_1", "name": "repo-a", "state": "done", "detail": "ok"}
+                    ],
+                },
+                {"type": "text", "content": "Resposta"},
+                {"type": "done"},
+            ]
+        ),
+    ).execute(conv.id, user_id, "Ola agente")
+
+    payloads = _json_payloads([c async for c in stream])
+    saved = await msg_repo.list_by_conversation(conv.id)
+
+    assert any(p["type"] == "context_progress" for p in payloads)
+    assert any(p["type"] == "subagent_group" for p in payloads)
+    assistants = [m for m in saved if m.role == "assistant"]
+    assert len(assistants) == 1
+    assert assistants[0].content == "Resposta"
+
+
 async def test_tool_start_arguments_remain_available_through_stream_done(
     conv_repo: InMemoryConversationRepository,
     msg_repo: InMemoryMessageRepository,

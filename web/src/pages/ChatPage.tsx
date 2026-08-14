@@ -27,6 +27,7 @@ import {
   fetchUserPreferences,
   fetchWorkspaces,
   DEFAULT_PERMISSION_MODE,
+  DEFAULT_EXECUTION_PROFILE,
   getToken,
   listSlashCommands,
   redirectToLogin,
@@ -41,18 +42,23 @@ import {
   type CommandStartEvent,
   type Conversation,
   type ConversationUsage,
+  type ContextProgressEvent,
   type CurrentUser,
   type DoneEvent,
+  type ExecutionProfile,
   type PayloadSizeBreakdown,
   type PermissionMode,
   type ProjectSuggestionCard,
+  type RuntimeStateEvent,
   type Sandbox,
   type SlashCommand,
   type StatusEvent,
+  type SubagentGroupEvent,
   type Workspace,
 } from '../api'
 import { ActionRequiredCard } from '../components/ActionRequiredCard'
 import { AttachmentTray, type TrayItem } from '../components/AttachmentTray'
+import { AgentActivityCard, type AgentActivityStatus } from '../components/chat/AgentActivityCard'
 import { ModelPicker } from '../components/ModelPicker'
 import { ThinkingIndicator } from '../components/ThinkingIndicator'
 import { ThinkingStream, type ThoughtStep } from '../components/ThinkingStream'
@@ -123,7 +129,17 @@ const STICKY_SCROLL_THRESHOLD_PX = 96
 const CHAT_PREFS_KEY = 'cappycloud.chat.preferences.v1'
 const CHAT_CONVERSATIONS_COLLAPSED_KEY = 'cappycloud.chat.conversationsCollapsed'
 const CONVERSATION_PAGE_SIZE = 6
+const HEAVY_TURN_TOOL_THRESHOLD = 40
+const HEAVY_TURN_PROMPT_TOKEN_THRESHOLD = 200_000
+const HEAVY_TURN_COST_THRESHOLD_USD = 1
 type ChatMainMode = 'chat' | 'sandboxes'
+
+type StreamToolStats = {
+  total: number
+  broadSearches: number
+}
+
+const EMPTY_STREAM_TOOL_STATS: StreamToolStats = { total: 0, broadSearches: 0 }
 
 type PermissionModeOption = {
   value: PermissionMode
@@ -175,19 +191,97 @@ const PERMISSION_MODE_VALUES = new Set<PermissionMode>(
   PERMISSION_MODE_OPTIONS.map((option) => option.value),
 )
 
+type ExecutionProfileOption = {
+  value: ExecutionProfile
+  label: string
+  icon: string
+  description: string
+  searchBudget: string
+}
+
+const EXECUTION_PROFILE_OPTIONS: ExecutionProfileOption[] = [
+  {
+    value: 'medium',
+    label: 'Medio',
+    icon: 'bolt',
+    description: 'Equilibra velocidade e confianca',
+    searchBudget: 'ate 3 buscas amplas',
+  },
+  {
+    value: 'fast',
+    label: 'Rapido',
+    icon: 'speed',
+    description: 'Responde com investigacao curta',
+    searchBudget: 'ate 2 buscas amplas',
+  },
+  {
+    value: 'deep',
+    label: 'Profundo',
+    icon: 'travel_explore',
+    description: 'Permite analise mais extensa',
+    searchBudget: 'ate 6 buscas amplas',
+  },
+]
+
 function normalizePermissionMode(value: unknown): PermissionMode {
   return typeof value === 'string' && PERMISSION_MODE_VALUES.has(value as PermissionMode)
     ? (value as PermissionMode)
     : DEFAULT_PERMISSION_MODE
 }
 
+function normalizeExecutionProfile(value: unknown): ExecutionProfile {
+  return value === 'fast' || value === 'deep' || value === 'medium'
+    ? value
+    : DEFAULT_EXECUTION_PROFILE
+}
+
 function permissionModeOption(mode: PermissionMode): PermissionModeOption {
   return PERMISSION_MODE_OPTIONS.find((option) => option.value === mode) ?? PERMISSION_MODE_OPTIONS[0]
+}
+
+function executionProfileOption(profile: ExecutionProfile): ExecutionProfileOption {
+  return EXECUTION_PROFILE_OPTIONS.find((option) => option.value === profile) ?? EXECUTION_PROFILE_OPTIONS[0]
 }
 
 function fallbackReasonLabel(reason?: string): string {
   const normalized = (reason || '').replace(/[_-]+/g, ' ').trim()
   return normalized || 'runtime model changed'
+}
+
+function incrementStreamToolStats(prev: StreamToolStats, toolName: string): StreamToolStats {
+  const normalized = toolName.trim().toLowerCase()
+  const broadSearches = normalized === 'grep' || normalized === 'glob' || normalized === 'find'
+    ? prev.broadSearches + 1
+    : prev.broadSearches
+  return { total: prev.total + 1, broadSearches }
+}
+
+function heavyUsageReason(
+  promptTokens?: number | null,
+  completionTokens?: number | null,
+  costUsd?: number | null,
+): string | null {
+  const prompt = promptTokens ?? 0
+  const completion = completionTokens ?? 0
+  const cost = costUsd ?? 0
+  if (prompt >= HEAVY_TURN_PROMPT_TOKEN_THRESHOLD) {
+    return `${prompt.toLocaleString('pt-BR')} tokens de entrada nesta resposta`
+  }
+  if (cost >= HEAVY_TURN_COST_THRESHOLD_USD) {
+    return `${formatCostUsd(cost)} nesta resposta`
+  }
+  if (prompt + completion >= HEAVY_TURN_PROMPT_TOKEN_THRESHOLD) {
+    return `${(prompt + completion).toLocaleString('pt-BR')} tokens totais nesta resposta`
+  }
+  return null
+}
+
+function heavyToolReason(stats: StreamToolStats): string | null {
+  if (stats.total < HEAVY_TURN_TOOL_THRESHOLD) return null
+  const searchDetail = stats.broadSearches > 0
+    ? `, ${stats.broadSearches} de busca/listagem ampla`
+    : ''
+  return `${stats.total} ferramentas chamadas nesta rodada${searchDetail}`
 }
 
 type RepoChatPreference = {
@@ -198,6 +292,7 @@ type RepoChatPreference = {
 type ChatPreferenceState = {
   lastRepoSlug?: string
   lastModelId?: string
+  executionProfile?: ExecutionProfile
   byRepo?: Record<string, RepoChatPreference>
 }
 
@@ -744,6 +839,7 @@ export function ChatPage() {
     useState<PermissionMode>(DEFAULT_PERMISSION_MODE)
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(DEFAULT_PERMISSION_MODE)
   const [permissionWarningRuntimeConfirmed, setPermissionWarningRuntimeConfirmed] = useState(false)
+  const [executionProfile, setExecutionProfileState] = useState<ExecutionProfile>(DEFAULT_EXECUTION_PROFILE)
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [sandboxes, setSandboxes] = useState<Sandbox[]>([])
@@ -777,6 +873,10 @@ export function ChatPage() {
   const [pendingAction, setPendingAction] = useState<ActionRequiredEvent | null>(null)
   const [sessionProgress, setSessionProgress] = useState<SessionStageState[]>([])
   const [sessionProgressAnchor, setSessionProgressAnchor] = useState<SessionProgressAnchor | null>(null)
+  const [contextProgress, setContextProgress] = useState<ContextProgressEvent | null>(null)
+  const [subagentGroups, setSubagentGroups] = useState<SubagentGroupEvent[]>([])
+  const [runtimeStates, setRuntimeStates] = useState<RuntimeStateEvent[]>([])
+  const [streamToolStats, setStreamToolStats] = useState<StreamToolStats>(EMPTY_STREAM_TOOL_STATS)
   const [activityTraces, setActivityTraces] = useState<Record<string, ActivityTrace>>({})
   const [conversationsCollapsed, setConversationsCollapsed] = useState(false)
 
@@ -802,6 +902,13 @@ export function ChatPage() {
     },
     [activeId, streaming, token],
   )
+
+  const setExecutionProfile = useCallback((profile: ExecutionProfile) => {
+    if (streaming) return
+    const next = normalizeExecutionProfile(profile)
+    setExecutionProfileState(next)
+    updateChatPrefs((prefs) => ({ ...prefs, executionProfile: next }))
+  }, [streaming])
 
   // Anexos pendentes de envio (uploads em curso, concluídos ou falhados).
   // Apenas itens `kind === 'uploaded'` viajam no payload do streamAssistantReply.
@@ -1065,6 +1172,7 @@ export function ChatPage() {
 
         const prefs = chatPrefsRef.current
         let preferredSlug = prefs.lastRepoSlug || ''
+        setExecutionProfileState(normalizeExecutionProfile(prefs.executionProfile))
 
         if (userPrefsResult.status === 'fulfilled') {
           const mode = normalizePermissionMode(userPrefsResult.value.default_permission_mode)
@@ -1326,6 +1434,9 @@ export function ChatPage() {
     setPendingAction(null)
     setSessionProgress([])
     setSessionProgressAnchor(null)
+    setContextProgress(null)
+    setSubagentGroups([])
+    setRuntimeStates([])
     setActivityTraces({})
     setInput('')
     setPermissionWarningRuntimeConfirmed(false)
@@ -1376,6 +1487,10 @@ export function ChatPage() {
     setStreamElapsedMs(0)
     setPendingAction(null)
     setSessionProgress(createSessionProgress('initializing'))
+    setContextProgress(null)
+    setSubagentGroups([])
+    setRuntimeStates([])
+    setStreamToolStats(EMPTY_STREAM_TOOL_STATS)
     setPermissionWarningRuntimeConfirmed(false)
 
     const ctrl = new AbortController()
@@ -1416,6 +1531,7 @@ export function ChatPage() {
           },
           onToolStart(tool) {
             setStreamActivityAt(Date.now())
+            setStreamToolStats((prev) => incrementStreamToolStats(prev, tool.name))
             setThoughtSteps((prev) => appendToolStartToThoughts(prev, tool))
             setActivityTraces((prev) =>
               updateActivityTrace(prev, userMsg, (steps) => appendToolStartToThoughts(steps, tool)),
@@ -1465,6 +1581,22 @@ export function ChatPage() {
             setStreamActivityAt(Date.now())
             latestPayloadDiagnostics = diagnostics
           },
+          onContextProgress(progress) {
+            setStreamActivityAt(Date.now())
+            setContextProgress(progress)
+          },
+          onSubagentGroup(group) {
+            setStreamActivityAt(Date.now())
+            setSubagentGroups((prev) => {
+              const key = group.parent_turn_id ?? group.label
+              const next = prev.filter((item) => (item.parent_turn_id ?? item.label) !== key)
+              return [...next, group]
+            })
+          },
+          onRuntimeState(state) {
+            setStreamActivityAt(Date.now())
+            setRuntimeStates((prev) => [...prev.slice(-3), state])
+          },
           onError(message) {
             setStreamActivityAt(Date.now())
             setThoughtSteps((prev) => finishPendingThoughtTools(prev, true))
@@ -1495,6 +1627,7 @@ export function ChatPage() {
         modelForRequest || null,
         uploadedAttachmentIds.length ? uploadedAttachmentIds : null,
         selectedPermissionMode,
+        executionProfile,
         null,
         false,
       )
@@ -1587,9 +1720,13 @@ export function ChatPage() {
     setStreamActivityAt(startedAt)
     setStreamElapsedMs(0)
     setPendingAction(null)
-    if (!isActionResume) {
-      setSessionProgress([])
-    }
+      if (!isActionResume) {
+        setSessionProgress([])
+        setContextProgress(null)
+        setSubagentGroups([])
+        setRuntimeStates([])
+        setStreamToolStats(EMPTY_STREAM_TOOL_STATS)
+      }
     setPermissionWarningRuntimeConfirmed(false)
 
     const ctrl = new AbortController()
@@ -1647,6 +1784,7 @@ export function ChatPage() {
           },
           onToolStart(tool) {
             setStreamActivityAt(Date.now())
+            setStreamToolStats((prev) => incrementStreamToolStats(prev, tool.name))
             setThoughtSteps((prev) => appendToolStartToThoughts(prev, tool))
             if (!isActionResume) {
               setActivityTraces((prev) =>
@@ -1704,6 +1842,22 @@ export function ChatPage() {
             setStreamActivityAt(Date.now())
             latestPayloadDiagnostics = diagnostics
           },
+          onContextProgress(progress) {
+            setStreamActivityAt(Date.now())
+            setContextProgress(progress)
+          },
+          onSubagentGroup(group) {
+            setStreamActivityAt(Date.now())
+            setSubagentGroups((prev) => {
+              const key = group.parent_turn_id ?? group.label
+              const next = prev.filter((item) => (item.parent_turn_id ?? item.label) !== key)
+              return [...next, group]
+            })
+          },
+          onRuntimeState(state) {
+            setStreamActivityAt(Date.now())
+            setRuntimeStates((prev) => [...prev.slice(-3), state])
+          },
           onError(message) {
             setStreamActivityAt(Date.now())
             setThoughtSteps((prev) => finishPendingThoughtTools(prev, true))
@@ -1738,6 +1892,7 @@ export function ChatPage() {
         modelForRequest || null,
         attachmentIds.length ? attachmentIds : null,
         selectedPermissionMode,
+        executionProfile,
         resumeCursor,
         isActionResume,
       )
@@ -2003,6 +2158,8 @@ export function ChatPage() {
             setSelectedBranch={setSelectedBranch}
             permissionMode={permissionMode}
             setPermissionMode={setPermissionMode}
+            executionProfile={executionProfile}
+            setExecutionProfile={setExecutionProfile}
             permissionWarningRuntimeConfirmed={permissionWarningRuntimeConfirmed}
             token={token}
             trayItems={trayItems}
@@ -2025,6 +2182,10 @@ export function ChatPage() {
               streamIdleMs={streamIdleMs}
               sessionProgress={sessionProgress}
               pendingAction={pendingAction}
+              contextProgress={contextProgress}
+              subagentGroups={subagentGroups}
+              runtimeStates={runtimeStates}
+              streamToolStats={streamToolStats}
               showThinking={showThinking}
               streaming={streaming}
               input={input}
@@ -2052,6 +2213,8 @@ export function ChatPage() {
               setSelectedModelId={setSelectedModelId}
               permissionMode={permissionMode}
               setPermissionMode={setPermissionMode}
+              executionProfile={executionProfile}
+              setExecutionProfile={setExecutionProfile}
               permissionWarningRuntimeConfirmed={permissionWarningRuntimeConfirmed}
               convUsage={convUsage}
               liveUsage={liveUsage}
@@ -2146,6 +2309,69 @@ function PermissionModeControl({
     </div>
   )
 }
+
+function ExecutionProfileControl({
+  value,
+  onChange,
+  disabled,
+  compact = false,
+}: {
+  value: ExecutionProfile
+  onChange: (profile: ExecutionProfile) => void
+  disabled: boolean
+  compact?: boolean
+}) {
+  const option = executionProfileOption(value)
+
+  return (
+    <div className={`${styles.permissionModeControl} ${compact ? styles.permissionModeControlCompact : ''}`}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild disabled={disabled}>
+          <button
+            type="button"
+            className={`${styles.permissionModePill} ${disabled ? styles.permissionModePillDisabled : ''}`}
+            title={disabled ? `${option.label} · bloqueado durante execucao` : 'Perfil de execucao'}
+            aria-label="Perfil de execucao"
+            disabled={disabled}
+          >
+            <span className={`${styles.icon} ${styles.permissionModeIcon}`}>{option.icon}</span>
+            <span className={styles.permissionModeLabel}>{option.label}</span>
+            <span className={`${styles.icon} ${styles.permissionModeChevron}`}>expand_more</span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align={compact ? 'start' : 'end'}
+          sideOffset={8}
+          className={styles.permissionModeMenu}
+        >
+          <DropdownMenuLabel className={styles.permissionModeMenuLabel}>
+            Perfil de execucao
+          </DropdownMenuLabel>
+          {EXECUTION_PROFILE_OPTIONS.map((profile) => {
+            const selected = profile.value === value
+            return (
+              <DropdownMenuItem
+                key={profile.value}
+                className={`${styles.permissionModeMenuItem} ${selected ? styles.permissionModeMenuItemSelected : ''}`}
+                onClick={() => onChange(profile.value)}
+              >
+                <span className={`${styles.icon} ${styles.permissionModeMenuIcon}`}>{profile.icon}</span>
+                <span className={styles.permissionModeMenuText}>
+                  <span className={styles.permissionModeMenuTitle}>
+                    {profile.label}
+                    <span className={styles.permissionModeMenuDescription}> · {profile.searchBudget}</span>
+                  </span>
+                  <span className={styles.permissionModeMenuDescription}>{profile.description}</span>
+                </span>
+              </DropdownMenuItem>
+            )
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+}
+
 interface EmptyStateProps {
   input: string
   setInput: (v: string) => void
@@ -2162,6 +2388,8 @@ interface EmptyStateProps {
   setSelectedBranch: Dispatch<SetStateAction<string>>
   permissionMode: PermissionMode
   setPermissionMode: (mode: PermissionMode) => void
+  executionProfile: ExecutionProfile
+  setExecutionProfile: (profile: ExecutionProfile) => void
   permissionWarningRuntimeConfirmed: boolean
   token: string
   trayItems: TrayItem[]
@@ -2179,7 +2407,7 @@ function EmptyState({
   selectedSlug, setSelectedSlug,
   selectedBranch, setSelectedBranch,
   token,
-  permissionMode, setPermissionMode, permissionWarningRuntimeConfirmed,
+  permissionMode, setPermissionMode, executionProfile, setExecutionProfile, permissionWarningRuntimeConfirmed,
   trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
 }: EmptyStateProps) {
   const [branches, setBranches] = useState<string[]>([])
@@ -2486,6 +2714,11 @@ function EmptyState({
                   disabled={streaming}
                   runtimeConfirmed={permissionWarningRuntimeConfirmed}
                 />
+                <ExecutionProfileControl
+                  value={executionProfile}
+                  onChange={setExecutionProfile}
+                  disabled={streaming}
+                />
               </div>
 
               <div className={styles.commandToolbarRight}>
@@ -2642,6 +2875,10 @@ interface ActiveChatProps {
   streamIdleMs: number
   sessionProgress: SessionStageState[]
   pendingAction: ActionRequiredEvent | null
+  contextProgress: ContextProgressEvent | null
+  subagentGroups: SubagentGroupEvent[]
+  runtimeStates: RuntimeStateEvent[]
+  streamToolStats: StreamToolStats
   showThinking: boolean
   streaming: boolean
   input: string
@@ -2669,6 +2906,8 @@ interface ActiveChatProps {
   setSelectedModelId: (id: string) => void
   permissionMode: PermissionMode
   setPermissionMode: (mode: PermissionMode) => void
+  executionProfile: ExecutionProfile
+  setExecutionProfile: (profile: ExecutionProfile) => void
   permissionWarningRuntimeConfirmed: boolean
   convUsage: ConversationUsage
   liveUsage: DoneEvent | null
@@ -2682,15 +2921,26 @@ interface ActiveChatProps {
   setDragOver: (v: boolean) => void
 }
 
+function groupStatus(group: SubagentGroupEvent): AgentActivityStatus {
+  const states = group.activities.map((activity) => activity.state)
+  if (states.some((state) => state === 'failed')) return 'failed'
+  if (states.some((state) => state === 'permission-timeout')) return 'permission-timeout'
+  if (states.some((state) => state === 'canceled')) return 'canceled'
+  if (states.some((state) => state === 'stalled')) return 'stalled'
+  if (states.length > 0 && states.every((state) => state === 'done')) return 'done'
+  return 'running'
+}
+
 function ActiveChat({
   messages, messagesLoading, messagesError, sessionProgressAnchor, thoughtSteps, activityTraces, streamElapsedMs, streamIdleMs, sessionProgress, pendingAction,
+  contextProgress, subagentGroups, runtimeStates, streamToolStats,
   showThinking, streaming, input, setInput, inputRef,
   onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch, activeSandboxName, sandboxAccessCount: _sandboxAccessCount,
   diffStats, prLoading, prUrl, prError, headBranch, onCreatePr,
   activeTitle: _activeTitle,
   token, conversationId,
   models, selectedModelId, setSelectedModelId,
-  permissionMode, setPermissionMode, permissionWarningRuntimeConfirmed,
+  permissionMode, setPermissionMode, executionProfile, setExecutionProfile, permissionWarningRuntimeConfirmed,
   convUsage, liveUsage,
   trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
 }: ActiveChatProps) {
@@ -2887,7 +3137,7 @@ function ActiveChat({
     } else {
       requestAnimationFrame(() => setShowJumpToLatest(true))
     }
-  }, [messages, thoughtSteps, sessionProgress, pendingAction, streaming, scrollToLatest])
+  }, [messages, thoughtSteps, sessionProgress, pendingAction, contextProgress, subagentGroups, runtimeStates, streaming, scrollToLatest])
 
   let sessionProgressBeforeIndex = -1
   if (sessionProgressAnchor) {
@@ -2926,6 +3176,7 @@ function ActiveChat({
     'Modelo'
   const activeBranchLabel = headBranch ?? activeBaseBranch ?? 'develop'
   const sandboxLabel = activeSandboxName ?? 'Sandbox'
+  const heavyStreamingReason = heavyToolReason(streamToolStats)
   const hasUsageMeta =
     convUsage.total_prompt_tokens > 0 ||
     convUsage.total_completion_tokens > 0 ||
@@ -3112,6 +3363,49 @@ function ActiveChat({
                   ) : null}
                 </Fragment>
               ))}
+              {streaming && (contextProgress || subagentGroups.length > 0 || runtimeStates.length > 0 || heavyStreamingReason) && (
+                <AgentBubble compact>
+                  <Stack gap="xs">
+                    {heavyStreamingReason && (
+                      <AgentActivityCard
+                        title="Iteracao pesada"
+                        status="warning"
+                        detail={`${heavyStreamingReason}. Considere usar Rapido para limitar a proxima rodada.`}
+                      />
+                    )}
+                    {contextProgress && (
+                      <AgentActivityCard
+                        title={contextProgress.label}
+                        status="running"
+                        detail={
+                          contextProgress.percent != null
+                            ? `${contextProgress.percent}% do contexto preparado`
+                            : contextProgress.limit_value != null && contextProgress.current_value != null
+                              ? `${contextProgress.current_value.toLocaleString()} de ${contextProgress.limit_value.toLocaleString()} itens`
+                              : 'Preparando contexto para o modelo'
+                        }
+                      />
+                    )}
+                    {subagentGroups.map((group) => (
+                      <AgentActivityCard
+                        key={group.parent_turn_id ?? group.label}
+                        title={group.label}
+                        status={groupStatus(group)}
+                        detail={`${group.activities.length} atividade${group.activities.length === 1 ? '' : 's'} auxiliar${group.activities.length === 1 ? '' : 'es'}`}
+                        activities={group.activities}
+                      />
+                    ))}
+                    {runtimeStates.map((state, index) => (
+                      <AgentActivityCard
+                        key={`${state.state}-${index}`}
+                        title={state.label}
+                        status={state.state === 'failed' ? 'failed' : state.state}
+                        detail={state.detail || (state.terminal ? 'Estado final recebido do runtime' : 'Aguardando novos eventos')}
+                      />
+                    ))}
+                  </Stack>
+                </AgentBubble>
+              )}
               {((thoughtSteps.length > 0 && !sessionProgressAnchor) || (streaming && showThinking)) && (
                 <AgentBubble compact>
                   <Stack gap="xs">
@@ -3279,6 +3573,12 @@ function ActiveChat({
               onChange={setPermissionMode}
               disabled={streaming}
               runtimeConfirmed={permissionWarningRuntimeConfirmed}
+              compact
+            />
+            <ExecutionProfileControl
+              value={executionProfile}
+              onChange={setExecutionProfile}
+              disabled={streaming}
               compact
             />
             {hasUsageMeta && (
@@ -3546,6 +3846,7 @@ function PaperMessage({
   const totalTokens = (promptTokens ?? 0) + (completionTokens ?? 0)
   const hasUsage =
     !isUser && (totalTokens > 0 || !!modelUsed)
+  const usageWarning = isUser ? null : heavyUsageReason(promptTokens, completionTokens, costUsd)
   const costLabel = totalTokens === 0 && (costUsd ?? 0) === 0
     ? 'uso não informado'
     : formatCostUsd(costUsd ?? 0)
@@ -3585,6 +3886,12 @@ function PaperMessage({
       )}
       {!isUser && payloadDiagnostics && (
         <PayloadDiagnosticSummary diagnostics={payloadDiagnostics} />
+      )}
+      {usageWarning && (
+        <div className={styles.heavyUsageNotice} role="note">
+          <span className={styles.icon} aria-hidden="true">speed</span>
+          <span>Iteracao pesada: {usageWarning}. Use Rapido quando quiser limitar a proxima rodada.</span>
+        </div>
       )}
       {hasUsage && (
         <div className={styles.messageUsageFooter}>

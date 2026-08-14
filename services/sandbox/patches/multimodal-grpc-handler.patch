@@ -1,5 +1,5 @@
 diff --git a/src/grpc/server.ts b/src/grpc/server.ts
-index 11e6c66..42ae6dd 100644
+index d367ba77..243a2600 100644
 --- a/src/grpc/server.ts
 +++ b/src/grpc/server.ts
 @@ -1,5 +1,6 @@
@@ -9,15 +9,15 @@ index 11e6c66..42ae6dd 100644
  import path from 'path'
  import { randomUUID } from 'crypto'
  import { QueryEngine } from '../QueryEngine.js'
-@@ -8,6 +9,7 @@ import { getDefaultAppState } from '../state/AppStateStore.js'
- import { AppState } from '../state/AppState.js'
+@@ -9,6 +10,7 @@ import { AppState } from '../state/AppState.js'
  import { FileStateCache, READ_FILE_STATE_CACHE_SIZE } from '../utils/fileStateCache.js'
  import { getBuiltInAgents } from '../tools/AgentTool/builtInAgents.js'
+ import type { Message } from '../types/message.js'
 +import { getMcpToolsCommandsAndResources } from '../services/mcp/client.js'
  
  const PROTO_PATH = path.resolve(import.meta.dirname, '../proto/openclaude.proto')
  
-@@ -24,6 +26,368 @@ const openclaudeProto = protoDescriptor.openclaude.v1
+@@ -25,6 +27,368 @@ const openclaudeProto = protoDescriptor.openclaude.v1
  
  const MAX_SESSIONS = 1000
  
@@ -383,10 +383,10 @@ index 11e6c66..42ae6dd 100644
 +  }
 +}
 +
- export class GrpcServer {
-   private server: grpc.Server
-   private sessions: Map<string, any[]> = new Map()
-@@ -61,12 +425,15 @@ export class GrpcServer {
+ type TextDeltaEvent = {
+   type: 'content_block_delta'
+   delta: {
+@@ -120,12 +484,15 @@ export class GrpcServer {
      let previousMessages: any[] = []
      let sessionId = ''
      let interrupted = false
@@ -402,7 +402,7 @@ index 11e6c66..42ae6dd 100644
                error: {
                  message: 'A request is already in progress on this stream',
                  code: 'ALREADY_EXISTS'
-@@ -76,21 +443,56 @@ export class GrpcServer {
+@@ -135,21 +502,56 @@ export class GrpcServer {
            }
            interrupted = false
            const req = clientMessage.request
@@ -440,7 +440,7 @@ index 11e6c66..42ae6dd 100644
 +          }
 +          const grpcAllowedWorktree = path.resolve(req.working_directory || process.cwd())
 +          const grpcPermissionMode = cappycloudPermissionMode(req.permission_mode)
-+          const grpcNumericParameterMode = /Regra obrigat.ria para par.metro num.rico|par.metro[^\n]{0,80}\b\d{1,12}\b/i.test(String(req.message || ''))
++          const grpcNumericParameterMode = /Regra obrigat.ria para par.metro num.rico|par.metro[\s\S]{0,80}\d{1,12}/i.test(String(req.message || ''))
 +          if (grpcNumericParameterMode) {
 +            console.log('[grpc] numeric parameter mode enabled')
 +          }
@@ -467,7 +467,7 @@ index 11e6c66..42ae6dd 100644
              // Register OpenClaude's built-in agents (general-purpose,
              // statusline-setup, optional code-guide). Without this the Agent
              // tool throws "Agent type 'general-purpose' not found" the moment
-@@ -102,19 +504,49 @@ export class GrpcServer {
+@@ -161,19 +564,49 @@ export class GrpcServer {
                if (toolUseID) {
                  toolNameById.set(toolUseID, tool.name)
                }
@@ -487,9 +487,9 @@ index 11e6c66..42ae6dd 100644
                call.write({
 +                request_id: currentRequestId,
                  tool_start: {
-                  tool_name: tool.name,
-                  arguments_json: JSON.stringify(input),
-                  tool_use_id: toolUseID
+                   tool_name: tool.name,
+                   arguments_json: JSON.stringify(input),
+                   tool_use_id: toolUseID
                  }
                })
 +              const permissionDecision = cappycloudPermissionDecision(grpcPermissionMode, tool.name)
@@ -514,10 +514,10 @@ index 11e6c66..42ae6dd 100644
                const question = `Approve ${tool.name}?`
                call.write({
 +                request_id: currentRequestId,
-                action_required: {
-                  prompt_id: promptId,
-                  question,
-@@ -144,12 +576,30 @@ export class GrpcServer {
+                 action_required: {
+                   prompt_id: promptId,
+                   question,
+@@ -210,12 +643,30 @@ export class GrpcServer {
            let promptTokens = 0
            let completionTokens = 0
  
@@ -543,21 +543,21 @@ index 11e6c66..42ae6dd 100644
  
            for await (const msg of generator) {
              if (msg.type === 'stream_event') {
-               if (msg.event.type === 'content_block_delta' && msg.event.delta.type === 'text_delta') {
+               if (isTextDeltaEvent(msg.event)) {
                  call.write({
 +                  request_id: currentRequestId,
-                  text_chunk: {
-                    text: msg.event.delta.text
-                  }
-@@ -169,6 +619,7 @@ export class GrpcServer {
-                       outputStr = block.content.map(c => c.type === 'text' ? c.text : '').join('\n')
-                     }
+                   text_chunk: {
+                     text: msg.event.delta.text
+                   }
+@@ -230,6 +681,7 @@ export class GrpcServer {
+                   if (isToolResultBlock(block)) {
+                     const outputStr = toolResultContentToString(block.content)
                      call.write({
 +                      request_id: currentRequestId,
-                      tool_result: {
-                        tool_name: toolNameById.get(block.tool_use_id) ?? block.tool_use_id,
-                        tool_use_id: block.tool_use_id,
-@@ -192,19 +643,12 @@ export class GrpcServer {
+                       tool_result: {
+                         tool_name: toolNameById.get(block.tool_use_id) ?? block.tool_use_id,
+                         tool_use_id: block.tool_use_id,
+@@ -253,22 +705,12 @@ export class GrpcServer {
            }
  
            if (!interrupted) {
@@ -568,7 +568,10 @@ index 11e6c66..42ae6dd 100644
 -            if (sessionId) {
 -              if (!this.sessions.has(sessionId) && this.sessions.size >= MAX_SESSIONS) {
 -                // Evict oldest session (Map preserves insertion order)
--                this.sessions.delete(this.sessions.keys().next().value)
+-                const oldestSessionId = this.sessions.keys().next().value
+-                if (oldestSessionId !== undefined) {
+-                  this.sessions.delete(oldestSessionId)
+-                }
 -              }
 -              this.sessions.set(sessionId, previousMessages)
 -            }
@@ -578,14 +581,14 @@ index 11e6c66..42ae6dd 100644
  
              call.write({
 +              request_id: currentRequestId,
-              done: {
-                full_text: fullText,
+               done: {
+                 full_text: fullText,
                  prompt_tokens: promptTokens,
-@@ -232,6 +676,7 @@ export class GrpcServer {
+@@ -296,6 +738,7 @@ export class GrpcServer {
        } catch (err: any) {
          console.error('Error processing stream')
          call.write({
 +          request_id: currentRequestId,
-          error: {
-            message: err.message || "Internal server error",
-            code: "INTERNAL"
+           error: {
+             message: err.message || "Internal server error",
+             code: "INTERNAL"

@@ -13,7 +13,7 @@ from app.adapters.primary.http.deps import get_authenticated_user, get_db_sessio
 from app.domain.entities import User
 from app.infrastructure.encryption import get_encryptor
 from app.infrastructure.orm_models import GitProvider, Sandbox, SandboxSyncQueue
-from app.schemas import GitProviderCreate, GitProviderOut
+from app.schemas import GitProviderCreate, GitProviderOut, GitProviderTokenUpdate
 
 router = APIRouter(prefix="/git-providers", tags=["git-providers"])
 
@@ -79,13 +79,16 @@ async def create_git_provider(
 @router.patch("/{provider_id}/token", response_model=GitProviderOut)
 async def update_token(
     provider_id: uuid.UUID,
-    token: str,
+    body: GitProviderTokenUpdate,
     _current: Annotated[User, Depends(get_authenticated_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> GitProviderOut:
     provider = await session.get(GitProvider, provider_id)
     if not provider:
         raise HTTPException(status_code=404, detail="Provider não encontrado")
+    token = body.token.strip()
+    if not token:
+        raise HTTPException(status_code=422, detail="Token obrigatorio")
     provider.token_encrypted = get_encryptor().encrypt(token)
     await _enqueue_git_auth_for_all_sandboxes(session, provider, token)
     await session.commit()

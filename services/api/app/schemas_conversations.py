@@ -7,7 +7,11 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.domain.value_objects import DEFAULT_PERMISSION_MODE, validate_permission_mode
+from app.domain.value_objects import (
+    DEFAULT_PERMISSION_MODE,
+    validate_execution_profile,
+    validate_permission_mode,
+)
 
 
 class RepoSelection(BaseModel):
@@ -68,6 +72,28 @@ class PayloadSizeBreakdownOut(BaseModel):
     generated_at: str = ""
 
 
+class ContextProgressOut(BaseModel):
+    label: str = "Processando contexto"
+    current_value: int | None = None
+    limit_value: int | None = None
+    percent: float | None = None
+    financial: bool = False
+
+
+class SubagentActivityOut(BaseModel):
+    id: str
+    name: str = "Subagente"
+    state: str = "tool-running"
+    detail: str = ""
+
+
+class SubagentGroupOut(BaseModel):
+    parent_turn_id: str | None = None
+    label: str = "Atividade auxiliar"
+    collapsible: bool = True
+    activities: list[SubagentActivityOut] = Field(default_factory=list)
+
+
 class MessageOut(BaseModel):
     id: uuid.UUID
     role: str
@@ -95,6 +121,7 @@ class SendMessageBody(BaseModel):
     model_id: str | None = Field(default=None, max_length=256)
     attachment_ids: list[uuid.UUID] | None = None
     permission_mode: str | None = Field(default=None, max_length=32)
+    execution_profile: str | None = Field(default=None, max_length=16)
     action_reply: bool = False
 
     @field_validator("permission_mode")
@@ -103,3 +130,10 @@ class SendMessageBody(BaseModel):
         if v is None:
             return None
         return validate_permission_mode(v)
+
+    @field_validator("execution_profile")
+    @classmethod
+    def execution_profile_valid(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return validate_execution_profile(v)

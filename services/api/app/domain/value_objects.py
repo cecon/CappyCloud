@@ -25,6 +25,15 @@ class PermissionMode(StrEnum):
 DEFAULT_PERMISSION_MODE = PermissionMode.BYPASS_PERMISSIONS.value
 
 
+class ExecutionProfile(StrEnum):
+    FAST = "fast"
+    MEDIUM = "medium"
+    DEEP = "deep"
+
+
+DEFAULT_EXECUTION_PROFILE = ExecutionProfile.MEDIUM.value
+
+
 class UserWorkspaceStatus(StrEnum):
     PREPARING = "preparing"
     READY = "ready"
@@ -79,6 +88,18 @@ def validate_permission_mode(raw: object | None) -> str:
     except ValueError as exc:
         allowed = ", ".join(mode.value for mode in PermissionMode)
         raise ValueError(f"modo de permissão inválido. Use um de: {allowed}.") from exc
+
+
+def validate_execution_profile(raw: object | None) -> str:
+    """Normaliza e valida o perfil de execucao da mensagem."""
+    if raw is None:
+        return DEFAULT_EXECUTION_PROFILE
+    value = str(raw).strip()
+    try:
+        return ExecutionProfile(value).value
+    except ValueError as exc:
+        allowed = ", ".join(profile.value for profile in ExecutionProfile)
+        raise ValueError(f"perfil de execucao invalido. Use um de: {allowed}.") from exc
 
 
 def validate_user_workspace_status(raw: object | None) -> str:

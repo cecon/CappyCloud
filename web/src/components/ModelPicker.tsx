@@ -79,6 +79,15 @@ function fmtCtx(n: number): string {
   return String(n)
 }
 
+function modelStateLabel(model: AiModel): string | null {
+  if (!model.active) return 'retirado'
+  if (model.tier === 'paid') return 'pago'
+  if (model.tier === 'unknown' || model.input_cost_per_1m_usd == null || model.output_cost_per_1m_usd == null) {
+    return 'preço desconhecido'
+  }
+  return null
+}
+
 export function ModelPicker({
   models,
   value,
@@ -230,7 +239,7 @@ export function ModelPicker({
     }
   }
 
-  const triggerLabel = selected ? selected.cleanName : placeholder
+  const triggerLabel = selected ? selected.cleanName : value ? 'Modelo indisponível' : placeholder
   const triggerProvider = selected?.provider
 
   return (
@@ -330,9 +339,18 @@ export function ModelPicker({
             )}
 
             {filtered.length === 0 && !allowClear && (
-              <div className={styles.empty}>Sem resultados.</div>
+              <div className={styles.empty}>
+                {rows.length === 0
+                  ? 'Nenhum modelo autorizado para este usuário.'
+                  : 'Sem resultados.'}
+              </div>
             )}
-            {filtered.length === 0 && allowClear && (
+            {filtered.length === 0 && allowClear && rows.length === 0 && (
+              <div className={styles.empty}>
+                Nenhum modelo autorizado para este usuário.
+              </div>
+            )}
+            {filtered.length === 0 && allowClear && rows.length > 0 && (
               <div className={styles.empty}>
                 Sem resultados para “{query}”.
               </div>
@@ -365,6 +383,11 @@ export function ModelPicker({
                   <span className={styles.rowMain}>
                     <span className={styles.rowName}>
                       {row.cleanName}
+                      {modelStateLabel(row.model) && (
+                        <span className={styles.stateBadge}>
+                          {modelStateLabel(row.model)}
+                        </span>
+                      )}
                       {row.model.capabilities?.includes('vision') && (
                         <span
                           className={styles.visionBadge}

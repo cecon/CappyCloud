@@ -126,19 +126,25 @@ O custo deve usar dados reais:
 
 Nao usar estimativa local de tokens como custo principal.
 
-## OpenClaude v0.17.1
+## OpenClaude 0.28.0
 
-O runtime da sandbox deve ficar pinado no tag SHA
-`1b7e55058cca57f2f83d7e229441631794286c1a`, correspondente ao alvo
-OpenClaude v0.17.1 verificado em `refs/tags/v0.17.1`. A release v0.18.0 existe
-em upstream, mas fica fora desta atualizacao para manter o escopo da spec
-`004-openclaude-v017-ui-debt`.
+Para a feature `008-openclaude-current-upgrade`, o runtime da sandbox fica
+pinado no commit `6e30b40de00868a968bdcaa0c3d0dd915d69d357`, correspondente ao
+alvo OpenClaude `0.28.0`. A linha de base operacional observada antes da
+mudanca e OpenClaude `0.24.0`; o Dockerfile local anterior apontava para um
+commit mais antigo e foi avancado diretamente para o alvo congelado.
+
+Versoes posteriores a `0.28.0` exigem nova decisao explicita de produto e nova
+avaliacao de UI antes de entrar neste escopo. A implementacao atual valida
+localmente o sandbox, o contrato de eventos e a UI; rollout de producao deve
+seguir o runbook especifico.
 
 Recursos novos do OpenClaude que envolvam cache de conversa, persistencia de
-sessao, descoberta de modelos, fallback de provider ou skills via `skill://`
-devem continuar subordinados ao contexto autorizado do CappyCloud. Historico,
-repositorios selecionados, modo de permissao, modelo visivel, uso e custo
-continuam vindo da conversa, do banco e do catalogo autorizado.
+sessao, descoberta de modelos, fallback de provider, subagents, contexto em
+tempo de execucao ou provider auth continuam subordinados ao contexto autorizado
+do CappyCloud. Historico, repositorios selecionados, modo de permissao, modelo
+visivel, uso e custo continuam vindo da conversa, do banco e do catalogo
+autorizado.
 
 ## Validacao antes de PR
 

@@ -90,5 +90,5 @@ Nao inclua artefatos temporarios, backups locais, dumps de webview ou arquivos
 grandes que nao sejam parte intencional do produto.
 
 <!-- SPECKIT START -->
-Current Spec Kit plan: [specs/010-chat-vertical-navigation/plan.md](specs/010-chat-vertical-navigation/plan.md)
+Current Spec Kit plan: [specs/008-openclaude-current-upgrade/plan.md](specs/008-openclaude-current-upgrade/plan.md)
 <!-- SPECKIT END -->
