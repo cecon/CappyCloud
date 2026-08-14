@@ -210,6 +210,7 @@ from app.schemas_platform import (  # noqa: E402, F401
     AiProviderOut,
     GitProviderCreate,
     GitProviderOut,
+    GitProviderTokenUpdate,
     RepositoryCreate,
     RepositoryOut,
 )

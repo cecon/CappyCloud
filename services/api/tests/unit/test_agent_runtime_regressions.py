@@ -279,6 +279,97 @@ def test_malformed_payload_diagnostic_event_is_ignored() -> None:
     assert _grpc_event_handlers.payload_diagnostic_event(msg) is None
 
 
+def test_context_progress_event_is_progress_only() -> None:
+    msg = types.SimpleNamespace(
+        context_progress=types.SimpleNamespace(
+            label="Contexto usado",
+            current_value=50,
+            limit_value=200,
+            percent="25.4",
+            financial=True,
+        )
+    )
+
+    assert _grpc_event_handlers.context_progress_event(msg) == (
+        "context_progress",
+        {
+            "label": "Contexto usado",
+            "current_value": 50,
+            "limit_value": 200,
+            "percent": 25.4,
+            "financial": False,
+        },
+    )
+
+
+def test_subagent_group_event_sanitizes_activity_state() -> None:
+    msg = types.SimpleNamespace(
+        subagent_group=types.SimpleNamespace(
+            parent_turn_id="turn_1",
+            label="Auxiliares\ninternos",
+            collapsible=True,
+            activities=[
+                types.SimpleNamespace(id="agent_1", name="repo-a", state="done", detail="ok"),
+                types.SimpleNamespace(id="agent_2", name="repo-b", state="weird", detail="rodando"),
+            ],
+        )
+    )
+
+    assert _grpc_event_handlers.subagent_group_event(msg) == (
+        "subagent_group",
+        {
+            "parent_turn_id": "turn_1",
+            "label": "Auxiliares internos",
+            "collapsible": True,
+            "activities": [
+                {"id": "agent_1", "name": "repo-a", "state": "done", "detail": "ok"},
+                {
+                    "id": "agent_2",
+                    "name": "repo-b",
+                    "state": "tool-running",
+                    "detail": "rodando",
+                },
+            ],
+        },
+    )
+
+
+def test_subagent_group_event_preserves_runtime_edge_states() -> None:
+    states = [
+        "loading",
+        "streaming",
+        "tool-running",
+        "permission-request",
+        "permission-timeout",
+        "stalled",
+        "canceled",
+        "failed",
+        "done",
+    ]
+    msg = types.SimpleNamespace(
+        subagent_group=types.SimpleNamespace(
+            parent_turn_id="turn_2",
+            label="Auxiliares",
+            collapsible=True,
+            activities=[
+                types.SimpleNamespace(
+                    id=f"agent_{index}",
+                    name=f"worker-{index}",
+                    state=state,
+                    detail="ok",
+                )
+                for index, state in enumerate(states)
+            ],
+        )
+    )
+
+    event = _grpc_event_handlers.subagent_group_event(msg)
+
+    assert event is not None
+    _, data = event
+    assert [activity["state"] for activity in data["activities"]] == states
+
+
 def test_tool_result_event_preserves_stdout_and_error_flag() -> None:
     msg = types.SimpleNamespace(
         tool_result=types.SimpleNamespace(

@@ -149,6 +149,35 @@
   margin-bottom: 8px;
 }
 
+.activityList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.activityNotice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid rgba(72, 72, 75, 0.14);
+  border-radius: 6px;
+  background: var(--cc-surface-high);
+  padding: 8px 10px;
+  color: var(--cc-on-surface-variant);
+  font-size: 0.75rem;
+}
+
+.activityNotice strong,
+.activityNotice span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ─ Markdown body ─ */
 
 .markdownBody {

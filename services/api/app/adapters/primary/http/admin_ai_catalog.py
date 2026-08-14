@@ -25,6 +25,7 @@ from app.adapters.primary.http.admin_ai_catalog_helpers import (
     AdminProviderOut,
     AdminProviderPatch,
     _normalise_provider_endpoint,
+    admin_provider_out,
     create_manual_model,
     ensure_unique_provider_name,
     normalise_capabilities,
@@ -59,18 +60,7 @@ async def list_providers(
     providers = (
         (await session.execute(select(AiProvider).order_by(AiProvider.name))).scalars().all()
     )
-    return [
-        AdminProviderOut(
-            id=p.id,
-            name=p.name,
-            base_url=p.base_url,
-            api_format=p.api_format,
-            active=p.active,
-            last_synced_at=p.last_synced_at.isoformat() if p.last_synced_at else None,
-            models_count=int(counts.get(p.id, 0)),
-        )
-        for p in providers
-    ]
+    return [admin_provider_out(p, int(counts.get(p.id, 0))) for p in providers]
 
 
 @router.post(
@@ -121,15 +111,7 @@ async def create_provider(
 
     await session.commit()
     await session.refresh(provider)
-    return AdminProviderOut(
-        id=provider.id,
-        name=provider.name,
-        base_url=provider.base_url,
-        api_format=provider.api_format,
-        active=provider.active,
-        last_synced_at=provider.last_synced_at.isoformat() if provider.last_synced_at else None,
-        models_count=1 if body.model_id.strip() else 0,
-    )
+    return admin_provider_out(provider, 1 if body.model_id.strip() else 0)
 
 
 @router.patch(
@@ -174,15 +156,7 @@ async def patch_provider(
             select(func.count(AiModel.id)).where(AiModel.provider_id == provider.id)
         )
     ).scalar_one()
-    return AdminProviderOut(
-        id=provider.id,
-        name=provider.name,
-        base_url=provider.base_url,
-        api_format=provider.api_format,
-        active=provider.active,
-        last_synced_at=provider.last_synced_at.isoformat() if provider.last_synced_at else None,
-        models_count=int(count),
-    )
+    return admin_provider_out(provider, int(count))
 
 
 @router.post(

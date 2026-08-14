@@ -389,6 +389,22 @@
   vertical-align: middle;
 }
 
+.stateBadge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid rgba(234, 179, 8, 0.32);
+  background: rgba(234, 179, 8, 0.12);
+  color: #e5a54b;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  vertical-align: middle;
+}
+
 .visionBadge .icon {
   font-family: 'Material Symbols Outlined', 'Material Icons', sans-serif;
   font-size: 12px;

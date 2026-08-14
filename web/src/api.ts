@@ -285,6 +285,10 @@ export type PermissionMode =
 
 export const DEFAULT_PERMISSION_MODE: PermissionMode = 'bypass_permissions'
 
+export type ExecutionProfile = 'fast' | 'medium' | 'deep'
+
+export const DEFAULT_EXECUTION_PROFILE: ExecutionProfile = 'medium'
+
 export interface UserPreferences {
   default_permission_mode: PermissionMode
 }
@@ -435,6 +439,53 @@ export interface StatusEvent {
   }
 }
 
+export interface ContextProgressEvent {
+  label: string
+  current_value: number | null
+  limit_value: number | null
+  percent: number | null
+  financial: false
+}
+
+export type SubagentActivityState =
+  | 'loading'
+  | 'streaming'
+  | 'tool-running'
+  | 'permission-request'
+  | 'permission-timeout'
+  | 'stalled'
+  | 'canceled'
+  | 'failed'
+  | 'done'
+
+export interface SubagentActivityEvent {
+  id: string
+  name: string
+  state: SubagentActivityState
+  detail: string
+}
+
+export interface SubagentGroupEvent {
+  parent_turn_id: string | null
+  label: string
+  collapsible: boolean
+  activities: SubagentActivityEvent[]
+}
+
+export type RuntimeStateKind =
+  | 'permission-timeout'
+  | 'stalled'
+  | 'canceled'
+  | 'failed'
+  | 'done'
+
+export interface RuntimeStateEvent {
+  state: RuntimeStateKind
+  label: string
+  detail: string
+  terminal: boolean
+}
+
 export interface StreamHandlers {
   onText(accumulated: string): void
   onToolStart(tool: ToolStartEvent): void
@@ -446,6 +497,9 @@ export interface StreamHandlers {
   onError(message: string): void
   onCursor? (cursor: number): void
   onPayloadDiagnostic? (diagnostics: PayloadSizeBreakdown): void
+  onContextProgress? (progress: ContextProgressEvent): void
+  onSubagentGroup? (group: SubagentGroupEvent): void
+  onRuntimeState? (state: RuntimeStateEvent): void
   /** Acumulador final de tokens/modelo enviado quando o agente termina o turno. */
   onDone? (usage: DoneEvent): void
   signal?: AbortSignal
@@ -560,6 +614,112 @@ function parseFallbackNotice(value: unknown): DoneEvent['fallback'] {
 function safeModelText(value: unknown): string {
   const text = typeof value === 'string' ? value.trim() : ''
   return /^[A-Za-z0-9_.:/@+-]{1,256}$/.test(text) ? text : ''
+}
+
+function parseContextProgress(evt: Record<string, unknown>): ContextProgressEvent {
+  const percent = safeOptionalPercent(evt.percent)
+  return {
+    label: safeUserLabel(evt.label, 'Processando contexto'),
+    current_value: safeOptionalCount(evt.current_value),
+    limit_value: safeOptionalCount(evt.limit_value),
+    percent,
+    financial: false,
+  }
+}
+
+function parseSubagentGroup(evt: Record<string, unknown>): SubagentGroupEvent {
+  const rawActivities = Array.isArray(evt.activities) ? evt.activities : []
+  return {
+    parent_turn_id: safeNullableId(evt.parent_turn_id),
+    label: safeUserLabel(evt.label, 'Atividade auxiliar'),
+    collapsible: evt.collapsible !== false,
+    activities: rawActivities
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+      .map(parseSubagentActivity),
+  }
+}
+
+function parseSubagentActivity(item: Record<string, unknown>): SubagentActivityEvent {
+  return {
+    id: safeNullableId(item.id) ?? 'subagent',
+    name: safeUserLabel(item.name, 'Subagente'),
+    state: safeSubagentState(item.state),
+    detail: safeUserLabel(item.detail, ''),
+  }
+}
+
+function safeOptionalCount(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const numeric = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : null
+}
+
+function safeOptionalPercent(value: unknown): number | null {
+  const numeric = safeOptionalCount(value)
+  if (numeric === null) return null
+  return Math.min(100, Math.max(0, numeric))
+}
+
+function safeNullableId(value: unknown): string | null {
+  const text = typeof value === 'string' ? value.trim() : ''
+  return /^[A-Za-z0-9_.:@+-]{1,256}$/.test(text) ? text : null
+}
+
+function safeUserLabel(value: unknown, fallback: string): string {
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (!text) return fallback
+  return text.replace(/[\r\n\t]+/g, ' ').slice(0, 280)
+}
+
+function safeSubagentState(value: unknown): SubagentActivityState {
+  const state = typeof value === 'string' ? value : ''
+  return state === 'loading' ||
+    state === 'streaming' ||
+    state === 'tool-running' ||
+    state === 'permission-request' ||
+    state === 'permission-timeout' ||
+    state === 'stalled' ||
+    state === 'canceled' ||
+    state === 'failed' ||
+    state === 'done'
+    ? state
+    : 'tool-running'
+}
+
+function parseRuntimeState(evt: Record<string, unknown>, fallback: RuntimeStateKind): RuntimeStateEvent {
+  const state = safeRuntimeState(evt.state ?? evt.type, fallback)
+  return {
+    state,
+    label: safeUserLabel(evt.label, runtimeStateLabel(state)),
+    detail: safeUserLabel(evt.detail ?? evt.message, ''),
+    terminal: state === 'permission-timeout' || state === 'canceled' || state === 'failed' || state === 'done',
+  }
+}
+
+function safeRuntimeState(value: unknown, fallback: RuntimeStateKind): RuntimeStateKind {
+  const text = typeof value === 'string' ? value : ''
+  return text === 'permission-timeout' ||
+    text === 'stalled' ||
+    text === 'canceled' ||
+    text === 'failed' ||
+    text === 'done'
+    ? text
+    : fallback
+}
+
+function runtimeStateLabel(state: RuntimeStateKind): string {
+  switch (state) {
+    case 'permission-timeout':
+      return 'Permissão expirou'
+    case 'stalled':
+      return 'Execução sem novos eventos'
+    case 'canceled':
+      return 'Execução cancelada'
+    case 'failed':
+      return 'Execução falhou'
+    case 'done':
+      return 'Execução concluída'
+  }
 }
 
 export async function fetchConversations(
@@ -704,6 +864,7 @@ export async function streamAssistantReply(
   modelId?: string | null,
   attachmentIds?: string[] | null,
   permissionMode?: PermissionMode | null,
+  executionProfile?: ExecutionProfile | null,
   cursor?: number | null,
   actionReply = false,
 ): Promise<void> {
@@ -712,6 +873,7 @@ export async function streamAssistantReply(
   if (modelId) bodyPayload.model_id = modelId
   if (attachmentIds && attachmentIds.length > 0) bodyPayload.attachment_ids = attachmentIds
   if (permissionMode) bodyPayload.permission_mode = permissionMode
+  if (executionProfile) bodyPayload.execution_profile = executionProfile
   if (actionReply) bodyPayload.action_reply = true
   let retryCursor = cursor
   let retries = 0
@@ -854,7 +1016,23 @@ export async function streamAssistantReply(
             }
             break
           }
+          case 'context_progress':
+            eventHandlers.onContextProgress?.(parseContextProgress(evt))
+            break
+          case 'subagent_group':
+            eventHandlers.onSubagentGroup?.(parseSubagentGroup(evt))
+            break
+          case 'permission_timeout':
+            eventHandlers.onRuntimeState?.(parseRuntimeState(evt, 'permission-timeout'))
+            break
+          case 'stalled':
+            eventHandlers.onRuntimeState?.(parseRuntimeState(evt, 'stalled'))
+            break
+          case 'canceled':
+            eventHandlers.onRuntimeState?.(parseRuntimeState(evt, 'canceled'))
+            break
           case 'error':
+            eventHandlers.onRuntimeState?.(parseRuntimeState(evt, 'failed'))
             eventHandlers.onError((evt.message as string) ?? 'Erro desconhecido')
             break
           case 'done':
@@ -864,6 +1042,7 @@ export async function streamAssistantReply(
               completion_tokens: (evt.completion_tokens as number) ?? 0,
               fallback: parseFallbackNotice(evt.fallback),
             })
+            eventHandlers.onRuntimeState?.(parseRuntimeState(evt, 'done'))
             sawDone = true
             break
         }
@@ -1386,13 +1565,11 @@ export async function updateGitProviderToken(
   providerId: string,
   newToken: string,
 ): Promise<GitProvider> {
-  const res = await apiFetch(
-    `/api/git-providers/${providerId}/token?? token=${encodeURIComponent(newToken)}`,
-    {
-      method: 'PATCH',
-      headers: { Authorization: `Bearer ${token}` },
-    },
-  )
+  const res = await apiFetch(`/api/git-providers/${providerId}/token`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: newToken }),
+  })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(formatApiErrorPayload(err) || 'Falha ao atualizar token')
@@ -2559,6 +2736,9 @@ export interface AdminAiProvider {
   active: boolean
   last_synced_at: string | null
   models_count: number
+  auth_state: 'configured' | 'missing-key' | 'inactive' | 'catalog-only' | string
+  auth_label: string
+  auth_next_action: string
 }
 
 export interface AdminProviderCreate {

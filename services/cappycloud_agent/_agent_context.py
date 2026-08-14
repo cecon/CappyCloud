@@ -18,6 +18,7 @@ import httpx
 log = logging.getLogger(__name__)
 
 from ._agent_prompt_sections import (  # noqa: E402
+    render_execution_profile,
     render_repo_agents,
     render_repo_skills,
     render_response_rules,
@@ -286,6 +287,7 @@ def build_prompt_with_agent(
     session_root: str = "",
     worktree_top_level: dict[str, list[str]] | None = None,
     agent_profiles: list[dict] | None = None,
+    execution_profile: str = "medium",
 ) -> str:
     """Monta o prompt final colando top-N skills + msg do user.
 
@@ -343,6 +345,8 @@ def build_prompt_with_agent(
 
     if sandbox_session_url:
         parts.append(render_session_tools(sandbox_session_url, repos))
+
+    parts.append(render_execution_profile(execution_profile))
 
     parts.append(render_response_rules())
 

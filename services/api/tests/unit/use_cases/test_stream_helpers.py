@@ -433,3 +433,34 @@ async def test_build_pipeline_body_defaults_legacy_permission_mode() -> None:
     )
 
     assert body["permission_mode"] == PermissionMode.BYPASS_PERMISSIONS.value
+
+
+async def test_build_pipeline_body_defaults_execution_profile_to_medium() -> None:
+    conv = Conversation(id=uuid.uuid4(), user_id=uuid.uuid4(), title="t")
+
+    body = build_pipeline_body(
+        conv,
+        enriched_repos=[],
+        user_id=conv.user_id,
+        cursor=None,
+        override_model=None,
+        attachments_payload=None,
+    )
+
+    assert body["execution_profile"] == "medium"
+
+
+async def test_build_pipeline_body_includes_execution_profile() -> None:
+    conv = Conversation(id=uuid.uuid4(), user_id=uuid.uuid4(), title="t")
+
+    body = build_pipeline_body(
+        conv,
+        enriched_repos=[],
+        user_id=conv.user_id,
+        cursor=None,
+        override_model=None,
+        attachments_payload=None,
+        execution_profile="fast",
+    )
+
+    assert body["execution_profile"] == "fast"

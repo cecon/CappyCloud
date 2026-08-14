@@ -1433,6 +1433,20 @@
   white-space: nowrap;
 }
 
+.heavyUsageNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin-top: 12px;
+  padding: 9px 10px;
+  border: 1px solid rgba(224, 164, 88, 0.26);
+  border-radius: 8px;
+  background: rgba(224, 164, 88, 0.07);
+  color: var(--cc-on-surface-variant);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
 .messageUsageFooter {
   display: flex;
   flex-wrap: wrap;

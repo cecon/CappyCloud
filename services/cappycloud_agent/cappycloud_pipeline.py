@@ -148,6 +148,7 @@ class Pipeline:
         session_root = str(body.get("session_root") or "")
         sandbox_id = str(body.get("sandbox_id") or "")
         permission_mode = sanitize_permission_mode(body.get("permission_mode"))
+        execution_profile = str(body.get("execution_profile") or "medium")
         cursor = body.get("cursor")
         try:
             cursor = int(cursor) if cursor is not None else None
@@ -237,6 +238,7 @@ class Pipeline:
             session_root=session_root,
             worktree_top_level=None,
             agent_profiles=agent_profiles,
+            execution_profile=execution_profile,
         )
         prompt = inject_repo_context(prompt, repos, session_root)
 

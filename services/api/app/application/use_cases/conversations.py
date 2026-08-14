@@ -104,6 +104,7 @@ class StreamMessage:
         override_model: str | None = None,
         attachment_ids: list[uuid.UUID] | None = None,
         permission_mode: str | None = None,
+        execution_profile: str | None = None,
         action_reply: bool = False,
     ) -> AsyncGenerator[bytes]:
         conv = await self._conversations.get(conversation_id, user_id)
@@ -168,6 +169,7 @@ class StreamMessage:
             cursor,
             effective_model,
             attachments_payload,
+            execution_profile,
         )
         pipeline_body["action_reply"] = action_reply
 
@@ -248,11 +250,12 @@ class StreamMessage:
         cursor: int | None,
         override_model: str | None = None,
         attachments_payload: list[dict] | None = None,
+        execution_profile: str | None = None,
     ) -> dict:
         enriched = await enrich_repos_for_pipeline(self._repositories, conv.repos)
         enriched = await self._attach_user_workspaces(enriched, user_id, user_role)
         return build_pipeline_body(
-            conv, enriched, user_id, cursor, override_model, attachments_payload
+            conv, enriched, user_id, cursor, override_model, attachments_payload, execution_profile
         )
 
     async def _attach_user_workspaces(

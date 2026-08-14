@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from app.ports.repositories import MessageRepository, RepositoryRepository
 
 from app.application.use_cases.chat_command_sanitization import sanitize_command_text
-from app.domain.value_objects import validate_permission_mode
+from app.domain.value_objects import validate_execution_profile, validate_permission_mode
 
 
 async def compute_cost(messages: MessageRepository, usage: dict) -> float:
@@ -106,6 +106,7 @@ def build_pipeline_body(
     cursor: int | None,
     override_model: str | None,
     attachments_payload: list[dict] | None,
+    execution_profile: str | None = None,
 ) -> dict:
     """Monta o dict que vai para o pipeline do agente."""
     try:
@@ -122,6 +123,7 @@ def build_pipeline_body(
         "sandbox_id": str(conv.sandbox_id) if conv.sandbox_id else "",
         "override_model": override_model,
         "permission_mode": permission_mode,
+        "execution_profile": validate_execution_profile(execution_profile),
     }
     # ``attachments_payload`` viaja como bytes brutos pelo pipeline → gRPC.
     # Não serializável para JSON, por isso fica fora de qualquer log.
