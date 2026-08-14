@@ -364,7 +364,7 @@ function SidebarUserMenu({ user }: { user: CurrentUser | null }) {
         {admin.length > 0 && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel>Administracao</DropdownMenuLabel>
+            <DropdownMenuLabel>Administração</DropdownMenuLabel>
             {admin.map((item) => <SidebarUserMenuLink key={item.to} item={item} />)}
           </>
         )}
@@ -822,6 +822,7 @@ export function ChatPage() {
   const token = getToken()!
   const currentUserState = useCurrentUser()
   const currentUser = currentUserState.status === 'ready' ? currentUserState.user : null
+  const isAdminUser = currentUser?.role === 'admin'
   const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure()
 
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -2069,6 +2070,16 @@ export function ChatPage() {
           </button>
 
           <div className={styles.sidebarUtility}>
+            {isAdminUser && (
+              <Link
+                to="/admin"
+                className={styles.sandboxAccessBtn}
+                onClick={closeMobile}
+              >
+                <span className={`${styles.icon} ${styles.sandboxAccessIcon}`}>dashboard</span>
+                <span className={styles.sandboxAccessLabel}>Dashboard admin</span>
+              </Link>
+            )}
             <button
               type="button"
               className={`${styles.sandboxAccessBtn} ${mainMode === 'sandboxes' ? styles.sandboxAccessBtnActive : ''}`}

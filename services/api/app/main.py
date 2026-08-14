@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from app.adapters.primary.http import admin_ai_catalog as admin_ai_catalog_router
+from app.adapters.primary.http import admin_dashboard as admin_dashboard_router
 from app.adapters.primary.http import admin_mcp_telemetry as admin_mcp_telemetry_router
 from app.adapters.primary.http import admin_sandbox_globals as admin_sandbox_globals_router
 from app.adapters.primary.http import admin_sandbox_mcps as admin_sandbox_mcps_router
@@ -188,6 +189,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router.router, prefix="/api")
+app.include_router(admin_dashboard_router.router, prefix="/api")
 app.include_router(admin_users_router.router, prefix="/api")
 app.include_router(admin_mcp_telemetry_router.router, prefix="/api")
 app.include_router(admin_sandboxes_router.router, prefix="/api")

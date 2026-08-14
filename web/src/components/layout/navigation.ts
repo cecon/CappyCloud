@@ -22,6 +22,7 @@ export const routeTitles: Record<string, { title: string; subtitle: string }> = 
   '/mcp': { title: 'MCP Server', subtitle: 'Acesso externo controlado aos repositorios' },
   '/settings': { title: 'Configuracoes', subtitle: 'Preferencias e atalhos do ambiente' },
   '/change-password': { title: 'Alterar senha', subtitle: 'Superficie de conta alinhada ao novo tema' },
+  '/admin': { title: 'Admin', subtitle: 'Visao operacional das conversas e execucoes' },
   '/admin/users': { title: 'Usuarios', subtitle: 'Cadastro de utilizadores, papeis e permissoes' },
   '/admin/sandboxes': { title: 'Sandboxes', subtitle: 'Containers por cliente, squad e repositorio' },
   '/admin/repositories': { title: 'Repositorios', subtitle: 'Catalogo Git, credenciais e branches default' },
@@ -42,6 +43,7 @@ export const navigationItems: NavigationItem[] = [
   { to: '/mcp', label: 'MCP Server', description: 'Servidores MCP', icon: 'mcp', section: 'work', overlay: true },
   { to: '/settings', label: 'Configuracoes', description: 'Preferencias', icon: 'settings', section: 'account', superAdminOnly: true },
   { to: '/change-password', label: 'Alterar senha', description: 'Conta e acesso', icon: 'changePassword', section: 'account' },
+  { to: '/admin', label: 'Dashboard admin', description: 'Operacao e conversas', icon: 'dashboard', section: 'admin', adminOnly: true, overlay: true },
   { to: '/admin/users', label: 'Usuarios', description: 'Papeis e acesso', icon: 'users', section: 'admin', adminOnly: true, overlay: true },
   { to: '/admin/sandboxes', label: 'Sandboxes', description: 'Ambientes isolados', icon: 'sandboxes', section: 'admin', adminOnly: true, overlay: true },
   { to: '/admin/repositories', label: 'Repositorios', description: 'Catalogo Git', icon: 'repositories', section: 'admin', adminOnly: true, overlay: true },
@@ -77,5 +79,5 @@ export function visibleNavigationItems(role: CappyRole, section?: NavigationItem
 }
 
 export function isAdminRoute(pathname: string) {
-  return pathname.startsWith('/admin/')
+  return pathname === '/admin' || pathname.startsWith('/admin/')
 }

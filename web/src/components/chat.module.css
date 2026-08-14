@@ -2443,6 +2443,8 @@
 
 .sidebarUtility {
   padding: 4px 12px 0;
+  display: grid;
+  gap: 4px;
 }
 
 .sandboxAccessBtn {
@@ -2459,6 +2461,7 @@
   font: 600 13px/1.25 Inter, ui-sans-serif, system-ui, sans-serif;
   text-align: left;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .sandboxAccessBtn:hover,

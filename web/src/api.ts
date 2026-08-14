@@ -270,6 +270,64 @@ export async function updateAdminUserRole(
   return (await res.json()) as AdminUser
 }
 
+// -- Admin · Dashboard -----------------------------------------------------
+
+export interface AdminDashboardTotals {
+  users: number
+  admins: number
+  conversations: number
+  conversations_24h: number
+  messages: number
+  assistant_messages: number
+  running_tasks: number
+  failed_tasks_24h: number
+  open_pull_requests: number
+  sandboxes: number
+  active_sandboxes: number
+  prompt_tokens: number
+  completion_tokens: number
+  total_cost_usd: number
+}
+
+export interface AdminDashboardConversation {
+  id: string
+  title: string
+  user_id: string
+  user_email: string | null
+  sandbox_id: string | null
+  created_at: string
+  updated_at: string
+  last_message_at: string | null
+  last_message_preview: string | null
+  model_used: string | null
+  message_count: number
+  cost_usd: number
+  ci_status: string
+  pr_status: string
+}
+
+export interface AdminDashboard {
+  generated_at: string
+  totals: AdminDashboardTotals
+  recent_conversations: AdminDashboardConversation[]
+}
+
+export async function fetchAdminDashboard(
+  token: string,
+  limit = 12,
+): Promise<AdminDashboard> {
+  const params = new URLSearchParams()
+  params.set('limit', String(limit))
+  const res = await apiFetch(`/api/admin/dashboard?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao carregar dashboard admin')
+  }
+  return (await res.json()) as AdminDashboard
+}
+
 export type RepoSelection = {
   slug: string
   alias?: string | null
