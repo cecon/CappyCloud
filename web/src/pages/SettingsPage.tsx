@@ -32,6 +32,12 @@ const userLinks: SettingsLink[] = [
 
 const adminLinks: SettingsLink[] = [
   {
+    to: '/admin',
+    icon: 'dashboard',
+    title: 'Dashboard admin',
+    description: 'Conversas recentes, volume e saúde operacional.',
+  },
+  {
     to: '/admin/users',
     icon: 'group',
     title: 'Usuários',

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prod Container Verify"
+  short_description: "Verifica containers CappyCloud em producao via Bitvise sexec."
+  default_prompt: "Confirme no container de producao se o CappyCloud sandbox esta saudavel e qual versao do OpenClaude esta rodando."

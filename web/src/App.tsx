@@ -23,6 +23,9 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ defa
 const AdminUsersPage = lazy(() =>
   import('./pages/AdminUsersPage').then((m) => ({ default: m.AdminUsersPage })),
 )
+const AdminDashboardPage = lazy(() =>
+  import('./pages/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage })),
+)
 const AdminSandboxesPage = lazy(() =>
   import('./pages/AdminSandboxesPage').then((m) => ({ default: m.AdminSandboxesPage })),
 )
@@ -164,6 +167,14 @@ export default function App() {
         />
         <Route path="/register" element={<Navigate to="/login" replace />} />
         <Route path="/environments" element={<Navigate to="/" replace />} />
+        <Route
+          path="/admin"
+          element={
+            <AdminPage>
+              <AdminDashboardPage />
+            </AdminPage>
+          }
+        />
         <Route
           path="/admin/users"
           element={
