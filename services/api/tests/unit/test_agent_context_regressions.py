@@ -33,7 +33,7 @@ def test_session_tools_scope_skill_search_by_repo_id() -> None:
     assert "repo_id=2d9500d8-eb4c-4535-9b5c-5d0b4e7bd6cc" in section
 
 
-def test_session_tools_require_confluence_for_operational_support() -> None:
+def test_session_tools_medium_uses_confluence_on_demand() -> None:
     section = _agent_prompt_sections.render_session_tools(
         "http://sandbox:8080",
         repos=[
@@ -46,8 +46,34 @@ def test_session_tools_require_confluence_for_operational_support() -> None:
         ],
     )
 
+    assert "Nos perfis rápido e médio, consulte Confluence quando" in section
+    assert "documentação externa não foi necessária" in section
+    assert "consulta é obrigatória para perguntas de suporte operacional" not in section
+    assert "/task" not in section
+    assert "A busca principal deve manter `&space=`" in section
+    assert "resultados forem vazios, lentos ou pouco aderentes" in section
+    assert "&space=Postos" in section
+    assert "&labels=autosystem" in section
+
+
+def test_session_tools_deep_require_confluence_for_operational_support() -> None:
+    section = _agent_prompt_sections.render_session_tools(
+        "http://sandbox:8080",
+        repos=[
+            {
+                "alias": "autosystem",
+                "confluence_url": "https://share.linx.com.br",
+                "confluence_space": "Postos",
+                "confluence_labels": ["autosystem"],
+            }
+        ],
+        execution_profile="deep",
+    )
+
+    assert "No perfil profundo" in section
     assert "consulta é obrigatória para perguntas de suporte operacional" in section
     assert "execute primeiro o `curl` de `/confluence/search`" in section
+    assert "/task" in section
     assert "A busca principal deve manter `&space=`" in section
     assert "resultados forem vazios, lentos ou pouco aderentes" in section
     assert "&space=Postos" in section
@@ -90,6 +116,27 @@ def test_agent_prompt_does_not_instruct_read_tool_for_file_evidence() -> None:
         "'Read...'",
     ):
         assert forbidden not in prompt
+
+
+def test_agent_prompt_passes_execution_profile_to_session_tools() -> None:
+    prompt = _agent_context.build_prompt_with_agent(
+        "investigue profundamente esse bug",
+        skills=[],
+        sandbox_session_url="http://sandbox:8080",
+        repos=[
+            {
+                "slug": "autosystem",
+                "worktree_path": "/repos/sessions/abc/autosystem",
+                "confluence_url": "https://share.linx.com.br",
+                "confluence_space": "Postos",
+            }
+        ],
+        execution_profile="deep",
+    )
+
+    assert "Perfil selecionado: Profundo" in prompt
+    assert "Sub-agente de investigação" in prompt
+    assert "No perfil profundo" in prompt
 
 
 def test_build_prompt_injects_repo_architect_agent_before_skills() -> None:
