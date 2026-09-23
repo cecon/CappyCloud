@@ -12,6 +12,7 @@
  */
 
 import { useState } from 'react'
+import type { TurnPhaseStage } from '../api'
 import styles from './chat.module.css'
 
 export type ThoughtStep =
@@ -28,6 +29,17 @@ export type ThoughtStep =
       output?: string
       isError?: boolean
       done: boolean
+    }
+  | {
+      /** Fase real do turno (workspace, contexto, modelo) ou erro terminal. */
+      kind: 'phase'
+      id: string
+      stage: TurnPhaseStage | 'error'
+      label: string
+      done: boolean
+      startedAt: number
+      durationMs?: number
+      isError?: boolean
     }
 
 interface Props {
@@ -78,6 +90,7 @@ function summarizeToolInput(name: string, raw: string): string {
 }
 
 function describeActiveStep(step: ThoughtStep): string {
+  if (step.kind === 'phase') return `${step.label}…`
   if (step.kind === 'text') {
     const trimmed = step.content.trim().replace(/\s+/g, ' ')
     return trimmed.length > 80 ? `${trimmed.slice(0, 80)}…` : trimmed || 'Pensando…'
@@ -140,6 +153,8 @@ function activeHeaderLabel(steps: ThoughtStep[], idleMs: number): string {
   )
   if (runningTools.length > 1) return `${runningTools.length} ferramentas trabalhando em paralelo`
   if (runningTools.length === 1) return describeActiveStep(runningTools[0])
+  const openPhase = steps.find((s) => s.kind === 'phase' && !s.done)
+  if (openPhase) return describeActiveStep(openPhase)
   if (idleMs < 8_000) return 'Pensando…'
   if (idleMs < 35_000) return 'Cruzando resultados das ferramentas…'
   if (idleMs < 90_000) return 'Aguardando o coordenador continuar…'
@@ -172,8 +187,9 @@ export function ThinkingStream({
     : `Pensei por ${formatElapsed(elapsedMs)}`
 
   const toolCounts = countByTool(steps)
-  const hasError = steps.some((s) => s.kind === 'tool' && s.isError)
+  const hasError = steps.some((s) => (s.kind === 'tool' || s.kind === 'phase') && s.isError)
   const coordinatorLabel = activeCoordinatorLabel(steps, idleMs)
+  const actionCount = steps.filter((s) => s.kind !== 'phase').length
 
   return (
     <div
@@ -222,9 +238,11 @@ export function ThinkingStream({
           )}
         </span>
 
-        <span className={styles.thinkingStreamCount}>
-          {steps.length} {steps.length === 1 ? 'passo' : 'passos'}
-        </span>
+        {actionCount > 0 && (
+          <span className={styles.thinkingStreamCount}>
+            {actionCount} {actionCount === 1 ? 'passo' : 'passos'}
+          </span>
+        )}
         <span className={styles.thinkingStreamChevron} aria-hidden="true">
           {expanded ? '▾' : '▸'}
         </span>
@@ -238,7 +256,9 @@ export function ThinkingStream({
               className={styles.thinkingStreamStep}
               style={{ ['--cc-step-delay' as string]: `${Math.min(idx, 8) * 40}ms` }}
             >
-              {step.kind === 'text' ? (
+              {step.kind === 'phase' ? (
+                <ThinkingPhaseStep step={step} />
+              ) : step.kind === 'text' ? (
                 <ThinkingTextStep content={step.content} />
               ) : (
                 <ThinkingToolStep
@@ -265,6 +285,26 @@ export function ThinkingStream({
             </div>
           )}
         </div>
+      )}
+    </div>
+  )
+}
+
+/** Linha discreta de fase: workspace/contexto/modelo com a duração real. */
+function ThinkingPhaseStep({ step }: { step: Extract<ThoughtStep, { kind: 'phase' }> }) {
+  const mark = step.isError ? '✗' : step.done ? '✓' : '⟳'
+  return (
+    <div
+      className={`${styles.thinkingStreamPhaseStep} ${
+        step.done ? '' : styles.thinkingStreamPhaseStepRunning
+      } ${step.isError ? styles.thinkingStreamPhaseStepError : ''}`}
+    >
+      <span className={styles.thinkingStreamPhaseMark} aria-hidden="true">
+        {mark}
+      </span>
+      <span className={styles.thinkingStreamPhaseLabel}>{step.label}</span>
+      {step.done && step.durationMs !== undefined && (
+        <span className={styles.thinkingStreamPhaseDuration}>{formatElapsed(step.durationMs)}</span>
       )}
     </div>
   )

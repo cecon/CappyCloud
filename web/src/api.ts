@@ -484,9 +484,15 @@ export interface ActionRequiredEvent {
   choices: string[] | null
 }
 
+/**
+ * Fases reais de um turno emitidas pelo backend: workspace (clone/worktree na
+ * primeira mensagem), context (montagem do prompt) e agent (espera do modelo).
+ */
+export type TurnPhaseStage = 'workspace' | 'context' | 'agent'
+
 export interface StatusEvent {
   message: string
-  stage?: 'session' | 'repository' | 'ready' | 'agent'
+  stage?: TurnPhaseStage
   mode?: 'initializing' | 'resuming'
   state?: 'active' | 'done'
   metadata?: {
@@ -494,7 +500,27 @@ export interface StatusEvent {
       runtime_confirmed: boolean
       source: 'openclaude_startup_alert'
     }
+    duration_ms?: number
   }
+}
+
+/** Evento compactado do histórico de um turno (ver GET /conversations/:id/activity). */
+export interface ConversationActivityEvent {
+  type: string
+  data: Record<string, unknown>
+  at: string | null
+}
+
+/** Um turno do agente com os eventos que de facto aconteceram. */
+export interface ConversationActivityTurn {
+  task_id: string
+  user_message_id: string | null
+  status: string
+  model_used: string | null
+  created_at: string
+  completed_at: string | null
+  last_event_at: string | null
+  events: ConversationActivityEvent[]
 }
 
 export interface ContextProgressEvent {
@@ -634,6 +660,27 @@ function safeDiagnosticSource(value: unknown): string {
 function safeDiagnosticText(value: unknown): string {
   const text = typeof value === 'string' ? value.trim() : ''
   return /^[A-Za-z0-9_.:+-]{1,64}$/.test(text) ? text : ''
+}
+
+function parseStatusMetadata(value: unknown): StatusEvent['metadata'] | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const durationMs = (value as Record<string, unknown>).duration_ms
+  const warning = safePermissionWarningMetadata(value)
+  if (typeof durationMs !== 'number') return warning
+  return { ...warning, duration_ms: durationMs }
+}
+
+/** Converte um evento `status` cru (SSE ou histórico) no formato tipado. */
+export function parseStatusEvent(evt: Record<string, unknown>): StatusEvent {
+  const stage = evt.stage
+  const mode = evt.mode
+  return {
+    message: (evt.message as string) ?? 'Preparando sessão...',
+    stage: stage === 'workspace' || stage === 'context' || stage === 'agent' ? stage : undefined,
+    mode: mode === 'initializing' || mode === 'resuming' ? mode : undefined,
+    state: evt.state === 'active' || evt.state === 'done' ? evt.state : undefined,
+    metadata: parseStatusMetadata(evt.metadata),
+  }
 }
 
 function safePermissionWarningMetadata(value: unknown): StatusEvent['metadata'] | undefined {
@@ -820,6 +867,18 @@ export async function fetchMessages(token: string, conversationId: string): Prom
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) throw new Error('Não foi possível carregar mensagens')
+  return res.json()
+}
+
+/** Histórico de ações do agente por turno, para reconstruir a timeline. */
+export async function fetchConversationActivity(
+  token: string,
+  conversationId: string,
+): Promise<ConversationActivityTurn[]> {
+  const res = await apiFetch(`/api/conversations/${conversationId}/activity`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error('Não foi possível carregar o histórico de ações')
   return res.json()
 }
 
@@ -1052,21 +1111,9 @@ export async function streamAssistantReply(
               choices: (evt.choices as string[] | null) ?? null,
             })
             break
-          case 'status': {
-            const stage = evt.stage
-            const mode = evt.mode
-            eventHandlers.onStatus({
-              message: (evt.message as string) ?? 'Preparando sessão...',
-              stage:
-                stage === 'session' || stage === 'repository' || stage === 'ready' || stage === 'agent'
-                  ? stage
-                  : undefined,
-              mode: mode === 'initializing' || mode === 'resuming' ? mode : undefined,
-              state: evt.state === 'active' || evt.state === 'done' ? evt.state : undefined,
-              metadata: safePermissionWarningMetadata(evt.metadata),
-            })
+          case 'status':
+            eventHandlers.onStatus(parseStatusEvent(evt))
             break
-          }
           case 'payload_diagnostic': {
             const diagnostics = parsePayloadDiagnostics(evt.diagnostics)
             if (diagnostics) {

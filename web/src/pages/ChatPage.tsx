@@ -19,6 +19,7 @@ import {
   fetchBranches,
   fetchConversationDiff,
   fetchConversations,
+  fetchConversationActivity,
   fetchConversationUsage,
   fetchMessages,
   executeSlashCommand,
@@ -38,8 +39,6 @@ import {
   type ActionRequiredEvent,
   type AiModel,
   type ChatMessage,
-  type CommandResultEvent,
-  type CommandStartEvent,
   type Conversation,
   type ConversationUsage,
   type ContextProgressEvent,
@@ -52,7 +51,6 @@ import {
   type RuntimeStateEvent,
   type Sandbox,
   type SlashCommand,
-  type StatusEvent,
   type SubagentGroupEvent,
   type Workspace,
 } from '../api'
@@ -62,6 +60,16 @@ import { AgentActivityCard, type AgentActivityStatus } from '../components/chat/
 import { ModelPicker } from '../components/ModelPicker'
 import { ThinkingIndicator } from '../components/ThinkingIndicator'
 import { ThinkingStream, type ThoughtStep } from '../components/ThinkingStream'
+import {
+  appendCommandStartToThoughts,
+  appendTextToThoughts,
+  appendToolStartToThoughts,
+  applyCommandResultToThoughts,
+  applyPhaseToThoughts,
+  applyToolResultToThoughts,
+  finishPendingThoughtTools,
+  buildHistoryTraces,
+} from '../components/chat/thoughtSteps'
 import { CommandConfirmation } from '../components/chat/CommandConfirmation'
 import { ChatVerticalNavigation } from '../components/chat/ChatVerticalNavigation'
 import { SlashCommandMenu } from '../components/chat/SlashCommandMenu'
@@ -474,15 +482,6 @@ function formatCostUsd(value: number | null | undefined): string {
   return `$${value.toFixed(2)}`
 }
 
-function formatShortDuration(ms: number): string {
-  if (ms < 1000) return 'menos de 1s'
-  const seconds = Math.floor(ms / 1000)
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  const rest = seconds - minutes * 60
-  return rest > 0 ? `${minutes}m ${rest}s` : `${minutes}m`
-}
-
 /**
  * Ordena modelos: free primeiro (melhor para experimentar), depois por preço de
  * input ascendente, com pricing desconhecido no fim. Estável por display_name.
@@ -567,16 +566,6 @@ function groupConversations(convs: Conversation[]): { label: string; items: Conv
     .map(([label, items]) => ({ label, items }))
 }
 
-type SessionMode = 'initializing' | 'resuming'
-type SessionStageKey = 'session' | 'repository' | 'ready' | 'agent'
-
-type SessionStageState = {
-  key: SessionStageKey
-  label: string
-  detail?: string
-  status: 'pending' | 'active' | 'done'
-}
-
 type SessionProgressAnchor = {
   id: string
   content: string
@@ -588,20 +577,6 @@ type ActivityTrace = {
   elapsedMs: number
   interrupted?: boolean
 }
-
-const SESSION_STAGES: Array<{ key: SessionStageKey; label: string }> = [
-  { key: 'session', label: 'Configurar contêiner na nuvem' },
-  { key: 'repository', label: 'Repositório clonado' },
-  { key: 'ready', label: 'Worktree da sessão criado' },
-  { key: 'agent', label: 'Agente iniciado' },
-]
-
-const RESUMED_SESSION_STAGES: Array<{ key: SessionStageKey; label: string }> = [
-  { key: 'session', label: 'Contêiner na nuvem reativado' },
-  { key: 'repository', label: 'Repositório sincronizado' },
-  { key: 'ready', label: 'Worktree da sessão reutilizado' },
-  { key: 'agent', label: 'Agente reiniciado' },
-]
 
 /** Customiza elementos Markdown que precisam de comportamento visual ou seguro. */
 const markdownComponents: Components = {
@@ -643,157 +618,6 @@ const markdownComponents: Components = {
       />
     )
   },
-}
-
-/** Devolve os rótulos corretos para sessão nova ou retomada. */
-function sessionStagesForMode(mode: SessionMode): Array<{ key: SessionStageKey; label: string }> {
-  return mode === 'resuming' ? RESUMED_SESSION_STAGES : SESSION_STAGES
-}
-
-/** Cria o estado inicial do checklist de inicialização da sessão. */
-function createSessionProgress(mode: SessionMode = 'initializing'): SessionStageState[] {
-  return sessionStagesForMode(mode).map((stage) => ({ ...stage, status: 'pending' }))
-}
-
-/** Marca etapas concluídas conforme eventos de progresso chegam do backend. */
-function reduceSessionProgress(
-  previous: SessionStageState[],
-  event: StatusEvent,
-): SessionStageState[] {
-  const mode = event.mode ?? 'initializing'
-  const stages = sessionStagesForMode(mode)
-  const currentIndex = stages.findIndex((stage) => stage.key === event.stage)
-  if (currentIndex < 0) return previous
-  const stageDone = event.state === 'done'
-
-  return previous.map((stage, index) => {
-    const nextStage = stages[index] ?? stage
-    if (index < currentIndex) {
-      return { ...stage, label: nextStage.label, status: 'done' }
-    }
-    if (index === currentIndex) {
-      return {
-        ...stage,
-        label: nextStage.label,
-        status: stageDone ? 'done' : 'active',
-        detail: event.message,
-      }
-    }
-    return { ...stage, label: nextStage.label }
-  })
-}
-
-/**
- * Timeline cronológica do "pensamento" do agente.
- * Concatena chunks de texto consecutivos no último step de tipo 'text' para
- * preservar a ordem natural texto→tool→texto→tool→… Quando chega um tool_start,
- * congela o texto atual e abre um novo step de tool. Tool_result actualiza o
- * step correspondente.
- */
-function appendTextToThoughts(
-  prev: ThoughtStep[],
-  delta: string,
-): ThoughtStep[] {
-  if (!delta) return prev
-  const last = prev[prev.length - 1]
-  if (last && last.kind === 'text') {
-    return [...prev.slice(0, -1), { ...last, content: last.content + delta }]
-  }
-  return [
-    ...prev,
-    { kind: 'text', id: `t-${prev.length}-${Date.now()}`, content: delta },
-  ]
-}
-
-function appendToolStartToThoughts(
-  prev: ThoughtStep[],
-  tool: { id: string; name: string; input: string },
-): ThoughtStep[] {
-  if (!tool.id || !tool.name) return prev
-  if (prev.some((s) => s.kind === 'tool' && s.id === tool.id)) return prev
-  return [
-    ...prev,
-    {
-      kind: 'tool',
-      id: tool.id,
-      name: tool.name,
-      input: tool.input,
-      done: false,
-    },
-  ]
-}
-
-function applyToolResultToThoughts(
-  prev: ThoughtStep[],
-  result: { id: string; output: string; is_error: boolean },
-): ThoughtStep[] {
-  if (!result.id) return prev
-  return prev.map((step) =>
-    step.kind === 'tool' && step.id === result.id
-      ? { ...step, output: result.output, isError: result.is_error, done: true }
-      : step,
-  )
-}
-
-function commandThoughtId(command: string): string {
-  return `command:${command || 'unknown'}`
-}
-
-function appendCommandStartToThoughts(prev: ThoughtStep[], event: CommandStartEvent): ThoughtStep[] {
-  const id = commandThoughtId(event.command)
-  if (prev.some((step) => step.kind === 'tool' && step.id === id)) return prev
-  return [
-    ...prev,
-    {
-      kind: 'tool',
-      id,
-      name: event.command || 'comando',
-      input: event.label,
-      done: false,
-    },
-  ]
-}
-
-function applyCommandResultToThoughts(prev: ThoughtStep[], event: CommandResultEvent): ThoughtStep[] {
-  const id = commandThoughtId(event.command)
-  const isError =
-    event.status === 'failed' ||
-    event.status === 'cancelled' ||
-    event.status === 'unavailable'
-  const output = event.details_markdown || event.summary
-  const updated = prev.map((step) =>
-    step.kind === 'tool' && step.id === id
-      ? { ...step, output, isError, done: true }
-      : step,
-  )
-  if (updated !== prev && updated.some((step) => step.kind === 'tool' && step.id === id)) {
-    return updated
-  }
-  return [
-    ...prev,
-    {
-      kind: 'tool',
-      id,
-      name: event.command || 'comando',
-      input: 'Comando do chat',
-      output,
-      isError,
-      done: true,
-    },
-  ]
-}
-
-function finishPendingThoughtTools(prev: ThoughtStep[], isError = false): ThoughtStep[] {
-  return prev.map((step) =>
-    step.kind === 'tool' && !step.done
-      ? {
-          ...step,
-          done: true,
-          isError: isError || step.isError,
-          output: step.output ?? '',
-        }
-      : step,
-  )
 }
 
 function updateActivityTrace(
@@ -872,7 +696,6 @@ export function ChatPage() {
   const [streamActivityAt, setStreamActivityAt] = useState<number | null>(null)
   const [streamElapsedMs, setStreamElapsedMs] = useState(0)
   const [pendingAction, setPendingAction] = useState<ActionRequiredEvent | null>(null)
-  const [sessionProgress, setSessionProgress] = useState<SessionStageState[]>([])
   const [sessionProgressAnchor, setSessionProgressAnchor] = useState<SessionProgressAnchor | null>(null)
   const [contextProgress, setContextProgress] = useState<ContextProgressEvent | null>(null)
   const [subagentGroups, setSubagentGroups] = useState<SubagentGroupEvent[]>([])
@@ -1286,6 +1109,21 @@ export function ChatPage() {
     })
   }, [selectedModelId, selectedSlug])
 
+  /** Reconstrói a timeline de ações de cada turno a partir do histórico do servidor. */
+  const loadActivityHistory = useCallback(
+    async (conversationId: string, msgs: ChatMessage[]) => {
+      try {
+        const turns = await fetchConversationActivity(token, conversationId)
+        const traces = buildHistoryTraces(turns, msgs)
+        setActivityTraces((prev) => ({ ...prev, ...traces }))
+      } catch (e) {
+        if (e instanceof AuthError) redirectToLogin()
+        // Sem histórico a conversa continua utilizável; só a timeline antiga não aparece.
+      }
+    },
+    [token],
+  )
+
   useEffect(() => {
     if (!activeId) {
       setMessages([])
@@ -1319,6 +1157,9 @@ export function ChatPage() {
             preserveOptimistic && msgs.length === 0 && prev.length > 0 ? prev : msgs,
           )
           setConvUsage(usage)
+          // Na conversa recém-criada a timeline ao vivo é a fonte; o histórico
+          // é recarregado quando o turno termina.
+          if (!preserveOptimistic) void loadActivityHistory(activeId, msgs)
         }
       } catch (e) {
         if (e instanceof AuthError) {
@@ -1331,7 +1172,7 @@ export function ChatPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [activeId, token])
+  }, [activeId, token, loadActivityHistory])
 
   async function handleStop() {
     if (stopRequestedRef.current) return
@@ -1433,7 +1274,6 @@ export function ChatPage() {
     setThoughtSteps([])
     setStreamActivityAt(null)
     setPendingAction(null)
-    setSessionProgress([])
     setSessionProgressAnchor(null)
     setContextProgress(null)
     setSubagentGroups([])
@@ -1487,7 +1327,6 @@ export function ChatPage() {
     setStreamActivityAt(startedAt)
     setStreamElapsedMs(0)
     setPendingAction(null)
-    setSessionProgress(createSessionProgress('initializing'))
     setContextProgress(null)
     setSubagentGroups([])
     setRuntimeStates([])
@@ -1570,12 +1409,10 @@ export function ChatPage() {
               setPermissionWarningRuntimeConfirmed(true)
             }
             if (!status.stage) return
-            const statusWithMode = { ...status, mode: status.mode ?? 'initializing' }
-            setSessionProgress((prev) =>
-              reduceSessionProgress(
-                prev.length ? prev : createSessionProgress(statusWithMode.mode),
-                statusWithMode,
-              )
+            const atMs = Date.now()
+            setThoughtSteps((prev) => applyPhaseToThoughts(prev, status, atMs))
+            setActivityTraces((prev) =>
+              updateActivityTrace(prev, userMsg, (steps) => applyPhaseToThoughts(steps, status, atMs)),
             )
           },
           onPayloadDiagnostic(diagnostics) {
@@ -1599,10 +1436,11 @@ export function ChatPage() {
             setRuntimeStates((prev) => [...prev.slice(-3), state])
           },
           onError(message) {
-            setStreamActivityAt(Date.now())
-            setThoughtSteps((prev) => finishPendingThoughtTools(prev, true))
+            const atMs = Date.now()
+            setStreamActivityAt(atMs)
+            setThoughtSteps((prev) => finishPendingThoughtTools(prev, true, atMs))
             setActivityTraces((prev) =>
-              updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps, true)),
+              updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps, true, atMs)),
             )
             setMessages((m) => [
               ...m,
@@ -1616,11 +1454,12 @@ export function ChatPage() {
             ])
           },
           onDone(usage) {
-            setStreamActivityAt(Date.now())
+            const atMs = Date.now()
+            setStreamActivityAt(atMs)
             setLiveUsage(usage)
-            setThoughtSteps((prev) => finishPendingThoughtTools(prev))
+            setThoughtSteps((prev) => finishPendingThoughtTools(prev, false, atMs))
             setActivityTraces((prev) =>
-              updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps)),
+              updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps, false, atMs)),
             )
           },
           signal: ctrl.signal,
@@ -1652,7 +1491,7 @@ export function ChatPage() {
       optimisticConversationIdRef.current = null
       setConvUsage(totals)
       setLiveUsage(null)
-      setSessionProgress([])
+      void loadActivityHistory(c.id, msgs)
     } catch (e) {
       if (e instanceof AuthError) {
         redirectToLogin(); return
@@ -1722,7 +1561,6 @@ export function ChatPage() {
     setStreamElapsedMs(0)
     setPendingAction(null)
       if (!isActionResume) {
-        setSessionProgress([])
         setContextProgress(null)
         setSubagentGroups([])
         setRuntimeStates([])
@@ -1831,13 +1669,13 @@ export function ChatPage() {
               setPermissionWarningRuntimeConfirmed(true)
             }
             if (!status.stage) return
-            const statusWithMode = { ...status, mode: status.mode ?? 'initializing' }
-            setSessionProgress((prev) =>
-              reduceSessionProgress(
-                prev.length ? prev : createSessionProgress(statusWithMode.mode),
-                statusWithMode,
+            const atMs = Date.now()
+            setThoughtSteps((prev) => applyPhaseToThoughts(prev, status, atMs))
+            if (!isActionResume) {
+              setActivityTraces((prev) =>
+                updateActivityTrace(prev, userMsg, (steps) => applyPhaseToThoughts(steps, status, atMs)),
               )
-            )
+            }
           },
           onPayloadDiagnostic(diagnostics) {
             setStreamActivityAt(Date.now())
@@ -1860,11 +1698,12 @@ export function ChatPage() {
             setRuntimeStates((prev) => [...prev.slice(-3), state])
           },
           onError(message) {
-            setStreamActivityAt(Date.now())
-            setThoughtSteps((prev) => finishPendingThoughtTools(prev, true))
+            const atMs = Date.now()
+            setStreamActivityAt(atMs)
+            setThoughtSteps((prev) => finishPendingThoughtTools(prev, true, atMs))
             if (!isActionResume) {
               setActivityTraces((prev) =>
-                updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps, true)),
+                updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps, true, atMs)),
               )
             }
             setMessages((m) => [
@@ -1879,12 +1718,13 @@ export function ChatPage() {
             ])
           },
           onDone(usage) {
-            setStreamActivityAt(Date.now())
+            const atMs = Date.now()
+            setStreamActivityAt(atMs)
             setLiveUsage(usage)
-            setThoughtSteps((prev) => finishPendingThoughtTools(prev))
+            setThoughtSteps((prev) => finishPendingThoughtTools(prev, false, atMs))
             if (!isActionResume) {
               setActivityTraces((prev) =>
-                updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps)),
+                updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps, false, atMs)),
               )
             }
           },
@@ -1918,6 +1758,7 @@ export function ChatPage() {
       setMessages(msgs)
       setConvUsage(totals)
       setLiveUsage(null)
+      void loadActivityHistory(activeId, msgs)
     } catch (e) {
       if (e instanceof AuthError) {
         redirectToLogin(); return
@@ -1955,7 +1796,6 @@ export function ChatPage() {
     null
   const showThinking =
     streaming &&
-    !sessionProgress.length &&
     thoughtSteps.length === 0 &&
     !pendingAction
 
@@ -2191,7 +2031,6 @@ export function ChatPage() {
               activityTraces={activityTraces}
               streamElapsedMs={streamElapsedMs}
               streamIdleMs={streamIdleMs}
-              sessionProgress={sessionProgress}
               pendingAction={pendingAction}
               contextProgress={contextProgress}
               subagentGroups={subagentGroups}
@@ -2884,7 +2723,6 @@ interface ActiveChatProps {
   activityTraces: Record<string, ActivityTrace>
   streamElapsedMs: number
   streamIdleMs: number
-  sessionProgress: SessionStageState[]
   pendingAction: ActionRequiredEvent | null
   contextProgress: ContextProgressEvent | null
   subagentGroups: SubagentGroupEvent[]
@@ -2943,7 +2781,7 @@ function groupStatus(group: SubagentGroupEvent): AgentActivityStatus {
 }
 
 function ActiveChat({
-  messages, messagesLoading, messagesError, sessionProgressAnchor, thoughtSteps, activityTraces, streamElapsedMs, streamIdleMs, sessionProgress, pendingAction,
+  messages, messagesLoading, messagesError, sessionProgressAnchor, thoughtSteps, activityTraces, streamElapsedMs, streamIdleMs, pendingAction,
   contextProgress, subagentGroups, runtimeStates, streamToolStats,
   showThinking, streaming, input, setInput, inputRef,
   onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch, activeSandboxName, sandboxAccessCount: _sandboxAccessCount,
@@ -3148,36 +2986,25 @@ function ActiveChat({
     } else {
       requestAnimationFrame(() => setShowJumpToLatest(true))
     }
-  }, [messages, thoughtSteps, sessionProgress, pendingAction, contextProgress, subagentGroups, runtimeStates, streaming, scrollToLatest])
+  }, [messages, thoughtSteps, activityTraces, pendingAction, contextProgress, subagentGroups, runtimeStates, streaming, scrollToLatest])
 
-  let sessionProgressBeforeIndex = -1
-  if (sessionProgressAnchor) {
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message = messages[index]
-      if (
-        message.id === sessionProgressAnchor.id ||
-        (message.role === 'user' && message.content === sessionProgressAnchor.content)
-      ) {
-        sessionProgressBeforeIndex = index
-        break
-      }
-    }
-    if (sessionProgressBeforeIndex < 0) {
-      for (let index = messages.length - 1; index >= 0; index -= 1) {
-        if (messages[index].role === 'user') {
-          sessionProgressBeforeIndex = index
-          break
-        }
-      }
-    }
-  }
-
-  const tracesByContent = Object.values(activityTraces)
+  const lastUserMessageId = [...messages].reverse().find((message) => message.role === 'user')?.id
+  /**
+   * O turno ao vivo fica guardado sob o id local da mensagem; quando as
+   * mensagens voltam do servidor com outro id, a última mensagem do utilizador
+   * continua ligada ao rastro ao vivo até o histórico ser recarregado.
+   */
+  const isLiveTurnMessage = (message: ChatMessage): boolean =>
+    !!sessionProgressAnchor &&
+    (message.id === sessionProgressAnchor.id ||
+      (message.id === lastUserMessageId && message.content === sessionProgressAnchor.content))
   const activityTraceFor = (message: ChatMessage): ActivityTrace | null => {
     if (message.role !== 'user') return null
-    return activityTraces[message.id]
-      ? (tracesByContent.find((trace) => trace.content === message.content) ?? null)
-      : null
+    if (activityTraces[message.id]) return activityTraces[message.id]
+    if (isLiveTurnMessage(message) && sessionProgressAnchor) {
+      return activityTraces[sessionProgressAnchor.id] ?? null
+    }
+    return null
   }
   const hasSendableAttachment = trayItems.some(isSendableTrayItem)
   const hasUploadInProgress = trayItems.some((item) => item.kind === 'uploading')
@@ -3317,26 +3144,11 @@ function ActiveChat({
                   <Text size="sm" c="dimmed">Esta conversa ainda não tem mensagens.</Text>
                 </div>
               )}
-              {sessionProgress.length > 0 && sessionProgressBeforeIndex < 0 && (
-                <AgentBubble compact>
-                  <SessionProgressCard
-                    stages={sessionProgress}
-                    elapsedMs={streamElapsedMs}
-                    idleMs={streamIdleMs}
-                  />
-                </AgentBubble>
-              )}
-              {messages.map((m, index) => (
+              {messages.map((m) => {
+                const trace = activityTraceFor(m)
+                const liveTurn = streaming && isLiveTurnMessage(m)
+                return (
                 <Fragment key={m.id}>
-                  {sessionProgress.length > 0 && index === sessionProgressBeforeIndex && (
-                    <AgentBubble compact>
-                      <SessionProgressCard
-                        stages={sessionProgress}
-                        elapsedMs={streamElapsedMs}
-                        idleMs={streamIdleMs}
-                      />
-                    </AgentBubble>
-                  )}
                   <div
                     ref={setMessageTargetRef(`message-${m.id}`)}
                     className={styles.messageAnchor}
@@ -3353,27 +3165,20 @@ function ActiveChat({
                       payloadDiagnostics={m.payload_diagnostics ?? null}
                     />
                   </div>
-                  {activityTraceFor(m)?.steps.length ? (
+                  {trace?.steps.length ? (
                     <AgentBubble compact>
                       <ThinkingStream
-                        steps={activityTraceFor(m)!.steps}
-                        streaming={streaming && sessionProgressAnchor?.content === m.content}
-                        elapsedMs={
-                          streaming && sessionProgressAnchor?.content === m.content
-                            ? streamElapsedMs
-                            : activityTraceFor(m)!.elapsedMs
-                        }
-                        idleMs={
-                          streaming && sessionProgressAnchor?.content === m.content
-                            ? streamIdleMs
-                            : 0
-                        }
-                        interrupted={!!activityTraceFor(m)!.interrupted}
+                        steps={trace.steps}
+                        streaming={liveTurn}
+                        elapsedMs={liveTurn ? streamElapsedMs : trace.elapsedMs}
+                        idleMs={liveTurn ? streamIdleMs : 0}
+                        interrupted={!!trace.interrupted}
                       />
                     </AgentBubble>
                   ) : null}
                 </Fragment>
-              ))}
+                )
+              })}
               {streaming && (contextProgress || subagentGroups.length > 0 || runtimeStates.length > 0 || heavyStreamingReason) && (
                 <AgentBubble compact>
                   <Stack gap="xs">
@@ -3428,9 +3233,7 @@ function ActiveChat({
                         idleMs={streamIdleMs}
                       />
                     )}
-                    {streaming &&
-                      sessionProgress.length === 0 &&
-                      showThinking && <ThinkingIndicator />}
+                    {streaming && showThinking && <ThinkingIndicator />}
                   </Stack>
                 </AgentBubble>
               )}
@@ -3636,99 +3439,6 @@ function ActiveChat({
           </div>
         </div>
       </div>
-    </div>
-  )
-}
-
-/** Card com progresso operacional da criação da sessão e execução do agente. */
-function SessionProgressCard({
-  stages,
-  elapsedMs,
-  idleMs,
-}: {
-  stages: SessionStageState[]
-  elapsedMs: number
-  idleMs: number
-}) {
-  const completed = stages.every((stage) => stage.status === 'done')
-  const doneCount = stages.filter((s) => s.status === 'done').length
-  const progressPct = stages.length > 0 ? (doneCount / stages.length) * 100 : 0
-  const activeStage = stages.find((stage) => stage.status === 'active')
-  const title = completed
-    ? 'Sistema ligado'
-    : activeStage?.key === 'agent'
-      ? 'Agente trabalhando'
-      : 'Ligando sistema'
-  const meta = completed
-    ? `Concluído em ${formatShortDuration(elapsedMs)}`
-    : `Em andamento há ${formatShortDuration(elapsedMs)}`
-  const idleLabel = !completed && activeStage?.key === 'agent' && idleMs >= 5000
-    ? `sem novos eventos há ${formatShortDuration(idleMs)}`
-    : null
-
-  return (
-    <div
-      className={`${styles.sessionProgressCard} ${
-        completed ? styles.sessionProgressCardComplete : ''
-      }`}
-      style={{ ['--cc-progress' as string]: `${progressPct}%` }}
-    >
-      <div
-        className={styles.sessionProgressHeader}
-        aria-live={completed ? 'off' : 'polite'}
-      >
-        <span
-          className={`${styles.sessionProgressBootIcon} ${
-            completed ? styles.sessionProgressBootIconDone : ''
-          }`}
-          aria-hidden="true"
-        >
-          {completed ? '✓' : ''}
-        </span>
-        <span className={styles.sessionProgressHeaderText}>
-          <span>{title}</span>
-          <span className={styles.sessionProgressMeta}>
-            {meta}{idleLabel ? ` · ${idleLabel}` : ''}
-          </span>
-        </span>
-      </div>
-      <div className={styles.sessionProgressList}>
-        {stages.map((stage, index) => (
-          <div
-            key={stage.key}
-            className={styles.sessionProgressItem}
-            style={{ ['--cc-step-delay' as string]: `${Math.min(index, 6) * 45}ms` }}
-          >
-            <span
-              className={`${styles.sessionProgressIcon} ${
-                stage.status === 'active'
-                  ? styles.sessionProgressIconActive
-                  : stage.status === 'done'
-                    ? styles.sessionProgressIconDone
-                    : ''
-              }`}
-              aria-hidden="true"
-            >
-              {stage.status === 'done' ? '✓' : ''}
-            </span>
-            <span className={styles.sessionProgressStepBody}>
-              <span
-                className={`${styles.sessionProgressLabel} ${
-                  stage.status === 'done' ? styles.sessionProgressLabelDone : ''
-                }`}
-              >
-                {stage.label}
-              </span>
-              {stage.detail && (
-                <span className={styles.sessionProgressDetail}>
-                  {stage.detail}
-                </span>
-              )}
-            </span>
-          </div>
-        ))}
-      </div>
-      {!completed && <div className={styles.sessionProgressPulse} aria-hidden="true" />}
     </div>
   )
 }

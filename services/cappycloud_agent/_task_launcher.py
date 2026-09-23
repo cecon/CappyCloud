@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from ._evidence_prefetch import inject_evidence_prefetch
-from ._grpc_session import GrpcSession
 from ._grpc_helpers import sanitize_permission_mode
+from ._grpc_session import GrpcSession
 from ._pipeline_helpers import (
     build_prompt_with_worktree_context,
     resolve_model_provider_runtime_config,
@@ -39,8 +40,17 @@ async def launch_runner(
     """Cria sessão, inicia gRPC e registra o runner ativo."""
     user_id = user_id or conversation_id or "system"
     chat_id = conversation_id or task_id
+    repo_label = _repo_label(repos)
 
     try:
+        # Só a primeira mensagem da conversa prepara workspace (clone/worktree);
+        # as seguintes reutilizam a sessão e não geram fase visível.
+        needs_workspace = not await dispatcher._env_manager.has_session(user_id, chat_id)
+        if needs_workspace:
+            await _emit_phase(
+                dispatcher, task_id, "workspace", f"Preparando workspace{repo_label}", "active"
+            )
+        started = time.monotonic()
         lease = await dispatcher._env_manager.get_or_create_session(
             user_id=user_id,
             chat_id=chat_id,
@@ -49,9 +59,15 @@ async def launch_runner(
             sandbox_id=sandbox_id,
         )
         sandbox = lease.record
-        emit_session_progress = lease.created
-        if emit_session_progress:
-            await _emit_session_ready(dispatcher, task_id, sandbox, repos)
+        if needs_workspace:
+            await _emit_phase(
+                dispatcher,
+                task_id,
+                "workspace",
+                f"Workspace pronto{repo_label}",
+                "done",
+                duration_ms=_elapsed_ms(started),
+            )
     except Exception as exc:
         log.exception("[Dispatcher] Falha ao criar sessão para task %s", task_id[:8])
         await update_task_status(dispatcher._pool, task_id, "error")
@@ -67,6 +83,8 @@ async def launch_runner(
 
     user_prompt = prompt
     sandbox_session_url = f"http://{sandbox.grpc_host}:{sandbox.session_port}"
+    await _emit_phase(dispatcher, task_id, "context", "Preparando contexto", "active")
+    started = time.monotonic()
     prompt = await build_prompt_with_worktree_context(
         prompt,
         sandbox_session_url,
@@ -95,6 +113,14 @@ async def launch_runner(
         repos=repos or [],
         session_root=session_root or sandbox.session_root,
     )
+    await _emit_phase(
+        dispatcher,
+        task_id,
+        "context",
+        "Contexto preparado",
+        "done",
+        duration_ms=_elapsed_ms(started),
+    )
 
     effective_model = override_model or dispatcher._model
     resolved_permission_mode = sanitize_permission_mode(permission_mode)
@@ -114,15 +140,9 @@ async def launch_runner(
         permission_mode=resolved_permission_mode,
     )
 
-    if emit_session_progress:
-        await insert_status_event(
-            dispatcher._pool,
-            task_id,
-            "Aguardando resposta do agente.",
-            "agent",
-            "initializing",
-            state="active",
-        )
+    await _emit_phase(
+        dispatcher, task_id, "agent", f"Aguardando resposta de {effective_model}", "active"
+    )
     try:
         await session.start(prompt, attachments=attachments)
     except Exception as exc:
@@ -145,51 +165,38 @@ async def launch_runner(
         db_url=dispatcher._db_url,
         model_used=effective_model,
         conversation_id=conversation_id,
-        emit_session_progress=emit_session_progress,
     )
     dispatcher._runners[task_id] = runner
     await runner.start()
     log.info("[Dispatcher] TaskRunner started for task %s", task_id[:8])
 
 
-async def _emit_session_ready(
-    dispatcher, task_id: str, sandbox, repos: list | None
+async def _emit_phase(
+    dispatcher,
+    task_id: str,
+    stage: str,
+    message: str,
+    state: str,
+    duration_ms: int | None = None,
 ) -> None:
+    """Registra uma fase real do turno (workspace, contexto, modelo).
+
+    Emitida no momento em que a fase começa/termina, para a timeline refletir
+    o tempo de verdade e ficar no histórico de ``agent_events``.
+    """
+    metadata = {"duration_ms": duration_ms} if duration_ms is not None else None
+    if duration_ms is not None:
+        log.info("[Dispatcher] task %s fase %s: %dms", task_id[:8], stage, duration_ms)
     await insert_status_event(
-        dispatcher._pool,
-        task_id,
-        "Sessão do agente preparada.",
-        "session",
-        "initializing",
+        dispatcher._pool, task_id, message, stage, "initializing", state=state, metadata=metadata
     )
-    if repos:
-        reused = [
-            str(repo.get("slug") or repo.get("alias") or "?")
-            for repo in repos
-            if repo.get("source_workspace_path")
-        ]
-        if reused:
-            await insert_status_event(
-                dispatcher._pool,
-                task_id,
-                f"Workspace persistente reutilizado: {', '.join(reused)}.",
-                "repository",
-                "initializing",
-            )
-        repo_slugs = ", ".join(
-            str(repo.get("slug") or repo.get("alias") or "?") for repo in repos
-        )
-        await insert_status_event(
-            dispatcher._pool,
-            task_id,
-            f"Repositório preparado: {repo_slugs}.",
-            "repository",
-            "initializing",
-        )
-    await insert_status_event(
-        dispatcher._pool,
-        task_id,
-        f"Sessão criada em {sandbox.working_directory}",
-        "ready",
-        "initializing",
-    )
+
+
+def _elapsed_ms(started: float) -> int:
+    return int((time.monotonic() - started) * 1000)
+
+
+def _repo_label(repos: list | None) -> str:
+    slugs = [str(repo.get("slug") or repo.get("alias") or "") for repo in repos or []]
+    slugs = [slug for slug in slugs if slug]
+    return f": {', '.join(slugs)}" if slugs else ""

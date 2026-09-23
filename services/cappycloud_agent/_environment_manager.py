@@ -104,6 +104,10 @@ class EnvironmentManager:
 
     # ── Public API ───────────────────────────────────────────────
 
+    async def has_session(self, user_id: str, chat_id: str) -> bool:
+        """Indica se a conversa já tem sessão registrada (workspace pronto)."""
+        return await self._store.get(user_id, chat_id) is not None
+
     async def get_or_create_session(
         self,
         user_id: str,

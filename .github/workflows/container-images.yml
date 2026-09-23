@@ -69,31 +69,26 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
-  redeploy-portainer:
-    name: Redeploy Portainer stack
+  redeploy-dokploy:
+    name: Redeploy Dokploy stack
     runs-on: ubuntu-latest
     needs: build-and-push
     if: github.ref == 'refs/heads/main'
 
     steps:
-      - name: Trigger Portainer webhook
+      - name: Trigger Dokploy deploy webhook
+        # URL da aba Deployments do compose "cappycloud" no Dokploy
+        # (https://painel.linx.cappyfy.com/api/deploy/compose/<token>).
+        # O Traefik libera só esse caminho fora da allowlist do painel.
         run: |
-          WEBHOOKS="${PORTAINER_WEBHOOK_URLS:-${PORTAINER_WEBHOOK_URL:-}}"
-
-          if [ -z "${WEBHOOKS}" ]; then
-            echo "No Portainer webhook configured; skipping Portainer redeploy."
+          if [ -z "${DOKPLOY_DEPLOY_WEBHOOK_URL}" ]; then
+            echo "No Dokploy webhook configured; skipping redeploy."
             exit 0
           fi
 
-          echo "${WEBHOOKS}" | while IFS= read -r webhook_url; do
-            if [ -z "${webhook_url}" ]; then
-              continue
-            fi
-
-            curl --fail --show-error --silent \
-              --request POST \
-              "${webhook_url}"
-          done
+          curl --fail --show-error --silent \
+            --request POST \
+            --retry 3 --retry-delay 5 \
+            "${DOKPLOY_DEPLOY_WEBHOOK_URL}"
         env:
-          PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
-          PORTAINER_WEBHOOK_URLS: ${{ secrets.PORTAINER_WEBHOOK_URLS }}
+          DOKPLOY_DEPLOY_WEBHOOK_URL: ${{ secrets.DOKPLOY_DEPLOY_WEBHOOK_URL }}
