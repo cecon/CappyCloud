@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from app.domain.value_objects import DEFAULT_PERMISSION_MODE
+from app.domain.value_objects import DEFAULT_PERMISSION_MODE, AgentRuntime
 
 
 def _utcnow() -> datetime:
@@ -22,13 +22,6 @@ class UserRole(StrEnum):
 class SandboxRuntime(StrEnum):
     COMPOSE = "compose"
     SWARM = "swarm"
-
-
-class AgentRuntime(StrEnum):
-    """Runtime do agente dentro da sandbox (``runtime`` é o orquestrador)."""
-
-    OPENCLAUDE = "openclaude"
-    CLAUDE_CLI = "claude_cli"
 
 
 class ModelTier(StrEnum):
