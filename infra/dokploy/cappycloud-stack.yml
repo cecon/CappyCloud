@@ -82,6 +82,8 @@ services:
       CONFLUENCE_MAIN_MENU_URL: ${CONFLUENCE_MAIN_MENU_URL:-}
     volumes:
       - cappycloud_repos_data:/repos
+      # Config e credenciais do Claude CLI (`claude login`); sobrevive a redeploys.
+      - cappycloud_claude_config:/root/.claude
     networks:
       cappycloud_internal:
         aliases:
@@ -227,6 +229,8 @@ volumes:
     name: cappycloud_redis_data
   cappycloud_repos_data:
     name: cappycloud_repos_data
+  cappycloud_claude_config:
+    name: cappycloud_claude_config
   cappycloud_attachments_data:
     name: cappycloud_attachments_data
   cappycloud_postgres_backups:

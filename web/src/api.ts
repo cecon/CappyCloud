@@ -1810,6 +1810,9 @@ export type ContainerStatus =
   | 'stopped'
   | 'error'
 
+/** Runtime do agente na sandbox (`runtime` é o orquestrador compose/swarm). */
+export type AgentRuntime = 'openclaude' | 'claude_cli'
+
 export interface Sandbox {
   id: string
   name: string
@@ -1820,6 +1823,7 @@ export interface Sandbox {
   runtime: SandboxRuntime
   image: string
   claude_md?: string
+  agent_runtime?: AgentRuntime
   env_vars: Record<string, string>
   container_status: ContainerStatus
   active_sessions: number
@@ -1841,6 +1845,7 @@ export interface SandboxAdminCreate {
   runtime: SandboxRuntime
   image: string
   claude_md?: string
+  agent_runtime?: AgentRuntime
   env_vars?: Record<string, string>
   host?: string | null
   grpc_port?: number
@@ -1850,6 +1855,7 @@ export interface SandboxAdminCreate {
 export interface SandboxAdminUpdate {
   image?: string
   claude_md?: string
+  agent_runtime?: AgentRuntime
   env_vars?: Record<string, string>
   host?: string
   grpc_port?: number
@@ -1886,6 +1892,31 @@ export async function createAdminSandbox(
     throw new Error(formatApiErrorPayload(err) || 'Falha ao criar sandbox')
   }
   return (await res.json()) as Sandbox
+}
+
+/** Estado do Claude CLI dentro da sandbox (instalado, versão, `claude login`). */
+export interface SandboxClaudeStatus {
+  reachable: boolean
+  error?: string
+  installed?: boolean
+  version?: string | null
+  logged_in?: boolean
+  config_dir?: string
+  active_turns?: number
+}
+
+export async function fetchSandboxClaudeStatus(
+  token: string,
+  sandboxId: string,
+): Promise<SandboxClaudeStatus> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/claude-status`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao consultar o Claude CLI')
+  }
+  return (await res.json()) as SandboxClaudeStatus
 }
 
 export async function updateAdminSandbox(

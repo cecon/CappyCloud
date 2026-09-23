@@ -24,6 +24,7 @@ from dataclasses import dataclass
 import asyncpg
 import httpx
 
+from ._agent_session import AGENT_RUNTIME_OPENCLAUDE
 from ._session_store import SandboxRecord, SessionStore
 
 log = logging.getLogger(__name__)
@@ -101,6 +102,27 @@ class EnvironmentManager:
             int(row["session_port"] or self._default_session_port),
             str(row["name"] or self._default_name),
         )
+
+    async def resolve_agent_runtime(self, sandbox_id: str) -> str:
+        """Runtime do agente configurado na sandbox (lido a cada turno).
+
+        Não fica no ``SandboxRecord`` da sessão para que trocar o runtime no
+        admin valha já na próxima mensagem, inclusive em conversas abertas.
+        """
+        if not sandbox_id or not self._database_url:
+            return AGENT_RUNTIME_OPENCLAUDE
+        try:
+            conn = await asyncpg.connect(self._database_url)
+            try:
+                value = await conn.fetchval(
+                    "SELECT agent_runtime FROM sandboxes WHERE id = $1::uuid", sandbox_id
+                )
+            finally:
+                await conn.close()
+        except Exception as exc:
+            log.warning("Falha ao ler agent_runtime da sandbox %s: %s", sandbox_id, exc)
+            return AGENT_RUNTIME_OPENCLAUDE
+        return str(value or AGENT_RUNTIME_OPENCLAUDE)
 
     # ── Public API ───────────────────────────────────────────────
 

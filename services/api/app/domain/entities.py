@@ -24,6 +24,13 @@ class SandboxRuntime(StrEnum):
     SWARM = "swarm"
 
 
+class AgentRuntime(StrEnum):
+    """Runtime do agente dentro da sandbox (``runtime`` é o orquestrador)."""
+
+    OPENCLAUDE = "openclaude"
+    CLAUDE_CLI = "claude_cli"
+
+
 class ModelTier(StrEnum):
     FREE = "free"
     PAID = "paid"
@@ -92,6 +99,7 @@ class Sandbox:
     container_status: ContainerStatus = ContainerStatus.NOT_CREATED
     register_token: str | None = None
     claude_md: str = ""
+    agent_runtime: AgentRuntime = AgentRuntime.OPENCLAUDE
     created_at: datetime = field(default_factory=_utcnow)
 
 

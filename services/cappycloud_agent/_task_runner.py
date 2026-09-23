@@ -22,8 +22,8 @@ from datetime import UTC, datetime
 
 import asyncpg
 
+from ._agent_session import AgentSession
 from ._grpc_helpers import PendingAction
-from ._grpc_session import GrpcSession
 from ._task_final_message import persist_final_message_if_missing
 from ._task_usage import persist_usage
 
@@ -38,12 +38,12 @@ FIRST_EVENT_TIMEOUT_S = float(os.getenv("AGENT_FIRST_EVENT_TIMEOUT_S", "75"))
 
 
 class TaskRunner:
-    """Wraps a GrpcSession e persiste todos os eventos no DB."""
+    """Wraps an AgentSession (openclaude ou Claude CLI) e persiste todos os eventos no DB."""
 
     def __init__(
         self,
         task_id: str,
-        session: GrpcSession,
+        session: AgentSession,
         db_url: str,
         model_used: str = "",
         conversation_id: str | None = None,
@@ -120,7 +120,7 @@ class TaskRunner:
                 )
                 try:
                     event_type, data = await asyncio.wait_for(
-                        self._session._out_queue.get(),
+                        self._session.next_event(),
                         timeout=timeout_s,
                     )
                 except TimeoutError:

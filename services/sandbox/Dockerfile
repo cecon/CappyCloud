@@ -66,6 +66,18 @@ RUN npm install -g \
     && npm cache clean --force
 ENV NODE_PATH="/usr/local/lib/node_modules"
 
+# Runtime alternativo do agente: Claude Code oficial (`claude login` no terminal
+# do sandbox) + Agent SDK usado pelo claude_runtime_handler.js. A configuração e
+# as credenciais ficam em CLAUDE_CONFIG_DIR, montado como volume persistente.
+# IS_SANDBOX=1 permite bypassPermissions rodando como root.
+RUN npm install -g \
+        @anthropic-ai/claude-code@2.1.281 \
+        @anthropic-ai/claude-agent-sdk@0.3.281 \
+    && npm cache clean --force
+ENV CLAUDE_CONFIG_DIR="/root/.claude" \
+    IS_SANDBOX="1" \
+    DISABLE_AUTOUPDATER="1"
+
 # GitHub CLI (gh)
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
         | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
@@ -152,6 +164,8 @@ COPY services/sandbox/confluence_auth.js /confluence_auth.js
 COPY services/sandbox/confluence_handler.js /confluence_handler.js
 COPY services/sandbox/repo_handlers.js /repo_handlers.js
 COPY services/sandbox/runtime_handler.js /runtime_handler.js
+COPY services/sandbox/claude_runtime_handler.js /claude_runtime_handler.js
+COPY services/sandbox/claude_runtime_mapper.js /claude_runtime_mapper.js
 COPY services/sandbox/task_handler.js /task_handler.js
 COPY services/sandbox/worktree_handlers.js /worktree_handlers.js
 COPY services/sandbox/confluence_mcp_lib.py /usr/local/bin/confluence_mcp_lib.py

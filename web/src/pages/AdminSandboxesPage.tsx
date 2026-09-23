@@ -35,6 +35,7 @@ import {
   errorToUserMessage,
   fetchAdminSandboxes,
   getToken,
+  type AgentRuntime,
   type Sandbox,
   type SandboxRuntime,
   stopAdminSandbox,
@@ -46,6 +47,7 @@ import styles from './AdminSandboxesPage.module.css'
 type CreateState = {
   name: string
   runtime: SandboxRuntime
+  agentRuntime: AgentRuntime
   image: string
   envEntries: { key: string; value: string }[]
 }
@@ -53,6 +55,7 @@ type CreateState = {
 const EMPTY_CREATE: CreateState = {
   name: '',
   runtime: 'compose',
+  agentRuntime: 'openclaude',
   image: '',
   envEntries: [{ key: '', value: '' }],
 }
@@ -157,6 +160,7 @@ export function AdminSandboxesPage() {
       await createAdminSandbox(token, {
         name: form.name.trim(),
         runtime: form.runtime,
+        agent_runtime: form.agentRuntime,
         image: form.image.trim(),
         env_vars: envEntriesToRecord(form.envEntries),
       })
@@ -458,6 +462,21 @@ export function AdminSandboxesPage() {
             onChange={(value) => {
               if (value === 'compose' || value === 'swarm') {
                 setForm({ ...form, runtime: value })
+              }
+            }}
+            allowDeselect={false}
+          />
+          <Select
+            label="Runtime do agente"
+            description="Claude CLI exige `claude login` no terminal da sandbox (aba Runtime)."
+            data={[
+              { value: 'openclaude', label: 'openclaude (catálogo de modelos)' },
+              { value: 'claude_cli', label: 'Claude CLI oficial' },
+            ]}
+            value={form.agentRuntime}
+            onChange={(value) => {
+              if (value === 'openclaude' || value === 'claude_cli') {
+                setForm({ ...form, agentRuntime: value })
               }
             }}
             allowDeselect={false}

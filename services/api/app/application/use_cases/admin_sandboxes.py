@@ -20,6 +20,7 @@ from app.application.use_cases.sandbox_globals import (
     ListSandboxSkills,
 )
 from app.domain.entities import (
+    AgentRuntime,
     ContainerStatus,
     Sandbox,
     SandboxRuntime,
@@ -92,6 +93,7 @@ class CreateSandbox:
         runtime: SandboxRuntime,
         image: str,
         claude_md: str = "",
+        agent_runtime: AgentRuntime = AgentRuntime.OPENCLAUDE,
         env_vars: dict[str, str] | None = None,
         host: str | None = None,
         grpc_port: int = 50051,
@@ -113,6 +115,7 @@ class CreateSandbox:
             runtime=runtime,
             image=image.strip(),
             claude_md=claude_md,
+            agent_runtime=agent_runtime,
             env_vars=dict(env_vars or {}),
             container_status=ContainerStatus.NOT_CREATED,
         )
@@ -136,6 +139,7 @@ class UpdateSandbox:
         *,
         image: str | None = None,
         claude_md: str | None = None,
+        agent_runtime: AgentRuntime | None = None,
         env_vars: dict[str, str] | None = None,
         host: str | None = None,
         grpc_port: int | None = None,
@@ -152,6 +156,7 @@ class UpdateSandbox:
             current,
             image=image.strip() if image is not None else current.image,
             claude_md=claude_md if claude_md is not None else current.claude_md,
+            agent_runtime=agent_runtime if agent_runtime is not None else current.agent_runtime,
             env_vars=dict(env_vars) if env_vars is not None else current.env_vars,
             host=host if host is not None else current.host,
             grpc_port=grpc_port if grpc_port is not None else current.grpc_port,
@@ -356,6 +361,7 @@ class CloneSandbox:
             runtime=source.runtime,
             image=source.image,
             claude_md=source.claude_md,
+            agent_runtime=source.agent_runtime,
             env_vars=dict(source.env_vars),
             container_status=ContainerStatus.NOT_CREATED,
         )

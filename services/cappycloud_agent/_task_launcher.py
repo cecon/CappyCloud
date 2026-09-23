@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import time
 
+from ._agent_session import AGENT_RUNTIME_CLAUDE_CLI, AgentSession
+from ._claude_cli_session import ClaudeCliSession
 from ._evidence_prefetch import inject_evidence_prefetch
 from ._grpc_helpers import sanitize_permission_mode
 from ._grpc_session import GrpcSession
@@ -124,29 +126,45 @@ async def launch_runner(
 
     effective_model = override_model or dispatcher._model
     resolved_permission_mode = sanitize_permission_mode(permission_mode)
-    provider_config = await resolve_model_provider_runtime_config(
-        dispatcher._db_url,
-        effective_model,
-    )
-    session = GrpcSession(
-        container_ip=sandbox.grpc_host,
-        grpc_port=sandbox.grpc_port,
-        session_id=f"{user_id}:{chat_id}",
-        model=effective_model,
-        working_directory=working_directory,
-        provider_base_url=provider_config.base_url if provider_config else "",
-        provider_api_key=provider_config.api_key if provider_config else "",
-        provider_api_format=provider_config.api_format if provider_config else "",
-        permission_mode=resolved_permission_mode,
-    )
+    agent_runtime = await dispatcher._env_manager.resolve_agent_runtime(sandbox_id)
+    session: AgentSession
+    if agent_runtime == AGENT_RUNTIME_CLAUDE_CLI:
+        # Claude Code oficial: autentica com o `claude login` do sandbox,
+        # não com o provider do catálogo.
+        session = ClaudeCliSession(
+            host=sandbox.grpc_host,
+            session_port=sandbox.session_port,
+            conversation_key=f"{user_id}:{chat_id}",
+            model=effective_model,
+            working_directory=working_directory,
+            permission_mode=resolved_permission_mode,
+        )
+        waiting_label = f"Aguardando resposta do Claude CLI ({effective_model})"
+    else:
+        provider_config = await resolve_model_provider_runtime_config(
+            dispatcher._db_url,
+            effective_model,
+        )
+        session = GrpcSession(
+            container_ip=sandbox.grpc_host,
+            grpc_port=sandbox.grpc_port,
+            session_id=f"{user_id}:{chat_id}",
+            model=effective_model,
+            working_directory=working_directory,
+            provider_base_url=provider_config.base_url if provider_config else "",
+            provider_api_key=provider_config.api_key if provider_config else "",
+            provider_api_format=provider_config.api_format if provider_config else "",
+            permission_mode=resolved_permission_mode,
+        )
+        waiting_label = f"Aguardando resposta de {effective_model}"
 
-    await _emit_phase(
-        dispatcher, task_id, "agent", f"Aguardando resposta de {effective_model}", "active"
-    )
+    await _emit_phase(dispatcher, task_id, "agent", waiting_label, "active")
     try:
         await session.start(prompt, attachments=attachments)
     except Exception as exc:
-        log.exception("[Dispatcher] Falha ao iniciar gRPC para task %s", task_id[:8])
+        log.exception(
+            "[Dispatcher] Falha ao iniciar runtime %s para task %s", agent_runtime, task_id[:8]
+        )
         await update_task_status(dispatcher._pool, task_id, "error")
         await insert_error_event(dispatcher._pool, task_id, str(exc))
         await session.close()
