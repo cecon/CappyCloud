@@ -1842,8 +1842,7 @@
 .welcomePanel,
 .commandCard,
 .quickCard,
-.chatStateCard,
-.sessionProgressCard {
+.chatStateCard {
   border-color: var(--border);
   border-radius: var(--radius-lg);
   background: var(--card);
@@ -2162,7 +2161,6 @@
 
 .messageAgent,
 .chatStateCard,
-.sessionProgressCard,
 .welcomePanel,
 .commandCard,
 .quickCard {
@@ -2951,7 +2949,6 @@
 
 .agentBubbleBody > .messageAgent,
 .agentBubbleBody > .thinkingStream,
-.agentBubbleBody > .sessionProgressCard,
 .agentBubbleBody > .actionCard {
   width: 100%;
   max-width: 100%;
@@ -2973,8 +2970,7 @@
   max-width: min(82%, 46rem);
 }
 
-.thinkingStream,
-.sessionProgressCard {
+.thinkingStream {
   border-color: var(--border);
   border-radius: 12px;
   background: var(--card);
@@ -3626,21 +3622,9 @@
   .streamingCursor,
   .thinkingDot,
   .spinner,
-  .sessionProgressCard,
-  .sessionProgressCard::before,
-  .sessionProgressIconActive,
-  .sessionProgressIconDone,
-  .sessionProgressIconDone::after,
-  .sessionProgressItem,
-  .sessionProgressLabelDone,
   .message {
     animation: none !important;
     transition: none !important;
-  }
-
-  .sessionProgressItem {
-    opacity: 1;
-    transform: none;
   }
 }
 
@@ -3655,206 +3639,6 @@
   animation: blink 1s step-start infinite;
 }
 
-/* ─────────────────────────────────────────────────────────────
-   Session progress
-   ───────────────────────────────────────────────────────────── */
-
-.sessionProgressCard {
-  align-self: flex-start;
-  width: min(460px, 92%);
-  border: 1px solid var(--cc-outline-variant);
-  border-radius: 8px;
-  background: var(--cc-surface-container);
-  padding: 0.7rem 0.8rem;
-  animation: fadeInUp 0.24s ease both;
-  position: relative;
-  overflow: hidden;
-}
-
-.sessionProgressCard::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(96, 165, 250, 0.6) 50%,
-    transparent 100%
-  );
-  background-size: 200% 100%;
-  animation: sessionProgressShimmer 2.4s ease-in-out infinite;
-  opacity: 0.7;
-}
-
-.sessionProgressCardComplete::before {
-  animation: none;
-  background: var(--success);
-  opacity: 0.5;
-}
-
-.sessionProgressHeader {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--cc-on-surface);
-  font: 600 0.85rem 'Inter', sans-serif;
-}
-
-.sessionProgressHeaderText {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.12rem;
-}
-
-.sessionProgressMeta {
-  color: var(--cc-on-surface-variant);
-  font: 500 0.72rem 'Inter', sans-serif;
-}
-
-.sessionProgressBootIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.05rem;
-  height: 1.05rem;
-  border: 1.5px solid rgba(59, 130, 246, 0.35);
-  border-top-color: var(--cc-primary);
-  border-radius: 999px;
-  color: #07130a;
-  font: 800 0.68rem/1 'Inter', sans-serif;
-  flex-shrink: 0;
-  animation: spin 0.8s linear infinite;
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.10);
-}
-
-.sessionProgressBootIconDone {
-  border-color: var(--success);
-  background: var(--success);
-  animation: sessionIconPop 0.42s cubic-bezier(0.22, 1.4, 0.36, 1) both;
-  box-shadow: none;
-}
-
-.sessionProgressPulse {
-  height: 1px;
-  margin-top: 0.7rem;
-  background: linear-gradient(90deg, transparent, rgba(96, 165, 250, 0.9), transparent);
-  background-size: 220% 100%;
-  animation: sessionProgressShimmer 1.4s linear infinite;
-  opacity: 0.75;
-}
-
-.sessionProgressList {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  margin-top: 0.65rem;
-  position: relative;
-}
-
-/* Linha vertical conectando os steps — preenchida conforme progressão. */
-.sessionProgressList::before {
-  content: '';
-  position: absolute;
-  left: calc(0.475rem - 1px);
-  top: 0.45rem;
-  bottom: 0.45rem;
-  width: 2px;
-  background: linear-gradient(
-    to bottom,
-    var(--success) 0%,
-    var(--success) var(--cc-progress, 0%),
-    rgba(172, 170, 174, 0.18) var(--cc-progress, 0%),
-    rgba(172, 170, 174, 0.18) 100%
-  );
-  border-radius: 999px;
-  transition: background 0.4s ease;
-  pointer-events: none;
-}
-
-.sessionProgressItem {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.45rem;
-  opacity: 0;
-  transform: translateY(4px);
-  animation: sessionStepIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: var(--cc-step-delay, 0s);
-  position: relative;
-  z-index: 1;
-}
-
-.sessionProgressIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 0.95rem;
-  height: 0.95rem;
-  margin-top: 0.12rem;
-  border: 1.5px solid rgba(172, 170, 174, 0.5);
-  border-radius: 999px;
-  color: var(--cc-surface);
-  font: 800 0.72rem/1 'Inter', sans-serif;
-  flex-shrink: 0;
-  background: var(--cc-surface-container);
-  transition: border-color 0.25s ease, background 0.25s ease,
-    box-shadow 0.25s ease;
-}
-
-.sessionProgressIconActive {
-  border-color: rgba(59, 130, 246, 0.35);
-  border-top-color: var(--cc-primary);
-  animation: spin 0.8s linear infinite;
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
-}
-
-.sessionProgressIconDone {
-  border-color: var(--success);
-  background: var(--success);
-  color: #07130a;
-  animation: sessionIconPop 0.42s cubic-bezier(0.22, 1.4, 0.36, 1) both;
-}
-
-.sessionProgressIconDone::after {
-  content: '';
-  position: absolute;
-  inset: -6px;
-  border-radius: 999px;
-  border: 1px solid var(--success);
-  opacity: 0;
-  animation: sessionIconRipple 0.6s ease-out both;
-  pointer-events: none;
-}
-
-.sessionProgressLabelDone {
-  animation: sessionLabelTick 0.3s ease both;
-}
-
-.sessionProgressStepBody {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.12rem;
-}
-
-.sessionProgressLabel {
-  color: var(--cc-on-surface);
-  font: 600 0.78rem 'Inter', sans-serif;
-  line-height: 1.35;
-}
-
-.sessionProgressDetail {
-  color: var(--cc-on-surface-variant);
-  font: 500 0.72rem 'Inter', sans-serif;
-  line-height: 1.35;
-  word-break: break-word;
-}
-
 @keyframes sessionStepIn {
   from {
     opacity: 0;
@@ -3863,41 +3647,6 @@
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-@keyframes sessionIconPop {
-  0% {
-    transform: scale(0.6);
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6);
-  }
-  60% {
-    transform: scale(1.2);
-    box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.18);
-  }
-  100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
-  }
-}
-
-@keyframes sessionIconRipple {
-  0% {
-    opacity: 0.6;
-    transform: scale(0.7);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1.6);
-  }
-}
-
-@keyframes sessionLabelTick {
-  from {
-    color: var(--cc-on-surface-variant);
-  }
-  to {
-    color: var(--cc-on-surface);
   }
 }
 
@@ -4577,6 +4326,55 @@
 
 /* Texto livre intercalado com tool calls (a "linha de pensamento"). */
 
+/* Fase real do turno (workspace/contexto/modelo): linha discreta com duração. */
+.thinkingStreamPhaseStep {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+  font-size: 0.74rem;
+  color: var(--cc-on-surface-variant);
+}
+
+.thinkingStreamPhaseMark {
+  flex-shrink: 0;
+  width: 0.9rem;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--success, #3ecf8e);
+}
+
+.thinkingStreamPhaseStepRunning .thinkingStreamPhaseMark {
+  color: var(--cc-primary, #60a5fa);
+  animation: spin 1.2s linear infinite;
+  display: inline-block;
+}
+
+.thinkingStreamPhaseStepError .thinkingStreamPhaseMark,
+.thinkingStreamPhaseStepError .thinkingStreamPhaseLabel {
+  color: var(--destructive);
+}
+
+.thinkingStreamPhaseLabel {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.thinkingStreamPhaseDuration {
+  flex-shrink: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinkingStreamPhaseStepRunning .thinkingStreamPhaseMark {
+    animation: none;
+  }
+}
+
 .thinkingStreamTextStep {
   display: flex;
   gap: 0.5rem;
@@ -4830,9 +4628,7 @@
   .thinkingStreamToolRunning .thinkingStreamToolMark,
   .thinkingStreamCoordinatorLine,
   .thinkingStreamCoordinatorText::after,
-  .thinkingStreamCoordinatorIdle,
-  .sessionProgressBootIcon,
-  .sessionProgressPulse {
+  .thinkingStreamCoordinatorIdle {
     animation: none !important;
   }
 
@@ -4924,14 +4720,12 @@
 }
 
 .spinner,
-.thinkingStreamSpinner,
-.sessionProgressBootIcon {
+.thinkingStreamSpinner {
   border-color: rgba(224, 164, 88, 0.22);
   border-top-color: var(--primary);
 }
 
-.thinkingStream::before,
-.sessionProgressCard::before {
+.thinkingStream::before {
   background: linear-gradient(90deg, rgba(224, 164, 88, 0.38), rgba(127, 189, 106, 0.24));
 }
 
@@ -4949,8 +4743,7 @@
   );
 }
 
-.thinkingStreamCoordinatorLine,
-.sessionProgressPulse {
+.thinkingStreamCoordinatorLine {
   background: linear-gradient(90deg, transparent, rgba(224, 164, 88, 0.9), transparent);
 }
 

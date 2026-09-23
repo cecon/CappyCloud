@@ -47,14 +47,12 @@ class TaskRunner:
         db_url: str,
         model_used: str = "",
         conversation_id: str | None = None,
-        emit_session_progress: bool = True,
     ) -> None:
         self._task_id = task_id
         self._session = session
         self._db_url = db_url
         self._model_used = model_used
         self._conversation_id = conversation_id
-        self._emit_session_progress = emit_session_progress
         self._text_parts: list[str] = []
         self._last_error_message: str | None = None
         self._pool: asyncpg.Pool | None = None
@@ -149,11 +147,10 @@ class TaskRunner:
                 await self._insert_event(event_type, _normalise(data))
                 await self._touch_task()
 
-                # Marca o stage 'agent' como done apenas quando o LLM responde
-                # de facto (text/tool/action). Se nunca chegar resposta — caso
-                # típico de done-vazio ou erro de provider — o passo "Agente
-                # iniciado" fica explicitamente pending e o erro detalhado
-                # aparece logo abaixo, sem o falso "tudo verde".
+                # Fecha a fase 'agent' quando o LLM responde de facto
+                # (text/tool/action). Se nunca chegar resposta — done vazio ou
+                # erro de provider — a fase fica aberta e o erro aparece logo
+                # abaixo, sem o falso "tudo verde".
                 if not agent_stage_marked and event_type in (
                     "text",
                     "tool_start",
@@ -161,16 +158,15 @@ class TaskRunner:
                     "action_required",
                 ):
                     agent_stage_marked = True
-                    if self._emit_session_progress:
-                        await self._insert_event(
-                            "status",
-                            {
-                                "message": "Agente respondeu",
-                                "stage": "agent",
-                                "mode": "initializing",
-                                "state": "done",
-                            },
-                        )
+                    await self._insert_event(
+                        "status",
+                        {
+                            "message": "Modelo respondeu",
+                            "stage": "agent",
+                            "mode": "initializing",
+                            "state": "done",
+                        },
+                    )
 
                 if event_type == "action_required":
                     await self._update_task(status="paused")
