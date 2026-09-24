@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from app.domain.value_objects import DEFAULT_PERMISSION_MODE
+from app.domain.value_objects import DEFAULT_PERMISSION_MODE, AgentRuntime, SandboxRuntime
 
 
 def _utcnow() -> datetime:
@@ -17,11 +17,6 @@ def _utcnow() -> datetime:
 class UserRole(StrEnum):
     ADMIN = "admin"
     USER = "user"
-
-
-class SandboxRuntime(StrEnum):
-    COMPOSE = "compose"
-    SWARM = "swarm"
 
 
 class ModelTier(StrEnum):
@@ -92,6 +87,7 @@ class Sandbox:
     container_status: ContainerStatus = ContainerStatus.NOT_CREATED
     register_token: str | None = None
     claude_md: str = ""
+    agent_runtime: AgentRuntime = AgentRuntime.OPENCLAUDE
     created_at: datetime = field(default_factory=_utcnow)
 
 

@@ -58,6 +58,8 @@ _grpc_session = load_agent_module(
 
 def test_sanitize_permission_mode_falls_back_to_bypass_permissions() -> None:
     assert _grpc_helpers.sanitize_permission_mode("auto") == "auto"
+    # Antes virava bypass_permissions e o modo "pedir permissão" nunca pedia.
+    assert _grpc_helpers.sanitize_permission_mode("request_permissions") == "request_permissions"
     assert _grpc_helpers.sanitize_permission_mode("unknown") == "bypass_permissions"
     assert _grpc_helpers.sanitize_permission_mode(None) == "bypass_permissions"
 

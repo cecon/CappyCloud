@@ -3,6 +3,7 @@ import type { Sandbox } from '../api'
 import { SandboxAgentsPanel } from './sandbox-globals/SandboxAgentsPanel'
 import { SandboxClaudeMdPanel } from './sandbox-globals/SandboxClaudeMdPanel'
 import { SandboxMcpsPanel } from './sandbox-globals/SandboxMcpsPanel'
+import { SandboxRuntimePanel } from './sandbox-globals/SandboxRuntimePanel'
 import { SandboxSkillsPanel } from './sandbox-globals/SandboxSkillsPanel'
 
 type Props = {
@@ -12,8 +13,9 @@ type Props = {
 }
 
 /**
- * Drawer único com 3 tabs (MCPs / Skills / Agents) — todos materializados em
- * ``~/.claude/`` dentro do container da sandbox ao boot (ADR-004 §5-6).
+ * Drawer único com as tabs da sandbox: CLAUDE.md, runtime do agente
+ * (openclaude ou Claude CLI) e os periféricos (MCPs / Skills / Agents)
+ * materializados em ``~/.claude/`` dentro do container ao boot (ADR-004 §5-6).
  */
 export function SandboxGlobalsDrawer({ sandbox, onClose, onUpdated }: Props) {
   return (
@@ -37,12 +39,16 @@ export function SandboxGlobalsDrawer({ sandbox, onClose, onUpdated }: Props) {
         <Tabs defaultValue="claude" keepMounted={false}>
           <Tabs.List>
             <Tabs.Tab value="claude">CLAUDE.md</Tabs.Tab>
+            <Tabs.Tab value="runtime">Runtime</Tabs.Tab>
             <Tabs.Tab value="mcps">MCPs</Tabs.Tab>
             <Tabs.Tab value="skills">Skills</Tabs.Tab>
             <Tabs.Tab value="agents">Subagents</Tabs.Tab>
           </Tabs.List>
           <Tabs.Panel value="claude" pt="md">
             <SandboxClaudeMdPanel sandbox={sandbox} onUpdated={onUpdated} />
+          </Tabs.Panel>
+          <Tabs.Panel value="runtime" pt="md">
+            <SandboxRuntimePanel sandbox={sandbox} onUpdated={onUpdated} />
           </Tabs.Panel>
           <Tabs.Panel value="mcps" pt="md">
             <SandboxMcpsPanel sandbox={sandbox} />

@@ -18,6 +18,7 @@
 //   POST   /mcp/configure          → escreve mcpServers em ~/.claude/settings.json
 //   POST   /globals/configure      → escreve skills/agents em ~/.claude/
 //   POST   /runtime/restart-openclaude → reinicia o processo principal do container
+//   *      /claude/*               → claude_runtime_handler.js (runtime Claude CLI via Agent SDK)
 //   POST   /workspaces/sync        → workspace_handler.js (árvore /repos/workspaces/<slug>)
 //   GET    /health                 → liveness probe
 // ──────────────────────────────────────────────────────────────
@@ -29,6 +30,7 @@ const { execFile, execFileSync } = require('child_process')
 const { promisify } = require('util')
 
 const gitHandlers = require('./git_handlers')
+const claudeRuntimeHandler = require('./claude_runtime_handler')
 const globalsHandler = require('./globals_handler')
 const mcpHandler = require('./mcp_handler')
 const confluenceHandler = require('./confluence_handler')
@@ -501,6 +503,7 @@ const server = http.createServer(async (req, res) => {
 
     if (await runtimeHandler.tryHandle(req, res, { json, clearActiveSessions })) return
 
+    if (await claudeRuntimeHandler.tryHandle(req, res, { json, readBody })) return
     if (await workspaceHandler.tryHandle(req, res, { json, readBody })) return
 
     return json(res, 404, { error: 'Not found' })

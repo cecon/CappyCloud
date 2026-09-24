@@ -51,6 +51,10 @@ class Sandbox(Base):
     image: Mapped[str] = mapped_column(String(512), nullable=False, server_default="", default="")
     env_vars: Mapped[dict] = mapped_column(JSONBType, nullable=False, server_default="{}")
     claude_md: Mapped[str] = mapped_column(Text, nullable=False, server_default="", default="")
+    # Runtime do agente: openclaude (gRPC) ou claude_cli (Claude Code oficial).
+    agent_runtime: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default="openclaude", default="openclaude"
+    )
     container_status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,

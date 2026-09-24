@@ -8,7 +8,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.domain.entities import ContainerStatus, SandboxRuntime, UserRole
+from app.domain.entities import AgentRuntime, ContainerStatus, SandboxRuntime, UserRole
 from app.domain.value_objects import validate_email, validate_password, validate_permission_mode
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{1,62}[a-z0-9]$")
@@ -136,6 +136,7 @@ class SandboxOut(BaseModel):
 
 class SandboxAdminOut(SandboxOut):
     claude_md: str = ""
+    agent_runtime: AgentRuntime = AgentRuntime.OPENCLAUDE
 
 
 class SandboxRegister(BaseModel):
@@ -155,6 +156,7 @@ class SandboxAdminCreate(BaseModel):
     runtime: SandboxRuntime = SandboxRuntime.COMPOSE
     image: str = Field(default="", max_length=512)
     claude_md: str = Field(default="", max_length=20000)
+    agent_runtime: AgentRuntime = AgentRuntime.OPENCLAUDE
     env_vars: dict[str, str] = Field(default_factory=dict)
     host: str | None = Field(default=None, max_length=256)
     grpc_port: int = Field(default=50051, ge=1, le=65535)
@@ -166,6 +168,7 @@ class SandboxAdminUpdate(BaseModel):
 
     image: str | None = Field(default=None, max_length=512)
     claude_md: str | None = Field(default=None, max_length=20000)
+    agent_runtime: AgentRuntime | None = None
     env_vars: dict[str, str] | None = None
     host: str | None = Field(default=None, max_length=256)
     grpc_port: int | None = Field(default=None, ge=1, le=65535)

@@ -25,6 +25,20 @@ class PermissionMode(StrEnum):
 DEFAULT_PERMISSION_MODE = PermissionMode.BYPASS_PERMISSIONS.value
 
 
+class SandboxRuntime(StrEnum):
+    """Orquestrador do container da sandbox."""
+
+    COMPOSE = "compose"
+    SWARM = "swarm"
+
+
+class AgentRuntime(StrEnum):
+    """Runtime do agente dentro da sandbox (``Sandbox.runtime`` é o orquestrador)."""
+
+    OPENCLAUDE = "openclaude"
+    CLAUDE_CLI = "claude_cli"
+
+
 class ExecutionProfile(StrEnum):
     FAST = "fast"
     MEDIUM = "medium"

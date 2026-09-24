@@ -24,6 +24,7 @@ from dataclasses import dataclass
 import asyncpg
 import httpx
 
+from ._agent_runtime_lookup import resolve_agent_runtime
 from ._session_store import SandboxRecord, SessionStore
 
 log = logging.getLogger(__name__)
@@ -101,6 +102,9 @@ class EnvironmentManager:
             int(row["session_port"] or self._default_session_port),
             str(row["name"] or self._default_name),
         )
+
+    async def resolve_agent_runtime(self, sandbox_id: str) -> str:
+        return await resolve_agent_runtime(self._database_url, sandbox_id)
 
     # ── Public API ───────────────────────────────────────────────
 

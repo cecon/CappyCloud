@@ -32,13 +32,19 @@ DEVOPS_TOKEN="${DEVOPS_TOKEN:-}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 
 # ── Configure openclaude ──────────────────────────────────────
+# ~/.claude pode ser um volume persistente (CLAUDE_CONFIG_DIR) com o login do
+# Claude CLI: só atualiza as chaves do CappyCloud, preservando o resto.
 mkdir -p ~/.claude
-cat > ~/.claude/settings.json <<EOF
-{
-  "apiKeyHelper": null,
-  "autoUpdaterStatus": "disabled"
-}
-EOF
+node - <<'JSEOF'
+const fs = require('fs')
+const file = `${process.env.HOME || '/root'}/.claude/settings.json`
+let current = {}
+try { current = JSON.parse(fs.readFileSync(file, 'utf8')) } catch {}
+// Sem apiKeyHelper: o openclaude recebe a chave por request e o Claude CLI usa o `claude login`.
+delete current.apiKeyHelper
+current.autoUpdaterStatus = 'disabled'
+fs.writeFileSync(file, JSON.stringify(current, null, 2), 'utf8')
+JSEOF
 
 echo "Provider: OpenRouter  model=${OPENAI_MODEL}"
 

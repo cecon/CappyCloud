@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 import urllib.error
 import urllib.request
@@ -47,6 +48,27 @@ def probe_session_server(sandbox: Sandbox) -> RuntimeProbe | None:
     except OSError, urllib.error.URLError, TimeoutError:
         return None
     return None
+
+
+def fetch_claude_status(sandbox: Sandbox) -> dict[str, Any]:
+    """Estado do Claude CLI no sandbox (instalado, versão, `claude login` feito).
+
+    Nunca levanta exceção: sandbox fora do ar ou imagem antiga viram
+    ``reachable=False`` com o motivo, para o admin mostrar o diagnóstico.
+    """
+    url = f"http://{sandbox.host}:{sandbox.session_port}/claude/status"
+    request = urllib.request.Request(url, method="GET")
+    request.add_header("X-Internal-Token", os.getenv("INTERNAL_API_TOKEN", "").strip())
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            data = json.loads(response.read().decode("utf-8") or "{}")
+            return {"reachable": True, **data}
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return {"reachable": False, "error": "imagem do sandbox sem runtime Claude CLI"}
+        return {"reachable": False, "error": f"HTTP {exc.code}"}
+    except (OSError, TimeoutError, ValueError) as exc:
+        return {"reachable": False, "error": str(exc)}
 
 
 def post_runtime_control(sandbox: Sandbox, action: str) -> None:
