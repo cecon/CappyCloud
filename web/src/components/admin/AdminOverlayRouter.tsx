@@ -15,7 +15,7 @@ export function AdminOverlayRouter({ children }: AdminOverlayRouterProps) {
   }
 
   return (
-    <div className="h-full bg-background p-3 lg:p-5">
+    <div className="h-full bg-background p-2 sm:p-3 lg:p-5">
       <AppOverlay title={meta.title} subtitle={meta.subtitle} closeTo="/chat" className="h-full">
         {children}
       </AppOverlay>

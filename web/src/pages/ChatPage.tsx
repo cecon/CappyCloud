@@ -105,6 +105,7 @@ import {
   SelectValue,
 } from '../components/ui/select'
 import { useCurrentUser } from '../hooks/useCurrentUser'
+import { useIsMobile } from '../hooks/useIsMobile'
 import styles from '../components/chat.module.css'
 
 const ALLOWED_ATTACHMENT_MIME = new Set([
@@ -660,6 +661,8 @@ export function ChatPage() {
   const currentUser = currentUserState.status === 'ready' ? currentUserState.user : null
   const isAdminUser = currentUser?.role === 'admin'
   const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure()
+  // Celular: a barra lateral vira gaveta (abre pelo botão ☰, fecha ao escolher).
+  const isMobile = useIsMobile()
 
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -1300,6 +1303,7 @@ export function ChatPage() {
 
   const handleNewChat = useCallback(() => {
     setMainMode('chat')
+    closeMobile()
     setTrayItems([])
     setIsDragOver(false)
     setActiveId(null)
@@ -1311,7 +1315,7 @@ export function ChatPage() {
     setPermissionModeState(userDefaultPermissionMode)
     setPermissionWarningRuntimeConfirmed(false)
     setTimeout(() => inputRef.current?.focus(), 50)
-  }, [userDefaultPermissionMode])
+  }, [closeMobile, userDefaultPermissionMode])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -1919,7 +1923,8 @@ export function ChatPage() {
       <div className={styles.body}>
         {/* ── Conversation panel ───────────────────────────────── */}
         <aside
-          className={`${styles.sidebar} ${conversationsCollapsed ? styles.sidebarCollapsed : ''} ${mobileOpened ? styles.sidebarOpen : ''}`}
+          className={`${styles.sidebar} ${!isMobile && conversationsCollapsed ? styles.sidebarCollapsed : ''} ${isMobile && mobileOpened ? styles.sidebarOpen : ''}`}
+          aria-hidden={isMobile && !mobileOpened ? true : undefined}
         >
           <div className={styles.sidebarHead}>
             <div className={styles.sidebarHeadLeft}>
@@ -1929,7 +1934,9 @@ export function ChatPage() {
                 <div className={styles.sidebarSubtitle}>Workspace</div>
               </div>
             </div>
-            <Burger opened={mobileOpened} onClick={toggleMobile} size="sm" color="var(--cc-on-surface-variant)" hiddenFrom="sm" />
+            {isMobile && (
+              <Burger opened={mobileOpened} onClick={toggleMobile} size="sm" color="var(--cc-on-surface-variant)" aria-label="Fechar menu" />
+            )}
           </div>
 
           {/* New session button */}
@@ -2044,6 +2051,12 @@ export function ChatPage() {
             <SidebarUserMenu user={currentUser} />
           </div>
         </aside>
+        {isMobile && mobileOpened && <div className={styles.mobileBackdrop} onClick={closeMobile} aria-hidden="true" />}
+        {isMobile && !mobileOpened && (
+          <button type="button" className={styles.mobileMenuBtn} onClick={toggleMobile} aria-label="Abrir menu de conversas">
+            <span className={styles.icon}>menu</span>
+          </button>
+        )}
 
         {/* ── Main ─────────────────────────────────────────────── */}
         <main className={styles.main}>

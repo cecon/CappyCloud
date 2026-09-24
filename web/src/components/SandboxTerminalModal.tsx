@@ -245,9 +245,9 @@ function TerminalView({ sandbox }: { sandbox: Sandbox }) {
   }
 
   return (
-    <div style={{ display: 'grid', gap: 10 }} onClick={() => setMenu(null)}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10, minWidth: 0 }} onClick={() => setMenu(null)}>
       <Group justify="space-between" wrap="wrap" gap="sm">
-        <Text size="sm" c="dimmed">
+        <Text size="sm" c="dimmed" style={{ overflowWrap: 'anywhere', minWidth: 0 }}>
           {STATUS_TEXT[status]}. Para conectar o Claude CLI, rode <code>claude login</code>, abra o link e cole o código.
         </Text>
         <Group gap="xs" wrap="wrap">
@@ -345,7 +345,7 @@ function TerminalView({ sandbox }: { sandbox: Sandbox }) {
       </div>
 
       <Group gap="xs" wrap="nowrap">
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <TextInput
             aria-label="Colar no terminal"
             placeholder="Colar no terminal (ex.: o código do login) e Enviar"
