@@ -10,7 +10,7 @@ const { execFile } = require('child_process')
 const { promisify } = require('util')
 
 const execFileAsync = promisify(execFile)
-const { assertInsideSession, sessionRootInfo } = require('./session_paths')
+const { assertInsideSession, sessionRootInfo, workspaceRepoPath } = require('./session_paths')
 
 function resolveSafeWorktree(raw) {
   if (!raw || typeof raw !== 'string') {
@@ -29,6 +29,19 @@ function resolveSafeWorktree(raw) {
   }
 }
 
+// Leitura (ls-files, read-file, search) também aceita repos somente leitura do workspace.
+function resolveReadableWorktree(raw) {
+  try {
+    return resolveSafeWorktree(raw)
+  } catch (err) {
+    try {
+      return workspaceRepoPath(String(raw || '').trim())
+    } catch {
+      throw err
+    }
+  }
+}
+
 function resolveSafeFileInWorktree(worktreeRaw, relPath) {
   if (!relPath || typeof relPath !== 'string') {
     throw new Error('path é obrigatório')
@@ -36,7 +49,7 @@ function resolveSafeFileInWorktree(worktreeRaw, relPath) {
   if (relPath.includes('..') || path.isAbsolute(relPath)) {
     throw new Error('path inválido')
   }
-  const wt = resolveSafeWorktree(worktreeRaw)
+  const wt = resolveReadableWorktree(worktreeRaw)
   const full = path.resolve(path.join(wt, relPath))
   const prefix = wt.endsWith('/') ? wt : wt + '/'
   if (full !== wt && !full.startsWith(prefix)) {
@@ -76,7 +89,7 @@ async function tryHandle(req, res, { json, readBody }) {
   if (pathname === '/worktree/ls-files') {
     try {
       const body = await readBody(req)
-      const wt = resolveSafeWorktree(body.worktree_path)
+      const wt = resolveReadableWorktree(body.worktree_path)
       const { stdout } = await execFileAsync('git', ['-C', wt, 'ls-files'], {
         timeout: 120_000,
         maxBuffer: 50 * 1024 * 1024,
@@ -110,7 +123,7 @@ async function tryHandle(req, res, { json, readBody }) {
   if (pathname === '/worktree/search') {
     const body = await readBody(req)
     try {
-      const wt = resolveSafeWorktree(body.worktree_path)
+      const wt = resolveReadableWorktree(body.worktree_path)
       const query = String(body.query || '').trim()
       const limit = Math.max(1, Math.min(Number(body.limit || 20), 50))
       if (!query) {
@@ -213,4 +226,4 @@ async function tryHandle(req, res, { json, readBody }) {
   return false
 }
 
-module.exports = { tryHandle }
+module.exports = { tryHandle, resolveReadableWorktree, resolveSafeFileInWorktree }

@@ -17,6 +17,8 @@ class WorkspaceRepositoryIn(BaseModel):
     alias: str | None = Field(default=None, pattern=ALIAS_PATTERN)
     # Vazio = default_branch do repositório.
     base_branch: str = Field(default="", max_length=256)
+    # Somente leitura: o agente consulta, mas não edita (sem PR).
+    read_only: bool = False
 
 
 class WorkspaceCreate(BaseModel):
@@ -44,6 +46,7 @@ class WorkspaceRepositoryOut(BaseModel):
     base_branch: str
     default_branch: str
     sandbox_status: str
+    read_only: bool = False
 
 
 class WorkspaceOut(BaseModel):

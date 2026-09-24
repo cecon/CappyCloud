@@ -55,13 +55,20 @@ class CreateConversation:
             slug = r["slug"]
             alias = r.get("alias") or slug
             repo_entity = await self._repositories.get_by_slug(slug) if self._repositories else None
+            # Somente leitura (workspace): lê o clone do workspace, sem worktree nem branch.
+            read_only = bool(r.get("read_only")) and bool(workspace_slug)
             resolved_repos.append(
                 {
                     "slug": slug,
                     "alias": alias,
                     "base_branch": r.get("base_branch") or "main",
-                    "branch_name": f"cappy/{slug}/{short_id}-{alias}",
-                    "worktree_path": f"{session_root}/{alias}",
+                    "read_only": read_only,
+                    "branch_name": None if read_only else f"cappy/{slug}/{short_id}-{alias}",
+                    "worktree_path": (
+                        f"/repos/workspaces/{workspace_slug}/repos/{alias}"
+                        if read_only
+                        else f"{session_root}/{alias}"
+                    ),
                     "repo_id": str(repo_entity.id) if repo_entity else None,
                     "sandbox_id": str(repo_entity.sandbox_id)
                     if repo_entity and repo_entity.sandbox_id

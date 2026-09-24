@@ -2,28 +2,36 @@
 
 from __future__ import annotations
 
-import re
+import logging
+import os
 import uuid
 from typing import Annotated
 
-import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.primary.http.conversation_worktree_paths import (
-    CREATE_PR_FROM_CONVERSATION,
-    repo_url_from_create_pr_row,
-    resolve_git_paths_from_worktree_row,
+from app.adapters.primary.http.conversation_repos import (
+    ConversationRepo,
+    load_conversation_repos,
 )
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
 from app.domain.entities import User
+from app.infrastructure.encryption import get_encryptor
+from app.infrastructure.git_pull_requests import (
+    PullRequestError,
+    open_pull_request,
+    parse_pr_target,
+)
+from app.infrastructure.orm_models_platform import GitProvider
 from app.infrastructure.sandbox_worktree_client import (
     SandboxWorktreeError,
     resolve_head_branch_for_pr,
+    worktree_diff_against_base,
 )
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
@@ -33,92 +41,97 @@ class CreatePrBody(BaseModel):
     draft: bool = False
 
 
+async def _provider_token(db: AsyncSession, repo: ConversationRepo, provider: str) -> str:
+    """Token do git provider do repositório; GitHub ainda aceita o GITHUB_TOKEN global."""
+    if repo.provider_id:
+        git_provider = await db.get(GitProvider, repo.provider_id)
+        if git_provider and git_provider.token_encrypted:
+            try:
+                return get_encryptor().decrypt(git_provider.token_encrypted)
+            except Exception:
+                log.warning("token do git provider %s ilegível", repo.provider_id)
+    return os.getenv("GITHUB_TOKEN", "") if provider == "github" else ""
+
+
+async def _open_repo_pr(
+    db: AsyncSession, repo: ConversationRepo, pr_body: CreatePrBody, conversation_id: uuid.UUID
+) -> dict | None:
+    """PR de um repositório; ``None`` se ele não tem alterações."""
+    out: dict = {"alias": repo.alias, "slug": repo.slug}
+    try:
+        if not (await worktree_diff_against_base(repo.worktree_path, repo.base_branch)).strip():
+            return None
+        target = parse_pr_target(repo.clone_url)
+        token = await _provider_token(db, repo, target.provider)
+        head = await resolve_head_branch_for_pr(repo.worktree_path)
+        result = await open_pull_request(
+            target,
+            token=token,
+            head=head,
+            base=repo.base_branch,
+            title=pr_body.title or f"Agent changes from branch {head}",
+            body=pr_body.body
+            or f"Changes made by CappyCloud agent in conversation {conversation_id}.",
+            draft=pr_body.draft,
+        )
+    except (SandboxWorktreeError, PullRequestError) as exc:
+        return {**out, "error": str(exc)}
+    return {
+        **out,
+        "provider": result.provider,
+        "repo_path": result.repo_path,
+        "pr_url": result.url,
+        "pr_number": result.number,
+        "head_branch": head,
+    }
+
+
 @router.post("/{conversation_id}/create-pr")
 async def create_pull_request(
     conversation_id: uuid.UUID,
     pr_body: CreatePrBody,
     current: Annotated[User, Depends(get_authenticated_user)],
-    request: Request,
     db: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> dict:
-    """Cria um Pull Request no GitHub a partir do branch actual do worktree."""
-    import os
+    """Abre um PR em cada repositório editável da conversa que tem alterações.
 
-    github_token = os.getenv("GITHUB_TOKEN", "")
-    if not github_token:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="GITHUB_TOKEN não configurado.",
-        )
-
-    row = await db.execute(
-        text(CREATE_PR_FROM_CONVERSATION),
-        {"cid": str(conversation_id), "uid": str(current.id)},
-    )
-    conv = row.fetchone()
-    if not conv:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Conversa ou worktree não encontrado."
-        )
-
-    worktree_path, _, base_branch_resolved = resolve_git_paths_from_worktree_row(
-        conv, conversation_id
-    )
-    repo_url = repo_url_from_create_pr_row(conv)
-
-    try:
-        head_branch = await resolve_head_branch_for_pr(worktree_path)
-    except SandboxWorktreeError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-
-    m = re.search(r"github\.com[:/](.+?/.+?)(?:\.git)?$", repo_url or "")
-    if not m:
+    Repositórios somente leitura ficam de fora. ``prs`` traz o resultado (ou o
+    erro) de cada repositório; os campos de topo repetem o primeiro PR aberto.
+    """
+    conv = await load_conversation_repos(db, conversation_id, current.id)
+    prs = [
+        pr
+        for repo in conv.editable
+        if (pr := await _open_repo_pr(db, repo, pr_body, conversation_id)) is not None
+    ]
+    if not prs:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="URL do repositório não é um repo GitHub válido.",
+            detail="Nenhum repositório editável tem alterações para PR.",
         )
-    owner_repo = m.group(1)
-    base = base_branch_resolved or "main"
-    pr_title = pr_body.title or f"Agent changes from branch {head_branch}"
-    pr_description = (
-        pr_body.body or f"Changes made by CappyCloud agent in conversation {conversation_id}."
-    )
+    opened = [pr for pr in prs if "error" not in pr]
+    if not opened:
+        detail = "; ".join(f"{pr['alias'] or pr['slug']}: {pr['error']}" for pr in prs)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
 
-    async with httpx.AsyncClient() as http:
-        resp = await http.post(
-            f"https://api.github.com/repos/{owner_repo}/pulls",
-            headers={
-                "Authorization": f"Bearer {github_token}",
-                "Accept": "application/vnd.github+json",
-            },
-            json={
-                "title": pr_title,
-                "body": pr_description,
-                "head": head_branch,
-                "base": base,
-                "draft": pr_body.draft,
-            },
+    # Auto-fix de PR (pr_subscriptions) só conhece GitHub: guarda o primeiro.
+    github = next((pr for pr in opened if pr["provider"] == "github"), None)
+    if github:
+        await db.execute(
+            text(
+                "UPDATE conversations SET github_pr_number = :num, github_repo_slug = :slug "
+                "WHERE id = :cid"
+            ),
+            {"num": github["pr_number"], "slug": github["repo_path"], "cid": str(conversation_id)},
         )
-
-    if resp.status_code not in (200, 201):
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"GitHub API error {resp.status_code}: {resp.text[:500]}",
-        )
-
-    data = resp.json()
-    pr_url = data.get("html_url", "")
-    pr_number = data.get("number")
-
-    await db.execute(
-        text(
-            "UPDATE conversations SET github_pr_number = :num, github_repo_slug = :slug "
-            "WHERE id = :cid"
-        ),
-        {"num": pr_number, "slug": owner_repo, "cid": str(conversation_id)},
-    )
-    await db.commit()
-    return {"pr_url": pr_url, "pr_number": pr_number, "head_branch": head_branch}
+        await db.commit()
+    first = opened[0]
+    return {
+        "pr_url": first["pr_url"],
+        "pr_number": first["pr_number"],
+        "head_branch": first["head_branch"],
+        "prs": prs,
+    }
 
 
 # ── PR subscriptions ──────────────────────────────────────────────────────────

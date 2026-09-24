@@ -66,6 +66,10 @@ class WorkspaceRepository(Base):
     alias: Mapped[str] = mapped_column(String(128), nullable=False)
     # Vazio = usa a default_branch do repositório.
     base_branch: Mapped[str] = mapped_column(String(256), nullable=False, server_default="")
+    # Somente leitura: sem worktree/branch na sessão, fora do diff e do PR.
+    read_only: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     workspace: Mapped[Workspace] = relationship("Workspace", back_populates="repositories")

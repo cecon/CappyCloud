@@ -283,6 +283,8 @@ const server = http.createServer(async (req, res) => {
       for (const repo of repos) {
         const { slug, alias, base_branch: rb, branch_name, clone_url: rc } = repo
         if (!slug || !alias) continue
+        // Somente leitura: o agente lê o clone do workspace; sem worktree/branch.
+        if (repo.read_only && workspaceRoot) continue
         const wt_path = assertSafeSessionPath(path.join(session_root, alias))
         const resolved_branch = branch_name || `cappy/${slug}/${session_id}-${alias}`
         try {

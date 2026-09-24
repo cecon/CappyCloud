@@ -97,6 +97,7 @@ async def create_workspace_conversation(
             "slug": link.repository.slug,
             "alias": link.alias,
             "base_branch": link.base_branch or link.repository.default_branch,
+            "read_only": link.read_only,
         }
         for link in ws.repositories
     ]

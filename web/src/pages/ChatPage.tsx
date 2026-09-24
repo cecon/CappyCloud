@@ -142,6 +142,8 @@ const CONVERSATION_PAGE_SIZE = 6
 const HEAVY_TURN_TOOL_THRESHOLD = 40
 const HEAVY_TURN_PROMPT_TOKEN_THRESHOLD = 200_000
 const HEAVY_TURN_COST_THRESHOLD_USD = 1
+type PrLink = { label: string; url: string }
+
 type ChatMainMode = 'chat' | 'sandboxes'
 
 type StreamToolStats = {
@@ -936,7 +938,7 @@ export function ChatPage() {
 
   const [diffStats, setDiffStats] = useState<{ added: number; removed: number } | null>(null)
   const [prLoading, setPrLoading] = useState(false)
-  const [prUrl, setPrUrl] = useState<string | null>(null)
+  const [prLinks, setPrLinks] = useState<PrLink[]>([])
   const [prError, setPrError] = useState<string | null>(null)
   const [headBranch, setHeadBranch] = useState<string | null>(null)
 
@@ -1150,7 +1152,7 @@ export function ChatPage() {
     let cancelled = false
     const preserveOptimistic = optimisticConversationIdRef.current === activeId
     setDiffStats(null)
-    setPrUrl(null)
+    setPrLinks([])
     setHeadBranch(null)
     if (!preserveOptimistic) {
       setMessages([])
@@ -1243,8 +1245,18 @@ export function ChatPage() {
     setPrError(null)
     try {
       const result = await createConversationPr(token, activeId)
-      setPrUrl(result.pr_url)
+      const perRepo = result.prs ?? []
+      const opened = perRepo.filter((pr) => pr.pr_url)
+      setPrLinks(
+        opened.length > 0
+          ? opened.map((pr) => ({ label: pr.alias || pr.slug, url: pr.pr_url as string }))
+          : [{ label: '', url: result.pr_url }],
+      )
       setHeadBranch(result.head_branch)
+      const failed = perRepo.filter((pr) => pr.error)
+      if (failed.length > 0) {
+        setPrError(failed.map((pr) => `${pr.alias || pr.slug}: ${pr.error}`).join(' · '))
+      }
     } catch (e) {
       setPrError(e instanceof Error ? e.message : 'Não foi possível criar o PR. Tente novamente.')
     } finally {
@@ -2088,7 +2100,7 @@ export function ChatPage() {
               sandboxAccessCount={sandboxAccessCount}
               diffStats={diffStats}
               prLoading={prLoading}
-              prUrl={prUrl}
+              prLinks={prLinks}
               prError={prError}
               headBranch={headBranch}
               onCreatePr={handleCreatePr}
@@ -2841,7 +2853,7 @@ interface ActiveChatProps {
   sandboxAccessCount: number
   diffStats: { added: number; removed: number } | null
   prLoading: boolean
-  prUrl: string | null
+  prLinks: PrLink[]
   prError: string | null
   headBranch: string | null
   onCreatePr: () => void
@@ -2883,7 +2895,7 @@ function ActiveChat({
   contextProgress, subagentGroups, runtimeStates, streamToolStats,
   showThinking, streaming, input, setInput, inputRef,
   onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch, activeSandboxName, sandboxAccessCount: _sandboxAccessCount,
-  diffStats, prLoading, prUrl, prError, headBranch, onCreatePr,
+  diffStats, prLoading, prLinks, prError, headBranch, onCreatePr,
   activeTitle: _activeTitle,
   token, conversationId,
   models, selectedModelId, setSelectedModelId,
@@ -3172,16 +3184,27 @@ function ActiveChat({
               <span className={styles.diffAdded}>+{diffStats.added}</span>
               <span className={styles.diffRemoved}>-{diffStats.removed}</span>
               {activeEnvSlug && (
-                prUrl ? (
-                  <a
-                    href={prUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={styles.prLink}
-                  >
-                    <span className={`${styles.icon}`} style={{ fontSize: '0.875rem' }}>open_in_new</span>
-                    Ver PR
-                  </a>
+                prLinks.length > 0 ? (
+                  <>
+                    {prLinks.map((pr) => (
+                      <a
+                        key={pr.url}
+                        href={pr.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={styles.prLink}
+                        title={pr.label ? `PR de ${pr.label}` : undefined}
+                      >
+                        <span className={`${styles.icon}`} style={{ fontSize: '0.875rem' }}>open_in_new</span>
+                        {prLinks.length > 1 && pr.label ? `PR ${pr.label}` : 'Ver PR'}
+                      </a>
+                    ))}
+                    {prError && (
+                      <span role="alert" style={{ fontSize: '0.72rem', color: 'var(--destructive)' }} title={prError}>
+                        falhou em parte
+                      </span>
+                    )}
+                  </>
                 ) : (
                   <>
                     <button

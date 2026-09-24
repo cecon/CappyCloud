@@ -35,7 +35,7 @@ import {
 } from '../api'
 import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
 
-type RepoChoice = { selected: boolean; alias: string; base_branch: string }
+type RepoChoice = { selected: boolean; alias: string; base_branch: string; read_only: boolean }
 
 type FormState = {
   slug: string
@@ -52,7 +52,12 @@ const SYNC_COLORS: Record<string, string> = { synced: 'green', pending: 'yellow'
 function formFromWorkspace(ws: AdminWorkspace): FormState {
   const repos: Record<string, RepoChoice> = {}
   for (const link of ws.repositories) {
-    repos[link.repository_id] = { selected: true, alias: link.alias, base_branch: link.base_branch }
+    repos[link.repository_id] = {
+      selected: true,
+      alias: link.alias,
+      base_branch: link.base_branch,
+      read_only: link.read_only,
+    }
   }
   return { slug: ws.slug, name: ws.name, sandbox_id: ws.sandbox_id, claude_md: ws.claude_md, repos }
 }
@@ -64,6 +69,7 @@ function linksFromForm(form: FormState): WorkspaceRepositoryLink[] {
       repository_id,
       alias: choice.alias.trim() || null,
       base_branch: choice.base_branch.trim(),
+      read_only: choice.read_only,
     }))
 }
 
@@ -135,7 +141,12 @@ export function AdminWorkspacesPage() {
 
   function updateRepo(repoId: string, patch: Partial<RepoChoice>, fallbackAlias: string) {
     setForm((prev) => {
-      const current = prev.repos[repoId] ?? { selected: false, alias: fallbackAlias, base_branch: '' }
+      const current = prev.repos[repoId] ?? {
+        selected: false,
+        alias: fallbackAlias,
+        base_branch: '',
+        read_only: false,
+      }
       return { ...prev, repos: { ...prev.repos, [repoId]: { ...current, ...patch } } }
     })
   }
@@ -262,6 +273,7 @@ export function AdminWorkspacesPage() {
                             color={link.sandbox_status === 'cloned' ? 'blue' : 'yellow'}
                           >
                             {link.alias}
+                            {link.read_only ? ' · leitura' : ''}
                           </Badge>
                         ))}
                       </Group>
@@ -386,6 +398,13 @@ export function AdminWorkspacesPage() {
                           value={choice.base_branch}
                           onChange={(e) =>
                             updateRepo(repo.id, { base_branch: e.currentTarget.value }, repo.slug)
+                          }
+                        />
+                        <Checkbox
+                          label="Somente leitura (sem edição nem PR)"
+                          checked={choice.read_only}
+                          onChange={(e) =>
+                            updateRepo(repo.id, { read_only: e.currentTarget.checked }, repo.slug)
                           }
                         />
                       </>
