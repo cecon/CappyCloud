@@ -24,6 +24,7 @@ import {
   IconPlayerStop,
   IconRefresh,
   IconSettings,
+  IconTerminal2,
   IconTrash,
 } from '@tabler/icons-react'
 import {
@@ -41,7 +42,9 @@ import {
   stopAdminSandbox,
 } from '../api'
 import { SandboxGlobalsDrawer } from '../components/SandboxGlobalsDrawer'
+import { SandboxTerminalModal } from '../components/SandboxTerminalModal'
 import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
+import { useCurrentUser } from '../hooks/useCurrentUser'
 import styles from './AdminSandboxesPage.module.css'
 
 type CreateState = {
@@ -115,6 +118,10 @@ export function AdminSandboxesPage() {
   const [cloning, setCloning] = useState(false)
 
   const [globalsFor, setGlobalsFor] = useState<Sandbox | null>(null)
+  const [terminalFor, setTerminalFor] = useState<Sandbox | null>(null)
+  const currentUser = useCurrentUser()
+  // Terminal abre um shell no container: só super admin.
+  const canUseTerminal = currentUser.status === 'ready' && currentUser.user.is_super_admin
 
   const [pendingAction, setPendingAction] = useState<string | null>(null)
 
@@ -377,6 +384,17 @@ export function AdminSandboxesPage() {
                         >
                           <IconPlayerStop size={16} />
                         </RowActionIcon>
+                        {canUseTerminal && (
+                          <RowActionIcon
+                            label={live ? 'Terminal (ex.: claude login)' : 'Terminal: inicie o container primeiro'}
+                            color="grape"
+                            variant="default"
+                            onClick={() => setTerminalFor(sb)}
+                            disabled={isPending || !live}
+                          >
+                            <IconTerminal2 size={16} />
+                          </RowActionIcon>
+                        )}
                         <Menu shadow="md" position="bottom-end">
                           <Menu.Target>
                             <ActionIcon
@@ -538,6 +556,8 @@ export function AdminSandboxesPage() {
         onClose={() => setGlobalsFor(null)}
         onUpdated={applyUpdatedSandbox}
       />
+
+      {terminalFor && <SandboxTerminalModal sandbox={terminalFor} onClose={() => setTerminalFor(null)} />}
 
       {/* Clonar */}
       <Modal

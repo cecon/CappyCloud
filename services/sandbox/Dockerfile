@@ -169,6 +169,8 @@ COPY services/sandbox/claude_runtime_mapper.js /claude_runtime_mapper.js
 COPY services/sandbox/session_cleanup.js /session_cleanup.js
 COPY services/sandbox/session_paths.js /session_paths.js
 COPY services/sandbox/workspace_handler.js /workspace_handler.js
+COPY services/sandbox/terminal_handler.js /terminal_handler.js
+COPY services/sandbox/terminal_pty.py /terminal_pty.py
 COPY services/sandbox/task_handler.js /task_handler.js
 COPY services/sandbox/worktree_handlers.js /worktree_handlers.js
 COPY services/sandbox/confluence_mcp_lib.py /usr/local/bin/confluence_mcp_lib.py
