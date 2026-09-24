@@ -1,4 +1,4 @@
-﻿import { Fragment, type Dispatch, type SetStateAction, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+﻿import { Fragment, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Burger,
@@ -16,7 +16,6 @@ import {
   createConversationPr,
   deleteAttachment,
   fetchAiModels,
-  fetchBranches,
   fetchConversationDiff,
   fetchConversations,
   fetchConversationActivity,
@@ -992,7 +991,11 @@ export function ChatPage() {
   useEffect(() => {
     let cancelled = false
     fetchAccessibleWorkspaces(token)
-      .then((list) => { if (!cancelled) setProjectWorkspaces(list) })
+      .then((list) => {
+        if (cancelled) return
+        setProjectWorkspaces(list)
+        setSelectedWorkspaceId((prev) => defaultWorkspaceId(list, prev))
+      })
       .catch(() => {})
     return () => { cancelled = true }
   }, [token])
@@ -1325,19 +1328,16 @@ export function ChatPage() {
     if (modelForRequest && modelForRequest !== selectedModelId) {
       setSelectedModelId(modelForRequest)
     }
-    const repos = !selectedWorkspaceId && selectedSlug
-      ? [{ slug: selectedSlug, base_branch: selectedBranch || null }]
-      : []
+    // Conversa nova é sempre de um workspace (a sandbox e os repositórios vêm dele).
+    if (!selectedWorkspaceId) {
+      setNewChatError('Selecione um workspace para começar a conversa.')
+      return
+    }
     let c
     try {
       setNewChatError(null)
-      c = await createConversation(
-        token,
-        repos,
-        modelForRequest || null,
-        selectedWorkspaceId ? null : selectedSandboxId || null,
-        selectedWorkspaceId || null,
-      )
+      rememberWorkspace(selectedWorkspaceId)
+      c = await createConversation(token, [], modelForRequest || null, null, selectedWorkspaceId)
     } catch (err) {
       if (err instanceof AuthError) {
         redirectToLogin()
@@ -2040,18 +2040,12 @@ export function ChatPage() {
             inputRef={inputRef}
             onExecute={(text) => handleNewChatWithMessage(text)}
             streaming={streaming}
-            sandboxes={availableSandboxes}
-            selectedSandboxId={selectedSandboxId}
-            setSelectedSandboxId={setSelectedSandboxId}
             selectableWorkspaces={selectableWorkspaces}
             projectWorkspaces={projectWorkspaces}
             selectedWorkspaceId={selectedWorkspaceId}
             setSelectedWorkspaceId={setSelectedWorkspaceId}
             newChatError={newChatError}
             selectedSlug={selectedSlug}
-            setSelectedSlug={setSelectedSlug}
-            selectedBranch={selectedBranch}
-            setSelectedBranch={setSelectedBranch}
             permissionMode={permissionMode}
             setPermissionMode={setPermissionMode}
             executionProfile={executionProfile}
@@ -2282,13 +2276,7 @@ interface EmptyStateProps {
   selectedWorkspaceId: string
   setSelectedWorkspaceId: (id: string) => void
   newChatError: string | null
-  sandboxes: Sandbox[]
-  selectedSandboxId: string
-  setSelectedSandboxId: (id: string) => void
   selectedSlug: string
-  setSelectedSlug: (s: string) => void
-  selectedBranch: string
-  setSelectedBranch: Dispatch<SetStateAction<string>>
   permissionMode: PermissionMode
   setPermissionMode: (mode: PermissionMode) => void
   executionProfile: ExecutionProfile
@@ -2304,24 +2292,41 @@ interface EmptyStateProps {
   setDragOver: (v: boolean) => void
 }
 
-// Valor sentinela do seletor: conversa por repositório (sem workspace).
-const REPO_MODE = '__repo__'
+const LAST_WORKSPACE_KEY = 'cappy.lastWorkspaceId'
+
+/** Workspace da nova conversa: o atual se ainda existir, o último usado, ou o primeiro pronto. */
+function defaultWorkspaceId(list: AccessibleWorkspace[], current: string): string {
+  if (current && list.some((workspace) => workspace.id === current)) return current
+  let remembered = ''
+  try {
+    remembered = localStorage.getItem(LAST_WORKSPACE_KEY) ?? ''
+  } catch {
+    remembered = ''
+  }
+  const usable = (id: string) => list.some((workspace) => workspace.id === id && workspace.ready)
+  if (usable(remembered)) return remembered
+  return (list.find((workspace) => workspace.ready) ?? list[0])?.id ?? ''
+}
+
+function rememberWorkspace(id: string) {
+  try {
+    if (id) localStorage.setItem(LAST_WORKSPACE_KEY, id)
+  } catch {
+    // Sem storage (aba privada): só não lembra a escolha.
+  }
+}
 
 function EmptyState({
   input, setInput, inputRef, onExecute, streaming,
-  selectableWorkspaces, sandboxes, selectedSandboxId, setSelectedSandboxId,
+  selectableWorkspaces,
   projectWorkspaces, selectedWorkspaceId, setSelectedWorkspaceId, newChatError,
-  selectedSlug, setSelectedSlug,
-  selectedBranch, setSelectedBranch,
+  selectedSlug,
   token,
   permissionMode, setPermissionMode, executionProfile, setExecutionProfile, permissionWarningRuntimeConfirmed,
   trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
 }: EmptyStateProps) {
-  const [branches, setBranches] = useState<string[]>([])
-  const [loadedSlug, setLoadedSlug] = useState('')
   const [suggestions, setSuggestions] = useState<ProjectSuggestionCard[]>([])
   const [suggestionsSlug, setSuggestionsSlug] = useState('')
-  const branchesLoading = !!selectedSlug && loadedSlug !== selectedSlug
   const selectedWorkspace = useMemo(
     () => selectableWorkspaces.find((workspace) => workspace.slug === selectedSlug) ?? null,
     [selectableWorkspaces, selectedSlug],
@@ -2331,26 +2336,11 @@ function EmptyState({
   const hasSendableAttachment = trayItems.some(isSendableTrayItem)
   const hasUploadInProgress = trayItems.some((item) => item.kind === 'uploading')
   const chosenWorkspace = projectWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null
-  const sandboxRequired = !chosenWorkspace && !selectedSandboxId
   const canExecute =
-    (chosenWorkspace
-      ? chosenWorkspace.ready
-      : !sandboxRequired && !!selectedSlug && !!selectedBranch) &&
+    !!chosenWorkspace?.ready &&
     (!!input.trim() || hasSendableAttachment) &&
     !hasUploadInProgress &&
     !streaming
-
-  useEffect(() => {
-    if (!selectedSlug) return
-    let cancelled = false
-    fetchBranches(token, selectedSlug).then(({ branches: list, default: def }) => {
-      if (cancelled) return
-      setBranches(list)
-      setLoadedSlug(selectedSlug)
-      setSelectedBranch((prev) => (list.includes(prev) ? prev : def))
-    })
-    return () => { cancelled = true }
-  }, [selectedSlug, token, setSelectedBranch])
 
   useEffect(() => {
     if (!selectedSlug) {
@@ -2378,8 +2368,6 @@ function EmptyState({
     }
   }
 
-  const repoRequired = selectableWorkspaces.length > 0 && !selectedSlug
-  const branchRequired = !!selectedSlug && !selectedBranch
   const quickActions = buildProjectQuickActions({
     repoName: selectedWorkspace?.name || selectedSlug || 'seu projeto',
     suggestions: selectedSlug && suggestionsSlug === selectedSlug ? suggestions : [],
@@ -2466,11 +2454,9 @@ function EmptyState({
                 ref={inputRef}
                 className={styles.commandTextarea}
                 placeholder={
-                  !selectedSlug
-                    ? 'Pergunte algo ao agente...'
-                    : !selectedBranch
-                      ? 'Selecione uma branch antes de continuar...'
-                      : 'Pergunte algo ao agente... (Enter para enviar)'
+                  chosenWorkspace?.ready
+                    ? 'Pergunte algo ao agente... (Enter para enviar)'
+                    : 'Pergunte algo ao agente...'
                 }
                 rows={2}
                 value={input}
@@ -2492,13 +2478,18 @@ function EmptyState({
                 >
                   <span className={styles.icon}>attachment</span>
                 </button>
-                {projectWorkspaces.length > 0 && (
+                {projectWorkspaces.length > 0 ? (
                   <Select
-                    value={selectedWorkspaceId || REPO_MODE}
-                    onValueChange={(id) => setSelectedWorkspaceId(id === REPO_MODE ? '' : id)}
+                    value={selectedWorkspaceId}
+                    onValueChange={(id) => {
+                      rememberWorkspace(id)
+                      setSelectedWorkspaceId(id)
+                    }}
                   >
                     <SelectTrigger
-                      className={`${styles.contextSelectTrigger} ${styles.contextSelectTriggerSandbox}`}
+                      className={`${styles.contextSelectTrigger} ${styles.contextSelectTriggerSandbox} ${
+                        chosenWorkspace ? '' : styles.contextPillRequired
+                      }`}
                       title="Selecionar workspace"
                       aria-label="Selecionar workspace"
                     >
@@ -2510,9 +2501,6 @@ function EmptyState({
                     <SelectContent className={styles.contextSelectContent} position="item-aligned">
                       <SelectGroup>
                         <SelectLabel className={styles.contextSelectLabel}>Workspace</SelectLabel>
-                        <SelectItem value={REPO_MODE} className={styles.contextSelectItem}>
-                          Por repositório
-                        </SelectItem>
                         {projectWorkspaces.map((workspace) => (
                           <SelectItem
                             key={workspace.id}
@@ -2527,146 +2515,25 @@ function EmptyState({
                       </SelectGroup>
                     </SelectContent>
                   </Select>
+                ) : (
+                  <div
+                    className={`${styles.contextPill} ${styles.contextPillRequired}`}
+                    title="Peça ao super admin acesso a um workspace"
+                  >
+                    <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.5 }}>folder_off</span>
+                    <span className={styles.contextPillLabel} style={{ opacity: 0.6 }}>
+                      Sem workspace — peça acesso ao super admin
+                    </span>
+                  </div>
                 )}
-                {chosenWorkspace ? (
+                {chosenWorkspace && (
                   <div className={styles.contextPill} title={chosenWorkspace.repositories.map((repo) => repo.alias).join(', ')}>
                     <span className={styles.icon} style={{ fontSize: '0.875rem' }}>source</span>
                     <span className={styles.contextPillLabel}>
-                      {chosenWorkspace.repositories.length} repositórios
+                      {chosenWorkspace.repositories.length}{' '}
+                      {chosenWorkspace.repositories.length === 1 ? 'repositório' : 'repositórios'}
                     </span>
                   </div>
-                ) : (
-                <>
-                {sandboxes.length > 0 ? (
-                  <Select
-                    value={selectedSandboxId}
-                    onValueChange={(id) => {
-                      setSelectedSandboxId(id)
-                      setSelectedSlug('')
-                      setSelectedBranch('')
-                    }}
-                  >
-                    <SelectTrigger
-                      className={`${styles.contextSelectTrigger} ${styles.contextSelectTriggerSandbox} ${
-                        sandboxRequired ? styles.contextPillRequired : ''
-                      }`}
-                      title="Selecionar sandbox"
-                      aria-label="Selecionar sandbox"
-                    >
-                      <span className={styles.icon} aria-hidden="true">
-                        dns
-                      </span>
-                      <SelectValue placeholder="Sandbox..." />
-                    </SelectTrigger>
-                    <SelectContent
-                      className={styles.contextSelectContent}
-                      position="item-aligned"
-                    >
-                      <SelectGroup>
-                        <SelectLabel className={styles.contextSelectLabel}>
-                          Sandbox
-                        </SelectLabel>
-                        {sandboxes.map((sandbox) => (
-                          <SelectItem
-                            key={sandbox.id}
-                            value={sandbox.id}
-                            className={styles.contextSelectItem}
-                          >
-                            {sandbox.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <div className={`${styles.contextPill} ${styles.contextPillRequired}`} style={{ marginLeft: '0.5rem' }}>
-                    <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.5 }}>dns</span>
-                    <span className={styles.contextPillLabel} style={{ opacity: 0.45 }}>Nenhuma sandbox</span>
-                  </div>
-                )}
-                {selectableWorkspaces.length > 0 ? (
-                  <Select
-                    value={selectedSlug}
-                    onValueChange={setSelectedSlug}
-                  >
-                    <SelectTrigger
-                      className={`${styles.contextSelectTrigger} ${styles.contextSelectTriggerRepo} ${
-                        repoRequired ? styles.contextPillRequired : ''
-                      }`}
-                      title="Selecionar repositório"
-                      aria-label="Selecionar repositório"
-                    >
-                      <span className={styles.icon} aria-hidden="true">
-                        source
-                      </span>
-                      <SelectValue placeholder="Repositório..." />
-                    </SelectTrigger>
-                    <SelectContent
-                      className={styles.contextSelectContent}
-                      position="item-aligned"
-                    >
-                      <SelectGroup>
-                        <SelectLabel className={styles.contextSelectLabel}>
-                          Repositório
-                        </SelectLabel>
-                        {selectableWorkspaces.map((w) => (
-                          <SelectItem
-                            key={w.slug}
-                            value={w.slug}
-                            className={styles.contextSelectItem}
-                          >
-                            {w.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <div className={`${styles.contextPill} ${styles.contextPillRequired}`} style={{ marginLeft: '0.5rem' }}>
-                    <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.5 }}>source</span>
-                    <span className={styles.contextPillLabel} style={{ opacity: 0.45 }}>Nenhum repositório</span>
-                  </div>
-                )}
-                {selectedSlug && (
-                  <Select
-                    value={selectedBranch}
-                    onValueChange={setSelectedBranch}
-                    disabled={branchesLoading}
-                  >
-                    <SelectTrigger
-                      className={`${styles.contextSelectTrigger} ${styles.contextSelectTriggerBranch} ${
-                        branchRequired ? styles.contextPillRequired : ''
-                      }`}
-                      title="Selecionar branch"
-                      aria-label="Selecionar branch"
-                    >
-                      <span className={styles.icon} aria-hidden="true">
-                        fork_right
-                      </span>
-                      <SelectValue placeholder={branchesLoading ? '...' : 'Branch...'} />
-                    </SelectTrigger>
-                    <SelectContent
-                      className={styles.contextSelectContent}
-                      position="item-aligned"
-                    >
-                      <SelectGroup>
-                        <SelectLabel className={styles.contextSelectLabel}>
-                          Branch
-                        </SelectLabel>
-                        {branches.map((b) => (
-                          <SelectItem
-                            key={b}
-                            value={b}
-                            className={styles.contextSelectItem}
-                          >
-                            {b}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                )}
-                </>
                 )}
                 <PermissionModeControl
                   value={permissionMode}
@@ -2687,8 +2554,8 @@ function EmptyState({
                   onClick={() => canExecute && onExecute(input)}
                   disabled={!canExecute}
                   title={
-                    !selectedSlug ? 'Selecione um repositório' :
-                    !selectedBranch ? 'Selecione uma branch' :
+                    !chosenWorkspace ? 'Selecione um workspace' :
+                    !chosenWorkspace.ready ? 'Workspace ainda sincronizando' :
                     hasUploadInProgress ? 'Aguarde os anexos terminarem o envio…' :
                     !input.trim() && !hasSendableAttachment ? 'Digite uma mensagem ou cole um print' : undefined
                   }
