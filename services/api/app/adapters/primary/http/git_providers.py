@@ -9,7 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
+from app.adapters.primary.http.deps import get_db_session
+from app.adapters.primary.http.deps_auth import require_super_admin
 from app.domain.entities import User
 from app.infrastructure.encryption import get_encryptor
 from app.infrastructure.orm_models import GitProvider, Sandbox, SandboxSyncQueue
@@ -46,7 +47,7 @@ async def _enqueue_git_auth_for_all_sandboxes(
 
 @router.get("", response_model=list[GitProviderOut])
 async def list_git_providers(
-    _current: Annotated[User, Depends(get_authenticated_user)],
+    _current: Annotated[User, Depends(require_super_admin)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> list[GitProviderOut]:
     rows = await session.execute(select(GitProvider).order_by(GitProvider.created_at))
@@ -56,7 +57,7 @@ async def list_git_providers(
 @router.post("", response_model=GitProviderOut, status_code=201)
 async def create_git_provider(
     body: GitProviderCreate,
-    _current: Annotated[User, Depends(get_authenticated_user)],
+    _current: Annotated[User, Depends(require_super_admin)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> GitProviderOut:
     enc = get_encryptor()
@@ -80,7 +81,7 @@ async def create_git_provider(
 async def update_token(
     provider_id: uuid.UUID,
     body: GitProviderTokenUpdate,
-    _current: Annotated[User, Depends(get_authenticated_user)],
+    _current: Annotated[User, Depends(require_super_admin)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> GitProviderOut:
     provider = await session.get(GitProvider, provider_id)
@@ -99,7 +100,7 @@ async def update_token(
 @router.delete("/{provider_id}", status_code=204)
 async def delete_git_provider(
     provider_id: uuid.UUID,
-    _current: Annotated[User, Depends(get_authenticated_user)],
+    _current: Annotated[User, Depends(require_super_admin)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> None:
     provider = await session.get(GitProvider, provider_id)

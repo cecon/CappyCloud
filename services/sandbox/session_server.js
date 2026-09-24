@@ -12,7 +12,7 @@
 //
 // Endpoints:
 //   POST   /sessions               → cria session_root + worktrees
-//   DELETE /sessions/:id           → remove session_root e faz worktree prune
+//   DELETE /sessions/:id           → session_cleanup.js (409 se houver trabalho não enviado)
 //   POST   /git/*                  → git_handlers.js (ls-remote, branch-r, ls-files, file)
 //   POST   /worktree/*             → worktree_handlers.js (ls-files, diff, PR, …)
 //   POST   /mcp/configure          → escreve mcpServers em ~/.claude/settings.json
@@ -33,6 +33,7 @@ const mcpHandler = require('./mcp_handler')
 const confluenceHandler = require('./confluence_handler')
 const repoHandlers = require('./repo_handlers')
 const runtimeHandler = require('./runtime_handler')
+const { assertSafeSessionRoot, cleanupSession } = require('./session_cleanup')
 const taskHandler = require('./task_handler')
 const worktreeHandlers = require('./worktree_handlers')
 
@@ -191,27 +192,6 @@ async function ensureUserWorkspace({ slug, base_branch, workspace_path, clone_ur
   }
 }
 
-// ── Remove session_root e prune worktrees ─────────────────────
-async function destroySession({ session_root, repos }) {
-  if (session_root) {
-    await execFileAsync('rm', ['-rf', session_root], { timeout: 30_000 }).catch(() => {})
-  }
-
-  // repos pode vir como array, string JSON ou null/undefined.
-  let arr = repos
-  if (typeof arr === 'string') {
-    try { arr = JSON.parse(arr) } catch { arr = [] }
-  }
-  if (!Array.isArray(arr)) arr = []
-  const slugs = new Set(arr.map(r => r && r.slug).filter(Boolean))
-  for (const slug of slugs) {
-    await execFileAsync(
-      'git', ['-C', `/repos/${slug}`, 'worktree', 'prune'],
-      { timeout: 30_000 }
-    ).catch(() => {})
-  }
-}
-
 // ── HTTP server ───────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`)
@@ -231,7 +211,12 @@ const server = http.createServer(async (req, res) => {
     const statusMatch = pathname.match(/^\/sessions\/([^/]+)\/status$/)
     if (req.method === 'GET' && statusMatch) {
       const session_id = statusMatch[1]
-      const session_root = url.searchParams.get('session_root') || ''
+      let session_root
+      try {
+        session_root = assertSafeSessionRoot(url.searchParams.get('session_root') || '')
+      } catch (err) {
+        return json(res, 400, { error: err.message })
+      }
       let repos = []
       try { repos = JSON.parse(url.searchParams.get('repos') || '[]') } catch {}
       if (!Array.isArray(repos)) repos = []
@@ -378,11 +363,20 @@ const server = http.createServer(async (req, res) => {
     const deleteMatch = pathname.match(/^\/sessions\/([^/]+)$/)
     if (req.method === 'DELETE' && deleteMatch) {
       const session_id = deleteMatch[1]
-      const session_root = url.searchParams.get('session_root') || ''
-      let repos = []
-      try { repos = JSON.parse(url.searchParams.get('repos') || '[]') } catch {}
-
-      await destroySession({ session_root, repos })
+      let result
+      try {
+        result = await cleanupSession({
+          session_root: url.searchParams.get('session_root') || '',
+          repos: url.searchParams.get('repos') || '[]',
+          force: url.searchParams.get('force') === '1',
+        })
+      } catch (err) {
+        return json(res, 400, { error: err.message })
+      }
+      if (!result.deleted) {
+        console.log(`[session_server] session ${session_id} mantida: trabalho não enviado`)
+        return json(res, 409, { deleted: false, session_id, blocked: result.blocked })
+      }
       activeSessions.delete(session_id)
       console.log(`[session_server] removed session ${session_id}`)
       return json(res, 200, { deleted: true, session_id })

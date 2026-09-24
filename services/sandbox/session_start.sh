@@ -221,6 +221,15 @@ _create_worktree() {
         echo "[session_start] Branch base detectada automaticamente: ${resolved_base}"
     fi
 
+    # Sessão retomada depois da limpeza de inatividade: a branch local foi
+    # removida, mas o trabalho enviado (PR) está no remote. Continua de lá.
+    if ! git -C "$main_repo" rev-parse --verify "$branch_name" >/dev/null 2>&1 \
+        && _fetch_base_branch "$main_repo" "$branch_name" >/dev/null 2>&1 \
+        && git -C "$main_repo" rev-parse --verify "refs/remotes/origin/${branch_name}" >/dev/null 2>&1; then
+        echo "[session_start] Branch ${branch_name} existe no remote — retomando dela."
+        resolved_base="refs/remotes/origin/${branch_name}"
+    fi
+
     echo "[session_start] Criando worktree: branch=${branch_name} a partir de ${resolved_base}"
 
     # Tenta criar nova branch a partir da base
@@ -301,6 +310,13 @@ if [ -f "$WORKTREE_PATH/CLAUDE.md" ] || [ -f "$WORKTREE_PATH/AGENTS.md" ]; then
     echo "[session_start] CLAUDE.md/AGENTS.md do repo preservado."
 elif [ -f /app/CLAUDE.md ]; then
     cp /app/CLAUDE.md "$WORKTREE_PATH/CLAUDE.md"
+    # Artefato injetado: não pode aparecer como alteração do utilizador
+    # (git status, PR, e a limpeza de sessões o trataria como trabalho pendente).
+    _exclude_file=$(git -C "$WORKTREE_PATH" rev-parse --git-path info/exclude 2>/dev/null || true)
+    if [ -n "$_exclude_file" ]; then
+        mkdir -p "$(dirname "$_exclude_file")" && touch "$_exclude_file"
+        grep -qxF "/CLAUDE.md" "$_exclude_file" || echo "/CLAUDE.md" >> "$_exclude_file"
+    fi
 fi
 
 # ── .sendbox/ overlay (commands/agents/skills do próprio repo) ──

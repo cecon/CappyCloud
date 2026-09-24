@@ -49,6 +49,12 @@ class SandboxRecord:
         # Backward compat: worktree_path → session_root para registros antigos
         if not d.get("session_root") and d.get("worktree_path"):
             d["session_root"] = d["worktree_path"]
+        # asyncpg devolve JSONB como texto (sem codec registrado no pool).
+        if isinstance(d.get("repos"), str):
+            try:
+                d["repos"] = json.loads(d["repos"]) or []
+            except ValueError:
+                d["repos"] = []
         d.setdefault("repos", [])
         d.setdefault("session_root", "")
         d.setdefault("sandbox_id", "")
@@ -94,6 +100,8 @@ ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS session_root TEXT NOT NULL D
 ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS repos        JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS grpc_host    TEXT;
 ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS session_port INTEGER NOT NULL DEFAULT 8080;
+ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS cleanup_blocked_at TIMESTAMPTZ;
+ALTER TABLE cappy_sessions ADD COLUMN IF NOT EXISTS cleanup_note TEXT NOT NULL DEFAULT '';
 ALTER TABLE cappy_sessions DROP COLUMN IF EXISTS repo_url;
 ALTER TABLE cappy_sessions DROP COLUMN IF EXISTS env_slug;
 ALTER TABLE cappy_sessions DROP COLUMN IF EXISTS container_id;
@@ -103,10 +111,18 @@ DROP TABLE IF EXISTS cappy_env_containers;
 
 
 class SessionStore:
-    def __init__(self, redis_url: str, database_url: str, idle_ttl: int = 1800) -> None:
+    def __init__(
+        self,
+        redis_url: str,
+        database_url: str,
+        idle_ttl: int = 1800,
+        cleanup_after: int = 86400,
+    ) -> None:
         self._redis_url = redis_url
         self._db_url = database_url
+        # idle_ttl: cache "quente" da sessão; cleanup_after: quando o GC apaga os worktrees.
         self._idle_ttl = idle_ttl
+        self._cleanup_after = cleanup_after
         self._redis: Optional[aioredis.Redis] = None
         self._pool: Optional[asyncpg.Pool] = None
 
@@ -223,7 +239,23 @@ class SessionStore:
                 chat_id,
             )
 
+    async def get_any(self, user_id: str, chat_id: str) -> Optional[SandboxRecord]:
+        """Registro da sessão mesmo expirado (usado pelo GC; ``get`` ignora expiradas)."""
+        pool = self._require_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM cappy_sessions WHERE user_id=$1 AND chat_id=$2",
+                user_id,
+                chat_id,
+            )
+        return SandboxRecord.from_dict(dict(row)) if row else None
+
     async def list_expired_sessions(self) -> list[dict]:
+        """Sessões inativas há mais de ``cleanup_after``.
+
+        Sessões bloqueadas (trabalho não enviado) só voltam a ser tentadas depois
+        de nova atividade ou de 1 dia do bloqueio, para não repetir a cada ciclo.
+        """
         pool = self._require_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
@@ -231,7 +263,24 @@ class SessionStore:
                 SELECT user_id, chat_id, sandbox_id, session_root, repos
                 FROM   cappy_sessions
                 WHERE  last_active < NOW() - make_interval(secs => $1)
+                  AND (cleanup_blocked_at IS NULL
+                       OR cleanup_blocked_at < last_active
+                       OR cleanup_blocked_at < NOW() - INTERVAL '1 day')
                 """,
-                float(self._idle_ttl),
+                float(self._cleanup_after),
             )
         return [dict(r) for r in rows]
+
+    async def mark_cleanup_blocked(self, user_id: str, chat_id: str, note: str) -> None:
+        pool = self._require_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE cappy_sessions
+                SET cleanup_blocked_at = NOW(), cleanup_note = $3
+                WHERE user_id=$1 AND chat_id=$2
+                """,
+                user_id,
+                chat_id,
+                note,
+            )

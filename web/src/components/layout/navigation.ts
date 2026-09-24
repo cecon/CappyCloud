@@ -46,7 +46,7 @@ export const navigationItems: NavigationItem[] = [
   { to: '/admin', label: 'Dashboard admin', description: 'Operacao e conversas', icon: 'dashboard', section: 'admin', adminOnly: true, overlay: true },
   { to: '/admin/users', label: 'Usuarios', description: 'Papeis e acesso', icon: 'users', section: 'admin', adminOnly: true, overlay: true },
   { to: '/admin/sandboxes', label: 'Sandboxes', description: 'Ambientes isolados', icon: 'sandboxes', section: 'admin', adminOnly: true, overlay: true },
-  { to: '/admin/repositories', label: 'Repositorios', description: 'Catalogo Git', icon: 'repositories', section: 'admin', adminOnly: true, overlay: true },
+  { to: '/admin/repositories', label: 'Repositorios', description: 'Catalogo Git', icon: 'repositories', section: 'admin', superAdminOnly: true, overlay: true },
   {
     to: '/admin/skills-global',
     label: 'Skills globais',
