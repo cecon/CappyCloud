@@ -125,10 +125,10 @@ export function SandboxRuntimePanel({ sandbox, onUpdated }: Props) {
           </Group>
         )}
         <Text size="sm" c="dimmed">
-          Para autenticar com a sua assinatura: no Dokploy, abra <b>Docker</b> → container{' '}
-          <Code>cappycloud_sandbox</Code> → <b>Terminal</b>, rode <Code>claude login</Code> e siga o
-          link. As credenciais ficam em <Code>{status?.config_dir ?? '/root/.claude'}</Code>, que
-          sobrevive a redeploys. Depois clique em “Verificar de novo”.
+          Para autenticar com a sua assinatura: na listagem de sandboxes, clique no ícone de{' '}
+          <b>terminal</b> desta sandbox → <b>Rodar claude login</b>, abra o link e cole o código. As
+          credenciais ficam em <Code>{status?.config_dir ?? '/root/.claude'}</Code>, que sobrevive a
+          redeploys. Depois clique em “Verificar de novo”.
         </Text>
       </Stack>
     </Stack>

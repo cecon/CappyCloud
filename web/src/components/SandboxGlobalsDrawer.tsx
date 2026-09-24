@@ -10,6 +10,8 @@ type Props = {
   sandbox: Sandbox | null
   onClose: () => void
   onUpdated: (sandbox: Sandbox) => void
+  /** Aba aberta ao abrir a gaveta (ex.: 'runtime' pelo atalho da listagem). */
+  initialTab?: 'claude' | 'runtime' | 'mcps' | 'skills' | 'agents'
 }
 
 /**
@@ -17,7 +19,7 @@ type Props = {
  * (openclaude ou Claude CLI) e os periféricos (MCPs / Skills / Agents)
  * materializados em ``~/.claude/`` dentro do container ao boot (ADR-004 §5-6).
  */
-export function SandboxGlobalsDrawer({ sandbox, onClose, onUpdated }: Props) {
+export function SandboxGlobalsDrawer({ sandbox, onClose, onUpdated, initialTab = 'claude' }: Props) {
   return (
     <Drawer
       opened={sandbox !== null}
@@ -36,7 +38,7 @@ export function SandboxGlobalsDrawer({ sandbox, onClose, onUpdated }: Props) {
       }
     >
       {sandbox && (
-        <Tabs defaultValue="claude" keepMounted={false}>
+        <Tabs key={`${sandbox.id}-${initialTab}`} defaultValue={initialTab} keepMounted={false}>
           <Tabs.List>
             <Tabs.Tab value="claude">CLAUDE.md</Tabs.Tab>
             <Tabs.Tab value="runtime">Runtime</Tabs.Tab>
