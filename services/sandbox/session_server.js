@@ -39,7 +39,6 @@ const repoHandlers = require('./repo_handlers')
 const runtimeHandler = require('./runtime_handler')
 const { assertSafeSessionRoot, cleanupSession } = require('./session_cleanup')
 const { assertInsideSession, sessionRootInfo } = require('./session_paths')
-const taskHandler = require('./task_handler')
 const worktreeHandlers = require('./worktree_handlers')
 const workspaceHandler = require('./workspace_handler')
 const terminalHandler = require('./terminal_handler')
@@ -410,7 +409,6 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
-    if (await taskHandler.tryHandle(req, res, { json, readBody })) return
 
     if (req.method === 'GET' && pathname === '/skills/search') {
       const q = url.searchParams.get('q') || ''

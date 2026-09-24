@@ -44,10 +44,18 @@ function writeAgents(home, agents) {
   return agents.map(item => item.name)
 }
 
+// Vazio apaga o arquivo: um ~/.claude/CLAUDE.md vazio passava na frente do
+// /app/CLAUDE.md padrão da imagem e o agente ficava sem instruções.
 function writeClaudeMd(home, content) {
   const dir = path.join(home, '.claude')
+  const file = path.join(dir, 'CLAUDE.md')
+  const text = String(content || '')
+  if (!text.trim()) {
+    fs.rmSync(file, { force: true })
+    return
+  }
   fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(path.join(dir, 'CLAUDE.md'), String(content || ''), 'utf8')
+  fs.writeFileSync(file, text, 'utf8')
 }
 
 async function tryHandle(req, res, { json, readBody }) {
@@ -78,4 +86,4 @@ async function tryHandle(req, res, { json, readBody }) {
   }
 }
 
-module.exports = { tryHandle }
+module.exports = { tryHandle, writeClaudeMd }

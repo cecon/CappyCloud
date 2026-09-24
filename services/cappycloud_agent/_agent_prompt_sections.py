@@ -196,18 +196,6 @@ def render_session_tools(
             "Não consulte `/confluence/*` nesta execução; use apenas skills, código e "
             "outras MCPs explicitamente configuradas."
         )
-
-    parts.append(
-        "\n### Sub-agente de investigação\n"
-        "Para delegar uma investigação a um sub-agente especializado, executa via Bash:\n"
-        "```bash\n"
-        f"curl -s -X POST '{sandbox_session_url}/task' \\\n"
-        "  -H 'Content-Type: application/json' \\\n"
-        '  -d \'{"description":"<título>","prompt":"<instrução completa>"}\'\n'
-        "```\n"
-        "O campo `result` da resposta contém o texto produzido pelo sub-agente.\n"
-        "Use `jq -r '.result'` para extrair apenas o texto."
-    )
     return "\n".join(parts)
 
 
