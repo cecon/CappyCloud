@@ -25,8 +25,6 @@ WORKTREE_PATH="${3:?}"
 BASE_BRANCH="${4:-}"
 BRANCH_NAME="${5:-cappy/${ENV_SLUG}/${SESSION_ID}}"
 CLONE_URL="${6:-}"
-# 0 = sessão de workspace: o CLAUDE.md vem da raiz do workspace, não é injetado no worktree.
-INJECT_CLAUDE_MD="${7:-1}"
 MAIN_REPO="/repos/${ENV_SLUG}"
 
 DEVOPS_TOKEN="${DEVOPS_TOKEN:-}"
@@ -327,25 +325,9 @@ else
     fi
 fi
 
-# ── CLAUDE.md ─────────────────────────────────────────────────
-# Prioridade: o ficheiro do próprio repo (seja CLAUDE.md ou AGENTS.md)
-# vence sempre. Só copiamos o template genérico do CappyCloud quando o repo
-# não tem nenhum desses ficheiros — assim não sobrescrevemos instruções do
-# utilizador nem confundimos o agente com o manual do CappyCloud.
-if [ "$INJECT_CLAUDE_MD" = "0" ]; then
-    echo "[session_start] Sessão de workspace — CLAUDE.md herdado da raiz do workspace."
-elif [ -f "$WORKTREE_PATH/CLAUDE.md" ] || [ -f "$WORKTREE_PATH/AGENTS.md" ]; then
-    echo "[session_start] CLAUDE.md/AGENTS.md do repo preservado."
-elif [ -f /app/CLAUDE.md ]; then
-    cp /app/CLAUDE.md "$WORKTREE_PATH/CLAUDE.md"
-    # Artefato injetado: não pode aparecer como alteração do utilizador
-    # (git status, PR, e a limpeza de sessões o trataria como trabalho pendente).
-    _exclude_file=$(git -C "$WORKTREE_PATH" rev-parse --git-path info/exclude 2>/dev/null || true)
-    if [ -n "$_exclude_file" ]; then
-        mkdir -p "$(dirname "$_exclude_file")" && touch "$_exclude_file"
-        grep -qxF "/CLAUDE.md" "$_exclude_file" || echo "/CLAUDE.md" >> "$_exclude_file"
-    fi
-fi
+# CLAUDE.md: não é copiado para o worktree. As regras do CappyCloud são memória
+# do usuário (~/.claude e ~/.openclaude, via globals_handler); o do workspace
+# vem da raiz do workspace; o do próprio repo já está no worktree.
 
 # ── .sendbox/ overlay (commands/agents/skills do próprio repo) ──
 _inject_sendbox_overlay "$MAIN_REPO" "$WORKTREE_PATH" || true

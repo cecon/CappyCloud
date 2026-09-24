@@ -21,7 +21,6 @@ from ._agent_prompt_sections import (  # noqa: E402
     render_execution_profile,
     render_repo_agents,
     render_repo_skills,
-    render_response_rules,
     render_session_tools,
 )
 
@@ -347,8 +346,6 @@ def build_prompt_with_agent(
         parts.append(render_session_tools(sandbox_session_url, repos))
 
     parts.append(render_execution_profile(execution_profile))
-
-    parts.append(render_response_rules())
 
     parts.append("## Mensagem do utilizador\n\n" + user_message)
 
