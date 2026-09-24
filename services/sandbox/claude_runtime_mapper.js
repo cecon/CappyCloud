@@ -142,6 +142,25 @@ function friendlyError(detail) {
   return `Claude CLI: ${text}`
 }
 
+/**
+ * Modelo principal do turno. O Claude Code também gasta tokens com modelos
+ * auxiliares (ex.: Haiku para tarefas internas), então a primeira chave de
+ * `modelUsage` nem sempre é o modelo que respondeu.
+ */
+function mainModel(modelUsage, initModel) {
+  const usage = modelUsage || {}
+  if (initModel && usage[initModel]) return initModel
+  let best = ''
+  let bestOutput = -1
+  for (const [model, item] of Object.entries(usage)) {
+    if ((item.outputTokens || 0) > bestOutput) {
+      best = model
+      bestOutput = item.outputTokens || 0
+    }
+  }
+  return best || initModel
+}
+
 function sumUsage(modelUsage) {
   let promptTokens = 0
   let completionTokens = 0
@@ -242,7 +261,7 @@ function createEventMapper({ requestedModel = '' } = {}) {
         type: 'done',
         prompt_tokens: promptTokens,
         completion_tokens: completionTokens,
-        model_used: Object.keys(message.modelUsage || {})[0] || initModel || requestedModel,
+        model_used: mainModel(message.modelUsage, initModel) || requestedModel,
       })
       return events
     }

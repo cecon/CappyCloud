@@ -103,9 +103,23 @@ _inject_sendbox_overlay() {
     fi
 }
 
+# A branch da sessão nunca rastreia a branch base: um `git push` do agente
+# (ou o comando que o próprio git sugere) iria para a base, ex.: produção.
+_drop_foreign_upstream() {
+    local worktree_path="$1"
+    local branch="$2"
+    local upstream
+    upstream=$(git -C "$worktree_path" rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || true)
+    if [ -n "$upstream" ] && [ "$upstream" != "origin/${branch}" ]; then
+        git -C "$worktree_path" branch --unset-upstream >/dev/null 2>&1 || true
+        echo "[session_start] Upstream ${upstream} removido de ${branch}."
+    fi
+}
+
 # ── Idempotente: worktree saudável já existe ──────────────────
 if [ -d "$WORKTREE_PATH/.git" ] || [ -f "$WORKTREE_PATH/.git" ]; then
     echo "[session_start] Worktree já existe — reutilizando."
+    _drop_foreign_upstream "$WORKTREE_PATH" "$BRANCH_NAME"
     _inject_sendbox_overlay "$MAIN_REPO" "$WORKTREE_PATH" || true
     exit 0
 fi
@@ -244,7 +258,7 @@ _create_worktree() {
     echo "[session_start] Criando worktree: branch=${branch_name} a partir de ${resolved_base}"
 
     # Tenta criar nova branch a partir da base
-    if git -C "$main_repo" worktree add -b "$branch_name" "$worktree_path" "$resolved_base" 2>&1; then
+    if git -C "$main_repo" worktree add --no-track -b "$branch_name" "$worktree_path" "$resolved_base" 2>&1; then
         echo "[session_start] Worktree criado com nova branch ${branch_name}"
         return 0
     fi
@@ -253,6 +267,7 @@ _create_worktree() {
     if git -C "$main_repo" rev-parse --verify "$branch_name" >/dev/null 2>&1; then
         echo "[session_start] Branch ${branch_name} já existe — checkout direto."
         if git -C "$main_repo" worktree add "$worktree_path" "$branch_name" 2>&1; then
+            _drop_foreign_upstream "$worktree_path" "$branch_name"
             return 0
         fi
     fi

@@ -19,6 +19,7 @@ from contextlib import suppress
 
 import httpx
 
+from ._agent_session import AGENT_RUNTIME_CLAUDE_CLI
 from ._grpc_helpers import (
     GRPC_CONNECTION_LOST,
     GRPC_UNEXPECTED_END,
@@ -193,6 +194,10 @@ class ClaudeCliSession:
             self.pending_action = action
             await self._emit("action_required", action)
             return
+        if event_type == "done":
+            # O modelo vem da assinatura do `claude login`, não do catálogo: a API
+            # não trata a diferença para o modelo pedido como fallback proibido.
+            data = {**data, "runtime": AGENT_RUNTIME_CLAUDE_CLI}
         await self._emit(event_type, data)
 
     async def _emit(self, event_type: str, data: object) -> None:

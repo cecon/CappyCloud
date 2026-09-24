@@ -401,6 +401,7 @@ class StreamMessage:
                             selected_model
                             and model_used
                             and model_used != selected_model
+                            and evt.get("runtime") != "claude_cli"
                             and not await self._final_model_is_authorized(
                                 user_id, user_role, model_used
                             )

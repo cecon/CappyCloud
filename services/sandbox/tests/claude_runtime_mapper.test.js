@@ -155,3 +155,16 @@ test('sessão de workspace: leitura do compartilhado, escrita e Bash só no work
     /outside the conversation worktree/,
   )
 })
+
+test('modelo usado é o principal, não o auxiliar que aparece primeiro', () => {
+  const usage = {
+    'claude-haiku-4-5-20251001': { inputTokens: 900, outputTokens: 40 },
+    'claude-sonnet-5': { inputTokens: 50, outputTokens: 800 },
+  }
+  const result = { type: 'result', subtype: 'success', is_error: false, result: 'ok', modelUsage: usage }
+  const withInit = createEventMapper()
+  withInit.map({ type: 'system', subtype: 'init', session_id: 's', model: 'claude-sonnet-5' })
+  assert.equal(withInit.map(result).at(-1).model_used, 'claude-sonnet-5')
+  // Sem o init: o que mais gerou texto.
+  assert.equal(createEventMapper().map(result).at(-1).model_used, 'claude-sonnet-5')
+})

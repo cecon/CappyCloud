@@ -81,6 +81,7 @@ async def test_stream_vira_eventos_e_envia_contexto_do_turno() -> None:
     assert [e[0] for e in events] == ["text", "tool_start", "tool_result", "done"]
     assert events[0][1] == {"content": "Olá"}
     assert events[3][1]["model_used"] == "claude-sonnet-5"
+    assert events[3][1]["runtime"] == "claude_cli"
     assert seen["path"] == "/claude/turns"
     assert seen["token"] == "segredo"
     assert seen["body"]["conversation_key"] == "user:chat"
