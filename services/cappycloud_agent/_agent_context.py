@@ -26,23 +26,12 @@ from ._agent_prompt_sections import (  # noqa: E402
 
 _RAG_TOP_N = int(os.getenv("RAG_TOP_N", "3"))
 _REPO_SKILLS_LIMIT = int(os.getenv("REPO_SKILLS_LIMIT", "20"))
-_SKILL_CONTENT_MAX_CHARS = int(os.getenv("SKILL_CONTENT_MAX_CHARS", "1200"))
 _TOPLEVEL_LIMIT = int(os.getenv("WORKTREE_TOPLEVEL_LIMIT", "80"))
 
 
 def _asyncpg_dsn(db_url: str) -> str:
     """Converte DSN SQLAlchemy async em DSN aceita por asyncpg."""
     return (db_url or "").replace("postgresql+asyncpg://", "postgresql://", 1)
-
-
-def _trim_skill_content(content: str | None) -> str:
-    """Limita conteúdo de skill injetado no prompt inicial."""
-    if not content:
-        return ""
-    text = content.strip()
-    if len(text) <= _SKILL_CONTENT_MAX_CHARS:
-        return text
-    return text[:_SKILL_CONTENT_MAX_CHARS].rstrip() + "\n..."
 
 
 async def fetch_worktree_top_levels(
@@ -144,7 +133,7 @@ async def _load_repo_skills(
 
     placeholders = ", ".join(f"${i + 2}::uuid" for i in range(len(repo_ids)))
     rows = await conn.fetch(
-        f"SELECT title, summary, content, source_url FROM skills "
+        f"SELECT title, summary, source_url FROM skills "
         f"WHERE active = TRUE AND repository_id IN ({placeholders}) "
         f"AND document_id IS NULL "
         f"ORDER BY title LIMIT $1",
@@ -155,7 +144,6 @@ async def _load_repo_skills(
         {
             "title": r["title"],
             "summary": r["summary"] or "",
-            "content": _trim_skill_content(r["content"]),
             "source_url": r["source_url"],
         }
         for r in rows
@@ -284,16 +272,17 @@ def build_prompt_with_agent(
     sandbox_session_url: str,
     repos: list[dict] | None = None,
     session_root: str = "",
-    worktree_top_level: dict[str, list[str]] | None = None,
     agent_profiles: list[dict] | None = None,
     execution_profile: str = "medium",
+    native_subagents: bool = False,
 ) -> str:
-    """Monta o prompt final colando top-N skills + msg do user.
+    """Monta o prompt do turno: só o que muda por sessão + a mensagem do usuário.
 
-    Inclui o caminho absoluto do worktree quando há repos associados (workaround
-    para bug de CWD do openclaude) e instrui o uso de ``GET <sandbox>/skills/
-    search?q=...`` via Bash para RAG sob demanda. ``worktree_top_level`` mapeia
-    ``worktree_path`` → entradas top-level do repo (fundação p/ modelos pequenos).
+    As regras fixas ficam no CLAUDE.md base (memória do usuário). Inclui o
+    caminho absoluto do worktree (workaround para bug de CWD do openclaude), o
+    índice das skills do repositório e as ferramentas do servidor de sessão.
+    ``native_subagents``: o runtime carrega ``~/.claude/agents`` (Claude CLI),
+    então o perfil do arquiteto é citado, não colado.
     """
     parts: list[str] = []
 
@@ -318,25 +307,8 @@ def build_prompt_with_agent(
             "(não confies em `pwd`):\n" + wt_str
         )
 
-        # Estrutura top-level do(s) worktree(s) — fundação para modelos pequenos
-        # decidirem onde procurar antes de qualquer grep/glob.
-        if worktree_top_level:
-            sections: list[str] = []
-            for path in worktree_paths:
-                entries = worktree_top_level.get(path) or []
-                if not entries:
-                    continue
-                listing = "\n".join(f"- {e}" for e in entries)
-                sections.append(f"### `{path}`\n{listing}")
-            if sections:
-                parts.append(
-                    "## Estrutura do worktree (top-level)\n\n"
-                    "Confirma com `ls`/`git ls-files` antes de afirmar que "
-                    "alguma pasta não existe:\n\n" + "\n\n".join(sections)
-                )
-
     if agent_profiles:
-        parts.append(render_repo_agents(agent_profiles))
+        parts.append(render_repo_agents(agent_profiles, native_subagents=native_subagents))
 
 
     if skills:

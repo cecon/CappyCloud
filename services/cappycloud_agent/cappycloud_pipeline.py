@@ -22,6 +22,8 @@ from ._agent_context import (
     load_agent_context,
     load_repo_agent_profiles,
 )
+from ._agent_runtime_lookup import resolve_agent_runtime
+from ._agent_session import AGENT_RUNTIME_CLAUDE_CLI
 from ._environment_manager import EnvironmentManager
 from ._pipeline_event_stream import stream_task_events
 from ._pipeline_helpers import (
@@ -117,6 +119,15 @@ class Pipeline:
         return asyncio.run_coroutine_threadsafe(coro, self._loop).result(
             timeout=timeout
         )
+
+    def _uses_claude_cli(self, sandbox_id: str) -> bool:
+        """Runtime Claude CLI carrega ~/.claude/agents por conta própria."""
+        try:
+            runtime = self._run(resolve_agent_runtime(db_url(), sandbox_id), timeout=5)
+        except Exception as exc:
+            log.warning("Falha ao ler o runtime da sandbox %s: %s", sandbox_id, exc)
+            return False
+        return runtime == AGENT_RUNTIME_CLAUDE_CLI
 
     def cancel_conversation(self, conversation_id: str) -> bool:
         if self._dispatcher is None:
@@ -239,9 +250,9 @@ class Pipeline:
             sandbox_session_url,
             repos=repos,
             session_root=session_root,
-            worktree_top_level=None,
             agent_profiles=agent_profiles,
             execution_profile=execution_profile,
+            native_subagents=bool(agent_profiles) and self._uses_claude_cli(sandbox_id),
         )
 
         # Injeta contexto SigNoz (service.name por repo) se houver configuração.
