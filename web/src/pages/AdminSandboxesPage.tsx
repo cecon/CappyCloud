@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/legacy'
 import {
   IconCopy,
+  IconCpu,
   IconDotsVertical,
   IconPlayerPlay,
   IconPlayerStop,
@@ -118,6 +119,11 @@ export function AdminSandboxesPage() {
   const [cloning, setCloning] = useState(false)
 
   const [globalsFor, setGlobalsFor] = useState<Sandbox | null>(null)
+  const [globalsTab, setGlobalsTab] = useState<'claude' | 'runtime'>('claude')
+  const openGlobals = (sb: Sandbox, tab: 'claude' | 'runtime') => {
+    setGlobalsTab(tab)
+    setGlobalsFor(sb)
+  }
   const [terminalFor, setTerminalFor] = useState<Sandbox | null>(null)
   const currentUser = useCurrentUser()
   // Terminal abre um shell no container: só super admin.
@@ -319,7 +325,7 @@ export function AdminSandboxesPage() {
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Nome</Table.Th>
-                  <Table.Th style={{ width: 120 }}>Runtime</Table.Th>
+                  <Table.Th style={{ width: 140 }}>Agente</Table.Th>
                   <Table.Th>Imagem</Table.Th>
                   <Table.Th style={{ width: 180 }}>Container</Table.Th>
                   <Table.Th style={{ width: 120 }}>Sessões</Table.Th>
@@ -340,9 +346,20 @@ export function AdminSandboxesPage() {
                         </Text>
                       </Table.Td>
                       <Table.Td>
-                        <Badge variant="light" color={sb.runtime === 'compose' ? 'blue' : 'grape'}>
-                          {sb.runtime.toUpperCase()}
-                        </Badge>
+                        {/* Runtime do agente (clicável: abre a troca); o modo do container fica abaixo. */}
+                        <button
+                          type="button"
+                          onClick={() => openGlobals(sb, 'runtime')}
+                          title="Trocar o runtime do agente (openclaude ou Claude CLI)"
+                          style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer' }}
+                        >
+                          <Badge variant="light" color={sb.agent_runtime === 'claude_cli' ? 'orange' : 'blue'}>
+                            {sb.agent_runtime === 'claude_cli' ? 'Claude CLI' : 'openclaude'}
+                          </Badge>
+                        </button>
+                        <Text size="xs" c="dimmed">
+                          {sb.runtime}
+                        </Text>
                       </Table.Td>
                       <Table.Td>
                         <Text size="sm" style={{ wordBreak: 'break-all' }}>
@@ -409,10 +426,16 @@ export function AdminSandboxesPage() {
                           </Menu.Target>
                           <Menu.Dropdown>
                             <Menu.Item
-                              leftSection={<IconSettings size={14} />}
-                              onClick={() => setGlobalsFor(sb)}
+                              leftSection={<IconCpu size={14} />}
+                              onClick={() => openGlobals(sb, 'runtime')}
                             >
-                              MCPs / Skills / Agents...
+                              Runtime do agente (openclaude / Claude CLI)...
+                            </Menu.Item>
+                            <Menu.Item
+                              leftSection={<IconSettings size={14} />}
+                              onClick={() => openGlobals(sb, 'claude')}
+                            >
+                              CLAUDE.md, MCPs, Skills e Agents...
                             </Menu.Item>
                             <Menu.Item
                               leftSection={<IconCopy size={14} />}
@@ -553,6 +576,7 @@ export function AdminSandboxesPage() {
       {/* MCPs do sandbox */}
       <SandboxGlobalsDrawer
         sandbox={globalsFor}
+        initialTab={globalsTab}
         onClose={() => setGlobalsFor(null)}
         onUpdated={applyUpdatedSandbox}
       />
