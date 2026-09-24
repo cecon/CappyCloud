@@ -4,6 +4,8 @@
 // de escopo do worktree. Sem I/O — testadas com `node --test`.
 
 const path = require('path').posix
+const { isReadOnlyCommand } = require('./readonly_commands')
+const { createSubagentTracker } = require('./claude_runtime_subagents')
 
 /** Modos do CappyCloud → permissionMode do Agent SDK. */
 const PERMISSION_MODES = {
@@ -97,11 +99,17 @@ function validateToolScope(toolName, input, worktree) {
     if (/(^|[\s;&|])cd\s+\.\.(?:\/|\s|$)/.test(command) || /(^|[\s"'=])\.\.(?:\/|$)/.test(command)) {
       return `Tool blocked: command tries to leave the conversation worktree. Allowed worktree: ${worktree}.`
     }
+    // Repos somente leitura do workspace: Bash só com comandos de leitura (não há Grep/Glob).
+    const readableRoots = workspaceReadOnlyRoots(worktree)
+    const readOnly = readableRoots.length > 0 && isReadOnlyCommand(command)
     for (const rawPath of extractRepoPaths(command)) {
       const resolved = resolveToolPath(worktree, rawPath)
-      if (resolved && !isInsideWorktree(worktree, resolved)) {
-        return `Tool blocked: command references a repo path outside the conversation worktree. Allowed worktree: ${worktree}. Requested path: ${resolved}.`
-      }
+      if (!resolved || isInsideWorktree(worktree, resolved)) continue
+      if (readOnly && readableRoots.some((root) => isInsideWorktree(root, resolved))) continue
+      const hint = readableRoots.some((root) => isInsideWorktree(root, resolved))
+        ? ' Somente leitura: use só comandos de leitura (rg, grep, find, cat, sed -n, head, ls, git log/show), sem redirecionar para arquivo.'
+        : ''
+      return `Tool blocked: command references a repo path outside the conversation worktree. Allowed worktree: ${worktree}. Requested path: ${resolved}.${hint}`
     }
   }
   return null
@@ -226,6 +234,7 @@ function createEventMapper({ requestedModel = '', previousTotals = null } = {}) 
   let sessionId = ''
   let planUsage = null
   let totals = null
+  const subagents = createSubagentTracker()
 
   function map(message) {
     if (!message || typeof message !== 'object') return []
@@ -263,10 +272,14 @@ function createEventMapper({ requestedModel = '', previousTotals = null } = {}) 
       const streamed = inner.id && streamedMessages.has(inner.id)
       // Mensagens sintéticas de erro (ex.: sem login) viram só o evento de erro do result.
       const synthetic = !!message.error
+      const parent = message.parent_tool_use_id
       for (const block of inner.content || []) {
-        if (block.type === 'text' && !message.parent_tool_use_id && !streamed && !synthetic && block.text) {
+        if (block.type === 'text' && !parent && !streamed && !synthetic && block.text) {
           emittedText = true
           events.push({ type: 'text', content: block.text })
+        } else if (block.type === 'tool_use' && parent) {
+          // Ferramenta de subagente: vai para o cartão dele, não para a lista principal.
+          events.push(subagents.toolStarted(parent, block))
         } else if (block.type === 'tool_use') {
           toolNames.set(block.id, block.name)
           events.push({
@@ -275,6 +288,7 @@ function createEventMapper({ requestedModel = '', previousTotals = null } = {}) 
             input: JSON.stringify(block.input ?? {}),
             id: block.id,
           })
+          if (subagents.isSubagentTool(block.name)) events.push(subagents.start(block))
         }
       }
       return events
@@ -283,15 +297,20 @@ function createEventMapper({ requestedModel = '', previousTotals = null } = {}) 
     if (message.type === 'user') {
       const content = message.message && message.message.content
       if (!Array.isArray(content)) return []
-      return content
-        .filter((block) => block && block.type === 'tool_result')
-        .map((block) => ({
+      const results = content.filter((block) => block && block.type === 'tool_result')
+      const parent = message.parent_tool_use_id
+      if (parent) return results.map((block) => subagents.toolFinished(parent, block))
+      return results.flatMap((block) => {
+        const done = {
           type: 'tool_result',
           name: toolNames.get(block.tool_use_id) || '',
           output: toolResultText(block.content),
           is_error: block.is_error === true,
           id: block.tool_use_id,
-        }))
+        }
+        const closed = subagents.finish(block.tool_use_id, block.is_error === true)
+        return closed ? [done, closed] : [done]
+      })
     }
 
     if (message.type === 'result') {

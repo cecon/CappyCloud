@@ -53,6 +53,13 @@ interface Props {
   interrupted?: boolean
 }
 
+const SUBAGENT_TOOLS = new Set(['agent', 'task'])
+
+/** Nome do passo para o usuário: a ferramenta Agent/Task é um subagente. */
+function displayToolName(name: string): string {
+  return SUBAGENT_TOOLS.has(name.toLowerCase()) ? 'Subagente' : name
+}
+
 function summarizeToolInput(name: string, raw: string): string {
   let parsed: Record<string, unknown> | null = null
   try {
@@ -63,6 +70,9 @@ function summarizeToolInput(name: string, raw: string): string {
   if (!parsed) return raw.slice(0, 80)
 
   const lname = name.toLowerCase()
+  if (SUBAGENT_TOOLS.has(lname)) {
+    return String(parsed.description ?? parsed.subagent_type ?? '')
+  }
   if (lname === 'grep') {
     const pattern = String(parsed.pattern ?? '')
     const path = String(parsed.path ?? parsed.glob ?? '')
@@ -110,7 +120,9 @@ function describeActiveStep(step: ThoughtStep): string {
               ? 'Editando'
               : lname === 'webfetch' || lname === 'web_fetch'
                 ? 'Buscando'
-                : step.name
+                : SUBAGENT_TOOLS.has(lname)
+                  ? 'Subagente:'
+                  : step.name
   return summary ? `${verb} ${summary}` : verb
 }
 
@@ -225,7 +237,7 @@ export function ThinkingStream({
               {toolCounts.map(([name, n], i) => (
                 <span key={name}>
                   {i > 0 && ' · '}
-                  {name} ×{n}
+                  {displayToolName(name)} ×{n}
                 </span>
               ))}
               {elapsedMs > 0 && (
@@ -361,7 +373,7 @@ function ThinkingToolStep({
         <span className={styles.thinkingStreamToolMark} aria-hidden="true">
           {step.isError ? '✗' : step.done ? '▸' : '⟳'}
         </span>
-        <span className={styles.thinkingStreamToolName}>{step.name}</span>
+        <span className={styles.thinkingStreamToolName}>{displayToolName(step.name)}</span>
         <span className={styles.thinkingStreamToolSummary}>{summary}</span>
         <span className={styles.thinkingStreamToolChevron} aria-hidden="true">
           {expanded ? '−' : '+'}

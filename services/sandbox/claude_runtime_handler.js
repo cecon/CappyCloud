@@ -101,6 +101,9 @@ function sdkEnv() {
   }
   env.CLAUDE_CONFIG_DIR = CONFIG_DIR
   env.IS_SANDBOX = '1'
+  // A sessão acaba com o turno: subagente/Bash em segundo plano morreria sem
+  // entregar o resultado ("aguarde um instante" e nada mais). Tudo roda no turno.
+  env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = '1'
   return env
 }
 
@@ -183,6 +186,8 @@ async function runTurn(body, write, turn) {
             hooks: [async (input) => {
               const reason = validateToolScope(input.tool_name, input.tool_input, worktree)
               if (!reason) return {}
+              // Registra o bloqueio com o comando: ferramentas de subagente não aparecem no chat.
+              console.warn(`[claude_runtime] bloqueado ${input.tool_name}: ${JSON.stringify(input.tool_input).slice(0, 400)}`)
               return {
                 hookSpecificOutput: {
                   hookEventName: 'PreToolUse',
