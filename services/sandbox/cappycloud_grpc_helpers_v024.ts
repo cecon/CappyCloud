@@ -242,15 +242,11 @@ const CAPPYCLOUD_WORKSPACE_SESSION_RE = /^(/repos/workspaces/[a-z0-9][a-z0-9-]{1
 // Sessão de workspace: leitura permitida no conhecimento compartilhado do workspace.
 function cappycloudWorkspaceReadOnlyRoots(worktree: string): string[] {
   const match = path.resolve(worktree).match(CAPPYCLOUD_WORKSPACE_SESSION_RE)
-  if (!match) return []
-  const root = match[1]
-  return [`${root}/knowledge`, `${root}/memory`, `${root}/.claude`, `${root}/CLAUDE.md`]
+  return match ? [`${match[1]}/knowledge`, `${match[1]}/memory`, `${match[1]}/.claude`, `${match[1]}/CLAUDE.md`] : []
 }
 
 function cappycloudValidateToolScope(toolName: string, input: unknown, worktree: string): string | null {
-  const readOnlyRoots = CAPPYCLOUD_READ_ONLY_TOOLS.has(toolName)
-    ? cappycloudWorkspaceReadOnlyRoots(worktree)
-    : []
+  const readOnlyRoots = CAPPYCLOUD_READ_ONLY_TOOLS.has(toolName) ? cappycloudWorkspaceReadOnlyRoots(worktree) : []
   if (CAPPYCLOUD_PATH_GUARDED_TOOLS.has(toolName)) {
     for (const rawPath of cappycloudCollectPathInputs(input)) {
       const resolvedPath = cappycloudResolveToolPath(worktree, rawPath)
