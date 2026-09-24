@@ -198,7 +198,10 @@ class TestWriteSkills:
         put_call = container.put_archive.call_args
         assert put_call.kwargs["path"] == f"{CLAUDE_DIR_IN_CONTAINER}/{SKILLS_SUBDIR}"
         rendered = _extract_file_from_tar(put_call.kwargs["data"], "naming-conventions/SKILL.md")
-        assert rendered.startswith("# naming-conventions")
+        # Frontmatter YAML: sem ele o Claude Code não reconhece a skill.
+        assert rendered.startswith("---\nname: naming-conventions\ndescription: ")
+        # O conteúdo já tem título: não ganha um "# naming-conventions" extra.
+        assert "\n---\n\n# Naming\n" in rendered
         assert "convenções" in rendered
         assert "snake_case" in rendered
 
