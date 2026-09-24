@@ -118,8 +118,9 @@ class ExportSandboxMcpConfig:
     (``{"mcpServers": {name: {command, args, env}}}``). MCPs ``enabled=False``
     são omitidos.
 
-    Este é o JSON que o bootstrap (ADR-004 §5) escreve em
-    ``~/.claude/settings.json`` dentro do container ao boot.
+    O servidor de sessão grava esse JSON em ``~/.openclaude.json`` (``POST
+    /mcp/configure``), de onde os dois runtimes leem: o openclaude direto e o
+    Claude CLI pela opção ``mcpServers`` do Agent SDK.
     """
 
     def __init__(self, repo: McpServerRepository) -> None:
