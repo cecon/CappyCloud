@@ -340,6 +340,7 @@ class StreamMessage:
                         completion_tokens=int(usage.get("completion_tokens") or 0),
                         cost_usd=cost_usd,
                         payload_diagnostics=latest_payload_diagnostics,
+                        plan_usage=usage.get("plan_usage") or None,
                     )
                 )
             elif accumulated_error:
@@ -438,12 +439,23 @@ class StreamMessage:
                                         if isinstance(evt.get("fallback"), dict)
                                         else {}
                                     ),
+                                    **(
+                                        {"plan_usage": evt["plan_usage"]}
+                                        if isinstance(evt.get("plan_usage"), dict)
+                                        else {}
+                                    ),
                                 }
                             ).decode("utf-8")
                         usage = {
                             "model_used": model_used,
                             "prompt_tokens": int(evt.get("prompt_tokens") or 0),
                             "completion_tokens": int(evt.get("completion_tokens") or 0),
+                            "plan_usage": (
+                                evt["plan_usage"]
+                                if isinstance(evt.get("plan_usage"), dict)
+                                else None
+                            ),
+                            "cost_usd": evt.get("cost_usd"),
                         }
                         save_before_yield = True
                 except Exception:

@@ -438,6 +438,43 @@ async def test_claude_cli_model_skips_catalog_check(
     assert next(p for p in payloads if p["type"] == "done")["model_used"] == "claude-opus-4-7"
 
 
+async def test_claude_cli_plan_usage_is_streamed_and_saved(
+    conv_repo: InMemoryConversationRepository,
+    msg_repo: InMemoryMessageRepository,
+    user_id: uuid.UUID,
+) -> None:
+    plan = {"five_hour": {"used_pct": 12.0, "resets_at": "2026-09-24T14:30:00.000Z"}}
+    conv = await CreateConversation(conv_repo).execute(user_id, "Chat")
+    stream = await StreamMessage(
+        conv_repo,
+        msg_repo,
+        _EventAgent(
+            [
+                {"type": "text", "content": "OK"},
+                {
+                    "type": "done",
+                    "model_used": "claude-sonnet-5",
+                    "runtime": "claude_cli",
+                    "prompt_tokens": 1000,
+                    "completion_tokens": 10,
+                    "cost_usd": 0.5432,
+                    "plan_usage": plan,
+                },
+            ]
+        ),
+    ).execute(conv.id, user_id, "Ola")
+
+    payloads = _json_payloads([c async for c in stream])
+    assistant = next(
+        m for m in await msg_repo.list_by_conversation(conv.id) if m.role == "assistant"
+    )
+
+    assert next(p for p in payloads if p["type"] == "done")["plan_usage"] == plan
+    assert assistant.plan_usage == plan
+    # Custo equivalente pela tabela da API, informado pelo Claude Code (fora do catálogo).
+    assert assistant.cost_usd == 0.5432
+
+
 async def test_error_event_saves_single_assistant_error_message(
     conv_repo: InMemoryConversationRepository,
     msg_repo: InMemoryMessageRepository,

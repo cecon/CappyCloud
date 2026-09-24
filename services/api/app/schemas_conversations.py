@@ -107,6 +107,8 @@ class MessageOut(BaseModel):
     completion_tokens: int = 0
     cost_usd: float = 0.0
     payload_diagnostics: PayloadSizeBreakdownOut | None = None
+    # Claude CLI: {"five_hour": {"used_pct", "resets_at"}, "seven_day": {...}}.
+    plan_usage: dict[str, object] | None = None
 
     model_config = {"from_attributes": True}
 

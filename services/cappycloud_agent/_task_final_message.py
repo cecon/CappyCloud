@@ -106,6 +106,9 @@ async def _find_existing_response_message(
     start time. That can be before ``agent_tasks.created_at`` even when the
     row was inserted at the end of the stream. Use the latest user turn as the
     search floor so the TaskRunner does not create a duplicate final answer.
+
+    The floor never reaches the next task's user turn (a message sent right
+    after this one), and answers after the next user turn belong to it.
     """
     latest_user = await conn.fetchrow(
         """
@@ -113,7 +116,17 @@ async def _find_existing_response_message(
         FROM messages
         WHERE conversation_id = $1
           AND role = 'user'
-          AND created_at <= $2::timestamptz + INTERVAL '30 seconds'
+          AND created_at <= LEAST(
+            $2::timestamptz + INTERVAL '30 seconds',
+            COALESCE(
+                (
+                    SELECT MIN(t.created_at) - INTERVAL '1 second'
+                    FROM agent_tasks t
+                    WHERE t.conversation_id = $1 AND t.created_at > $2::timestamptz
+                ),
+                'infinity'::timestamptz
+            )
+        )
         ORDER BY created_at DESC
         LIMIT 1
         """,
@@ -128,6 +141,14 @@ async def _find_existing_response_message(
         WHERE conversation_id = $1
           AND role = 'assistant'
           AND created_at >= $2
+          AND created_at < COALESCE(
+            (
+                SELECT MIN(u.created_at)
+                FROM messages u
+                WHERE u.conversation_id = $1 AND u.role = 'user' AND u.created_at > $2
+            ),
+            'infinity'::timestamptz
+          )
         ORDER BY created_at DESC
         LIMIT 10
         """,

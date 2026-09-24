@@ -207,6 +207,7 @@ async def list_messages(
             prompt_tokens=m.prompt_tokens,
             completion_tokens=m.completion_tokens,
             cost_usd=float(m.cost_usd),
+            plan_usage=m.plan_usage,
             payload_diagnostics=(
                 PayloadSizeBreakdownOut.model_validate(m.payload_diagnostics)
                 if m.payload_diagnostics

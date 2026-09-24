@@ -434,6 +434,17 @@ export type ChatMessage = {
   completion_tokens?: number
   cost_usd?: number
   payload_diagnostics?: PayloadSizeBreakdown | null
+  /** Claude CLI: uso das janelas da assinatura quando a resposta terminou. */
+  plan_usage?: PlanUsage | null
+}
+
+/** Janela de uso da assinatura do Claude (`claude login`). */
+export type PlanUsageWindow = { used_pct: number | null; resets_at: string | null }
+
+export type PlanUsage = {
+  status?: string | null
+  five_hour?: PlanUsageWindow
+  seven_day?: PlanUsageWindow
 }
 
 export type PayloadSizeCategory = {
@@ -460,6 +471,7 @@ export interface DoneEvent {
   model_used: string | null
   prompt_tokens: number
   completion_tokens: number
+  plan_usage?: PlanUsage | null
   fallback?: {
     selected_model?: string
     final_model?: string

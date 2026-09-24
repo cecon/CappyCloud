@@ -47,6 +47,7 @@ import {
   type DoneEvent,
   type ExecutionProfile,
   type PayloadSizeBreakdown,
+  type PlanUsage,
   type PermissionMode,
   type ProjectSuggestionCard,
   type RuntimeStateEvent,
@@ -63,6 +64,7 @@ import {
   CLAUDE_CLI_DEFAULT_MODEL,
   CLAUDE_CLI_MODELS,
   claudeCliModelFor,
+  planUsageBadge,
   usesClaudeCli,
 } from '../components/claudeCliModels'
 import { ThinkingIndicator } from '../components/ThinkingIndicator'
@@ -3046,11 +3048,13 @@ function ActiveChat({
               <span className={`${styles.icon} ${styles.sessionHeaderIcon}`}>folder_open</span>
               <span className={styles.sessionHeaderEnv}>{activeEnvName ?? activeEnvSlug}</span>
               {activeBaseBranch && (
-                <span className={styles.sessionHeaderBranch}>
+                // Só o ícone: o cabeçalho tem pouco espaço; o detalhe fica na dica.
+                <span
+                  className={styles.sessionHeaderBranch}
+                  title={`Seu espaço isolado: as alterações ficam numa branch só desta conversa (base ${activeBranchLabel}).`}
+                  aria-label={`Espaço isolado, base ${activeBranchLabel}`}
+                >
                   <span className={`${styles.icon} ${styles.sessionHeaderBranchIcon}`}>account_tree</span>
-                  <span className={styles.sessionHeaderBranchText}>seu espaço isolado</span>
-                  <span className={styles.sessionHeaderBranchSep}>·</span>
-                  <span className={styles.sessionHeaderBranchName}>{activeBranchLabel}</span>
                 </span>
               )}
             </>
@@ -3187,6 +3191,7 @@ function ActiveChat({
                       promptTokens={m.prompt_tokens ?? 0}
                       completionTokens={m.completion_tokens ?? 0}
                       costUsd={m.cost_usd ?? 0}
+                      planUsage={m.plan_usage ?? null}
                       payloadDiagnostics={m.payload_diagnostics ?? null}
                     />
                   </div>
@@ -3577,6 +3582,7 @@ function PaperMessage({
   promptTokens,
   completionTokens,
   costUsd,
+  planUsage,
   payloadDiagnostics,
 }: {
   role: string
@@ -3586,6 +3592,7 @@ function PaperMessage({
   promptTokens?: number
   completionTokens?: number
   costUsd?: number
+  planUsage?: PlanUsage | null
   payloadDiagnostics?: PayloadSizeBreakdown | null
 }) {
   const isUser = role === 'user'
@@ -3593,9 +3600,15 @@ function PaperMessage({
   const hasUsage =
     !isUser && (totalTokens > 0 || !!modelUsed)
   const usageWarning = isUser ? null : heavyUsageReason(promptTokens, completionTokens, costUsd)
+  // Claude CLI: o custo é o equivalente pela tabela da API (coberto pela assinatura);
+  // o uso das janelas de 5h/7d fica na dica, sem ocupar espaço.
+  const planBadge = planUsageBadge(planUsage)
   const costLabel = totalTokens === 0 && (costUsd ?? 0) === 0
     ? 'uso não informado'
     : formatCostUsd(costUsd ?? 0)
+  const costTitle = planBadge
+    ? `Custo equivalente na API da Anthropic, coberto pela assinatura. ${planBadge.title}`
+    : undefined
   const messageBubble = (
     <div className={`${styles.message} ${isUser ? styles.messageUser : styles.messageAgent}`}>
       <Text
@@ -3647,7 +3660,13 @@ function PaperMessage({
               {(promptTokens ?? 0).toLocaleString('pt-BR')} in · {(completionTokens ?? 0).toLocaleString('pt-BR')} out
             </span>
           )}
-          <span className={styles.messageUsageCost}>{costLabel}</span>
+          <span
+            className={styles.messageUsageCost}
+            title={costTitle}
+            style={planBadge?.low ? { color: 'var(--destructive)' } : undefined}
+          >
+            {costLabel}
+          </span>
         </div>
       )}
     </div>

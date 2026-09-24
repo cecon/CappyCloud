@@ -77,14 +77,18 @@ function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return fallback }
 }
 
-function sessionFor(conversationKey) {
-  return conversationKey ? readJson(SESSIONS_FILE, {})[conversationKey] || null : null
+// Valor por conversa: { session_id, totals } (antes era só o id da sessão).
+function storedSession(conversationKey) {
+  const raw = conversationKey ? readJson(SESSIONS_FILE, {})[conversationKey] : null
+  if (!raw) return { sessionId: null, totals: null }
+  if (typeof raw === 'string') return { sessionId: raw, totals: null }
+  return { sessionId: raw.session_id || null, totals: raw.totals || null }
 }
 
-function rememberSession(conversationKey, sessionId) {
+function rememberSession(conversationKey, sessionId, totals = null) {
   if (!conversationKey) return
   const sessions = readJson(SESSIONS_FILE, {})
-  if (sessionId) sessions[conversationKey] = sessionId
+  if (sessionId) sessions[conversationKey] = { session_id: sessionId, totals }
   else delete sessions[conversationKey]
   fs.mkdirSync(CONFIG_DIR, { recursive: true })
   fs.writeFileSync(SESSIONS_FILE, JSON.stringify(sessions, null, 2), 'utf8')
@@ -151,10 +155,12 @@ async function runTurn(body, write, turn) {
   const mode = sdkPermissionMode(body.permission_mode)
   const content = userContentBlocks(body.prompt, body.attachments)
 
+  const stored = storedSession(body.conversation_key)
   const attempt = async (resume) => {
     let resolveFinished
     const finished = new Promise((resolve) => { resolveFinished = resolve })
-    const mapper = createEventMapper({ requestedModel: alias })
+    // Totais da sessão retomada: o done informa só o consumo deste turno.
+    const mapper = createEventMapper({ requestedModel: alias, previousTotals: resume ? stored.totals : null })
     let emitted = 0
 
     const canUseTool = (toolName, input, { signal }) =>
@@ -209,10 +215,10 @@ async function runTurn(body, write, turn) {
     } finally {
       resolveFinished()
     }
-    return { emitted, sessionId: mapper.getSessionId() }
+    return { emitted, sessionId: mapper.getSessionId(), totals: mapper.getTotals() }
   }
 
-  const resume = sessionFor(body.conversation_key)
+  const resume = stored.sessionId
   let outcome
   try {
     outcome = await attempt(resume)
@@ -226,7 +232,7 @@ async function runTurn(body, write, turn) {
       throw err
     }
   }
-  if (outcome.sessionId) rememberSession(body.conversation_key, outcome.sessionId)
+  if (outcome.sessionId) rememberSession(body.conversation_key, outcome.sessionId, outcome.totals)
 }
 
 /** Converte um pedido de permissão (ou AskUserQuestion) em action_required e espera a resposta. */

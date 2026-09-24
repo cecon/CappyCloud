@@ -12,6 +12,7 @@ const {
   sdkPermissionMode,
   userContentBlocks,
   validateToolScope,
+  planUsageFrom,
   workspaceReadOnlyDirs,
 } = require('../claude_runtime_mapper')
 
@@ -167,4 +168,51 @@ test('modelo usado é o principal, não o auxiliar que aparece primeiro', () => 
   assert.equal(withInit.map(result).at(-1).model_used, 'claude-sonnet-5')
   // Sem o init: o que mais gerou texto.
   assert.equal(createEventMapper().map(result).at(-1).model_used, 'claude-sonnet-5')
+})
+
+test('uso da assinatura: janelas de 5h e 7 dias vão no done', () => {
+  const mapper = createEventMapper()
+  mapper.map({
+    type: 'rate_limit_event',
+    rate_limit_info: {
+      status: 'allowed',
+      rateLimitType: 'five_hour',
+      resetsAt: 1790260200,
+      unifiedWindows: {
+        five_hour: { utilization: 0.12, resetsAt: 1790260200 },
+        seven_day: { utilization: 0.07, resetsAt: 1790812800 },
+      },
+    },
+  })
+  const done = mapper.map({
+    type: 'result', subtype: 'success', is_error: false, result: 'ok', modelUsage: {}, total_cost_usd: 0.5432,
+  }).at(-1)
+  assert.equal(done.cost_usd, 0.5432)
+  assert.deepEqual(done.plan_usage, {
+    status: 'allowed',
+    five_hour: { used_pct: 12, resets_at: '2026-09-24T14:30:00.000Z' },
+    seven_day: { used_pct: 7, resets_at: '2026-10-01T00:00:00.000Z' },
+  })
+})
+
+test('sem evento de limite (API key) o done não traz plan_usage', () => {
+  const mapper = createEventMapper()
+  const done = mapper.map({ type: 'result', subtype: 'success', is_error: false, result: 'ok', modelUsage: {} }).at(-1)
+  assert.equal('plan_usage' in done, false)
+  assert.equal(planUsageFrom({ status: 'allowed' }), null)
+})
+
+test('sessão retomada: tokens e custo do turno, não o acumulado da sessão', () => {
+  // Números medidos no Claude Code: 2º turno com --resume soma o 1º.
+  const usage = { 'claude-haiku-4-5': { inputTokens: 20, cacheReadInputTokens: 39630, cacheCreationInputTokens: 3732, outputTokens: 130 } }
+  const result = { type: 'result', subtype: 'success', is_error: false, result: 'DOIS', modelUsage: usage, total_cost_usd: 0.0121 }
+  const previousTotals = { prompt_tokens: 21625, completion_tokens: 86, cost_usd: 0.00944 }
+  const mapper = createEventMapper({ previousTotals })
+  const done = mapper.map(result).at(-1)
+  assert.equal(done.prompt_tokens, 43382 - 21625)
+  assert.equal(done.completion_tokens, 44)
+  assert.equal(done.cost_usd, 0.00266)
+  assert.deepEqual(mapper.getTotals(), { prompt_tokens: 43382, completion_tokens: 130, cost_usd: 0.0121 })
+  // Sem totais anteriores (sessão nova): o próprio total.
+  assert.equal(createEventMapper().map(result).at(-1).prompt_tokens, 43382)
 })
