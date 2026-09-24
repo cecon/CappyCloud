@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from app.adapters.primary.http.conversation_repos import (
     ConversationRepo,
@@ -70,3 +72,69 @@ def test_alvo_do_pr_pela_url_de_clone(url: str, provider: str, path: str) -> Non
 def test_provedor_nao_suportado() -> None:
     with pytest.raises(PullRequestError):
         parse_pr_target("https://gitlab.com/acme/loja.git")
+
+
+class _Result:
+    def __init__(self, row=None, items=()):
+        self._row, self._items = row, list(items)
+
+    def fetchone(self):
+        return self._row
+
+    def scalars(self):
+        return iter(self._items)
+
+
+class _FakeDb:
+    def __init__(self, row, catalog=()):
+        self._results = [_Result(row=row), _Result(items=catalog)]
+
+    async def execute(self, *_args, **_kwargs):
+        return self._results.pop(0)
+
+
+async def test_carrega_repos_do_workspace_com_dados_do_catalogo() -> None:
+    import uuid
+    from types import SimpleNamespace
+
+    from app.adapters.primary.http.conversation_repos import load_conversation_repos
+
+    cid = uuid.uuid4()
+    conv_repos = [
+        {"slug": "seller", "alias": "backend", "base_branch": "develop"},
+        {"slug": "docs", "alias": "docs", "read_only": True, "worktree_path": "/ws/repos/docs"},
+    ]
+    session = json.dumps([{"alias": "backend", "worktree_path": "/s/backend"}])
+    provider = uuid.uuid4()
+    catalog = [SimpleNamespace(slug="seller", clone_url="https://g/seller", provider_id=provider)]
+    row = (conv_repos, "/repos/workspaces/loja/sessions/abc", uuid.uuid4(), session)
+
+    conv = await load_conversation_repos(_FakeDb(row, catalog), cid, "user")
+
+    assert conv.prefixed is True
+    backend, docs = conv.repos
+    assert (backend.worktree_path, backend.base_branch) == ("/s/backend", "develop")
+    assert (backend.clone_url, backend.provider_id) == ("https://g/seller", provider)
+    assert docs.read_only and docs.worktree_path == "/ws/repos/docs"
+    assert conv.editable == [backend]
+
+
+async def test_conversa_sem_repos_usa_a_pasta_da_sessao() -> None:
+    import uuid
+
+    from app.adapters.primary.http.conversation_repos import load_conversation_repos
+
+    cid = uuid.uuid4()
+    conv = await load_conversation_repos(_FakeDb(([], None, None, None)), cid, "user")
+    assert conv.prefixed is False
+    assert conv.repos[0].worktree_path == f"/repos/sessions/{cid.hex[:12]}"
+
+
+async def test_conversa_de_outro_usuario_da_404() -> None:
+    import uuid
+
+    from app.adapters.primary.http.conversation_repos import load_conversation_repos
+
+    with pytest.raises(HTTPException) as exc:
+        await load_conversation_repos(_FakeDb(None), uuid.uuid4(), "user")
+    assert exc.value.status_code == 404
