@@ -263,7 +263,7 @@ export function SandboxSkillsPanel({ sandbox, canManage = true }: Props) {
           />
           <Textarea
             label="Conteúdo (markdown)"
-            description="Corpo do arquivo SKILL.md que o openclaude vai ler."
+            description="Corpo do SKILL.md. O Claude CLI carrega as skills sozinho; o openclaude não usa skills globais."
             placeholder="# Naming&#10;- Python: snake_case&#10;- TS: camelCase"
             value={form.content}
             onChange={(e) => setForm({ ...form, content: e.currentTarget.value })}

@@ -245,3 +245,15 @@ test('sessão retomada: tokens e custo do turno, não o acumulado da sessão', (
   // Sem totais anteriores (sessão nova): o próprio total.
   assert.equal(createEventMapper().map(result).at(-1).prompt_tokens, 43382)
 })
+
+test('lista os subagentes gravados em ~/.claude/agents', () => {
+  const fs = require('fs')
+  const os = require('os')
+  const path = require('path')
+  const { agentNames } = require('../claude_runtime_subagents')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cappy-agents-'))
+  fs.writeFileSync(path.join(dir, 'seller-architect.md'), '---\nname: seller-architect\n---\n')
+  fs.writeFileSync(path.join(dir, 'notas.txt'), '')
+  assert.deepEqual(agentNames(dir), ['seller-architect'])
+  assert.deepEqual(agentNames(path.join(dir, 'nao-existe')), [])
+})

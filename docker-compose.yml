@@ -72,7 +72,6 @@ services:
     volumes:
       - repos_data:/repos
       - ./sandbox/CLAUDE.md:/app/CLAUDE.md:ro
-      - ./sandbox/skills:/app/sandbox/skills:ro
     networks:
       - cappycloud_net
 

@@ -22,6 +22,9 @@ from ._agent_context import (
     load_agent_context,
     load_repo_agent_profiles,
 )
+from ._agent_runtime_lookup import resolve_agent_runtime
+from ._agent_session import AGENT_RUNTIME_CLAUDE_CLI
+from ._claude_cli_resume import claude_cli_agent_names
 from ._environment_manager import EnvironmentManager
 from ._pipeline_event_stream import stream_task_events
 from ._pipeline_helpers import (
@@ -117,6 +120,17 @@ class Pipeline:
         return asyncio.run_coroutine_threadsafe(coro, self._loop).result(
             timeout=timeout
         )
+
+    def _native_subagents(self, sandbox_id: str, session_url: str) -> set[str]:
+        """Subagentes que o Claude CLI carrega de ~/.claude/agents neste sandbox."""
+        try:
+            runtime = self._run(resolve_agent_runtime(db_url(), sandbox_id), timeout=5)
+            if runtime != AGENT_RUNTIME_CLAUDE_CLI:
+                return set()
+            return self._run(claude_cli_agent_names(session_url), timeout=10)
+        except Exception as exc:
+            log.warning("Falha ao listar os subagentes da sandbox %s: %s", sandbox_id, exc)
+            return set()
 
     def cancel_conversation(self, conversation_id: str) -> bool:
         if self._dispatcher is None:
@@ -239,9 +253,11 @@ class Pipeline:
             sandbox_session_url,
             repos=repos,
             session_root=session_root,
-            worktree_top_level=None,
             agent_profiles=agent_profiles,
             execution_profile=execution_profile,
+            native_subagents=(
+                self._native_subagents(sandbox_id, sandbox_session_url) if agent_profiles else set()
+            ),
         )
 
         # Injeta contexto SigNoz (service.name por repo) se houver configuração.

@@ -259,3 +259,49 @@ def test_evidence_render_requires_confluence_sources_in_final_answer() -> None:
     assert "Fontes consultadas" in section
     assert "Não omita a fonte documental" in section
     assert "PDV Fácil + AS3" in section
+
+
+_ARCHITECT = {
+    "slug": "autosystem-architect",
+    "name": "autosystem-architect",
+    "description": "Arquitetura AutoSystem",
+    "system_prompt": "Mapa de investigação AutoSystem",
+    "default_model": "sonnet",
+}
+
+
+def test_claude_cli_cites_architect_subagent_instead_of_pasting_it() -> None:
+    """No Claude CLI o perfil já é subagente em ~/.claude/agents: colar duplicaria."""
+    native = _agent_prompt_sections.render_repo_agents(
+        [_ARCHITECT], native_subagents={"autosystem-architect"}
+    )
+    pasted = _agent_prompt_sections.render_repo_agents([_ARCHITECT])
+
+    assert "autosystem-architect" in native
+    assert "ferramenta Agent" in native
+    assert "Mapa de investigação AutoSystem" not in native
+    assert "Mapa de investigação AutoSystem" in pasted
+    assert "Modelo preferencial: `sonnet`" in pasted
+
+
+def test_repo_skills_are_an_index_not_full_content() -> None:
+    section = _agent_prompt_sections.render_repo_skills(
+        [{"title": "Fiscal", "summary": "Regras fiscais", "content": "conteúdo longo"}]
+    )
+
+    assert "- **Fiscal** — Regras fiscais" in section
+    assert "`/skills/search`" in section
+    assert "conteúdo longo" not in section
+    assert "skills globais" not in section
+
+
+def test_architect_without_agent_file_is_still_pasted() -> None:
+    """Sem ~/.claude/agents gravado (sandbox sem boot), citar mandaria para o nada."""
+    other = {**_ARCHITECT, "slug": "pdv-architect", "name": "pdv-architect"}
+    other["system_prompt"] = "Mapa do PDV"
+    section = _agent_prompt_sections.render_repo_agents(
+        [_ARCHITECT, other], native_subagents={"autosystem-architect"}
+    )
+
+    assert "Mapa de investigação AutoSystem" not in section
+    assert "Mapa do PDV" in section

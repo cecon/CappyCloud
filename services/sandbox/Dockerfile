@@ -151,7 +151,6 @@ WORKDIR /repos
 
 # Agent instructions injected into every workspace.
 COPY sandbox/CLAUDE.md /app/CLAUDE.md
-COPY sandbox/skills /app/sandbox/skills
 
 # Entrypoints e scripts
 COPY services/sandbox/env_init.sh /env_init.sh

@@ -123,11 +123,13 @@ async def test_add_so_vai_para_o_openclaude(calls: dict[str, int]) -> None:
     assert calls["add"] == 1
 
 
-def _patch_http(monkeypatch: pytest.MonkeyPatch, handler) -> None:
-    real_client = httpx.AsyncClient
+_REAL_CLIENT = httpx.AsyncClient
 
+
+def _patch_http(monkeypatch: pytest.MonkeyPatch, handler) -> None:
+    # A classe real fica fora: um segundo patch no mesmo teste embrulharia o primeiro.
     def factory(*_args, **kwargs):
-        return real_client(transport=httpx.MockTransport(handler), timeout=kwargs.get("timeout"))
+        return _REAL_CLIENT(transport=httpx.MockTransport(handler), timeout=kwargs.get("timeout"))
 
     monkeypatch.setattr(_resume.httpx, "AsyncClient", factory)
 
@@ -155,3 +157,12 @@ async def test_na_duvida_leva_o_contexto_completo(monkeypatch: pytest.MonkeyPatc
     _patch_http(monkeypatch, boom)
     assert await _resume.claude_cli_session_exists("http://sb:8080", "u:c") is False
     assert await _resume.claude_cli_session_exists("", "u:c") is False
+
+
+async def test_lista_os_subagentes_gravados_no_sandbox(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_http(monkeypatch, lambda _r: httpx.Response(200, json={"names": ["seller-architect"]}))
+    assert await _resume.claude_cli_agent_names("http://sb:8080") == {"seller-architect"}
+
+    _patch_http(monkeypatch, lambda _r: httpx.Response(404, json={"error": "Not found"}))
+    assert await _resume.claude_cli_agent_names("http://sb:8080") == set()
+    assert await _resume.claude_cli_agent_names("") == set()

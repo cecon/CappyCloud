@@ -3,6 +3,8 @@
 // — o mesmo formato que o openclaude manda —, para o chat mostrar um cartão por
 // subagente em vez de misturar as ferramentas dele com as do agente principal.
 
+const fs = require('fs')
+
 const SUBAGENT_TOOLS = new Set(['Agent', 'Task'])
 const DETAIL_LIMIT = 140
 
@@ -85,4 +87,13 @@ function createSubagentTracker() {
   }
 }
 
-module.exports = { createSubagentTracker }
+/** Subagentes em `dir` (~/.claude/agents, gravados pelo boot da sandbox). */
+function agentNames(dir) {
+  try {
+    return fs.readdirSync(dir).filter((file) => file.endsWith('.md')).map((file) => file.slice(0, -3))
+  } catch {
+    return []
+  }
+}
+
+module.exports = { agentNames, createSubagentTracker }

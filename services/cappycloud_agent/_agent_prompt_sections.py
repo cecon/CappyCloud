@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from urllib.parse import quote
 
 
@@ -25,14 +25,17 @@ def _clean_confluence_labels(raw_labels: object) -> list[str]:
 
 
 def render_repo_skills(skills: list[dict]) -> str:
+    """Índice das skills do repositório; o conteúdo vem pela busca de documentação.
+
+    As mais relevantes para a pergunta já entram completas nas evidências
+    automáticas, então aqui vai só título e resumo.
+    """
     lines = ["## Skills configuradas para este repositório"]
     lines.append(
-        "Estas skills foram cadastradas para o(s) repositório(s) da sessão. "
-        "Use título e descrição como contexto operacional antes de responder ou alterar código. "
-        "Não use skills globais do sandbox como substitutas das skills do repositório."
+        "Estas skills foram cadastradas para o(s) repositório(s) da sessão. Quando o "
+        "assunto bater, leia o conteúdo pela busca de documentação (`/skills/search`) "
+        "antes de responder ou alterar código."
     )
-
-
     for skill in skills:
         line = f"- **{skill['title']}**"
         if skill.get("summary"):
@@ -40,8 +43,6 @@ def render_repo_skills(skills: list[dict]) -> str:
         if skill.get("source_url"):
             line += f"  \n  Fonte: {skill['source_url']}"
         lines.append(line)
-        if skill.get("content"):
-            lines.append(f"\n{skill['content']}")
     return "\n".join(lines)
 
 
@@ -72,21 +73,43 @@ def render_execution_profile(profile: str) -> str:
     )
 
 
-def render_repo_agents(agent_profiles: list[dict]) -> str:
+def _agent_line(agent: dict, with_model: bool) -> str:
+    line = f"- **{agent['name']}** (`{agent['slug']}`)"
+    if agent.get("description"):
+        line += f" — {agent['description']}"
+    if with_model and agent.get("default_model"):
+        line += f"  \n  Modelo preferencial: `{agent['default_model']}`"
+    return line
+
+
+def render_repo_agents(
+    agent_profiles: list[dict], native_subagents: Collection[str] = ()
+) -> str:
+    """Perfis ``<repo>-architect``.
+
+    ``native_subagents``: nomes que o runtime já carrega como subagente
+    (``~/.claude/agents`` no Claude CLI). Esses o prompt só cita; os demais
+    (openclaude, ou arquivo ainda não gravado no sandbox) vão colados.
+    """
+    native = [a for a in agent_profiles if a["name"] in native_subagents]
+    pasted = [a for a in agent_profiles if a["name"] not in native_subagents]
     lines = ["## Agente arquitetural do repositório"]
-    lines.append(
-        "Estes perfis foram selecionados automaticamente pelo(s) repositório(s) "
-        "da sessão. Use-os como estratégia de investigação e validação antes das skills."
-    )
-    for agent in agent_profiles:
-        line = f"- **{agent['name']}** (`{agent['slug']}`)"
-        if agent.get("description"):
-            line += f" — {agent['description']}"
-        if agent.get("default_model"):
-            line += f"  \n  Modelo preferencial: `{agent['default_model']}`"
-        lines.append(line)
-        if agent.get("system_prompt"):
-            lines.append(f"\n{agent['system_prompt']}")
+    if native:
+        lines.append(
+            "Estes subagentes conhecem a arquitetura do(s) repositório(s) da sessão. "
+            "Delegue a eles (ferramenta Agent, pelo nome) a investigação arquitetural "
+            "e a validação de mudanças antes de consultar as skills."
+        )
+        lines.extend(_agent_line(agent, with_model=False) for agent in native)
+    if pasted:
+        lines.append(
+            "Estes perfis foram selecionados automaticamente pelo(s) repositório(s) "
+            "da sessão. Use-os como estratégia de investigação e validação antes das skills."
+        )
+        for agent in pasted:
+            lines.append(_agent_line(agent, with_model=True))
+            if agent.get("system_prompt"):
+                lines.append(f"\n{agent['system_prompt']}")
     return "\n".join(lines)
 
 
