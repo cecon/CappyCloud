@@ -35,6 +35,7 @@ const confluenceHandler = require('./confluence_handler')
 const repoHandlers = require('./repo_handlers')
 const runtimeHandler = require('./runtime_handler')
 const { assertSafeSessionRoot, cleanupSession } = require('./session_cleanup')
+const { assertInsideSession, sessionRootInfo } = require('./session_paths')
 const taskHandler = require('./task_handler')
 const worktreeHandlers = require('./worktree_handlers')
 const workspaceHandler = require('./workspace_handler')
@@ -91,8 +92,8 @@ function readBody(req) {
 }
 
 // ── Cria um worktree via session_start.sh ──────────────────────
-async function createWorktree({ slug, alias, base_branch, branch_name, worktree_path, clone_url = '' }) {
-  const args = [slug, alias, worktree_path, base_branch || '', branch_name || '', clone_url]
+async function createWorktree({ slug, alias, base_branch, branch_name, worktree_path, clone_url = '', inject_claude_md = true }) {
+  const args = [slug, alias, worktree_path, base_branch || '', branch_name || '', clone_url, inject_claude_md ? '1' : '0']
   const { stdout, stderr } = await execFileAsync('/session_start.sh', args, {
     env: { ...process.env },
     timeout: 300_000,
@@ -105,11 +106,8 @@ async function createWorktree({ slug, alias, base_branch, branch_name, worktree_
 }
 
 function assertSafeSessionPath(candidate) {
-  const resolved = path.resolve(candidate || '')
-  if (!resolved.startsWith('/repos/sessions/')) {
-    throw new Error('session worktree_path must be under /repos/sessions/')
-  }
-  return resolved
+  // Worktree dentro de uma sessão legada ou de workspace (session_paths.js).
+  return assertInsideSession(candidate)
 }
 
 function assertSafeUserWorkspacePath(candidate) {
@@ -254,16 +252,27 @@ const server = http.createServer(async (req, res) => {
       if (!session_root) {
         return json(res, 400, { error: 'session_root is required' })
       }
+      let sessionInfo
+      try {
+        sessionInfo = sessionRootInfo(session_root)
+      } catch (err) {
+        return json(res, 400, { error: err.message })
+      }
+      const workspaceRoot = sessionInfo.workspaceRoot
 
       const outputs = []
       const repos_created = []
 
       fs.mkdirSync(session_root, { recursive: true })
 
-      // CLAUDE.md na raiz da sessão: só se não houver instruções no próprio repo
-      // (cada worktree pode ter o seu CLAUDE.md / AGENTS.md). Aqui é a raiz
-      // multi-repo, fica como descrição neutra do ambiente.
-      if (!fs.existsSync(path.join(session_root, 'CLAUDE.md')) && !fs.existsSync(path.join(session_root, 'AGENTS.md'))) {
+      if (workspaceRoot) {
+        // Sessão de workspace: o CLAUDE.md vem da raiz do workspace (o agente
+        // herda por estar abaixo dela); skills/agents do workspace via link.
+        const claudeLink = path.join(session_root, '.claude')
+        if (!fs.existsSync(claudeLink)) fs.symlinkSync('../../.claude', claudeLink)
+      } else if (!fs.existsSync(path.join(session_root, 'CLAUDE.md')) && !fs.existsSync(path.join(session_root, 'AGENTS.md'))) {
+        // CLAUDE.md na raiz da sessão legada: só se não houver instruções no
+        // próprio repo. Aqui é a raiz multi-repo, fica como descrição neutra.
         const sandboxClaude = path.join(process.env.HOME || '/root', '.claude', 'CLAUDE.md')
         const sourceClaude = fs.existsSync(sandboxClaude) ? sandboxClaude : '/app/CLAUDE.md'
         if (fs.existsSync(sourceClaude)) {
@@ -287,6 +296,7 @@ const server = http.createServer(async (req, res) => {
             branch_name: resolved_branch,
             worktree_path: wt_path,
             clone_url: rc || '',
+            inject_claude_md: !workspaceRoot,
           })
           outputs.push(`[${alias}] ${out}`)
           repos_created.push({ alias, branch_name: resolved_branch, worktree_path: wt_path })

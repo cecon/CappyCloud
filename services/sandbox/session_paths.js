@@ -1,0 +1,49 @@
+'use strict'
+// Onde sessões (worktrees de conversa) podem existir no sandbox:
+//   <repos>/sessions/<id>/                        — conversas por repositório (legado)
+//   <repos>/workspaces/<slug>/sessions/<id>/      — conversas de workspace
+// Tudo que cria, lê ou apaga worktrees de sessão valida o caminho por aqui.
+
+const path = require('path').posix
+
+const WORKSPACE_SLUG = '[a-z0-9][a-z0-9-]{1,62}'
+const SESSION_ID = '[A-Za-z0-9][A-Za-z0-9._-]*'
+
+function patterns(reposRoot) {
+  const root = reposRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return [
+    new RegExp(`^${root}/sessions/${SESSION_ID}$`),
+    new RegExp(`^${root}/workspaces/(${WORKSPACE_SLUG})/sessions/${SESSION_ID}$`),
+  ]
+}
+
+/**
+ * Valida uma raiz de sessão e devolve `{ root, workspaceRoot }`
+ * (`workspaceRoot` é null para sessões legadas). Lança erro fora das áreas permitidas.
+ */
+function sessionRootInfo(candidate, reposRoot = '/repos') {
+  const root = path.resolve(String(candidate || ''))
+  const [legacy, workspace] = patterns(reposRoot)
+  if (legacy.test(root)) return { root, workspaceRoot: null }
+  const match = root.match(workspace)
+  if (match) return { root, workspaceRoot: path.join(reposRoot, 'workspaces', match[1]) }
+  throw new Error(`session_root must be ${reposRoot}/sessions/<id> or ${reposRoot}/workspaces/<ws>/sessions/<id>`)
+}
+
+/** Caminho (worktree ou arquivo) dentro de alguma raiz de sessão, nunca a raiz em si. */
+function assertInsideSession(candidate, reposRoot = '/repos') {
+  const resolved = path.resolve(String(candidate || ''))
+  let current = resolved
+  while (current !== path.dirname(current)) {
+    const parent = path.dirname(current)
+    try {
+      sessionRootInfo(parent, reposRoot)
+      return resolved
+    } catch {
+      current = parent
+    }
+  }
+  throw new Error('path must be inside a session root')
+}
+
+module.exports = { assertInsideSession, sessionRootInfo }

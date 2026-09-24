@@ -10,16 +10,23 @@ const { execFile } = require('child_process')
 const { promisify } = require('util')
 
 const execFileAsync = promisify(execFile)
+const { assertInsideSession, sessionRootInfo } = require('./session_paths')
 
 function resolveSafeWorktree(raw) {
   if (!raw || typeof raw !== 'string') {
     throw new Error('worktree_path é obrigatório')
   }
   const resolved = path.resolve(raw.trim())
-  if (!resolved.startsWith('/repos/sessions/')) {
-    throw new Error('worktree_path tem de estar em /repos/sessions/')
+  // Aceita a raiz da sessão (legada ou de workspace) ou qualquer caminho dentro dela.
+  try {
+    return sessionRootInfo(resolved).root
+  } catch {
+    try {
+      return assertInsideSession(resolved)
+    } catch {
+      throw new Error('worktree_path tem de estar numa sessão (/repos/sessions/ ou /repos/workspaces/<ws>/sessions/)')
+    }
   }
-  return resolved
 }
 
 function resolveSafeFileInWorktree(worktreeRaw, relPath) {

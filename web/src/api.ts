@@ -397,7 +397,28 @@ export type Conversation = {
   sandbox_id: string | null
   repos: RepoSelection[]
   session_root: string | null
+  /** Conversa de workspace: abre todos os repositórios dele. */
+  workspace_id?: string | null
   permission_mode: PermissionMode
+}
+
+/** Workspace que o utilizador pode usar ao abrir uma conversa. */
+export interface AccessibleWorkspace {
+  id: string
+  slug: string
+  name: string
+  sandbox_id: string
+  /** Sincronizado no sandbox e com repositórios. */
+  ready: boolean
+  repositories: Array<{ alias: string; slug: string }>
+}
+
+export async function fetchAccessibleWorkspaces(token: string): Promise<AccessibleWorkspace[]> {
+  const res = await apiFetch('/api/workspaces/accessible', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return []
+  return res.json()
 }
 
 export type ChatMessage = {
@@ -846,10 +867,12 @@ export async function createConversation(
   repos: RepoSelection[] = [],
   modelId?: string | null,
   sandboxId?: string | null,
+  workspaceId?: string | null,
 ): Promise<Conversation> {
   const body: Record<string, unknown> = { repos }
   if (modelId) body.model_id = modelId
   if (sandboxId) body.sandbox_id = sandboxId
+  if (workspaceId) body.workspace_id = workspaceId
   const res = await apiFetch('/api/conversations', {
     method: 'POST',
     headers: {
@@ -858,7 +881,10 @@ export async function createConversation(
     },
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error('Não foi possível criar conversa')
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Não foi possível criar conversa')
+  }
   return res.json()
 }
 

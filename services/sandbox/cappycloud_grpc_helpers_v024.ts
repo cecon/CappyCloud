@@ -236,10 +236,27 @@ function cappycloudWrapNumericParameterGrepTool(tool: any, worktree: string, num
   }
 }
 
+const CAPPYCLOUD_READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LSP'])
+const CAPPYCLOUD_WORKSPACE_SESSION_RE = /^(/repos/workspaces/[a-z0-9][a-z0-9-]{1,62})/sessions/[^/]+$/
+
+// Sessão de workspace: leitura permitida no conhecimento compartilhado do workspace.
+function cappycloudWorkspaceReadOnlyRoots(worktree: string): string[] {
+  const match = path.resolve(worktree).match(CAPPYCLOUD_WORKSPACE_SESSION_RE)
+  if (!match) return []
+  const root = match[1]
+  return [`${root}/knowledge`, `${root}/memory`, `${root}/.claude`, `${root}/CLAUDE.md`]
+}
+
 function cappycloudValidateToolScope(toolName: string, input: unknown, worktree: string): string | null {
+  const readOnlyRoots = CAPPYCLOUD_READ_ONLY_TOOLS.has(toolName)
+    ? cappycloudWorkspaceReadOnlyRoots(worktree)
+    : []
   if (CAPPYCLOUD_PATH_GUARDED_TOOLS.has(toolName)) {
     for (const rawPath of cappycloudCollectPathInputs(input)) {
       const resolvedPath = cappycloudResolveToolPath(worktree, rawPath)
+      if (resolvedPath && readOnlyRoots.some((root) => cappycloudIsInsideWorktree(root, resolvedPath))) {
+        continue
+      }
       if (resolvedPath && !cappycloudIsInsideWorktree(worktree, resolvedPath)) {
         return `Tool blocked: path outside the conversation worktree. Allowed worktree: ${worktree}. Requested path: ${resolvedPath}.`
       }
