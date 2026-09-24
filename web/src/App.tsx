@@ -35,6 +35,9 @@ const AdminProvidersPage = lazy(() =>
 const AdminModelsPage = lazy(() =>
   import('./pages/AdminModelsPage').then((m) => ({ default: m.AdminModelsPage })),
 )
+const AdminWorkspacesPage = lazy(() =>
+  import('./pages/AdminWorkspacesPage').then((m) => ({ default: m.AdminWorkspacesPage })),
+)
 const AdminRepositoriesPage = lazy(() =>
   import('./pages/AdminRepositoriesPage').then((m) => ({ default: m.AdminRepositoriesPage })),
 )
@@ -192,11 +195,19 @@ export default function App() {
           }
         />
         <Route
+          path="/admin/workspaces"
+          element={
+            <SuperAdminPage>
+              <AdminWorkspacesPage />
+            </SuperAdminPage>
+          }
+        />
+        <Route
           path="/admin/repositories"
           element={
-            <AdminPage>
+            <SuperAdminPage>
               <AdminRepositoriesPage />
-            </AdminPage>
+            </SuperAdminPage>
           }
         />
         <Route

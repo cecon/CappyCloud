@@ -18,6 +18,7 @@ from ._task_events import (
     update_task_status,
 )
 from ._task_runner import TaskRunner
+from ._workspace_paths import workspace_root_of
 from ._worktree_validation import validate_and_inject_worktree
 
 log = logging.getLogger(__name__)
@@ -75,7 +76,12 @@ async def launch_runner(
         return
 
     working_directory = sandbox.working_directory
-    if repos and len(repos) == 1 and repos[0].get("worktree_path"):
+    if (
+        repos
+        and len(repos) == 1
+        and repos[0].get("worktree_path")
+        and not workspace_root_of(session_root or sandbox.session_root)
+    ):
         working_directory = repos[0]["worktree_path"]
     log.debug(
         "[Dispatcher] working_directory=%r for task %s", working_directory, task_id[:8]

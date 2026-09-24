@@ -10,6 +10,11 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.primary.http.conversation_create_helpers import (
+    conversation_out,
+    create_workspace_conversation,
+    resolve_ai_model_id,
+)
 from app.adapters.primary.http.conversation_sandbox_guard import (
     ensure_sandbox_ready_for_chat,
 )
@@ -21,9 +26,6 @@ from app.adapters.primary.http.deps import (
     get_list_convs_uc,
     get_list_msgs_uc,
     get_stream_msg_uc,
-)
-from app.adapters.secondary.persistence.sqlalchemy_ai_model_access_policy import (
-    SQLAlchemyAiModelAccessPolicy,
 )
 from app.adapters.secondary.persistence.sqlalchemy_user_access_repo import (
     SQLAlchemyUserRepositoryAccessRepository,
@@ -37,7 +39,6 @@ from app.application.use_cases.conversations import (
 )
 from app.domain.entities import User, UserRole
 from app.infrastructure.orm_models import Repository
-from app.infrastructure.orm_models_platform import AiModel
 from app.ports.repositories import ConversationRepository
 from app.schemas import (
     ConversationCreate,
@@ -71,6 +72,7 @@ async def list_conversations(
             ai_model_id=c.ai_model_id,
             repos=c.repos,
             session_root=c.session_root,
+            workspace_id=c.workspace_id,
             permission_mode=c.permission_mode,
         )
         for c in convs
@@ -85,6 +87,8 @@ async def create_conversation(
     body: ConversationCreate | None = None,
 ) -> ConversationOut:
     b = body or ConversationCreate()
+    if b.workspace_id:
+        return conversation_out(await create_workspace_conversation(session, current, uc, b))
 
     repo_rows: list[Repository] = []
     if b.repos:
@@ -152,28 +156,7 @@ async def create_conversation(
     if resolved_sandbox_id is not None:
         await ensure_sandbox_ready_for_chat(session, resolved_sandbox_id)
 
-    ai_model_id: uuid.UUID | None = None
-    if b.model_id:
-        try:
-            resolved_model_id = await SQLAlchemyAiModelAccessPolicy(session).resolve_model_for_user(
-                current.id,
-                current.role,
-                b.model_id,
-            )
-        except PermissionError as exc:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-        ai_model_id = (
-            await session.execute(
-                select(AiModel.id)
-                .where(AiModel.model_id == resolved_model_id, AiModel.active.is_(True))
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-        if ai_model_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Modelo LLM indisponível ou desativado globalmente.",
-            )
+    ai_model_id = await resolve_ai_model_id(session, current, b.model_id)
 
     repos_dicts = [r.model_dump() for r in b.repos] if b.repos else []
     conv = await uc.execute(
@@ -183,17 +166,7 @@ async def create_conversation(
         ai_model_id=ai_model_id,
         repos=repos_dicts,
     )
-    return ConversationOut(
-        id=conv.id,
-        title=conv.title,
-        created_at=conv.created_at,
-        updated_at=conv.updated_at,
-        sandbox_id=conv.sandbox_id,
-        ai_model_id=conv.ai_model_id,
-        repos=conv.repos,
-        session_root=conv.session_root,
-        permission_mode=conv.permission_mode,
-    )
+    return conversation_out(conv)
 
 
 @router.get("/{conversation_id}/usage", response_model=ConversationUsage)

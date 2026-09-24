@@ -51,6 +51,8 @@ class Pipeline:
         SANDBOX_GRPC_PORT: int = Field(default=50051)
         SANDBOX_SESSION_PORT: int = Field(default=8080)
         SANDBOX_IDLE_TIMEOUT: int = Field(default=1800)
+        # Worktrees de sessão sem atividade há mais que isto são apagados pelo GC.
+        SESSION_CLEANUP_AFTER_S: int = Field(default=86400)
         REDIS_URL: str = Field(default="redis://redis:6379")
         DATABASE_URL: str = Field(default="")
 
@@ -65,6 +67,7 @@ class Pipeline:
             SANDBOX_GRPC_PORT=int(os.getenv("SANDBOX_GRPC_PORT", "50051")),
             SANDBOX_SESSION_PORT=int(os.getenv("SANDBOX_SESSION_PORT", "8080")),
             SANDBOX_IDLE_TIMEOUT=int(os.getenv("SANDBOX_IDLE_TIMEOUT", "1800")),
+            SESSION_CLEANUP_AFTER_S=int(os.getenv("SESSION_CLEANUP_AFTER_S", "86400")),
             REDIS_URL=os.getenv("REDIS_URL", "redis://redis:6379"),
             DATABASE_URL=db_url(),
         )
@@ -81,6 +84,7 @@ class Pipeline:
             redis_url=self.valves.REDIS_URL,
             database_url=self.valves.DATABASE_URL,
             idle_ttl=self.valves.SANDBOX_IDLE_TIMEOUT,
+            cleanup_after=self.valves.SESSION_CLEANUP_AFTER_S,
         )
         await self._store.connect()
         self._env_manager = EnvironmentManager(

@@ -397,7 +397,28 @@ export type Conversation = {
   sandbox_id: string | null
   repos: RepoSelection[]
   session_root: string | null
+  /** Conversa de workspace: abre todos os repositórios dele. */
+  workspace_id?: string | null
   permission_mode: PermissionMode
+}
+
+/** Workspace que o utilizador pode usar ao abrir uma conversa. */
+export interface AccessibleWorkspace {
+  id: string
+  slug: string
+  name: string
+  sandbox_id: string
+  /** Sincronizado no sandbox e com repositórios. */
+  ready: boolean
+  repositories: Array<{ alias: string; slug: string }>
+}
+
+export async function fetchAccessibleWorkspaces(token: string): Promise<AccessibleWorkspace[]> {
+  const res = await apiFetch('/api/workspaces/accessible', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return []
+  return res.json()
 }
 
 export type ChatMessage = {
@@ -846,10 +867,12 @@ export async function createConversation(
   repos: RepoSelection[] = [],
   modelId?: string | null,
   sandboxId?: string | null,
+  workspaceId?: string | null,
 ): Promise<Conversation> {
   const body: Record<string, unknown> = { repos }
   if (modelId) body.model_id = modelId
   if (sandboxId) body.sandbox_id = sandboxId
+  if (workspaceId) body.workspace_id = workspaceId
   const res = await apiFetch('/api/conversations', {
     method: 'POST',
     headers: {
@@ -858,7 +881,10 @@ export async function createConversation(
     },
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error('Não foi possível criar conversa')
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Não foi possível criar conversa')
+  }
   return res.json()
 }
 
@@ -1404,6 +1430,7 @@ export interface DiffFile {
 }
 
 export interface ConversationDiff {
+  /** Vazio quando os repositórios têm bases diferentes. */
   base_branch: string
   stats: { added: number; removed: number }
   files: DiffFile[]
@@ -1593,10 +1620,22 @@ export async function fetchConversationFile(
 
 // ── Pull Request ──────────────────────────────────────────────────────────────
 
+export interface RepoPrResult {
+  alias: string
+  slug: string
+  provider?: 'github' | 'azure_devops'
+  pr_url?: string
+  pr_number?: number
+  head_branch?: string
+  error?: string
+}
+
 export interface CreatePrResult {
   pr_url: string
   pr_number: number
   head_branch: string
+  /** Um item por repositório alterado (workspace: vários PRs). */
+  prs?: RepoPrResult[]
 }
 
 export async function createConversationPr(
@@ -1725,6 +1764,101 @@ export interface RepositoryCreate {
   provider_type?: string | null
   /** SigNoz service.name para correlacionar logs/traces (deixe vazio se não usar). */
   signoz_service_name?: string | null
+}
+
+// ── Admin · Workspaces (super admin) ─────────────────────────────────────────
+
+export interface WorkspaceRepositoryLink {
+  repository_id: string
+  alias?: string | null
+  /** Vazio = default_branch do repositório. */
+  base_branch?: string
+  /** Somente leitura: o agente consulta, sem worktree nem PR. */
+  read_only?: boolean
+}
+
+export interface AdminWorkspace {
+  id: string
+  slug: string
+  name: string
+  sandbox_id: string
+  claude_md: string
+  active: boolean
+  sync_status: 'pending' | 'synced' | 'error' | string
+  sync_error: string | null
+  last_sync_at: string | null
+  created_at: string
+  repositories: Array<{
+    repository_id: string
+    slug: string
+    name: string
+    alias: string
+    base_branch: string
+    default_branch: string
+    sandbox_status: string
+    read_only: boolean
+  }>
+}
+
+export interface AdminWorkspaceCreate {
+  slug: string
+  name: string
+  sandbox_id: string
+  claude_md?: string
+  repositories?: WorkspaceRepositoryLink[]
+}
+
+export interface AdminWorkspaceUpdate {
+  name?: string
+  claude_md?: string
+  active?: boolean
+  repositories?: WorkspaceRepositoryLink[]
+}
+
+async function workspaceRequest<T>(
+  token: string,
+  path: string,
+  init: RequestInit = {},
+  fallback = 'Falha na operação de workspace',
+): Promise<T> {
+  const res = await apiFetch(`/api/admin/workspaces${path}`, {
+    ...init,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || fallback)
+  }
+  return (res.status === 204 ? undefined : await res.json()) as T
+}
+
+export function fetchAdminWorkspaces(token: string): Promise<AdminWorkspace[]> {
+  return workspaceRequest(token, '', {}, 'Falha ao listar workspaces')
+}
+
+export function createAdminWorkspace(token: string, data: AdminWorkspaceCreate): Promise<AdminWorkspace> {
+  return workspaceRequest(token, '', { method: 'POST', body: JSON.stringify(data) }, 'Falha ao criar workspace')
+}
+
+export function updateAdminWorkspace(
+  token: string,
+  workspaceId: string,
+  data: AdminWorkspaceUpdate,
+): Promise<AdminWorkspace> {
+  return workspaceRequest(
+    token,
+    `/${workspaceId}`,
+    { method: 'PATCH', body: JSON.stringify(data) },
+    'Falha ao atualizar workspace',
+  )
+}
+
+export function syncAdminWorkspace(token: string, workspaceId: string): Promise<AdminWorkspace> {
+  return workspaceRequest(token, `/${workspaceId}/sync`, { method: 'POST' }, 'Falha ao sincronizar workspace')
+}
+
+export function deleteAdminWorkspace(token: string, workspaceId: string): Promise<void> {
+  return workspaceRequest(token, `/${workspaceId}`, { method: 'DELETE' }, 'Falha ao remover workspace')
 }
 
 export async function fetchRepositories(token: string): Promise<Repository[]> {
@@ -2740,7 +2874,7 @@ export async function deleteSandboxAgent(
 
 // ── User Access (ADR-005 §2) ────────────────────────────────────────────────
 
-export type AccessResource = 'sandboxes' | 'repositories' | 'ai-models'
+export type AccessResource = 'sandboxes' | 'repositories' | 'ai-models' | 'workspaces'
 
 async function fetchUserAccess(
   token: string,
@@ -2806,6 +2940,14 @@ export const revokeUserRepositoryAccess = (token: string, userId: string, repoId
   revokeUserAccess(token, userId, 'repositories', repoId)
 export const revokeUserAiModelAccess = (token: string, userId: string, modelId: string) =>
   revokeUserAccess(token, userId, 'ai-models', modelId)
+
+/** Acesso a workspaces: rotas só para super admin (admin comum recebe 403). */
+export const fetchUserWorkspaceAccess = (token: string, userId: string) =>
+  fetchUserAccess(token, userId, 'workspaces')
+export const grantUserWorkspaceAccess = (token: string, userId: string, workspaceId: string) =>
+  grantUserAccess(token, userId, 'workspaces', workspaceId)
+export const revokeUserWorkspaceAccess = (token: string, userId: string, workspaceId: string) =>
+  revokeUserAccess(token, userId, 'workspaces', workspaceId)
 
 export interface BulkTierResult {
   granted: number

@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
+from app.adapters.primary.http.deps_auth import require_super_admin
 from app.domain.entities import User
 from app.infrastructure.encryption import get_encryptor
 from app.infrastructure.orm_models import GitProvider, Repository, Sandbox, SandboxSyncQueue
@@ -149,7 +150,7 @@ async def list_repositories(
 @router.post("", response_model=RepositoryOut, status_code=201)
 async def create_repository(
     body: RepositoryCreate,
-    _current: Annotated[User, Depends(get_authenticated_user)],
+    _current: Annotated[User, Depends(require_super_admin)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RepositoryOut:
     sandbox_id = body.sandbox_id
@@ -195,7 +196,7 @@ async def create_repository(
 async def update_repository(
     repo_id: uuid.UUID,
     body: RepositoryCreate,
-    _current: Annotated[User, Depends(get_authenticated_user)],
+    _current: Annotated[User, Depends(require_super_admin)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RepositoryOut:
     """Atualiza o repositório (em particular, permite associar provider_id ou PAT inline)."""
@@ -233,7 +234,7 @@ async def update_repository(
 @router.post("/{repo_id}/sync", status_code=202)
 async def enqueue_sync(
     repo_id: uuid.UUID,
-    _current: Annotated[User, Depends(get_authenticated_user)],
+    _current: Annotated[User, Depends(require_super_admin)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> dict:
     """Enfileira clone/update do repo no sandbox via sandbox_sync_queue."""
@@ -250,7 +251,7 @@ async def enqueue_sync(
 @router.delete("/{repo_id}", status_code=204)
 async def delete_repository(
     repo_id: uuid.UUID,
-    _current: Annotated[User, Depends(get_authenticated_user)],
+    _current: Annotated[User, Depends(require_super_admin)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> None:
     repo = await session.get(Repository, repo_id)

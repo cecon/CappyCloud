@@ -15,6 +15,14 @@ const path = require('path')
 const { promisify } = require('util')
 
 const execFileAsync = promisify(execFile)
+const { resolveReadableWorktree, resolveSafeFileInWorktree } = require('./worktree_handlers')
+
+// Clone ou worktree em /repos (normalizado: `/repos/../etc` não passa).
+function safeRepoPath(raw) {
+  if (!raw || typeof raw !== 'string') return null
+  const resolved = path.posix.resolve(raw.trim())
+  return resolved.startsWith('/repos/') ? resolved : null
+}
 
 async function lsRemoteBranches(body, json, res, injectToken) {
   let { url: remoteUrl } = body
@@ -42,8 +50,8 @@ async function lsRemoteBranches(body, json, res, injectToken) {
 }
 
 async function originHeadBranch(body, json, res) {
-  const { repo_path: repoPath } = body
-  if (!repoPath || typeof repoPath !== 'string' || !repoPath.startsWith('/repos/')) {
+  const repoPath = safeRepoPath(body.repo_path)
+  if (!repoPath) {
     return json(res, 400, { error: 'repo_path must be under /repos/' })
   }
   try {
@@ -62,8 +70,8 @@ async function originHeadBranch(body, json, res) {
 }
 
 async function branchR(body, json, res) {
-  const { repo_path: repoPath } = body
-  if (!repoPath || typeof repoPath !== 'string' || !repoPath.startsWith('/repos/')) {
+  const repoPath = safeRepoPath(body.repo_path)
+  if (!repoPath) {
     return json(res, 400, { error: 'repo_path must be under /repos/' })
   }
   try {
@@ -92,9 +100,11 @@ async function tryHandle(req, res, { json, readBody, injectToken }) {
   const url = new URL(req.url || '/', 'http://localhost')
 
   if (req.method === 'GET' && urlPath === '/git/ls-files') {
-    const worktree_path = url.searchParams.get('worktree_path') || ''
-    if (!worktree_path) {
-      await json(res, 400, { error: 'worktree_path is required' })
+    let worktree_path
+    try {
+      worktree_path = resolveReadableWorktree(url.searchParams.get('worktree_path') || '')
+    } catch (err) {
+      await json(res, 400, { error: err.message })
       return true
     }
     try {
@@ -108,19 +118,12 @@ async function tryHandle(req, res, { json, readBody, injectToken }) {
   }
 
   if (req.method === 'GET' && urlPath === '/git/file') {
-    const worktree_path = url.searchParams.get('worktree_path') || ''
     const filePath = url.searchParams.get('path') || ''
-    if (!worktree_path) {
-      await json(res, 400, { error: 'worktree_path is required' })
-      return true
-    }
-    if (!filePath) {
-      await json(res, 400, { error: 'path is required' })
-      return true
-    }
-    const resolved = path.resolve(worktree_path, filePath)
-    if (!resolved.startsWith(path.resolve(worktree_path))) {
-      await json(res, 400, { error: 'Caminho inválido' })
+    let resolved
+    try {
+      resolved = resolveSafeFileInWorktree(url.searchParams.get('worktree_path') || '', filePath)
+    } catch (err) {
+      await json(res, 400, { error: err.message })
       return true
     }
     try {
