@@ -7,6 +7,7 @@ const path = require('path')
 process.env.INTERNAL_API_TOKEN = 'segredo-de-teste'
 // Um "shell" falso que ecoa a entrada: o teste não depende de pty (Windows/CI).
 process.env.TERMINAL_PTY_SCRIPT = path.join(__dirname, 'fixtures', 'fake_pty.py')
+process.env.TERMINAL_ORPHAN_MS = '1000'
 const handler = require('../terminal_handler')
 
 function request(method, url, { token = 'segredo-de-teste', body = {} } = {}) {
@@ -68,4 +69,13 @@ test('limita os terminais abertos', async (t) => {
   for (let i = 0; i < 3; i++) ids.push((await request('POST', '/terminal/sessions')).payload.id)
   assert.equal((await request('POST', '/terminal/sessions')).status, 429)
   for (const id of ids) handler.closeSession(id)
+})
+
+test('terminal sem ninguém lendo fecha sozinho (aba recarregada)', async (t) => {
+  const python = require('child_process').spawnSync('python3', ['--version'])
+  if (python.status !== 0) return t.skip('python3 indisponível')
+  const { id } = (await request('POST', '/terminal/sessions')).payload
+  assert.equal(handler._sessions.has(id), true)
+  await new Promise((r) => setTimeout(r, 1300))
+  assert.equal(handler._sessions.has(id), false)
 })

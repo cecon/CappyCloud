@@ -16,6 +16,8 @@ const { spawn } = require('child_process')
 const PTY_SCRIPT = process.env.TERMINAL_PTY_SCRIPT || '/terminal_pty.py'
 const MAX_SESSIONS = 3
 const IDLE_MS = 15 * 60 * 1000
+// Terminal sem ninguém lendo (aba fechada/recarregada, rede caiu) fecha antes.
+const ORPHAN_MS = Number(process.env.TERMINAL_ORPHAN_MS || 2 * 60 * 1000)
 const BACKLOG_BYTES = 256 * 1024
 const ROUTE = /^\/terminal\/sessions(?:\/([a-f0-9]{32})(?:\/(stream|input|resize))?)?$/
 
@@ -31,6 +33,13 @@ function authorized(req) {
 function clampSize(value, min, max, fallback) {
   const n = Number.parseInt(value, 10)
   return Number.isFinite(n) ? Math.max(min, Math.min(n, max)) : fallback
+}
+
+function watchOrphan(session) {
+  clearTimeout(session.orphanTimer)
+  session.orphanTimer = setTimeout(() => {
+    if (!session.reader) closeSession(session.id)
+  }, ORPHAN_MS).unref()
 }
 
 function touch(session) {
@@ -59,7 +68,7 @@ function createSession(cols, rows) {
     env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
     stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
   })
-  const session = { id, child, reader: null, backlog: [], backlogBytes: 0, exited: null, idleTimer: null }
+  const session = { id, child, reader: null, backlog: [], backlogBytes: 0, exited: null, idleTimer: null, orphanTimer: null }
   const output = (chunk) => emit(session, { type: 'output', data: chunk.toString('base64') })
   child.stdout.on('data', output)
   child.stderr.on('data', output)
@@ -76,6 +85,7 @@ function createSession(cols, rows) {
   })
   sessions.set(id, session)
   touch(session)
+  watchOrphan(session)
   console.log(`[terminal] sessão ${id} aberta (${cols}x${rows})`)
   return session
 }
@@ -84,6 +94,7 @@ function closeSession(id) {
   const session = sessions.get(id)
   if (!session) return false
   clearTimeout(session.idleTimer)
+  clearTimeout(session.orphanTimer)
   if (session.exited === null) session.child.kill('SIGHUP')
   if (session.reader) session.reader.end()
   sessions.delete(id)
@@ -106,8 +117,11 @@ function openStream(session, res) {
     return
   }
   session.reader = res
+  clearTimeout(session.orphanTimer)
   res.on('close', () => {
-    if (session.reader === res) session.reader = null
+    if (session.reader !== res) return
+    session.reader = null
+    watchOrphan(session)
   })
 }
 

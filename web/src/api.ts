@@ -2065,9 +2065,11 @@ async function terminalRequest(
   path: string,
   method: 'POST' | 'DELETE',
   body?: unknown,
+  keepalive = false,
 ): Promise<Record<string, unknown>> {
   const res = await apiFetch(path, {
     method,
+    keepalive,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
@@ -2100,8 +2102,9 @@ export function resizeSandboxTerminal(
   return terminalRequest(token, `/api/admin/sandboxes/${sandboxId}/terminal/${terminalId}/resize`, 'POST', size)
 }
 
-export function closeSandboxTerminal(token: string, sandboxId: string, terminalId: string) {
-  return terminalRequest(token, `/api/admin/sandboxes/${sandboxId}/terminal/${terminalId}`, 'DELETE')
+/** `keepalive`: o pedido sobrevive ao fechamento/recarga da página. */
+export function closeSandboxTerminal(token: string, sandboxId: string, terminalId: string, keepalive = false) {
+  return terminalRequest(token, `/api/admin/sandboxes/${sandboxId}/terminal/${terminalId}`, 'DELETE', undefined, keepalive)
 }
 
 /** Lê o stream NDJSON do terminal até o shell terminar ou o `signal` abortar. */
