@@ -31,10 +31,17 @@ def render_workspace_section(session_root: str, repos: list[dict]) -> str:
         f"Pasta de trabalho desta conversa: `{session_root}` (todos os repositórios abaixo).",
         "Repositórios (worktrees desta conversa, cada um na sua branch):",
     ]
+    read_only: list[str] = []
     for repo in repos:
         alias = repo.get("alias") or repo.get("slug") or ""
+        if repo.get("read_only"):
+            read_only.append(f"- `{alias}` → `{root}/repos/{alias}` (consulta; não edite)")
+            continue
         path = repo.get("worktree_path") or f"{session_root}/{alias}"
         lines.append(f"- `{alias}` → `{path}`")
+    if read_only:
+        lines.append("Repositórios somente leitura (use Read/Grep/Glob; sem alterações nem PR):")
+        lines += read_only
     lines += [
         "Somente leitura (compartilhado do workspace; não edite):",
         f"- Instruções: `{root}/CLAUDE.md`",

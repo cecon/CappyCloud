@@ -1430,6 +1430,7 @@ export interface DiffFile {
 }
 
 export interface ConversationDiff {
+  /** Vazio quando os repositórios têm bases diferentes. */
   base_branch: string
   stats: { added: number; removed: number }
   files: DiffFile[]
@@ -1619,10 +1620,22 @@ export async function fetchConversationFile(
 
 // ── Pull Request ──────────────────────────────────────────────────────────────
 
+export interface RepoPrResult {
+  alias: string
+  slug: string
+  provider?: 'github' | 'azure_devops'
+  pr_url?: string
+  pr_number?: number
+  head_branch?: string
+  error?: string
+}
+
 export interface CreatePrResult {
   pr_url: string
   pr_number: number
   head_branch: string
+  /** Um item por repositório alterado (workspace: vários PRs). */
+  prs?: RepoPrResult[]
 }
 
 export async function createConversationPr(
@@ -1760,6 +1773,8 @@ export interface WorkspaceRepositoryLink {
   alias?: string | null
   /** Vazio = default_branch do repositório. */
   base_branch?: string
+  /** Somente leitura: o agente consulta, sem worktree nem PR. */
+  read_only?: boolean
 }
 
 export interface AdminWorkspace {
@@ -1781,6 +1796,7 @@ export interface AdminWorkspace {
     base_branch: string
     default_branch: string
     sandbox_status: string
+    read_only: boolean
   }>
 }
 

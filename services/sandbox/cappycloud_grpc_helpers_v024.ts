@@ -239,10 +239,10 @@ function cappycloudWrapNumericParameterGrepTool(tool: any, worktree: string, num
 const CAPPYCLOUD_READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LSP'])
 const CAPPYCLOUD_WORKSPACE_SESSION_RE = /^(/repos/workspaces/[a-z0-9][a-z0-9-]{1,62})/sessions/[^/]+$/
 
-// Sessão de workspace: leitura permitida no conhecimento compartilhado do workspace.
+// Sessão de workspace: leitura permitida no conhecimento compartilhado e nos repos somente leitura.
 function cappycloudWorkspaceReadOnlyRoots(worktree: string): string[] {
   const match = path.resolve(worktree).match(CAPPYCLOUD_WORKSPACE_SESSION_RE)
-  return match ? [`${match[1]}/knowledge`, `${match[1]}/memory`, `${match[1]}/.claude`, `${match[1]}/CLAUDE.md`] : []
+  return match ? [`${match[1]}/knowledge`, `${match[1]}/memory`, `${match[1]}/repos`, `${match[1]}/.claude`, `${match[1]}/CLAUDE.md`] : []
 }
 
 function cappycloudValidateToolScope(toolName: string, input: unknown, worktree: string): string | null {

@@ -9,8 +9,12 @@ const path = require('path').posix
 const WORKSPACE_SLUG = '[a-z0-9][a-z0-9-]{1,62}'
 const SESSION_ID = '[A-Za-z0-9][A-Za-z0-9._-]*'
 
+function escapeRoot(reposRoot) {
+  return reposRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 function patterns(reposRoot) {
-  const root = reposRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const root = escapeRoot(reposRoot)
   return [
     new RegExp(`^${root}/sessions/${SESSION_ID}$`),
     new RegExp(`^${root}/workspaces/(${WORKSPACE_SLUG})/sessions/${SESSION_ID}$`),
@@ -30,6 +34,17 @@ function sessionRootInfo(candidate, reposRoot = '/repos') {
   throw new Error(`session_root must be ${reposRoot}/sessions/<id> or ${reposRoot}/workspaces/<ws>/sessions/<id>`)
 }
 
+/**
+ * Clone de um repositório somente leitura do workspace
+ * (`<repos>/workspaces/<ws>/repos/<alias>`): só leitura, nunca diff/push.
+ */
+function workspaceRepoPath(candidate, reposRoot = '/repos') {
+  const resolved = path.resolve(String(candidate || ''))
+  const re = new RegExp(`^${escapeRoot(reposRoot)}/workspaces/${WORKSPACE_SLUG}/repos/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+  if (!re.test(resolved)) throw new Error('path must be a workspace repository')
+  return resolved
+}
+
 /** Caminho (worktree ou arquivo) dentro de alguma raiz de sessão, nunca a raiz em si. */
 function assertInsideSession(candidate, reposRoot = '/repos') {
   const resolved = path.resolve(String(candidate || ''))
@@ -46,4 +61,4 @@ function assertInsideSession(candidate, reposRoot = '/repos') {
   throw new Error('path must be inside a session root')
 }
 
-module.exports = { assertInsideSession, sessionRootInfo }
+module.exports = { assertInsideSession, sessionRootInfo, workspaceRepoPath }
