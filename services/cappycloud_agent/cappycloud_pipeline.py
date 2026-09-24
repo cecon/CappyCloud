@@ -26,7 +26,6 @@ from ._environment_manager import EnvironmentManager
 from ._pipeline_event_stream import stream_task_events
 from ._pipeline_helpers import (
     db_url,
-    inject_repo_context,
     push_mcp_config,
     resolve_text_model_id,
     sse,
@@ -244,7 +243,6 @@ class Pipeline:
             agent_profiles=agent_profiles,
             execution_profile=execution_profile,
         )
-        prompt = inject_repo_context(prompt, repos, session_root)
 
         # Injeta contexto SigNoz (service.name por repo) se houver configuração.
         repo_ids_for_signoz = [r["repo_id"] for r in repos if r.get("repo_id")]

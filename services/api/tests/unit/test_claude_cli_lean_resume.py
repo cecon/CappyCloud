@@ -27,7 +27,8 @@ def _load_task_context():
         stub = types.ModuleType(name)
         for attr in (
             "inject_evidence_prefetch",
-            "build_prompt_with_worktree_context",
+            "add_workspace_section",
+            "inject_repo_context",
             "validate_and_inject_worktree",
         ):
             setattr(stub, attr, None)
@@ -54,11 +55,15 @@ _resume = load_agent_module(
 
 @pytest.fixture
 def calls(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
-    seen = {"worktree_context": 0, "validate": 0, "evidence": 0}
+    seen = {"workspace": 0, "validate": 0, "evidence": 0, "add": 0}
 
-    async def worktree_context(prompt, *_args):
-        seen["worktree_context"] += 1
-        return prompt + "\n[estrutura dos repositórios]"
+    def workspace(prompt, *_args):
+        seen["workspace"] += 1
+        return prompt + "\n[workspace]"
+
+    def add_lines(prompt, *_args):
+        seen["add"] += 1
+        return "/add /repos/x\n\n" + prompt
 
     async def validate(*, prompt, **_kwargs):
         seen["validate"] += 1
@@ -68,13 +73,14 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
         seen["evidence"] += 1
         return prompt + "\n[evidências]"
 
-    monkeypatch.setattr(_context, "build_prompt_with_worktree_context", worktree_context)
+    monkeypatch.setattr(_context, "add_workspace_section", workspace)
+    monkeypatch.setattr(_context, "inject_repo_context", add_lines)
     monkeypatch.setattr(_context, "validate_and_inject_worktree", validate)
     monkeypatch.setattr(_context, "inject_evidence_prefetch", evidence)
     return seen
 
 
-async def _prepare(resumed: bool, phases: list) -> str | None:
+async def _prepare(resumed: bool, phases: list, openclaude: bool = False) -> str | None:
     async def emit(task_id, stage, label, state, duration_ms=None):
         phases.append((label, state))
 
@@ -89,6 +95,7 @@ async def _prepare(resumed: bool, phases: list) -> str | None:
         repos=[{"slug": "Seller"}],
         session_root="/repos/workspaces/loja/sessions/abc",
         working_directory="/repos/workspaces/loja/sessions/abc",
+        openclaude=openclaude,
     )
 
 
@@ -97,7 +104,7 @@ async def test_sessao_retomada_manda_so_a_pergunta(calls: dict[str, int]) -> Non
     prompt = await _prepare(True, phases)
     assert prompt == "qual a versão do banco?"
     # Worktree continua conferido; estrutura e evidências não são recalculadas.
-    assert calls == {"worktree_context": 0, "validate": 1, "evidence": 0}
+    assert calls == {"workspace": 0, "validate": 1, "evidence": 0, "add": 0}
     assert phases == [("Retomando a sessão", "active"), ("Sessão retomada", "done")]
 
 
@@ -105,9 +112,15 @@ async def test_primeira_mensagem_leva_o_contexto_completo(calls: dict[str, int])
     phases: list = []
     prompt = await _prepare(False, phases)
     assert "[instruções e contexto do pipeline]" in prompt
-    assert prompt.endswith("[estrutura dos repositórios]\n[worktree ok]\n[evidências]")
-    assert calls == {"worktree_context": 1, "validate": 1, "evidence": 1}
+    assert prompt.endswith("[workspace]\n[worktree ok]\n[evidências]")
+    assert calls == {"workspace": 1, "validate": 1, "evidence": 1, "add": 0}
     assert phases[-1] == ("Contexto preparado", "done")
+
+
+async def test_add_so_vai_para_o_openclaude(calls: dict[str, int]) -> None:
+    prompt = await _prepare(False, [], openclaude=True)
+    assert prompt is not None and prompt.startswith("/add /repos/x")
+    assert calls["add"] == 1
 
 
 def _patch_http(monkeypatch: pytest.MonkeyPatch, handler) -> None:

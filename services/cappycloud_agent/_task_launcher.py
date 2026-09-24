@@ -107,6 +107,7 @@ async def launch_runner(
         repos=repos or [],
         session_root=session_root or sandbox.session_root,
         working_directory=working_directory,
+        openclaude=agent_runtime != AGENT_RUNTIME_CLAUDE_CLI,
     )
     if prepared is None:
         return

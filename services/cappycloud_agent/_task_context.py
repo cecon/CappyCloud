@@ -6,7 +6,7 @@ import time
 from collections.abc import Awaitable, Callable
 
 from ._evidence_prefetch import inject_evidence_prefetch
-from ._pipeline_helpers import build_prompt_with_worktree_context
+from ._pipeline_helpers import add_workspace_section, inject_repo_context
 from ._worktree_validation import validate_and_inject_worktree
 
 EmitPhase = Callable[..., Awaitable[None]]
@@ -28,6 +28,7 @@ async def prepare_turn_prompt(
     repos: list,
     session_root: str,
     working_directory: str,
+    openclaude: bool = False,
 ) -> str | None:
     """Prompt do turno, ou ``None`` se o worktree não pôde ser validado.
 
@@ -44,9 +45,7 @@ async def prepare_turn_prompt(
     if lean:
         prompt = user_message or prompt
     else:
-        prompt = await build_prompt_with_worktree_context(
-            prompt, sandbox_session_url, repos, session_root
-        )
+        prompt = add_workspace_section(prompt, repos, session_root)
 
     if sandbox_session_url and repos:
         validated = await validate_and_inject_worktree(
@@ -71,6 +70,8 @@ async def prepare_turn_prompt(
             repos=repos,
             session_root=session_root,
         )
+        if openclaude:
+            prompt = inject_repo_context(prompt, repos, session_root)
     done_label = "Sessão retomada" if lean else "Contexto preparado"
     await emit_phase(task_id, "context", done_label, "done", duration_ms=_elapsed_ms(started))
     return prompt

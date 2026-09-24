@@ -8,11 +8,7 @@ from urllib.parse import urlsplit, urlunsplit
 import asyncpg
 import httpx
 
-from ._agent_context import (
-    fetch_worktree_top_levels,
-    inject_section_before_user_message,
-    render_worktree_top_level_section,
-)
+from ._agent_context import inject_section_before_user_message
 
 from ._agent_session import CLAUDE_CLI_MODEL_IDS
 from ._workspace_paths import render_workspace_section, workspace_root_of
@@ -40,8 +36,9 @@ def sse(payload: dict) -> str:
 def inject_repo_context(user_message: str, repos: list, session_root: str) -> str:
     """Injeta comandos /add para cada worktree antes da mensagem do utilizador.
 
-    Apenas relevante em sessões **multi-repo** (>1 repo): cada repo recebe um
-    ``/add <path>`` para o openclaude conseguir navegar entre os repositórios.
+    Só para o openclaude, em sessões **multi-repo** (>1 repo): cada repo recebe
+    um ``/add <path>`` para ele navegar entre os repositórios. O Claude CLI não
+    tem esse comando e trataria as linhas como texto da pergunta.
     """
     if not repos or not session_root:
         return user_message
@@ -64,28 +61,16 @@ def inject_repo_context(user_message: str, repos: list, session_root: str) -> st
     return "\n".join(add_lines) + "\n\n" + user_message
 
 
-async def build_prompt_with_worktree_context(
-    prompt: str,
-    sandbox_session_url: str,
-    repos: list[dict],
-    session_root: str | None,
-) -> str:
-    """Injeta snapshot do worktree no prompt. Degrada graciosamente em caso de erro."""
+def add_workspace_section(prompt: str, repos: list[dict], session_root: str | None) -> str:
+    """Seção ``## Workspace`` antes da mensagem do usuário (só em sessão de workspace).
+
+    A estrutura dos worktrees entra depois, em ``validate_and_inject_worktree``,
+    que já precisa listá-los para conferir que existem.
+    """
     if not repos:
         return prompt
-    workspace_section = render_workspace_section(session_root or "", repos)
-    if workspace_section:
-        prompt = inject_section_before_user_message(prompt, workspace_section)
-    try:
-        top_level = await fetch_worktree_top_levels(
-            sandbox_session_url, repos, session_root or ""
-        )
-        section = render_worktree_top_level_section(top_level)
-        if section:
-            return inject_section_before_user_message(prompt, section)
-    except Exception as exc:
-        log.warning("[Dispatcher] worktree top-level fetch falhou: %s", exc)
-    return prompt
+    section = render_workspace_section(session_root or "", repos)
+    return inject_section_before_user_message(prompt, section) if section else prompt
 
 
 async def push_mcp_config(
