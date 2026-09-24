@@ -8,20 +8,15 @@ const path = require('path').posix
 const fs = require('fs')
 const { execFile } = require('child_process')
 const { promisify } = require('util')
+const { sessionRootInfo } = require('./session_paths')
 
 const REPOS_ROOT = '/repos'
 const SAFE_SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const defaultRun = promisify(execFile)
 
-/** Só aceita pastas *dentro* de <reposRoot>/sessions/ (nunca a própria raiz). */
+/** Só aceita raízes de sessão válidas (legadas ou de workspace); ver session_paths.js. */
 function assertSafeSessionRoot(candidate, reposRoot = REPOS_ROOT) {
-  const sessionsRoot = path.join(reposRoot, 'sessions')
-  const resolved = path.resolve(String(candidate || ''))
-  const relative = path.relative(sessionsRoot, resolved)
-  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
-    throw new Error(`session_root must be inside ${sessionsRoot}/`)
-  }
-  return resolved
+  return sessionRootInfo(candidate, reposRoot).root
 }
 
 function parseRepos(repos) {

@@ -397,7 +397,28 @@ export type Conversation = {
   sandbox_id: string | null
   repos: RepoSelection[]
   session_root: string | null
+  /** Conversa de workspace: abre todos os repositórios dele. */
+  workspace_id?: string | null
   permission_mode: PermissionMode
+}
+
+/** Workspace que o utilizador pode usar ao abrir uma conversa. */
+export interface AccessibleWorkspace {
+  id: string
+  slug: string
+  name: string
+  sandbox_id: string
+  /** Sincronizado no sandbox e com repositórios. */
+  ready: boolean
+  repositories: Array<{ alias: string; slug: string }>
+}
+
+export async function fetchAccessibleWorkspaces(token: string): Promise<AccessibleWorkspace[]> {
+  const res = await apiFetch('/api/workspaces/accessible', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return []
+  return res.json()
 }
 
 export type ChatMessage = {
@@ -846,10 +867,12 @@ export async function createConversation(
   repos: RepoSelection[] = [],
   modelId?: string | null,
   sandboxId?: string | null,
+  workspaceId?: string | null,
 ): Promise<Conversation> {
   const body: Record<string, unknown> = { repos }
   if (modelId) body.model_id = modelId
   if (sandboxId) body.sandbox_id = sandboxId
+  if (workspaceId) body.workspace_id = workspaceId
   const res = await apiFetch('/api/conversations', {
     method: 'POST',
     headers: {
@@ -858,7 +881,10 @@ export async function createConversation(
     },
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error('Não foi possível criar conversa')
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Não foi possível criar conversa')
+  }
   return res.json()
 }
 
@@ -1404,6 +1430,7 @@ export interface DiffFile {
 }
 
 export interface ConversationDiff {
+  /** Vazio quando os repositórios têm bases diferentes. */
   base_branch: string
   stats: { added: number; removed: number }
   files: DiffFile[]
@@ -1593,10 +1620,22 @@ export async function fetchConversationFile(
 
 // ── Pull Request ──────────────────────────────────────────────────────────────
 
+export interface RepoPrResult {
+  alias: string
+  slug: string
+  provider?: 'github' | 'azure_devops'
+  pr_url?: string
+  pr_number?: number
+  head_branch?: string
+  error?: string
+}
+
 export interface CreatePrResult {
   pr_url: string
   pr_number: number
   head_branch: string
+  /** Um item por repositório alterado (workspace: vários PRs). */
+  prs?: RepoPrResult[]
 }
 
 export async function createConversationPr(
@@ -1734,6 +1773,8 @@ export interface WorkspaceRepositoryLink {
   alias?: string | null
   /** Vazio = default_branch do repositório. */
   base_branch?: string
+  /** Somente leitura: o agente consulta, sem worktree nem PR. */
+  read_only?: boolean
 }
 
 export interface AdminWorkspace {
@@ -1755,6 +1796,7 @@ export interface AdminWorkspace {
     base_branch: string
     default_branch: string
     sandbox_status: string
+    read_only: boolean
   }>
 }
 

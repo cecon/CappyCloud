@@ -67,6 +67,7 @@ def _serialize(ws: Workspace) -> WorkspaceOut:
                 base_branch=link.base_branch,
                 default_branch=link.repository.default_branch,
                 sandbox_status=link.repository.sandbox_status,
+                read_only=link.read_only,
             )
             for link in ws.repositories
         ],
@@ -122,6 +123,7 @@ async def _set_repositories(
                 repository_id=item.repository_id,
                 alias=alias,
                 base_branch=item.base_branch.strip(),
+                read_only=item.read_only,
             )
         )
 

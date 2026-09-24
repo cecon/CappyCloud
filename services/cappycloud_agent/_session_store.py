@@ -20,6 +20,8 @@ from typing import Optional
 import asyncpg
 import redis.asyncio as aioredis
 
+from ._workspace_paths import workspace_root_of
+
 log = logging.getLogger(__name__)
 
 
@@ -64,6 +66,10 @@ class SandboxRecord:
     @property
     def working_directory(self) -> str:
         """Diretório de trabalho que o openclaude deve usar."""
+        # Sessão de workspace: a pasta da sessão contém todos os repos e herda o
+        # CLAUDE.md do workspace; não se isola num único worktree.
+        if workspace_root_of(self.session_root):
+            return self.session_root
         if len(self.repos) == 1:
             repo = self.repos[0]
             worktree_path = repo.get("worktree_path")

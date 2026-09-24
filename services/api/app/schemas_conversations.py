@@ -29,6 +29,8 @@ class ConversationCreate(BaseModel):
     sandbox_id: uuid.UUID | None = None
     model_id: str | None = Field(default=None, max_length=256)
     repos: list[RepoSelection] = Field(default_factory=list)
+    # Workspace: ignora `repos`/`sandbox_id` e abre todos os repositórios dele.
+    workspace_id: uuid.UUID | None = None
 
 
 class ConversationOut(BaseModel):
@@ -44,6 +46,7 @@ class ConversationOut(BaseModel):
     ai_model_id: uuid.UUID | None = None
     repos: list[dict] = Field(default_factory=list)
     session_root: str | None = None
+    workspace_id: uuid.UUID | None = None
     permission_mode: str = DEFAULT_PERMISSION_MODE
     worktree_exists: bool = False
     lines_added: int = 0

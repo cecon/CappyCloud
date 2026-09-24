@@ -53,6 +53,7 @@ class SQLAlchemyConversationRepository(ConversationRepository):
             ai_model_id=conversation.ai_model_id,
             repos=conversation.repos,
             session_root=conversation.session_root,
+            workspace_id=conversation.workspace_id,
             permission_mode=validate_permission_mode(conversation.permission_mode),
         )
         self._session.add(orm)
@@ -85,6 +86,7 @@ class SQLAlchemyConversationRepository(ConversationRepository):
             ai_model_id=row.ai_model_id,
             repos=row.repos or [],
             session_root=row.session_root,
+            workspace_id=getattr(row, "workspace_id", None),
             permission_mode=validate_permission_mode(getattr(row, "permission_mode", None)),
             worktree_exists=row.worktree_exists,
             lines_added=row.lines_added,

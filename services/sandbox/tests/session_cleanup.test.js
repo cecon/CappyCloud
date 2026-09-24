@@ -35,10 +35,10 @@ function scenario() {
   return { root, main, sessionRoot, worktree, repos }
 }
 
-test('recusa caminhos fora de <repos>/sessions/', () => {
-  assert.throws(() => assertSafeSessionRoot('/etc'), /inside/)
-  assert.throws(() => assertSafeSessionRoot('/repos/sessions'), /inside/)
-  assert.throws(() => assertSafeSessionRoot('/repos/sessions/../seller'), /inside/)
+test('recusa raízes fora das áreas de sessão', () => {
+  assert.throws(() => assertSafeSessionRoot('/etc'), /session_root must be/)
+  assert.throws(() => assertSafeSessionRoot('/repos/sessions'), /session_root must be/)
+  assert.throws(() => assertSafeSessionRoot('/repos/sessions/../seller'), /session_root must be/)
   assert.equal(assertSafeSessionRoot('/repos/sessions/abc'), '/repos/sessions/abc')
 })
 

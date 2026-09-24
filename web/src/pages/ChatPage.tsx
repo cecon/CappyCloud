@@ -27,6 +27,8 @@ import {
   fetchSandboxes,
   fetchUserPreferences,
   fetchWorkspaces,
+  fetchAccessibleWorkspaces,
+  type AccessibleWorkspace,
   DEFAULT_PERMISSION_MODE,
   DEFAULT_EXECUTION_PROFILE,
   getToken,
@@ -140,6 +142,8 @@ const CONVERSATION_PAGE_SIZE = 6
 const HEAVY_TURN_TOOL_THRESHOLD = 40
 const HEAVY_TURN_PROMPT_TOKEN_THRESHOLD = 200_000
 const HEAVY_TURN_COST_THRESHOLD_USD = 1
+type PrLink = { label: string; url: string }
+
 type ChatMainMode = 'chat' | 'sandboxes'
 
 type StreamToolStats = {
@@ -670,6 +674,10 @@ export function ChatPage() {
   const [sandboxes, setSandboxes] = useState<Sandbox[]>([])
   const [selectedSandboxId, setSelectedSandboxId] = useState<string>('')
   const [selectedSlug, setSelectedSlug] = useState<string>('')
+  // Workspaces (pasta com vários repos) — `workspaces` acima é o catálogo de repositórios.
+  const [projectWorkspaces, setProjectWorkspaces] = useState<AccessibleWorkspace[]>([])
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('')
+  const [newChatError, setNewChatError] = useState<string | null>(null)
   const [selectedBranch, setSelectedBranch] = useState<string>('')
   const [models, setModels] = useState<AiModel[]>([])
   const [selectedModelId, setSelectedModelId] = useState<string>('')
@@ -930,7 +938,7 @@ export function ChatPage() {
 
   const [diffStats, setDiffStats] = useState<{ added: number; removed: number } | null>(null)
   const [prLoading, setPrLoading] = useState(false)
-  const [prUrl, setPrUrl] = useState<string | null>(null)
+  const [prLinks, setPrLinks] = useState<PrLink[]>([])
   const [prError, setPrError] = useState<string | null>(null)
   const [headBranch, setHeadBranch] = useState<string | null>(null)
 
@@ -980,6 +988,14 @@ export function ChatPage() {
     setPermissionModeState(activeConversationPermissionMode)
     setPermissionWarningRuntimeConfirmed(false)
   }, [activeId, activeConversationPermissionMode])
+
+  useEffect(() => {
+    let cancelled = false
+    fetchAccessibleWorkspaces(token)
+      .then((list) => { if (!cancelled) setProjectWorkspaces(list) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [token])
 
   useEffect(() => {
     let cancelled = false
@@ -1136,7 +1152,7 @@ export function ChatPage() {
     let cancelled = false
     const preserveOptimistic = optimisticConversationIdRef.current === activeId
     setDiffStats(null)
-    setPrUrl(null)
+    setPrLinks([])
     setHeadBranch(null)
     if (!preserveOptimistic) {
       setMessages([])
@@ -1229,8 +1245,18 @@ export function ChatPage() {
     setPrError(null)
     try {
       const result = await createConversationPr(token, activeId)
-      setPrUrl(result.pr_url)
+      const perRepo = result.prs ?? []
+      const opened = perRepo.filter((pr) => pr.pr_url)
+      setPrLinks(
+        opened.length > 0
+          ? opened.map((pr) => ({ label: pr.alias || pr.slug, url: pr.pr_url as string }))
+          : [{ label: '', url: result.pr_url }],
+      )
       setHeadBranch(result.head_branch)
+      const failed = perRepo.filter((pr) => pr.error)
+      if (failed.length > 0) {
+        setPrError(failed.map((pr) => `${pr.alias || pr.slug}: ${pr.error}`).join(' · '))
+      }
     } catch (e) {
       setPrError(e instanceof Error ? e.message : 'Não foi possível criar o PR. Tente novamente.')
     } finally {
@@ -1299,15 +1325,27 @@ export function ChatPage() {
     if (modelForRequest && modelForRequest !== selectedModelId) {
       setSelectedModelId(modelForRequest)
     }
-    const repos = selectedSlug
+    const repos = !selectedWorkspaceId && selectedSlug
       ? [{ slug: selectedSlug, base_branch: selectedBranch || null }]
       : []
-    const c = await createConversation(
-      token,
-      repos,
-      modelForRequest || null,
-      selectedSandboxId || null,
-    )
+    let c
+    try {
+      setNewChatError(null)
+      c = await createConversation(
+        token,
+        repos,
+        modelForRequest || null,
+        selectedWorkspaceId ? null : selectedSandboxId || null,
+        selectedWorkspaceId || null,
+      )
+    } catch (err) {
+      if (err instanceof AuthError) {
+        redirectToLogin()
+        return
+      }
+      setNewChatError(errorToUserMessage(err))
+      return
+    }
     // Update otimista do título — o backend renomeia "Nova conversa" para o
     // início da primeira mensagem (mesma lógica de _TITLE_MAX_LEN=80).
     const previewTitle =
@@ -1790,6 +1828,9 @@ export function ChatPage() {
 
   const activeConv = conversations.find((c) => c.id === activeId)
   const activeEnvSlug = activeConv?.repos?.[0]?.slug ?? null
+  const activeProjectWorkspace = activeConv?.workspace_id
+    ? projectWorkspaces.find((workspace) => workspace.id === activeConv.workspace_id) ?? null
+    : null
   const activeSandboxName =
     sandboxes.find((sandbox) => sandbox.id === activeConv?.sandbox_id)?.name ??
     selectedSandbox?.name ??
@@ -2003,6 +2044,10 @@ export function ChatPage() {
             selectedSandboxId={selectedSandboxId}
             setSelectedSandboxId={setSelectedSandboxId}
             selectableWorkspaces={selectableWorkspaces}
+            projectWorkspaces={projectWorkspaces}
+            selectedWorkspaceId={selectedWorkspaceId}
+            setSelectedWorkspaceId={setSelectedWorkspaceId}
+            newChatError={newChatError}
             selectedSlug={selectedSlug}
             setSelectedSlug={setSelectedSlug}
             selectedBranch={selectedBranch}
@@ -2045,13 +2090,17 @@ export function ChatPage() {
               onStop={handleStop}
               onActionReply={handleActionReply}
               activeEnvSlug={activeEnvSlug}
-              activeEnvName={workspaces.find(w => w.slug === activeEnvSlug)?.name ?? activeEnvSlug ?? workspaces[0]?.name ?? null}
+              activeEnvName={
+                activeProjectWorkspace
+                  ? `${activeProjectWorkspace.name} · ${activeProjectWorkspace.repositories.length} repositórios`
+                  : workspaces.find(w => w.slug === activeEnvSlug)?.name ?? activeEnvSlug ?? workspaces[0]?.name ?? null
+              }
               activeBaseBranch={activeConv?.repos?.[0]?.base_branch ?? null}
               activeSandboxName={activeSandboxName}
               sandboxAccessCount={sandboxAccessCount}
               diffStats={diffStats}
               prLoading={prLoading}
-              prUrl={prUrl}
+              prLinks={prLinks}
               prError={prError}
               headBranch={headBranch}
               onCreatePr={handleCreatePr}
@@ -2229,6 +2278,10 @@ interface EmptyStateProps {
   onExecute: (text: string) => void
   streaming: boolean
   selectableWorkspaces: Workspace[]
+  projectWorkspaces: AccessibleWorkspace[]
+  selectedWorkspaceId: string
+  setSelectedWorkspaceId: (id: string) => void
+  newChatError: string | null
   sandboxes: Sandbox[]
   selectedSandboxId: string
   setSelectedSandboxId: (id: string) => void
@@ -2251,9 +2304,13 @@ interface EmptyStateProps {
   setDragOver: (v: boolean) => void
 }
 
+// Valor sentinela do seletor: conversa por repositório (sem workspace).
+const REPO_MODE = '__repo__'
+
 function EmptyState({
   input, setInput, inputRef, onExecute, streaming,
   selectableWorkspaces, sandboxes, selectedSandboxId, setSelectedSandboxId,
+  projectWorkspaces, selectedWorkspaceId, setSelectedWorkspaceId, newChatError,
   selectedSlug, setSelectedSlug,
   selectedBranch, setSelectedBranch,
   token,
@@ -2273,11 +2330,12 @@ function EmptyState({
   // auto-clone trata o caso de repo não clonado
   const hasSendableAttachment = trayItems.some(isSendableTrayItem)
   const hasUploadInProgress = trayItems.some((item) => item.kind === 'uploading')
-  const sandboxRequired = !selectedSandboxId
+  const chosenWorkspace = projectWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null
+  const sandboxRequired = !chosenWorkspace && !selectedSandboxId
   const canExecute =
-    !sandboxRequired &&
-    !!selectedSlug &&
-    !!selectedBranch &&
+    (chosenWorkspace
+      ? chosenWorkspace.ready
+      : !sandboxRequired && !!selectedSlug && !!selectedBranch) &&
     (!!input.trim() || hasSendableAttachment) &&
     !hasUploadInProgress &&
     !streaming
@@ -2397,6 +2455,11 @@ function EmptyState({
               conversationId={null}
               onRemove={onRemoveTrayItem}
             />
+            {newChatError && (
+              <div className={styles.chatStateCardError} role="alert" style={{ padding: '0.5rem 0.75rem', fontSize: '0.8rem' }}>
+                {newChatError}
+              </div>
+            )}
             <div className={styles.commandInputRow}>
               <span className={`${styles.icon} ${styles.boltIcon}`}>bolt</span>
               <textarea
@@ -2429,6 +2492,51 @@ function EmptyState({
                 >
                   <span className={styles.icon}>attachment</span>
                 </button>
+                {projectWorkspaces.length > 0 && (
+                  <Select
+                    value={selectedWorkspaceId || REPO_MODE}
+                    onValueChange={(id) => setSelectedWorkspaceId(id === REPO_MODE ? '' : id)}
+                  >
+                    <SelectTrigger
+                      className={`${styles.contextSelectTrigger} ${styles.contextSelectTriggerSandbox}`}
+                      title="Selecionar workspace"
+                      aria-label="Selecionar workspace"
+                    >
+                      <span className={styles.icon} aria-hidden="true">
+                        folder_open
+                      </span>
+                      <SelectValue placeholder="Workspace..." />
+                    </SelectTrigger>
+                    <SelectContent className={styles.contextSelectContent} position="item-aligned">
+                      <SelectGroup>
+                        <SelectLabel className={styles.contextSelectLabel}>Workspace</SelectLabel>
+                        <SelectItem value={REPO_MODE} className={styles.contextSelectItem}>
+                          Por repositório
+                        </SelectItem>
+                        {projectWorkspaces.map((workspace) => (
+                          <SelectItem
+                            key={workspace.id}
+                            value={workspace.id}
+                            className={styles.contextSelectItem}
+                            disabled={!workspace.ready}
+                          >
+                            {workspace.name}
+                            {workspace.ready ? '' : ' (sincronizando)'}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                )}
+                {chosenWorkspace ? (
+                  <div className={styles.contextPill} title={chosenWorkspace.repositories.map((repo) => repo.alias).join(', ')}>
+                    <span className={styles.icon} style={{ fontSize: '0.875rem' }}>source</span>
+                    <span className={styles.contextPillLabel}>
+                      {chosenWorkspace.repositories.length} repositórios
+                    </span>
+                  </div>
+                ) : (
+                <>
                 {sandboxes.length > 0 ? (
                   <Select
                     value={selectedSandboxId}
@@ -2557,6 +2665,8 @@ function EmptyState({
                       </SelectGroup>
                     </SelectContent>
                   </Select>
+                )}
+                </>
                 )}
                 <PermissionModeControl
                   value={permissionMode}
@@ -2743,7 +2853,7 @@ interface ActiveChatProps {
   sandboxAccessCount: number
   diffStats: { added: number; removed: number } | null
   prLoading: boolean
-  prUrl: string | null
+  prLinks: PrLink[]
   prError: string | null
   headBranch: string | null
   onCreatePr: () => void
@@ -2785,7 +2895,7 @@ function ActiveChat({
   contextProgress, subagentGroups, runtimeStates, streamToolStats,
   showThinking, streaming, input, setInput, inputRef,
   onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch, activeSandboxName, sandboxAccessCount: _sandboxAccessCount,
-  diffStats, prLoading, prUrl, prError, headBranch, onCreatePr,
+  diffStats, prLoading, prLinks, prError, headBranch, onCreatePr,
   activeTitle: _activeTitle,
   token, conversationId,
   models, selectedModelId, setSelectedModelId,
@@ -3074,16 +3184,27 @@ function ActiveChat({
               <span className={styles.diffAdded}>+{diffStats.added}</span>
               <span className={styles.diffRemoved}>-{diffStats.removed}</span>
               {activeEnvSlug && (
-                prUrl ? (
-                  <a
-                    href={prUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={styles.prLink}
-                  >
-                    <span className={`${styles.icon}`} style={{ fontSize: '0.875rem' }}>open_in_new</span>
-                    Ver PR
-                  </a>
+                prLinks.length > 0 ? (
+                  <>
+                    {prLinks.map((pr) => (
+                      <a
+                        key={pr.url}
+                        href={pr.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={styles.prLink}
+                        title={pr.label ? `PR de ${pr.label}` : undefined}
+                      >
+                        <span className={`${styles.icon}`} style={{ fontSize: '0.875rem' }}>open_in_new</span>
+                        {prLinks.length > 1 && pr.label ? `PR ${pr.label}` : 'Ver PR'}
+                      </a>
+                    ))}
+                    {prError && (
+                      <span role="alert" style={{ fontSize: '0.72rem', color: 'var(--destructive)' }} title={prError}>
+                        falhou em parte
+                      </span>
+                    )}
+                  </>
                 ) : (
                   <>
                     <button

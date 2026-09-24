@@ -14,6 +14,8 @@ from ._agent_context import (
     render_worktree_top_level_section,
 )
 
+from ._workspace_paths import render_workspace_section, workspace_root_of
+
 log = logging.getLogger(__name__)
 
 
@@ -42,7 +44,8 @@ def inject_repo_context(user_message: str, repos: list, session_root: str) -> st
     """
     if not repos or not session_root:
         return user_message
-    if len(repos) <= 1:
+    # Workspace: a pasta da sessão já contém todos os repos; /add é desnecessário.
+    if len(repos) <= 1 or workspace_root_of(session_root):
         return user_message
 
     add_lines: list[str] = []
@@ -69,6 +72,9 @@ async def build_prompt_with_worktree_context(
     """Injeta snapshot do worktree no prompt. Degrada graciosamente em caso de erro."""
     if not repos:
         return prompt
+    workspace_section = render_workspace_section(session_root or "", repos)
+    if workspace_section:
+        prompt = inject_section_before_user_message(prompt, workspace_section)
     try:
         top_level = await fetch_worktree_top_levels(
             sandbox_session_url, repos, session_root or ""

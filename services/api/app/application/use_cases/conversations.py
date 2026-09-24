@@ -253,7 +253,9 @@ class StreamMessage:
         execution_profile: str | None = None,
     ) -> dict:
         enriched = await enrich_repos_for_pipeline(self._repositories, conv.repos)
-        enriched = await self._attach_user_workspaces(enriched, user_id, user_role)
+        # Conversa de workspace parte da branch base do workspace, não do baseline por usuário.
+        if not conv.workspace_id:
+            enriched = await self._attach_user_workspaces(enriched, user_id, user_role)
         return build_pipeline_body(
             conv, enriched, user_id, cursor, override_model, attachments_payload, execution_profile
         )
