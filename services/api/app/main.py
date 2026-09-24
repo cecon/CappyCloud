@@ -21,6 +21,7 @@ from app.adapters.primary.http import admin_sandbox_mcps as admin_sandbox_mcps_r
 from app.adapters.primary.http import admin_sandboxes as admin_sandboxes_router
 from app.adapters.primary.http import admin_user_access as admin_user_access_router
 from app.adapters.primary.http import admin_users as admin_users_router
+from app.adapters.primary.http import admin_workspaces as admin_workspaces_router
 from app.adapters.primary.http import ai_models as ai_models_router
 from app.adapters.primary.http import attachments as attachments_router
 from app.adapters.primary.http import auth as auth_router
@@ -195,6 +196,8 @@ app.include_router(admin_users_router.router, prefix="/api")
 app.include_router(admin_mcp_telemetry_router.router, prefix="/api")
 app.include_router(admin_sandboxes_router.router, prefix="/api")
 app.include_router(admin_user_access_router.router, prefix="/api")
+app.include_router(admin_workspaces_router.router, prefix="/api")
+app.include_router(admin_workspaces_router.access_router, prefix="/api")
 app.include_router(admin_ai_catalog_router.router, prefix="/api")
 app.include_router(attachments_router.router)
 app.include_router(conv_router.router, prefix="/api")

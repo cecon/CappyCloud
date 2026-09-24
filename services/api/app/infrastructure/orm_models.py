@@ -328,3 +328,8 @@ from app.infrastructure.orm_models_user_preferences import (  # noqa: F401, E402
 from app.infrastructure.orm_models_user_workspaces import (  # noqa: F401, E402
     UserRepositoryWorkspace as UserRepositoryWorkspaceORM,
 )
+from app.infrastructure.orm_models_workspaces import (  # noqa: F401, E402
+    UserWorkspaceAccess,
+    Workspace,
+    WorkspaceRepository,
+)

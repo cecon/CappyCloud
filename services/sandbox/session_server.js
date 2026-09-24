@@ -18,6 +18,7 @@
 //   POST   /mcp/configure          → escreve mcpServers em ~/.claude/settings.json
 //   POST   /globals/configure      → escreve skills/agents em ~/.claude/
 //   POST   /runtime/restart-openclaude → reinicia o processo principal do container
+//   POST   /workspaces/sync        → workspace_handler.js (árvore /repos/workspaces/<slug>)
 //   GET    /health                 → liveness probe
 // ──────────────────────────────────────────────────────────────
 
@@ -36,6 +37,7 @@ const runtimeHandler = require('./runtime_handler')
 const { assertSafeSessionRoot, cleanupSession } = require('./session_cleanup')
 const taskHandler = require('./task_handler')
 const worktreeHandlers = require('./worktree_handlers')
+const workspaceHandler = require('./workspace_handler')
 
 const execFileAsync = promisify(execFile)
 const PORT = parseInt(process.env.SESSION_SERVER_PORT || '8080', 10)
@@ -486,6 +488,8 @@ const server = http.createServer(async (req, res) => {
     if (await globalsHandler.tryHandle(req, res, { json, readBody })) return
 
     if (await runtimeHandler.tryHandle(req, res, { json, clearActiveSessions })) return
+
+    if (await workspaceHandler.tryHandle(req, res, { json, readBody })) return
 
     return json(res, 404, { error: 'Not found' })
   } catch (err) {

@@ -1727,6 +1727,98 @@ export interface RepositoryCreate {
   signoz_service_name?: string | null
 }
 
+// ── Admin · Workspaces (super admin) ─────────────────────────────────────────
+
+export interface WorkspaceRepositoryLink {
+  repository_id: string
+  alias?: string | null
+  /** Vazio = default_branch do repositório. */
+  base_branch?: string
+}
+
+export interface AdminWorkspace {
+  id: string
+  slug: string
+  name: string
+  sandbox_id: string
+  claude_md: string
+  active: boolean
+  sync_status: 'pending' | 'synced' | 'error' | string
+  sync_error: string | null
+  last_sync_at: string | null
+  created_at: string
+  repositories: Array<{
+    repository_id: string
+    slug: string
+    name: string
+    alias: string
+    base_branch: string
+    default_branch: string
+    sandbox_status: string
+  }>
+}
+
+export interface AdminWorkspaceCreate {
+  slug: string
+  name: string
+  sandbox_id: string
+  claude_md?: string
+  repositories?: WorkspaceRepositoryLink[]
+}
+
+export interface AdminWorkspaceUpdate {
+  name?: string
+  claude_md?: string
+  active?: boolean
+  repositories?: WorkspaceRepositoryLink[]
+}
+
+async function workspaceRequest<T>(
+  token: string,
+  path: string,
+  init: RequestInit = {},
+  fallback = 'Falha na operação de workspace',
+): Promise<T> {
+  const res = await apiFetch(`/api/admin/workspaces${path}`, {
+    ...init,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || fallback)
+  }
+  return (res.status === 204 ? undefined : await res.json()) as T
+}
+
+export function fetchAdminWorkspaces(token: string): Promise<AdminWorkspace[]> {
+  return workspaceRequest(token, '', {}, 'Falha ao listar workspaces')
+}
+
+export function createAdminWorkspace(token: string, data: AdminWorkspaceCreate): Promise<AdminWorkspace> {
+  return workspaceRequest(token, '', { method: 'POST', body: JSON.stringify(data) }, 'Falha ao criar workspace')
+}
+
+export function updateAdminWorkspace(
+  token: string,
+  workspaceId: string,
+  data: AdminWorkspaceUpdate,
+): Promise<AdminWorkspace> {
+  return workspaceRequest(
+    token,
+    `/${workspaceId}`,
+    { method: 'PATCH', body: JSON.stringify(data) },
+    'Falha ao atualizar workspace',
+  )
+}
+
+export function syncAdminWorkspace(token: string, workspaceId: string): Promise<AdminWorkspace> {
+  return workspaceRequest(token, `/${workspaceId}/sync`, { method: 'POST' }, 'Falha ao sincronizar workspace')
+}
+
+export function deleteAdminWorkspace(token: string, workspaceId: string): Promise<void> {
+  return workspaceRequest(token, `/${workspaceId}`, { method: 'DELETE' }, 'Falha ao remover workspace')
+}
+
 export async function fetchRepositories(token: string): Promise<Repository[]> {
   const res = await apiFetch('/api/repositories', {
     headers: { Authorization: `Bearer ${token}` },
@@ -2740,7 +2832,7 @@ export async function deleteSandboxAgent(
 
 // ── User Access (ADR-005 §2) ────────────────────────────────────────────────
 
-export type AccessResource = 'sandboxes' | 'repositories' | 'ai-models'
+export type AccessResource = 'sandboxes' | 'repositories' | 'ai-models' | 'workspaces'
 
 async function fetchUserAccess(
   token: string,
@@ -2806,6 +2898,14 @@ export const revokeUserRepositoryAccess = (token: string, userId: string, repoId
   revokeUserAccess(token, userId, 'repositories', repoId)
 export const revokeUserAiModelAccess = (token: string, userId: string, modelId: string) =>
   revokeUserAccess(token, userId, 'ai-models', modelId)
+
+/** Acesso a workspaces: rotas só para super admin (admin comum recebe 403). */
+export const fetchUserWorkspaceAccess = (token: string, userId: string) =>
+  fetchUserAccess(token, userId, 'workspaces')
+export const grantUserWorkspaceAccess = (token: string, userId: string, workspaceId: string) =>
+  grantUserAccess(token, userId, 'workspaces', workspaceId)
+export const revokeUserWorkspaceAccess = (token: string, userId: string, workspaceId: string) =>
+  revokeUserAccess(token, userId, 'workspaces', workspaceId)
 
 export interface BulkTierResult {
   granted: number
