@@ -408,9 +408,11 @@ export interface AccessibleWorkspace {
   slug: string
   name: string
   sandbox_id: string
+  /** Sandbox onde as conversas do workspace rodam. */
+  sandbox_name?: string
   /** Sincronizado no sandbox e com repositórios. */
   ready: boolean
-  repositories: Array<{ alias: string; slug: string }>
+  repositories: Array<{ alias: string; slug: string; read_only?: boolean }>
 }
 
 export async function fetchAccessibleWorkspaces(token: string): Promise<AccessibleWorkspace[]> {

@@ -2490,7 +2490,11 @@ function EmptyState({
                       className={`${styles.contextSelectTrigger} ${styles.contextSelectTriggerSandbox} ${
                         chosenWorkspace ? '' : styles.contextPillRequired
                       }`}
-                      title="Selecionar workspace"
+                      title={
+                        chosenWorkspace?.sandbox_name
+                          ? `Workspace (roda na sandbox ${chosenWorkspace.sandbox_name})`
+                          : 'Selecionar workspace'
+                      }
                       aria-label="Selecionar workspace"
                     >
                       <span className={styles.icon} aria-hidden="true">
@@ -2509,6 +2513,7 @@ function EmptyState({
                             disabled={!workspace.ready}
                           >
                             {workspace.name}
+                            {workspace.sandbox_name ? ` · ${workspace.sandbox_name}` : ''}
                             {workspace.ready ? '' : ' (sincronizando)'}
                           </SelectItem>
                         ))}
@@ -2527,7 +2532,12 @@ function EmptyState({
                   </div>
                 )}
                 {chosenWorkspace && (
-                  <div className={styles.contextPill} title={chosenWorkspace.repositories.map((repo) => repo.alias).join(', ')}>
+                  <div
+                    className={styles.contextPill}
+                    title={chosenWorkspace.repositories
+                      .map((repo) => (repo.read_only ? `${repo.alias} (somente leitura)` : repo.alias))
+                      .join(', ')}
+                  >
                     <span className={styles.icon} style={{ fontSize: '0.875rem' }}>source</span>
                     <span className={styles.contextPillLabel}>
                       {chosenWorkspace.repositories.length}{' '}
