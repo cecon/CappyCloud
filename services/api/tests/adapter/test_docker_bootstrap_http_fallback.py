@@ -83,7 +83,17 @@ async def test_write_skills_uses_http_when_docker_is_unavailable(
 
     assert captured["url"] == "http://cappycloud-sandbox:8080/globals/configure"
     assert captured["payload"]["skills"][0]["name"] == "naming"
-    assert "# naming" in captured["payload"]["skills"][0]["markdown"]
+    markdown = captured["payload"]["skills"][0]["markdown"]
+    assert markdown.startswith('---\nname: naming\ndescription: "Convenções"\n---\n')
+    assert "# naming" in markdown
+
+
+def test_skill_que_ja_tem_frontmatter_vai_como_esta() -> None:
+    content = "---\nname: global\ndescription: Padrões\n---\n\n# Global"
+    skill = SandboxSkill(
+        id=uuid.uuid4(), sandbox_id=uuid.uuid4(), name="global", description="x", content=content
+    )
+    assert DockerSandboxBootstrap._render_skill_md(skill) == content + "\n"
 
 
 async def test_write_agents_uses_http_when_docker_is_unavailable(

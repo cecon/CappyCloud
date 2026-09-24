@@ -297,15 +297,22 @@ class DockerSandboxBootstrap(SandboxBootstrapGateway):
 
     @staticmethod
     def _render_skill_md(skill: SandboxSkill) -> str:
-        """Skill = markdown puro; descrição como subtítulo opcional."""
-        parts = [f"# {skill.name}"]
-        if skill.description:
-            parts.append("")
-            parts.append(skill.description)
-        if skill.content:
-            parts.append("")
-            parts.append(skill.content.rstrip())
-        return "\n".join(parts) + "\n"
+        """SKILL.md com o cabeçalho YAML que o Claude Code exige para achar a skill.
+
+        Sem ``name``/``description`` no frontmatter o arquivo fica no disco mas
+        não aparece como skill. Conteúdo que já traz frontmatter vai como está.
+        """
+        content = (skill.content or "").strip()
+        if content.startswith("---\n"):
+            return content + "\n"
+        description = " ".join((skill.description or skill.name).split())
+        quoted = json.dumps(description, ensure_ascii=False)
+        header = f"---\nname: {skill.name}\ndescription: {quoted}\n---\n\n"
+        if content.startswith("#"):
+            body = content + "\n"
+        else:
+            body = f"# {skill.name}\n" + (f"\n{content}\n" if content else "")
+        return header + body
 
     @staticmethod
     def _render_agent_md(agent: SandboxAgent) -> str:
