@@ -149,3 +149,12 @@ async def test_falha_de_conexao_explica_que_o_sandbox_nao_respondeu() -> None:
     event_type, data = await asyncio.wait_for(session.next_event(), timeout=2)
     assert event_type == "error"
     assert "cappycloud-sandbox" in data["message"]
+
+
+def test_rotulo_mostra_o_modelo_que_o_claude_cli_usa() -> None:
+    label = _session_mod.claude_cli_model_label
+    assert label("gpt-5.4") == "Sonnet"
+    assert label(None) == "Sonnet"
+    assert label("anthropic/claude-opus-4.7") == "Opus"
+    assert label("claude-haiku-4-5") == "Haiku"
+    assert label("anthropic/claude-sonnet-5") == "Sonnet"

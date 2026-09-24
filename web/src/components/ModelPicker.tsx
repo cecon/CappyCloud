@@ -81,6 +81,8 @@ function fmtCtx(n: number): string {
 
 function modelStateLabel(model: AiModel): string | null {
   if (!model.active) return 'retirado'
+  // Claude CLI: cobra da assinatura do `claude login`, não por token.
+  if (model.provider_id === 'claude-cli') return 'assinatura'
   if (model.tier === 'paid') return 'pago'
   if (model.tier === 'unknown' || model.input_cost_per_1m_usd == null || model.output_cost_per_1m_usd == null) {
     return 'preço desconhecido'

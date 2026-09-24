@@ -14,6 +14,7 @@ from ._agent_context import (
     render_worktree_top_level_section,
 )
 
+from ._agent_session import CLAUDE_CLI_MODEL_IDS
 from ._workspace_paths import render_workspace_section, workspace_root_of
 
 log = logging.getLogger(__name__)
@@ -188,6 +189,8 @@ async def resolve_text_model_id(
     database_url: str, requested_model: str | None
 ) -> str | None:
     """Mantém o modelo pedido se ele estiver ativo e suportar texto."""
+    if requested_model in CLAUDE_CLI_MODEL_IDS:
+        return requested_model
     if database_url and requested_model:
         try:
             conn = await asyncpg.connect(database_url)

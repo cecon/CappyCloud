@@ -106,6 +106,7 @@ class StreamMessage:
         permission_mode: str | None = None,
         execution_profile: str | None = None,
         action_reply: bool = False,
+        model_from_runtime: bool = False,
     ) -> AsyncGenerator[bytes]:
         conv = await self._conversations.get(conversation_id, user_id)
         if not conv:
@@ -121,14 +122,21 @@ class StreamMessage:
 
         attachments_payload: list[dict] | None = None
         injected_prompt = await inject_diff_comments(conversation_id, content)
-        effective_model = await self._resolve_model(user_id, user_role, override_model)
-        resolved_model_uuid = await self._resolve_model_uuid(user_id, user_role, effective_model)
+        # Modelo do runtime (Claude CLI): não está no catálogo; a rota já validou a sandbox.
+        if model_from_runtime:
+            effective_model, resolved_model_uuid = override_model, None
+        else:
+            effective_model = await self._resolve_model(user_id, user_role, override_model)
+            resolved_model_uuid = await self._resolve_model_uuid(
+                user_id, user_role, effective_model
+            )
         if resolved_model_uuid and conv.ai_model_id != resolved_model_uuid:
             conv.ai_model_id = resolved_model_uuid
             should_update_conversation = True
 
         if attachment_ids and not action_reply:
-            use_native = await self._can_send_native_vision(effective_model)
+            # Claude lê imagens direto; o catálogo não conhece os modelos do Claude CLI.
+            use_native = model_from_runtime or await self._can_send_native_vision(effective_model)
             if use_native:
                 attachments_payload = await self._load_attachment_bytes(
                     conversation_id, attachment_ids

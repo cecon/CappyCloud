@@ -405,6 +405,39 @@ async def test_claude_cli_model_is_not_treated_as_unauthorized_fallback(
     assert "Resposta do Claude CLI" in assistant.content
 
 
+async def test_claude_cli_model_skips_catalog_check(
+    conv_repo: InMemoryConversationRepository,
+    msg_repo: InMemoryMessageRepository,
+    user_id: uuid.UUID,
+) -> None:
+    """``model_from_runtime``: a rota já validou a sandbox; o catálogo nem é consultado."""
+    conv = await CreateConversation(conv_repo).execute(user_id, "Chat")
+    agent = _EventAgent(
+        [
+            {"type": "text", "content": "Oi"},
+            {"type": "done", "model_used": "claude-opus-4-7", "runtime": "claude_cli"},
+        ]
+    )
+    stream = await StreamMessage(
+        conv_repo,
+        msg_repo,
+        agent,
+        model_access=_SelectiveModelAccessPolicy({"openrouter/selected"}),
+    ).execute(
+        conv.id,
+        user_id,
+        "Ola",
+        user_role=UserRole.USER,
+        override_model="claude-cli/opus",
+        model_from_runtime=True,
+    )
+
+    payloads = _json_payloads([c async for c in stream])
+
+    assert not any(p["type"] == "error" for p in payloads)
+    assert next(p for p in payloads if p["type"] == "done")["model_used"] == "claude-opus-4-7"
+
+
 async def test_error_event_saves_single_assistant_error_message(
     conv_repo: InMemoryConversationRepository,
     msg_repo: InMemoryMessageRepository,

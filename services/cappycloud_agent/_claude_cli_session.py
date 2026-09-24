@@ -32,6 +32,19 @@ log = logging.getLogger(__name__)
 _TERMINAL_EVENTS = {"done", "error"}
 
 
+def claude_cli_model_label(model_id: str | None) -> str:
+    """Modelo que o Claude CLI usa de fato para o modelo pedido.
+
+    Mesma regra de ``modelAlias`` em ``claude_runtime_mapper.js``: Opus, Haiku
+    ou Sonnet pelo nome; qualquer outro (ex.: GPT) cai no Sonnet.
+    """
+    name = (model_id or "").lower()
+    for family in ("opus", "haiku", "sonnet"):
+        if family in name:
+            return family.capitalize()
+    return "Sonnet"
+
+
 def _attachments_payload(attachments: list[dict] | None) -> list[dict]:
     return [
         {

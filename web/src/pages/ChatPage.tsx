@@ -59,6 +59,12 @@ import { ActionRequiredCard } from '../components/ActionRequiredCard'
 import { AttachmentTray, type TrayItem } from '../components/AttachmentTray'
 import { AgentActivityCard, type AgentActivityStatus } from '../components/chat/AgentActivityCard'
 import { ModelPicker } from '../components/ModelPicker'
+import {
+  CLAUDE_CLI_DEFAULT_MODEL,
+  CLAUDE_CLI_MODELS,
+  claudeCliModelFor,
+  usesClaudeCli,
+} from '../components/claudeCliModels'
 import { ThinkingIndicator } from '../components/ThinkingIndicator'
 import { ThinkingStream, type ThoughtStep } from '../components/ThinkingStream'
 import {
@@ -688,6 +694,28 @@ export function ChatPage() {
   const [liveUsage, setLiveUsage] = useState<DoneEvent | null>(null)
 
   const sortedModels = useMemo(() => sortModelsForSelect(models), [models])
+  // Sandbox da próxima mensagem: a da conversa aberta ou a do workspace da nova conversa.
+  const runtimeSandboxId = activeId
+    ? conversations.find((conversation) => conversation.id === activeId)?.sandbox_id
+    : projectWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId)?.sandbox_id
+  const onClaudeCli = usesClaudeCli(sandboxes.find((sandbox) => sandbox.id === runtimeSandboxId)?.agent_runtime)
+  // Escolha do Claude CLI fica separada: não troca o modelo das sandboxes openclaude.
+  const [claudeCliModelId, setClaudeCliModelId] = useState(() => {
+    try {
+      return claudeCliModelFor(localStorage.getItem(CLAUDE_CLI_MODEL_KEY))
+    } catch {
+      return CLAUDE_CLI_DEFAULT_MODEL
+    }
+  })
+  const chooseClaudeCliModel = useCallback((modelId: string) => {
+    const next = claudeCliModelFor(modelId)
+    setClaudeCliModelId(next)
+    try {
+      localStorage.setItem(CLAUDE_CLI_MODEL_KEY, next)
+    } catch {
+      // Sem storage: vale só nesta aba.
+    }
+  }, [])
   const availableSandboxes = useMemo(() => sandboxes.filter(isSandboxAvailable), [sandboxes])
   const selectedSandbox = useMemo(
     () => sandboxes.find((sandbox) => sandbox.id === selectedSandboxId) ?? null,
@@ -757,7 +785,7 @@ export function ChatPage() {
       if (files.length === 0) return
       const normalized = files.map((file, index) => normalizedClipboardFile(file, index))
       const hasImage = normalized.some(isImageFile)
-      const modelForImages = modelIdForAttachments(models, selectedModelId, hasImage)
+      const modelForImages = onClaudeCli ? '' : modelIdForAttachments(models, selectedModelId, hasImage)
       if (modelForImages && modelForImages !== selectedModelId) {
         setSelectedModelId(modelForImages)
       }
@@ -831,7 +859,7 @@ export function ChatPage() {
           })
       }
     },
-    [activeId, models, selectedModelId, token],
+    [activeId, models, onClaudeCli, selectedModelId, token],
   )
 
   const uploadPendingAttachments = useCallback(
@@ -1320,12 +1348,11 @@ export function ChatPage() {
     const sendableAttachments = trayItems.filter(isSendableTrayItem)
     const userText = text.trim() || (sendableAttachments.length ? IMAGE_ONLY_PROMPT : '')
     if (!userText) return
-    const modelForRequest = modelIdForAttachments(
-      models,
-      selectedModelId,
-      sendableAttachments.some(trayItemHasImage),
-    )
-    if (modelForRequest && modelForRequest !== selectedModelId) {
+    // Claude CLI lê imagens direto; o modelo vem da escolha do Claude CLI.
+    const modelForRequest = onClaudeCli
+      ? claudeCliModelId
+      : modelIdForAttachments(models, selectedModelId, sendableAttachments.some(trayItemHasImage))
+    if (!onClaudeCli && modelForRequest && modelForRequest !== selectedModelId) {
       setSelectedModelId(modelForRequest)
     }
     // Conversa nova é sempre de um workspace (a sandbox e os repositórios vêm dele).
@@ -1570,12 +1597,11 @@ export function ChatPage() {
     const text = (textOverride ?? input).trim() ||
       (sendableAttachments.length ? IMAGE_ONLY_PROMPT : '')
     if (!text) return
-    const modelForRequest = modelIdForAttachments(
-      models,
-      selectedModelId,
-      sendableAttachments.some(trayItemHasImage),
-    )
-    if (modelForRequest && modelForRequest !== selectedModelId) {
+    // Claude CLI lê imagens direto; o modelo vem da escolha do Claude CLI.
+    const modelForRequest = onClaudeCli
+      ? claudeCliModelId
+      : modelIdForAttachments(models, selectedModelId, sendableAttachments.some(trayItemHasImage))
+    if (!onClaudeCli && modelForRequest && modelForRequest !== selectedModelId) {
       setSelectedModelId(modelForRequest)
     }
     const uploadedAttachmentIds = trayItems
@@ -2101,9 +2127,9 @@ export function ChatPage() {
               activeTitle={activeConv?.title ?? 'Conversa'}
               token={token}
               conversationId={activeId!}
-              models={sortedModels}
-              selectedModelId={selectedModelId}
-              setSelectedModelId={setSelectedModelId}
+              models={onClaudeCli ? CLAUDE_CLI_MODELS : sortedModels}
+              selectedModelId={onClaudeCli ? claudeCliModelId : selectedModelId}
+              setSelectedModelId={onClaudeCli ? chooseClaudeCliModel : setSelectedModelId}
               permissionMode={permissionMode}
               setPermissionMode={setPermissionMode}
               executionProfile={executionProfile}
@@ -2293,6 +2319,7 @@ interface EmptyStateProps {
 }
 
 const LAST_WORKSPACE_KEY = 'cappy.lastWorkspaceId'
+const CLAUDE_CLI_MODEL_KEY = 'cappy.claudeCliModel'
 
 /** Workspace da nova conversa: o atual se ainda existir, o último usado, ou o primeiro pronto. */
 function defaultWorkspaceId(list: AccessibleWorkspace[], current: string): string {

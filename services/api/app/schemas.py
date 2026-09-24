@@ -129,6 +129,8 @@ class SandboxOut(BaseModel):
     env_vars: dict[str, str]
     container_status: ContainerStatus
     active_sessions: int = 0
+    # Runtime do agente: o chat mostra "Claude CLI · Sonnet" em vez do modelo do catálogo.
+    agent_runtime: AgentRuntime = AgentRuntime.OPENCLAUDE
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -136,7 +138,6 @@ class SandboxOut(BaseModel):
 
 class SandboxAdminOut(SandboxOut):
     claude_md: str = ""
-    agent_runtime: AgentRuntime = AgentRuntime.OPENCLAUDE
 
 
 class SandboxRegister(BaseModel):
