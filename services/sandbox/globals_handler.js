@@ -44,18 +44,48 @@ function writeAgents(home, agents) {
   return agents.map(item => item.name)
 }
 
-// Vazio apaga o arquivo: um ~/.claude/CLAUDE.md vazio passava na frente do
-// /app/CLAUDE.md padrão da imagem e o agente ficava sem instruções.
-function writeClaudeMd(home, content) {
-  const dir = path.join(home, '.claude')
-  const file = path.join(dir, 'CLAUDE.md')
-  const text = String(content || '')
-  if (!text.trim()) {
-    fs.rmSync(file, { force: true })
-    return
+// Memória do usuário dos dois runtimes: o Claude CLI lê ~/.claude/CLAUDE.md
+// (CLAUDE_CONFIG_DIR) e o openclaude ~/.openclaude/CLAUDE.md. O conteúdo é a
+// base da imagem (/app/CLAUDE.md) mais as instruções extras do sandbox,
+// guardadas no volume para a base ser reaplicada quando a imagem mudar.
+const BASE_CLAUDE_MD = '/app/CLAUDE.md'
+const EXTRA_FILE = 'cappycloud-claude-extra.md'
+
+function claudeMdTargets(home) {
+  return [path.join(home, '.claude', 'CLAUDE.md'), path.join(home, '.openclaude', 'CLAUDE.md')]
+}
+
+function readText(file) {
+  try {
+    return fs.readFileSync(file, 'utf8')
+  } catch {
+    return ''
   }
-  fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(file, text, 'utf8')
+}
+
+function composeClaudeMd(base, extra) {
+  const parts = [base.trim()]
+  if (extra.trim()) parts.push(`## Instruções deste sandbox\n\n${extra.trim()}`)
+  const content = parts.filter(Boolean).join('\n\n')
+  return content ? `${content}\n` : ''
+}
+
+/** Regrava a memória do usuário. `extra` undefined = mantém as extras salvas. */
+function writeClaudeMd(home, extra, basePath = BASE_CLAUDE_MD) {
+  const extraPath = path.join(home, '.claude', EXTRA_FILE)
+  if (extra !== undefined) {
+    fs.mkdirSync(path.dirname(extraPath), { recursive: true })
+    fs.writeFileSync(extraPath, String(extra || ''), 'utf8')
+  }
+  const content = composeClaudeMd(readText(basePath), readText(extraPath))
+  for (const target of claudeMdTargets(home)) {
+    if (!content) {
+      fs.rmSync(target, { force: true })
+      continue
+    }
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.writeFileSync(target, content, 'utf8')
+  }
 }
 
 async function tryHandle(req, res, { json, readBody }) {

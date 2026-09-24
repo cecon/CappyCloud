@@ -54,16 +54,27 @@ def test_session_tools_require_confluence_for_operational_support() -> None:
     assert "&labels=autosystem" in section
 
 
-def test_response_rules_treat_grep_as_candidate_not_evidence() -> None:
-    section = _agent_prompt_sections.render_response_rules()
+def test_sandbox_claude_md_treats_grep_as_candidate_not_evidence() -> None:
+    """As regras de resposta ficam no CLAUDE.md base da imagem, não no prompt."""
+    from .agent_runtime_test_loader import ROOT
 
-    assert "`Grep`, listagem de arquivos" in section
-    assert "não são evidência suficiente" in section
-    assert "Não invente nomes de colunas" in section
-    assert "Não recomende criar script novo" in section
-    assert "pelo código que consegui" in section
-    assert "ao menos uma evidência citável" in section
-    assert "Não adicione prefixos como `src/`" in section
+    rules = (ROOT / "sandbox" / "CLAUDE.md").read_text(encoding="utf-8")
+
+    assert "`Grep`, listagem de arquivos" in rules
+    assert "não são evidência suficiente" in rules
+    assert "Não invente nomes de colunas" in rules
+    assert "Não recomende criar script" in rules
+    assert "pelo código que consegui" in rules
+    assert "ao menos uma evidência citável" in rules
+    assert "Não adicione prefixos como `src/`" in rules
+
+
+def test_agent_prompt_leaves_static_rules_to_claude_md() -> None:
+    prompt = _agent_context.build_prompt_with_agent(
+        "oi", skills=[], sandbox_session_url="http://sandbox:8080", repos=[]
+    )
+    assert "## Regras de resposta" not in prompt
+    assert "/task" not in prompt
 
 
 def test_agent_prompt_does_not_instruct_read_tool_for_file_evidence() -> None:

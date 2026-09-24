@@ -16,7 +16,7 @@
 //   POST   /git/*                  → git_handlers.js (ls-remote, branch-r, ls-files, file)
 //   POST   /worktree/*             → worktree_handlers.js (ls-files, diff, PR, …)
 //   POST   /mcp/configure          → escreve mcpServers em ~/.claude/settings.json
-//   POST   /globals/configure      → escreve skills/agents em ~/.claude/
+//   POST   /globals/configure      → CLAUDE.md (memória do usuário), skills e agents
 //   POST   /runtime/restart-openclaude → reinicia o processo principal do container
 //   *      /claude/*               → claude_runtime_handler.js (runtime Claude CLI via Agent SDK)
 //   POST   /workspaces/sync        → workspace_handler.js (árvore /repos/workspaces/<slug>)
@@ -95,8 +95,8 @@ function readBody(req) {
 }
 
 // ── Cria um worktree via session_start.sh ──────────────────────
-async function createWorktree({ slug, alias, base_branch, branch_name, worktree_path, clone_url = '', inject_claude_md = true }) {
-  const args = [slug, alias, worktree_path, base_branch || '', branch_name || '', clone_url, inject_claude_md ? '1' : '0']
+async function createWorktree({ slug, alias, base_branch, branch_name, worktree_path, clone_url = '' }) {
+  const args = [slug, alias, worktree_path, base_branch || '', branch_name || '', clone_url]
   const { stdout, stderr } = await execFileAsync('/session_start.sh', args, {
     env: { ...process.env },
     timeout: 300_000,
@@ -271,16 +271,9 @@ const server = http.createServer(async (req, res) => {
       if (workspaceRoot) {
         // Sessão de workspace: o CLAUDE.md vem da raiz do workspace (o agente
         // herda por estar abaixo dela); skills/agents do workspace via link.
+        // As regras do sandbox são memória do usuário (globals_handler).
         const claudeLink = path.join(session_root, '.claude')
         if (!fs.existsSync(claudeLink)) fs.symlinkSync('../../.claude', claudeLink)
-      } else if (!fs.existsSync(path.join(session_root, 'CLAUDE.md')) && !fs.existsSync(path.join(session_root, 'AGENTS.md'))) {
-        // CLAUDE.md na raiz da sessão legada: só se não houver instruções no
-        // próprio repo. Aqui é a raiz multi-repo, fica como descrição neutra.
-        const sandboxClaude = path.join(process.env.HOME || '/root', '.claude', 'CLAUDE.md')
-        const sourceClaude = fs.existsSync(sandboxClaude) ? sandboxClaude : '/app/CLAUDE.md'
-        if (fs.existsSync(sourceClaude)) {
-          fs.copyFileSync(sourceClaude, path.join(session_root, 'CLAUDE.md'))
-        }
       }
 
       for (const repo of repos) {
@@ -301,7 +294,6 @@ const server = http.createServer(async (req, res) => {
             branch_name: resolved_branch,
             worktree_path: wt_path,
             clone_url: rc || '',
-            inject_claude_md: !workspaceRoot,
           })
           outputs.push(`[${alias}] ${out}`)
           repos_created.push({ alias, branch_name: resolved_branch, worktree_path: wt_path })
@@ -515,6 +507,13 @@ const server = http.createServer(async (req, res) => {
     }
   }
 })
+
+// A base do CLAUDE.md vem da imagem: reaplica a cada subida, com as extras salvas.
+try {
+  globalsHandler.writeClaudeMd(process.env.HOME || '/root')
+} catch (err) {
+  console.warn('[session_server] CLAUDE.md não reaplicado:', err.message)
+}
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`[session_server] listening on :${PORT}`)

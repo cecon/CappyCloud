@@ -56,8 +56,8 @@ export function SandboxClaudeMdPanel({ sandbox, onUpdated }: Props) {
         </Alert>
       )}
       <Text size="sm" c="dimmed">
-        Instruções globais do terminal headless desta sandbox. Novas sessões recebem este arquivo
-        na raiz do worktree.
+        Instruções extras desta sandbox, somadas às regras padrão do CappyCloud. Valem para todas
+        as conversas, no Claude CLI e no openclaude. Deixe vazio para usar só as regras padrão.
       </Text>
       <Textarea
         aria-label="Conteúdo do CLAUDE.md"

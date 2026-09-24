@@ -93,5 +93,5 @@ resolve o agente rodando dentro do sandbox via gRPC.
 ## Referências
 
 - `services/sandbox/Dockerfile`
-- `services/sandbox/CLAUDE.md`
+- `sandbox/CLAUDE.md` (seção "Ferramentas do container")
 - `docs/decisions/adr-002-sandbox-runtime-and-worktree-sessions.md`
