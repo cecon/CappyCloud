@@ -484,3 +484,13 @@
 :global(:root:not(.dark):not([data-theme='dark'])) .rowPriceOut {
   color: var(--warning);
 }
+
+/* O gatilho cabe no espaço do pai (ex.: cabeçalho do chat no celular), cortando o nome. */
+.wrapper > .trigger {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.trigger .triggerText {
+  overflow: hidden;
+}

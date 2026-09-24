@@ -174,7 +174,7 @@ export function Center({ className, ...props }: LegacyProps) {
 export function Container({ className, size, ...props }: LegacyProps & { size?: Size }) {
   return (
     <div
-      className={cn('mx-auto w-full px-4', className)}
+      className={cn('mx-auto w-full px-0 sm:px-4', className)}
       style={{ maxWidth: unit(size) ?? '72rem', ...legacyStyle(props) }}
       {...clean(props)}
     />
@@ -353,7 +353,7 @@ export function Burger({ opened, onClick, className, hiddenFrom, ...props }: Act
   void hiddenFrom
   return (
     <ActionIcon className={className} onClick={onClick} aria-pressed={opened} {...props}>
-      <span className="material-symbols-rounded text-base">{opened ? 'close' : 'menu'}</span>
+      <span className="material-symbols-outlined text-base">{opened ? 'close' : 'menu'}</span>
     </ActionIcon>
   )
 }
@@ -652,7 +652,7 @@ export function Modal({ opened, onClose, title, children, size }: { opened: bool
           }}
         />
         <DialogPrimitive.Content
-          className="grid gap-4 overflow-auto rounded-lg border border-border bg-popover p-6 text-popover-foreground shadow-lg"
+          className="grid gap-4 overflow-auto rounded-lg border border-border bg-popover p-4 sm:p-6 text-popover-foreground shadow-lg grid-cols-[minmax(0,1fr)]"
           style={{
             position: 'fixed',
             left: '50%',
@@ -752,8 +752,11 @@ export function useDisclosure(initial = false) {
   ] as const
 }
 
+// Caixa com rolagem lateral: no celular a tabela rola em vez de cortar as colunas (ações).
 const TableRoot = ({ className, ...props }: React.TableHTMLAttributes<HTMLTableElement> & { verticalSpacing?: Size; highlightOnHover?: boolean }) => (
-  <table className={cn('w-full border-collapse text-sm', className)} {...props} />
+  <div className="w-full min-w-0 max-w-full overflow-x-auto">
+    <table className={cn('w-full border-collapse text-sm', className)} {...props} />
+  </div>
 )
 const Th = ({ className, ta, w, ...props }: React.ThHTMLAttributes<HTMLTableCellElement> & { ta?: React.CSSProperties['textAlign']; w?: Size }) => (
   <th className={cn('border-b border-border px-3 py-2 text-left font-semibold text-muted-foreground', className)} style={{ textAlign: ta, width: unit(w), ...props.style }} {...props} />
