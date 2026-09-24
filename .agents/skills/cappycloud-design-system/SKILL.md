@@ -1,5 +1,5 @@
 ---
-name: design-system
+name: cappycloud-design-system
 description: Use esta habilidade para gerar ou evoluir o design system do CappyCloud - tokens, paletas, tipografia, espacamentos e padroes de componentes.
 ---
 
