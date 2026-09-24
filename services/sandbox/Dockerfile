@@ -153,6 +153,8 @@ COPY services/sandbox/confluence_handler.js /confluence_handler.js
 COPY services/sandbox/repo_handlers.js /repo_handlers.js
 COPY services/sandbox/runtime_handler.js /runtime_handler.js
 COPY services/sandbox/session_cleanup.js /session_cleanup.js
+COPY services/sandbox/session_paths.js /session_paths.js
+COPY services/sandbox/workspace_handler.js /workspace_handler.js
 COPY services/sandbox/task_handler.js /task_handler.js
 COPY services/sandbox/worktree_handlers.js /worktree_handlers.js
 COPY services/sandbox/confluence_mcp_lib.py /usr/local/bin/confluence_mcp_lib.py

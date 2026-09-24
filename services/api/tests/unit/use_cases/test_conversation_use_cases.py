@@ -82,6 +82,24 @@ class TestCreateConversation:
         assert conv.title == "Meu chat"
         assert conv.user_id == user_id
 
+    async def test_workspace_puts_session_inside_workspace_folder(
+        self, conv_repo: InMemoryConversationRepository, user_id: uuid.UUID
+    ) -> None:
+        workspace_id = uuid.uuid4()
+        uc = CreateConversation(conv_repo)
+        conv = await uc.execute(
+            user_id,
+            repos=[{"slug": "Seller", "alias": "backend", "base_branch": "develop"}],
+            workspace_id=workspace_id,
+            workspace_slug="loja",
+        )
+        short = conv.id.hex[:12]
+        assert conv.workspace_id == workspace_id
+        assert conv.session_root == f"/repos/workspaces/loja/sessions/{short}"
+        assert conv.repos[0]["worktree_path"] == f"/repos/workspaces/loja/sessions/{short}/backend"
+        assert conv.repos[0]["branch_name"] == f"cappy/Seller/{short}-backend"
+        assert conv.repos[0]["base_branch"] == "develop"
+
     async def test_defaults_title_when_none(
         self, conv_repo: InMemoryConversationRepository, user_id: uuid.UUID
     ) -> None:

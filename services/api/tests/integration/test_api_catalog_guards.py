@@ -1,4 +1,4 @@
-"""Integration HTTP — só super admin altera repositórios e git providers.
+"""Integration HTTP — só super admin altera repositórios, git providers e workspaces.
 
 Antes, estas rotas exigiam apenas login: qualquer utilizador criava ou apagava
 repositórios e credenciais Git.
@@ -23,6 +23,15 @@ _MUTATIONS = [
     ("post", "/api/git-providers", {"name": "p", "provider_type": "github", "token": "t"}),
     ("patch", f"/api/git-providers/{_PROVIDER_ID}/token", {"token": "t"}),
     ("delete", f"/api/git-providers/{_PROVIDER_ID}", None),
+    ("get", "/api/admin/workspaces", None),
+    (
+        "post",
+        "/api/admin/workspaces",
+        {"slug": "loja", "name": "Loja", "sandbox_id": str(_REPO_ID)},
+    ),
+    ("patch", f"/api/admin/workspaces/{_REPO_ID}", {"name": "x"}),
+    ("delete", f"/api/admin/workspaces/{_REPO_ID}", None),
+    ("post", f"/api/admin/users/{_REPO_ID}/access/workspaces/{_REPO_ID}", None),
 ]
 
 

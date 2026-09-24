@@ -1,22 +1,11 @@
 from __future__ import annotations
 
-import sys
-from importlib import util
-from pathlib import Path
+from tests.unit.agent_runtime_test_loader import ROOT, load_agent_module
 
-
-def _load_sandbox_record_class():
-    module_path = Path(__file__).resolve().parents[4] / "cappycloud_agent" / "_session_store.py"
-    spec = util.spec_from_file_location("cappycloud_agent_session_store", module_path)
-    assert spec is not None
-    assert spec.loader is not None
-    module = util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module.SandboxRecord
-
-
-SandboxRecord = _load_sandbox_record_class()
+SandboxRecord = load_agent_module(
+    "services.cappycloud_agent._session_store",
+    ROOT / "services/cappycloud_agent/_session_store.py",
+).SandboxRecord
 
 
 def test_sandbox_record_uses_conversation_worktree_not_user_baseline() -> None:

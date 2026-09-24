@@ -217,6 +217,7 @@ class Conversation:
     ai_model_id: uuid.UUID | None = None
     repos: list[dict] = field(default_factory=list)
     session_root: str | None = None
+    workspace_id: uuid.UUID | None = None
     permission_mode: str = DEFAULT_PERMISSION_MODE
     worktree_exists: bool = False
     lines_added: int = 0
