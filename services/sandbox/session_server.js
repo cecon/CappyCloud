@@ -15,7 +15,7 @@
 //   DELETE /sessions/:id           → session_cleanup.js (409 se houver trabalho não enviado)
 //   POST   /git/*                  → git_handlers.js (ls-remote, branch-r, ls-files, file)
 //   POST   /worktree/*             → worktree_handlers.js (ls-files, diff, PR, …)
-//   POST   /mcp/configure          → escreve mcpServers em ~/.claude/settings.json
+//   POST   /mcp/configure          → mcp_handler.js (mcpServers em ~/.openclaude.json)
 //   POST   /globals/configure      → CLAUDE.md (memória do usuário), skills e agents
 //   POST   /runtime/restart-openclaude → reinicia o processo principal do container
 //   *      /claude/*               → claude_runtime_handler.js (runtime Claude CLI via Agent SDK)

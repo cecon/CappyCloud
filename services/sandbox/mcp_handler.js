@@ -1,6 +1,8 @@
 'use strict'
-// Handler para POST /mcp/configure — persiste mcpServers na configuração lida
-// pelo openclaude e mantém o arquivo legado para inspeção humana.
+// Handler para POST /mcp/configure — grava mcpServers em ~/.openclaude.json.
+// É o único arquivo lido: o openclaude o usa como config global (ignora
+// CLAUDE_CONFIG_DIR) e o claude_runtime_handler repassa a mesma lista ao Agent
+// SDK. Os settings.json não aceitam mcpServers; a chave antiga é removida deles.
 
 const { execFileSync } = require('child_process')
 const fs = require('fs')
@@ -40,26 +42,39 @@ function usableServers(mcpServers, options = {}) {
   return { usable, skipped }
 }
 
+function readJson(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+function writeJson(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify(value, null, 2), 'utf8')
+}
+
+/** Troca só mcpServers no ~/.openclaude.json; limpa a cópia antiga dos settings. */
+function writeMcpConfig(home, mcpServers) {
+  const configPath = path.join(home, '.openclaude.json')
+  writeJson(configPath, { ...(readJson(configPath) || {}), mcpServers })
+  for (const legacy of [path.join(home, '.claude', 'settings.json'), path.join(home, '.openclaude', 'settings.json')]) {
+    const current = readJson(legacy)
+    if (current && Object.prototype.hasOwnProperty.call(current, 'mcpServers')) {
+      delete current.mcpServers
+      writeJson(legacy, current)
+    }
+  }
+}
+
 async function tryHandle(req, res, { json, readBody }) {
   if (req.method !== 'POST' || (req.url || '').split('?')[0] !== '/mcp/configure') return false
 
   try {
     const body = await readBody(req)
     const { usable: mcpServers, skipped } = usableServers(body.mcpServers)
-    const home = process.env.HOME || '/root'
-    const settingsPaths = [
-      `${home}/.openclaude.json`,
-      `${home}/.claude/settings.json`,
-      `${home}/.openclaude/settings.json`,
-    ]
-
-    for (const settingsPath of settingsPaths) {
-      let current = {}
-      try { current = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) } catch {}
-      current.mcpServers = mcpServers
-      fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
-      fs.writeFileSync(settingsPath, JSON.stringify(current, null, 2), 'utf8')
-    }
+    writeMcpConfig(process.env.HOME || '/root', mcpServers)
     if (skipped.length) console.log(`[session_server] MCP sem token, fora da config: ${skipped.join(', ')}`)
     console.log(`[session_server] MCP config updated: ${Object.keys(mcpServers).join(', ') || '(none)'}`)
     json(res, 200, { updated: true, servers: Object.keys(mcpServers), skipped })
@@ -70,4 +85,4 @@ async function tryHandle(req, res, { json, readBody }) {
   }
 }
 
-module.exports = { tryHandle, usableServers }
+module.exports = { tryHandle, usableServers, writeMcpConfig }
