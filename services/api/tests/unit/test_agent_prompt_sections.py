@@ -133,7 +133,7 @@ def test_render_session_tools_includes_labels_param_when_labels_set() -> None:
     )
     assert "&space=Frontend&labels=react,react-dom&q=" in rendered
     assert "labels `react`, `react-dom`" in rendered
-    assert "parâmetros, cadastros, configurações" in rendered
+    assert "Nos perfis rápido e médio, consulte Confluence quando" in rendered
 
 
 def test_render_session_tools_url_encodes_labels_with_special_chars() -> None:

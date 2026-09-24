@@ -91,8 +91,11 @@ def render_repo_agents(agent_profiles: list[dict]) -> str:
 
 
 def render_session_tools(
-    sandbox_session_url: str, repos: list[dict] | None = None
+    sandbox_session_url: str,
+    repos: list[dict] | None = None,
+    execution_profile: str = "medium",
 ) -> str:
+    profile = execution_profile if execution_profile in {"fast", "medium", "deep"} else "medium"
     repo_ids = [
         str(repo.get("repo_id")).strip()
         for repo in (repos or [])
@@ -100,12 +103,14 @@ def render_session_tools(
     ]
     repo_filter = "".join(f"&repo_id={quote(repo_id, safe='')}" for repo_id in repo_ids)
     parts = [
-        "## Ferramentas do servidor de sessão\n\n"
-        "### Busca de documentação\n"
-        "Para consultar mais documentação relevante, executa via Bash:\n"
-        f"`curl -s '{sandbox_session_url}/skills/search?q=<termo>{repo_filter}'`\n"
-        "(retorna JSON com slug/title/summary/content das skills mais próximas "
-        "dentro do(s) repositório(s) da sessão).\n"
+        (
+            "## Ferramentas do servidor de sessão\n\n"
+            "### Busca de documentação\n"
+            "Para consultar mais documentação relevante, executa via Bash:\n"
+            f"`curl -s '{sandbox_session_url}/skills/search?q=<termo>{repo_filter}'`\n"
+            "(retorna JSON com slug/title/summary/content das skills mais próximas "
+            "dentro do(s) repositório(s) da sessão).\n"
+        )
     ]
 
     confluence_repos = [
@@ -114,15 +119,28 @@ def render_session_tools(
     if confluence_repos:
         lines = [
             "\n### Documentação externa por repositório\n",
-            "Use Confluence apenas para os repositórios listados abaixo. Se um "
-            "repositório não estiver listado aqui, não consulte `/confluence/*` para ele.",
-            "Quando houver Confluence configurado, a consulta é obrigatória para "
-            "perguntas de suporte operacional, configuração, cadastro, regra funcional, "
-            "integração ou procedimento. Execute pelo menos uma busca em `/confluence/search` "
-            "antes da resposta final e cite as páginas retornadas que forem usadas. "
-            "Se nenhuma página relevante for encontrada, diga que a busca documental "
-            "não trouxe evidência direta.",
+            (
+                "Use Confluence apenas para os repositórios listados abaixo. Se um "
+                "repositório não estiver listado aqui, não consulte `/confluence/*` para ele."
+            ),
         ]
+        if profile == "deep":
+            lines.append(
+                "No perfil profundo, quando houver Confluence configurado, a consulta é "
+                "obrigatória para perguntas de suporte operacional, configuração, cadastro, "
+                "regra funcional, integração ou procedimento. Execute pelo menos uma busca "
+                "em `/confluence/search` antes da resposta final e cite as páginas retornadas "
+                "que forem usadas. Se nenhuma página relevante for encontrada, diga que a "
+                "busca documental não trouxe evidência direta."
+            )
+        else:
+            lines.append(
+                "Nos perfis rápido e médio, consulte Confluence quando o pedido depender "
+                "de documentação externa, procedimento oficial, regra funcional não evidente "
+                "no código ou quando o utilizador pedir fonte documental. Para dúvidas simples "
+                "com evidência local suficiente, responda com código/configuração já lidos e "
+                "diga que a documentação externa não foi necessária."
+            )
         for repo in confluence_repos:
             alias = repo.get("alias") or repo.get("slug") or "repo"
             confluence_url = str(repo.get("confluence_url") or "").strip()
@@ -173,14 +191,22 @@ def render_session_tools(
                 "ao módulo perguntado, repita sem `&labels=` mantendo `&space=` e termos de "
                 "busca mais curtos. Labels ajudam o escopo, mas podem estar incompletos."
             )
-        lines.append(
-            "Não use WebSearch como substituto do Confluence configurado; WebSearch não "
-            "consulta essas credenciais nem respeita o space do repositório. Para dúvidas "
-            "sobre parâmetros, cadastros, configurações, regras funcionais, integrações, "
-            "procedimentos operacionais ou quando a pergunta pedir documentação externa, "
-            "execute primeiro o `curl` de "
-            "`/confluence/search` correspondente ao repositório da sessão."
-        )
+        if profile == "deep":
+            lines.append(
+                "Não use WebSearch como substituto do Confluence configurado; WebSearch não "
+                "consulta essas credenciais nem respeita o space do repositório. Para dúvidas "
+                "sobre parâmetros, cadastros, configurações, regras funcionais, integrações, "
+                "procedimentos operacionais ou quando a pergunta pedir documentação externa, "
+                "execute primeiro o `curl` de "
+                "`/confluence/search` correspondente ao repositório da sessão."
+            )
+        else:
+            lines.append(
+                "Não use WebSearch como substituto do Confluence configurado; WebSearch não "
+                "consulta essas credenciais nem respeita o space do repositório. Quando a "
+                "pergunta pedir documentação externa ou a evidência local não bastar, use o "
+                "`curl` de `/confluence/search` correspondente ao repositório da sessão."
+            )
         lines.append(
             "Cruze o que vier da documentação externa com Grep e leitura via Bash "
             "(`sed -n`, `nl -ba`, `cat` ou equivalente) no repositório. Ao usar "
@@ -197,17 +223,18 @@ def render_session_tools(
             "outras MCPs explicitamente configuradas."
         )
 
-    parts.append(
-        "\n### Sub-agente de investigação\n"
-        "Para delegar uma investigação a um sub-agente especializado, executa via Bash:\n"
-        "```bash\n"
-        f"curl -s -X POST '{sandbox_session_url}/task' \\\n"
-        "  -H 'Content-Type: application/json' \\\n"
-        '  -d \'{"description":"<título>","prompt":"<instrução completa>"}\'\n'
-        "```\n"
-        "O campo `result` da resposta contém o texto produzido pelo sub-agente.\n"
-        "Use `jq -r '.result'` para extrair apenas o texto."
-    )
+    if profile == "deep":
+        parts.append(
+            "\n### Sub-agente de investigação\n"
+            "Para delegar uma investigação a um sub-agente especializado, executa via Bash:\n"
+            "```bash\n"
+            f"curl -s -X POST '{sandbox_session_url}/task' \\\n"
+            "  -H 'Content-Type: application/json' \\\n"
+            '  -d \'{"description":"<título>","prompt":"<instrução completa>"}\'\n'
+            "```\n"
+            "O campo `result` da resposta contém o texto produzido pelo sub-agente.\n"
+            "Use `jq -r '.result'` para extrair apenas o texto."
+        )
     return "\n".join(parts)
 
 
