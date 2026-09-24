@@ -59,3 +59,10 @@ def test_repo_somente_leitura_aponta_para_o_clone_do_workspace() -> None:
     section = _paths.render_workspace_section(_WS_SESSION, repos)
     assert "`docs` → `/repos/workspaces/loja/repos/docs` (consulta; não edite)" in section
     assert f"{_WS_SESSION}/docs" not in section
+
+
+def test_secao_ensina_a_consultar_o_grafo_do_workspace() -> None:
+    section = _paths.render_workspace_section(_WS_SESSION, _REPOS)
+    graph = "/repos/workspaces/loja/knowledge/graphify/graph.json"
+    assert f'graphify query "<pergunta>" --graph {graph}' in section
+    assert "Se o arquivo do grafo não existir, siga sem ele." in section

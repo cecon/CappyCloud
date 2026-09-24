@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infrastructure.orm_models import Repository, Sandbox, SandboxSyncQueue
 from app.infrastructure.orm_models_workspaces import Workspace
+from app.infrastructure.workspace_knowledge import OPERATION as BUILD_KNOWLEDGE
+from app.infrastructure.workspace_knowledge import enqueue_knowledge_build
 
 log = logging.getLogger(__name__)
 
@@ -93,6 +95,8 @@ class SandboxWatchdog:
             ws.sync_status = "synced"
             ws.sync_error = None
             ws.last_sync_at = datetime.now(UTC)
+            # Repositórios podem ter mudado: o grafo do workspace é refeito.
+            await enqueue_knowledge_build(session, ws)
 
     async def _sync_repo_state(
         self,
@@ -150,6 +154,12 @@ class SandboxWatchdog:
             elif operation == "remove_workspace":
                 slug = payload.get("slug", "")
                 response = await client.delete(f"{base}/workspaces/{slug}")
+                response.raise_for_status()
+
+            elif operation == BUILD_KNOWLEDGE:
+                # O sandbox responde 202 e reconstrói em segundo plano.
+                slug = payload.get("slug", "")
+                response = await client.post(f"{base}/workspaces/{slug}/knowledge/build")
                 response.raise_for_status()
 
             elif operation == "reconfigure_mcp":

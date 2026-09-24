@@ -73,3 +73,11 @@ test('comandos reais dos subagentes: aspas com | e $(...) só de leitura', () =>
     assert.equal(isReadOnlyCommand(cmd), true, cmd)
   }
 })
+
+test('graphify só com os subcomandos de consulta', () => {
+  const graph = '/repos/workspaces/loja/knowledge/graphify/graph.json'
+  assert.equal(isReadOnlyCommand(`graphify query "fluxo de venda" --graph ${graph} --budget 1500`), true)
+  assert.equal(isReadOnlyCommand(`graphify explain "SaleService" --graph ${graph}`), true)
+  assert.equal(isReadOnlyCommand('graphify update /repos/workspaces/loja/repos/pdv'), false)
+  assert.equal(isReadOnlyCommand(`graphify merge-graphs a.json b.json --out ${graph}`), false)
+})

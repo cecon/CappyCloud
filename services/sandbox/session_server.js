@@ -20,6 +20,7 @@
 //   POST   /runtime/restart-openclaude → reinicia o processo principal do container
 //   *      /claude/*               → claude_runtime_handler.js (runtime Claude CLI via Agent SDK)
 //   POST   /workspaces/sync        → workspace_handler.js (árvore /repos/workspaces/<slug>)
+//   *      /workspaces/:slug/knowledge → knowledge_handler.js (grafo graphify, arquivos)
 //   *      /terminal/*             → terminal_handler.js (terminal web do admin, ex.: claude login)
 //   GET    /health                 → liveness probe
 // ──────────────────────────────────────────────────────────────
@@ -41,6 +42,7 @@ const { assertSafeSessionRoot, cleanupSession } = require('./session_cleanup')
 const { assertInsideSession, sessionRootInfo } = require('./session_paths')
 const worktreeHandlers = require('./worktree_handlers')
 const workspaceHandler = require('./workspace_handler')
+const knowledgeHandler = require('./knowledge_handler')
 const terminalHandler = require('./terminal_handler')
 
 const execFileAsync = promisify(execFile)
@@ -496,6 +498,7 @@ const server = http.createServer(async (req, res) => {
     if (await runtimeHandler.tryHandle(req, res, { json, clearActiveSessions })) return
 
     if (await claudeRuntimeHandler.tryHandle(req, res, { json, readBody })) return
+    if (await knowledgeHandler.tryHandle(req, res, { json })) return
     if (await workspaceHandler.tryHandle(req, res, { json, readBody })) return
     if (await terminalHandler.tryHandle(req, res, { json, readBody })) return
 

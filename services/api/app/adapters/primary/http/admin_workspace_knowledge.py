@@ -1,0 +1,95 @@
+"""Admin do conhecimento de um workspace (só super admin).
+
+  GET  /admin/workspaces/{id}/knowledge            → status do grafo e arquivos
+  GET  /admin/workspaces/{id}/knowledge/file?path= → um arquivo de knowledge/ ou memory/
+  POST /admin/workspaces/{id}/knowledge/build      → enfileira a reconstrução ("Atualizar agora")
+
+Os dados vêm do sandbox do workspace (``knowledge_handler.js``).
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import Awaitable, Callable
+from typing import Annotated, Any
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.adapters.primary.http.deps import get_db_session
+from app.adapters.primary.http.deps_auth import require_super_admin
+from app.infrastructure.orm_models import Sandbox
+from app.infrastructure.orm_models_workspaces import Workspace
+from app.infrastructure.workspace_knowledge import enqueue_knowledge_build
+
+router = APIRouter(
+    prefix="/admin/workspaces/{workspace_id}/knowledge",
+    tags=["admin"],
+    dependencies=[Depends(require_super_admin)],
+)
+
+Session = Annotated[AsyncSession, Depends(get_db_session)]
+SandboxGet = Callable[[str, dict[str, str]], Awaitable[tuple[int, Any]]]
+
+
+def get_sandbox_get() -> SandboxGet:
+    """GET JSON num sandbox: devolve (status HTTP, corpo). 502 se não responder."""
+
+    async def get(url: str, params: dict[str, str]) -> tuple[int, Any]:
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.get(url, params=params)
+            return response.status_code, response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            return 502, {"error": f"sandbox não respondeu: {exc}"}
+
+    return get
+
+
+SandboxGetter = Annotated[SandboxGet, Depends(get_sandbox_get)]
+
+
+async def _workspace_url(session: AsyncSession, workspace_id: uuid.UUID) -> tuple[Workspace, str]:
+    ws = await session.get(Workspace, workspace_id)
+    if ws is None:
+        raise HTTPException(status_code=404, detail="Workspace não encontrado.")
+    sandbox = await session.get(Sandbox, ws.sandbox_id)
+    if sandbox is None:
+        raise HTTPException(status_code=409, detail="O sandbox do workspace não existe mais.")
+    base = f"http://{sandbox.host}:{sandbox.session_port}/workspaces/{ws.slug}/knowledge"
+    return ws, base
+
+
+def _reply(code: int, body: Any) -> Any:
+    if code >= 400:
+        detail = body.get("error") if isinstance(body, dict) else None
+        raise HTTPException(status_code=502 if code >= 500 else 400, detail=detail or "erro")
+    return body
+
+
+@router.get("")
+async def knowledge_overview(
+    workspace_id: uuid.UUID, session: Session, sandbox_get: SandboxGetter
+) -> Any:
+    _, base = await _workspace_url(session, workspace_id)
+    return _reply(*await sandbox_get(base, {}))
+
+
+@router.get("/file")
+async def knowledge_file(
+    workspace_id: uuid.UUID,
+    session: Session,
+    sandbox_get: SandboxGetter,
+    path: Annotated[str, Query(min_length=1, max_length=512)],
+) -> Any:
+    _, base = await _workspace_url(session, workspace_id)
+    return _reply(*await sandbox_get(f"{base}/file", {"path": path}))
+
+
+@router.post("/build", status_code=202)
+async def knowledge_build(workspace_id: uuid.UUID, session: Session) -> dict:
+    ws, _ = await _workspace_url(session, workspace_id)
+    queued = await enqueue_knowledge_build(session, ws)
+    await session.commit()
+    return {"queued": queued}

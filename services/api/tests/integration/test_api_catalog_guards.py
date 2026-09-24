@@ -32,6 +32,8 @@ _MUTATIONS = [
     ("patch", f"/api/admin/workspaces/{_REPO_ID}", {"name": "x"}),
     ("delete", f"/api/admin/workspaces/{_REPO_ID}", None),
     ("post", f"/api/admin/users/{_REPO_ID}/access/workspaces/{_REPO_ID}", None),
+    ("get", f"/api/admin/workspaces/{_REPO_ID}/knowledge", None),
+    ("post", f"/api/admin/workspaces/{_REPO_ID}/knowledge/build", None),
 ]
 
 
