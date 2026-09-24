@@ -100,17 +100,44 @@ test('usa o texto do resultado quando nada foi transmitido e reporta erros', () 
   assert.deepEqual(failed, [{ type: 'error', message: 'Claude CLI: boom' }])
 })
 
-test('ignora texto de subagentes mas mostra suas ferramentas', () => {
+test('subagente vira um cartão próprio: ferramentas dele não se misturam às do agente', () => {
   const mapper = createEventMapper()
-  const events = mapper.map({
+  const main = mapper.map({
     type: 'assistant',
-    parent_tool_use_id: 'task-1',
-    message: { id: 'm2', content: [
-      { type: 'text', text: 'interno' },
-      { type: 'tool_use', id: 't9', name: 'Grep', input: { pattern: 'x' } },
+    message: { id: 'm1', content: [
+      { type: 'tool_use', id: 'ag1', name: 'Agent', input: { description: 'Buscar versão do schema Realm', prompt: '...' } },
     ] },
   })
-  assert.deepEqual(events.map((e) => e.type), ['tool_start'])
+  assert.deepEqual(main.map((e) => e.type), ['tool_start', 'subagent_group'])
+  assert.equal(main[1].label, 'Subagente · Buscar versão do schema Realm')
+  assert.equal(main[1].activities[0].state, 'loading')
+
+  const inside = mapper.map({
+    type: 'assistant',
+    parent_tool_use_id: 'ag1',
+    message: { id: 'm2', content: [
+      { type: 'text', text: 'interno' },
+      { type: 'tool_use', id: 't9', name: 'Bash', input: { command: 'rg -n schemaVersion src', description: 'Busca schemaVersion' } },
+    ] },
+  })
+  assert.deepEqual(inside.map((e) => e.type), ['subagent_group'])
+  assert.deepEqual(inside[0].activities[1], { id: 't9', name: 'Bash', state: 'tool-running', detail: 'Busca schemaVersion' })
+
+  const toolDone = mapper.map({
+    type: 'user',
+    parent_tool_use_id: 'ag1',
+    message: { content: [{ type: 'tool_result', tool_use_id: 't9', content: 'src/db.js:3: schemaVersion: 42' }] },
+  })
+  assert.deepEqual(toolDone.map((e) => e.type), ['subagent_group'])
+  assert.equal(toolDone[0].activities[1].state, 'done')
+
+  const finished = mapper.map({
+    type: 'user',
+    message: { content: [{ type: 'tool_result', tool_use_id: 'ag1', content: [{ type: 'text', text: 'schemaVersion 42' }] }] },
+  })
+  assert.deepEqual(finished.map((e) => e.type), ['tool_result', 'subagent_group'])
+  assert.equal(finished[1].activities[0].state, 'done')
+  assert.ok(finished[1].activities.every((activity) => activity.state === 'done'))
 })
 
 test('sem login vira só um erro com a instrução do terminal', () => {

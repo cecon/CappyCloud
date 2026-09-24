@@ -33,7 +33,9 @@ test('escrita, edição, remoção e execução continuam bloqueadas', () => {
     `rm -rf ${RO}/src`,
     `cd ${RO} && git checkout -- .`,
     `tee ${RO}/x < /dev/null`,
-    `cat $(echo ${RO}/x)`,
+    `cat $(rm -rf ${RO}/x)`,
+    `ls ${RO} &> ${RO}/saida.txt`,
+    `(cd ${RO} && touch novo)`,
     `find ${RO} | xargs rm`,
     `awk 'BEGIN{system("rm x")}' ${RO}/a`,
   ]) {
@@ -57,4 +59,17 @@ test('sed -n lê, sed -i edita', () => {
   assert.equal(isReadOnlyCommand(`sed -ni 's/a/b/p' ${RO}/a`), false)
   assert.equal(isReadOnlyCommand(`sed -i.bak 's/a/b/' ${RO}/a`), false)
   assert.equal(isReadOnlyCommand(`grep -i foo ${RO}/a`), true)
+})
+
+test('comandos reais dos subagentes: aspas com | e $(...) só de leitura', () => {
+  for (const cmd of [
+    `grep -nE '"(name|version)"' ${RO}/package.json`,
+    `cd ${RO} && echo "total: $(find . -type f -name '*.js' | wc -l)"; ls -d node_modules .git 2>&1`,
+    `grep '<View>' ${RO}/src/App.js`,
+    `wc -l < ${RO}/package.json`,
+    `ls ${RO} &>/dev/null`,
+    `(cd ${RO} && ls)`,
+  ]) {
+    assert.equal(isReadOnlyCommand(cmd), true, cmd)
+  }
 })

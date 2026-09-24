@@ -186,6 +186,8 @@ async function runTurn(body, write, turn) {
             hooks: [async (input) => {
               const reason = validateToolScope(input.tool_name, input.tool_input, worktree)
               if (!reason) return {}
+              // Registra o bloqueio com o comando: ferramentas de subagente não aparecem no chat.
+              console.warn(`[claude_runtime] bloqueado ${input.tool_name}: ${JSON.stringify(input.tool_input).slice(0, 400)}`)
               return {
                 hookSpecificOutput: {
                   hookEventName: 'PreToolUse',

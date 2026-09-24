@@ -60,6 +60,7 @@ import { ActionRequiredCard } from '../components/ActionRequiredCard'
 import { AttachmentTray, type TrayItem } from '../components/AttachmentTray'
 import { AgentActivityCard, type AgentActivityStatus } from '../components/chat/AgentActivityCard'
 import { ModelPicker } from '../components/ModelPicker'
+import { mergeSubagentGroup, subagentGroupDetail, type TimedSubagentGroup } from '../components/chat/subagentGroups'
 import {
   CLAUDE_CLI_DEFAULT_MODEL,
   CLAUDE_CLI_MODELS,
@@ -735,7 +736,7 @@ export function ChatPage() {
   const [pendingAction, setPendingAction] = useState<ActionRequiredEvent | null>(null)
   const [sessionProgressAnchor, setSessionProgressAnchor] = useState<SessionProgressAnchor | null>(null)
   const [contextProgress, setContextProgress] = useState<ContextProgressEvent | null>(null)
-  const [subagentGroups, setSubagentGroups] = useState<SubagentGroupEvent[]>([])
+  const [subagentGroups, setSubagentGroups] = useState<TimedSubagentGroup[]>([])
   const [runtimeStates, setRuntimeStates] = useState<RuntimeStateEvent[]>([])
   const [streamToolStats, setStreamToolStats] = useState<StreamToolStats>(EMPTY_STREAM_TOOL_STATS)
   const [activityTraces, setActivityTraces] = useState<Record<string, ActivityTrace>>({})
@@ -1492,11 +1493,7 @@ export function ChatPage() {
           },
           onSubagentGroup(group) {
             setStreamActivityAt(Date.now())
-            setSubagentGroups((prev) => {
-              const key = group.parent_turn_id ?? group.label
-              const next = prev.filter((item) => (item.parent_turn_id ?? item.label) !== key)
-              return [...next, group]
-            })
+            setSubagentGroups((prev) => mergeSubagentGroup(prev, group, Date.now()))
           },
           onRuntimeState(state) {
             setStreamActivityAt(Date.now())
@@ -1753,11 +1750,7 @@ export function ChatPage() {
           },
           onSubagentGroup(group) {
             setStreamActivityAt(Date.now())
-            setSubagentGroups((prev) => {
-              const key = group.parent_turn_id ?? group.label
-              const next = prev.filter((item) => (item.parent_turn_id ?? item.label) !== key)
-              return [...next, group]
-            })
+            setSubagentGroups((prev) => mergeSubagentGroup(prev, group, Date.now()))
           },
           onRuntimeState(state) {
             setStreamActivityAt(Date.now())
@@ -2097,6 +2090,7 @@ export function ChatPage() {
               thoughtSteps={thoughtSteps}
               activityTraces={activityTraces}
               streamElapsedMs={streamElapsedMs}
+              streamNowMs={streamStartedAt !== null ? streamStartedAt + streamElapsedMs : 0}
               streamIdleMs={streamIdleMs}
               pendingAction={pendingAction}
               contextProgress={contextProgress}
@@ -2738,10 +2732,12 @@ interface ActiveChatProps {
   thoughtSteps: ThoughtStep[]
   activityTraces: Record<string, ActivityTrace>
   streamElapsedMs: number
+  /** Relógio da resposta em andamento (início + decorrido), para os tempos dos cartões. */
+  streamNowMs: number
   streamIdleMs: number
   pendingAction: ActionRequiredEvent | null
   contextProgress: ContextProgressEvent | null
-  subagentGroups: SubagentGroupEvent[]
+  subagentGroups: TimedSubagentGroup[]
   runtimeStates: RuntimeStateEvent[]
   streamToolStats: StreamToolStats
   showThinking: boolean
@@ -2797,7 +2793,7 @@ function groupStatus(group: SubagentGroupEvent): AgentActivityStatus {
 }
 
 function ActiveChat({
-  messages, messagesLoading, messagesError, sessionProgressAnchor, thoughtSteps, activityTraces, streamElapsedMs, streamIdleMs, pendingAction,
+  messages, messagesLoading, messagesError, sessionProgressAnchor, thoughtSteps, activityTraces, streamElapsedMs, streamNowMs, streamIdleMs, pendingAction,
   contextProgress, subagentGroups, runtimeStates, streamToolStats,
   showThinking, streaming, input, setInput, inputRef,
   onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch, activeSandboxName, sandboxAccessCount: _sandboxAccessCount,
@@ -3237,7 +3233,7 @@ function ActiveChat({
                         key={group.parent_turn_id ?? group.label}
                         title={group.label}
                         status={groupStatus(group)}
-                        detail={`${group.activities.length} atividade${group.activities.length === 1 ? '' : 's'} auxiliar${group.activities.length === 1 ? '' : 'es'}`}
+                        detail={subagentGroupDetail(group, streamNowMs)}
                         activities={group.activities}
                       />
                     ))}
