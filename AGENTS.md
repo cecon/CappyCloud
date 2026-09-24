@@ -20,27 +20,27 @@ outros desenvolvedores, analistas e pessoas preparando demonstracoes.
 ## Contexto do projeto
 
 - Arquitetura: veja [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- Fluxo do agente do produto: API → TaskDispatcher → runtime configurado no
+  sandbox (openclaude via gRPC, ou Claude CLI via Agent SDK) → LLM. Instruções,
+  MCPs e skills que o agente do produto recebe estão em
+  [docs/decisions/adr-004-sandbox-lifecycle-and-registry.md](docs/decisions/adr-004-sandbox-lifecycle-and-registry.md)
+  (seção "Atualização"). As regras dele ficam em `sandbox/CLAUDE.md`, não aqui.
 - Regras obrigatorias de desenvolvimento e CI: veja
   [docs/AGENT_RULES.md](docs/AGENT_RULES.md).
 - Premissas de repositorios transitorios, skills de repo, ferramentas externas,
   modelos dinamicos e custo real: veja
   [docs/how-to/agent-runtime-context.md](docs/how-to/agent-runtime-context.md).
 
-## Skills do repositorio
+## Skills de desenvolvimento
 
-As skills devem ser tratadas como conhecimento do repositorio ou do ambiente da
-conversa, nao como regra global fixa.
+- `.agents/skills/<nome>/SKILL.md`: skills de dominio do CappyCloud (API,
+  frontend, migrations, revisao, seguranca, Spec Kit). Carregadas pelo Codex;
+  no Claude Code, leia o `SKILL.md` quando o assunto bater.
+- `.claude/skills/<nome>/SKILL.md`: skills de design de terceiros, carregadas
+  pelo Claude Code.
 
-Quando uma pergunta envolver um repo selecionado, carregue as skills ativas
-daquele repositorio a partir do contexto da conversa, banco ou arquivos
-versionados do proprio repo. No CappyCloud, os arquivos de skill versionados
-podem aparecer em:
-
-- `.agents/skills/<skill-name>/SKILL.md`
-- `.claude/skills/<skill-name>/SKILL.md`
-
-Nao assuma que existe `skills-registry.json`: o contrato atual e o contexto de
-runtime definem quais skills devem entrar na resposta.
+Cada skill existe em um lugar so. A lista e como criar uma nova estao em
+[docs/SKILLS.md](docs/SKILLS.md).
 
 ## Spec Kit
 
