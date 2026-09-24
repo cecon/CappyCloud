@@ -55,7 +55,7 @@ def test_secao_do_prompt_lista_repos_e_conhecimento_somente_leitura() -> None:
 
 
 def test_repo_somente_leitura_aponta_para_o_clone_do_workspace() -> None:
-    repos = _REPOS + [{"slug": "Docs", "alias": "docs", "read_only": True}]
+    repos = [*_REPOS, {"slug": "Docs", "alias": "docs", "read_only": True}]
     section = _paths.render_workspace_section(_WS_SESSION, repos)
     assert "`docs` → `/repos/workspaces/loja/repos/docs` (consulta; não edite)" in section
     assert f"{_WS_SESSION}/docs" not in section

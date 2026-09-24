@@ -299,9 +299,7 @@ def build_prompt_with_agent(
     parts: list[str] = []
 
     worktree_paths: list[str] = []
-    for r in repos or []:
-        if r.get("read_only"):
-            continue  # listado na seção do workspace, fora do worktree editável
+    for r in [r for r in repos or [] if not r.get("read_only")]:  # read_only: seção workspace
         wt = r.get("worktree_path")
         if not wt and session_root:
             alias = r.get("alias") or r.get("slug", "")

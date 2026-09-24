@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from fastapi import HTTPException
-
 from app.adapters.primary.http.conversation_repos import (
     ConversationRepo,
     ConversationRepos,
@@ -12,6 +10,7 @@ from app.adapters.primary.http.conversation_repos import (
     _merge,
 )
 from app.infrastructure.git_pull_requests import PullRequestError, parse_pr_target
+from fastapi import HTTPException
 
 _BACKEND = ConversationRepo(
     "backend", "seller", "/repos/workspaces/loja/sessions/a/backend", "main"
