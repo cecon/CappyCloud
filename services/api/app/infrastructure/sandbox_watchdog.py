@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infrastructure.orm_models import Repository, Sandbox, SandboxSyncQueue
+from app.infrastructure.orm_models_workspaces import Workspace
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ class SandboxWatchdog:
                 item.status = "done"
                 item.last_error = None
                 await self._sync_repo_state(session, item)
+                await self._sync_workspace_state(session, item)
             except Exception as exc:
                 item.retries += 1
                 item.last_error = str(exc)
@@ -66,8 +68,31 @@ class SandboxWatchdog:
                     "[watchdog] %s failed (retry %d): %s", item.operation, item.retries, exc
                 )
                 await self._sync_repo_state(session, item, error=str(exc)[:500])
+                await self._sync_workspace_state(session, item, error=str(exc)[:500])
 
         await session.commit()
+
+    async def _sync_workspace_state(
+        self,
+        session: AsyncSession,
+        item: SandboxSyncQueue,
+        error: str | None = None,
+    ) -> None:
+        if item.operation != "sync_workspace":
+            return
+        slug = (item.payload or {}).get("slug", "")
+        ws = (
+            await session.execute(select(Workspace).where(Workspace.slug == slug))
+        ).scalar_one_or_none()
+        if not ws:
+            return
+        if error:
+            ws.sync_status = "error" if item.status == "error" else "pending"
+            ws.sync_error = error
+        else:
+            ws.sync_status = "synced"
+            ws.sync_error = None
+            ws.last_sync_at = datetime.now(UTC)
 
     async def _sync_repo_state(
         self,
@@ -117,6 +142,15 @@ class SandboxWatchdog:
 
             elif operation == "reconfigure_model":
                 log.info("[watchdog] reconfigure_model is not handled by session_server yet")
+
+            elif operation == "sync_workspace":
+                response = await client.post(f"{base}/workspaces/sync", json=payload)
+                response.raise_for_status()
+
+            elif operation == "remove_workspace":
+                slug = payload.get("slug", "")
+                response = await client.delete(f"{base}/workspaces/{slug}")
+                response.raise_for_status()
 
             elif operation == "reconfigure_mcp":
                 response = await client.post(f"{base}/mcp/configure", json=payload)

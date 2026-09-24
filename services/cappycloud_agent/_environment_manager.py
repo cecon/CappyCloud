@@ -179,30 +179,50 @@ class EnvironmentManager:
             created=True,
         )
 
-    async def destroy_session(self, user_id: str, chat_id: str) -> None:
-        record = await self._store.get(user_id, chat_id)
+    async def destroy_session(self, user_id: str, chat_id: str, *, force: bool = False) -> bool:
+        """Remove os worktrees da sessão no sandbox e o registro.
+
+        Sem ``force``, o sandbox recusa (409) se houver trabalho não enviado;
+        nesse caso a sessão fica marcada como bloqueada e nada é apagado.
+        Devolve ``True`` quando a sessão foi removida.
+        """
+        # get() ignora sessões expiradas — justamente as que o GC precisa apagar.
+        record = await self._store.get_any(user_id, chat_id)
         if not record:
-            return
+            return False
 
         host = record.grpc_host or self._default_host
         base = self._session_base(host, record.session_port or self._default_session_port)
         session_id = record.chat_id.replace("-", "")[:12]
 
         if record.session_root:
+            params = {"session_root": record.session_root, "repos": json.dumps(record.repos)}
+            if force:
+                params["force"] = "1"
             try:
-                async with httpx.AsyncClient(timeout=30) as client:
-                    await client.delete(
-                        f"{base}/sessions/{session_id}",
-                        params={
-                            "session_root": record.session_root,
-                            "repos": json.dumps(record.repos),
-                        },
-                    )
-                log.info("Removed session %s for %s/%s", session_id, user_id, chat_id)
-            except Exception as exc:
-                log.error("Error removing session via session server: %s", exc)
+                async with httpx.AsyncClient(timeout=120) as client:
+                    resp = await client.delete(f"{base}/sessions/{session_id}", params=params)
+            except httpx.HTTPError as exc:
+                log.error("Erro ao remover sessão %s no sandbox: %s", session_id, exc)
+                return False
+            if resp.status_code == 409:
+                blocked = resp.json().get("blocked") or []
+                note = "; ".join(f"{b.get('alias')}: {b.get('reason')}" for b in blocked)
+                log.info("Sessão %s mantida (trabalho não enviado): %s", session_id, note)
+                await self._store.mark_cleanup_blocked(user_id, chat_id, note[:500])
+                return False
+            if resp.status_code != 200:
+                log.error(
+                    "Sandbox recusou remover sessão %s: %s %s",
+                    session_id,
+                    resp.status_code,
+                    resp.text[:200],
+                )
+                return False
+            log.info("Removed session %s for %s/%s", session_id, user_id, chat_id)
 
         await self._store.delete(user_id, chat_id)
+        return True
 
     async def gc_expired(self) -> None:
         for row in await self._store.list_expired_sessions():

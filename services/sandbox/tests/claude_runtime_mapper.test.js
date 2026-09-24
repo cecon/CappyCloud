@@ -12,6 +12,7 @@ const {
   sdkPermissionMode,
   userContentBlocks,
   validateToolScope,
+  workspaceReadOnlyDirs,
 } = require('../claude_runtime_mapper')
 
 const WORKTREE = '/repos/sessions/abc/seller'
@@ -125,4 +126,32 @@ test('sem login vira só um erro com a instrução do terminal', () => {
 
   assert.deepEqual(events, [{ type: 'error', message: LOGIN_HINT }])
   assert.equal(friendlyError('boom'), 'Claude CLI: boom')
+})
+
+test('sessão de workspace: leitura do compartilhado, escrita e Bash só no worktree', () => {
+  const session = '/repos/workspaces/loja/sessions/abc'
+  assert.deepEqual(workspaceReadOnlyDirs(session), [
+    '/repos/workspaces/loja/knowledge',
+    '/repos/workspaces/loja/memory',
+    '/repos/workspaces/loja/.claude',
+    '/repos/workspaces/loja/repos',
+  ])
+  assert.deepEqual(workspaceReadOnlyDirs('/repos/sessions/abc'), [])
+  for (const file of ['knowledge/x.md', 'repos/docs/README.md', 'CLAUDE.md']) {
+    const target = `/repos/workspaces/loja/${file}`
+    assert.equal(validateToolScope('Read', { file_path: target }, session), null, file)
+  }
+  assert.equal(validateToolScope('Grep', { path: '/repos/workspaces/loja/repos/docs' }, session), null)
+  assert.match(
+    validateToolScope('Edit', { file_path: '/repos/workspaces/loja/repos/docs/a.md' }, session),
+    /outside the conversation worktree/,
+  )
+  assert.match(
+    validateToolScope('Bash', { command: 'cat /repos/workspaces/loja/repos/docs/a.md' }, session),
+    /outside the conversation worktree/,
+  )
+  assert.match(
+    validateToolScope('Read', { file_path: '/repos/workspaces/outra/knowledge/x.md' }, session),
+    /outside the conversation worktree/,
+  )
 })

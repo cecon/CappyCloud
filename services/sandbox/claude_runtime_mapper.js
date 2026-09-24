@@ -22,6 +22,20 @@ const PATH_GUARDED_TOOLS = new Set([
 ])
 const COMMAND_GUARDED_TOOLS = new Set(['Bash', 'Monitor'])
 const PATH_INPUT_KEYS = ['file_path', 'path', 'notebook_path']
+const READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LSP'])
+const WORKSPACE_SESSION_RE = /^(\/repos\/workspaces\/[a-z0-9][a-z0-9-]{1,62})\/sessions\/[^/]+$/
+const WORKSPACE_SHARED_DIRS = ['knowledge', 'memory', '.claude', 'repos']
+
+/** Pastas do workspace que a sessão lê (conhecimento, skills, repos somente leitura). */
+function workspaceReadOnlyDirs(worktree) {
+  const match = path.resolve(worktree || '/').match(WORKSPACE_SESSION_RE)
+  return match ? WORKSPACE_SHARED_DIRS.map((dir) => `${match[1]}/${dir}`) : []
+}
+
+function workspaceReadOnlyRoots(worktree) {
+  const dirs = workspaceReadOnlyDirs(worktree)
+  return dirs.length ? [...dirs, `${path.dirname(dirs[0])}/CLAUDE.md`] : []
+}
 
 function sdkPermissionMode(mode) {
   return PERMISSION_MODES[mode] || 'bypassPermissions'
@@ -67,10 +81,12 @@ function extractRepoPaths(command) {
 /** Devolve a mensagem de bloqueio quando a ferramenta sai do worktree, ou null. */
 function validateToolScope(toolName, input, worktree) {
   if (!worktree || !input || typeof input !== 'object') return null
+  const readOnlyRoots = READ_ONLY_TOOLS.has(toolName) ? workspaceReadOnlyRoots(worktree) : []
   if (PATH_GUARDED_TOOLS.has(toolName)) {
     for (const key of PATH_INPUT_KEYS) {
       if (typeof input[key] !== 'string') continue
       const resolved = resolveToolPath(worktree, input[key])
+      if (resolved && readOnlyRoots.some((root) => isInsideWorktree(root, resolved))) continue
       if (resolved && !isInsideWorktree(worktree, resolved)) {
         return `Tool blocked: path outside the conversation worktree. Allowed worktree: ${worktree}. Requested path: ${resolved}.`
       }
@@ -246,4 +262,5 @@ module.exports = {
   sdkPermissionMode,
   userContentBlocks,
   validateToolScope,
+  workspaceReadOnlyDirs,
 }

@@ -1,7 +1,7 @@
 """add sandbox agent runtime
 
 Revision ID: badd8f7956d2
-Revises: 6c4f9b2a7d81
+Revises: 5b7e2a91d4c3
 Create Date: 2026-09-23 19:18:24.609994
 
 Runtime do agente por sandbox: ``openclaude`` (gRPC, padrão) ou ``claude_cli``
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "badd8f7956d2"
-down_revision: str | Sequence[str] | None = "6c4f9b2a7d81"
+down_revision: str | Sequence[str] | None = "5b7e2a91d4c3"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

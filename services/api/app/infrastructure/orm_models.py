@@ -144,8 +144,15 @@ class Conversation(Base):
     title: Mapped[str] = mapped_column(String(512), default="Nova conversa")
     # Multi-repo: lista de {slug, alias, base_branch, branch_name, worktree_path}
     repos: Mapped[list] = mapped_column(JSONBType, nullable=False, server_default="[]")
-    # Diretório raiz da sessão no volume: /repos/sessions/<short_id>/
+    # Diretório raiz da sessão: /repos/sessions/<id>/ ou, em workspace,
+    # /repos/workspaces/<slug>/sessions/<id>/
     session_root: Mapped[str | None] = mapped_column(Text, nullable=True)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUIDType,
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     permission_mode: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
@@ -331,4 +338,9 @@ from app.infrastructure.orm_models_user_preferences import (  # noqa: F401, E402
 )
 from app.infrastructure.orm_models_user_workspaces import (  # noqa: F401, E402
     UserRepositoryWorkspace as UserRepositoryWorkspaceORM,
+)
+from app.infrastructure.orm_models_workspaces import (  # noqa: F401, E402
+    UserWorkspaceAccess,
+    Workspace,
+    WorkspaceRepository,
 )

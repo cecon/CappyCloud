@@ -25,6 +25,7 @@ const {
   sdkPermissionMode,
   userContentBlocks,
   validateToolScope,
+  workspaceReadOnlyDirs,
 } = require('./claude_runtime_mapper')
 
 const CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(process.env.HOME || '/root', '.claude')
@@ -164,6 +165,8 @@ async function runTurn(body, write, turn) {
       options: {
         abortController: turn.abort,
         cwd: worktree,
+        // Sessão de workspace: leitura do conhecimento/skills/repos somente leitura (o guard barra escrita).
+        additionalDirectories: workspaceReadOnlyDirs(worktree),
         model: alias,
         permissionMode: mode,
         allowDangerouslySkipPermissions: mode === 'bypassPermissions',
