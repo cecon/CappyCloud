@@ -6,7 +6,7 @@ import logging
 import time
 
 from ._agent_session import AGENT_RUNTIME_CLAUDE_CLI, AgentSession
-from ._claude_cli_session import ClaudeCliSession
+from ._claude_cli_session import ClaudeCliSession, claude_cli_model_label
 from ._evidence_prefetch import inject_evidence_prefetch
 from ._grpc_helpers import sanitize_permission_mode
 from ._grpc_session import GrpcSession
@@ -145,7 +145,7 @@ async def launch_runner(
             working_directory=working_directory,
             permission_mode=resolved_permission_mode,
         )
-        waiting_label = f"Aguardando resposta do Claude CLI ({effective_model})"
+        waiting_label = f"Aguardando resposta do Claude CLI ({claude_cli_model_label(effective_model)})"
     else:
         provider_config = await resolve_model_provider_runtime_config(
             dispatcher._db_url,

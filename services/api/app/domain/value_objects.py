@@ -126,3 +126,11 @@ def validate_user_workspace_status(raw: object | None) -> str:
     except ValueError as exc:
         allowed = ", ".join(status.value for status in UserWorkspaceStatus)
         raise ValueError(f"estado de workspace inválido. Use um de: {allowed}.") from exc
+
+
+# Modelos do Claude CLI (assinatura do `claude login` da sandbox, fora do catálogo).
+CLAUDE_CLI_MODEL_IDS = frozenset({"claude-cli/opus", "claude-cli/sonnet", "claude-cli/haiku"})
+
+
+def is_claude_cli_model(model_id: str | None) -> bool:
+    return (model_id or "") in CLAUDE_CLI_MODEL_IDS

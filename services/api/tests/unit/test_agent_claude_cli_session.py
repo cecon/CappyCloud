@@ -81,6 +81,7 @@ async def test_stream_vira_eventos_e_envia_contexto_do_turno() -> None:
     assert [e[0] for e in events] == ["text", "tool_start", "tool_result", "done"]
     assert events[0][1] == {"content": "Olá"}
     assert events[3][1]["model_used"] == "claude-sonnet-5"
+    assert events[3][1]["runtime"] == "claude_cli"
     assert seen["path"] == "/claude/turns"
     assert seen["token"] == "segredo"
     assert seen["body"]["conversation_key"] == "user:chat"
@@ -148,3 +149,12 @@ async def test_falha_de_conexao_explica_que_o_sandbox_nao_respondeu() -> None:
     event_type, data = await asyncio.wait_for(session.next_event(), timeout=2)
     assert event_type == "error"
     assert "cappycloud-sandbox" in data["message"]
+
+
+def test_rotulo_mostra_o_modelo_que_o_claude_cli_usa() -> None:
+    label = _session_mod.claude_cli_model_label
+    assert label("gpt-5.4") == "Sonnet"
+    assert label(None) == "Sonnet"
+    assert label("anthropic/claude-opus-4.7") == "Opus"
+    assert label("claude-haiku-4-5") == "Haiku"
+    assert label("anthropic/claude-sonnet-5") == "Sonnet"

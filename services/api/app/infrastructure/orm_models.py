@@ -219,6 +219,8 @@ class Message(Base):
     completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cost_usd: Mapped[float] = mapped_column(Numeric(12, 6), nullable=False, default=0)
     payload_diagnostics: Mapped[dict | None] = mapped_column(JSONBType, nullable=True)
+    # Claude CLI: % usado das janelas de 5h/7d da assinatura quando a resposta terminou.
+    plan_usage: Mapped[dict | None] = mapped_column(JSONBType, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship("Conversation", back_populates="messages")

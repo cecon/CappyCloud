@@ -17,6 +17,7 @@ from app.adapters.primary.http.conversation_create_helpers import (
 )
 from app.adapters.primary.http.conversation_sandbox_guard import (
     ensure_sandbox_ready_for_chat,
+    uses_claude_cli_model,
 )
 from app.adapters.primary.http.deps import (
     get_authenticated_user,
@@ -206,6 +207,7 @@ async def list_messages(
             prompt_tokens=m.prompt_tokens,
             completion_tokens=m.completion_tokens,
             cost_usd=float(m.cost_usd),
+            plan_usage=m.plan_usage,
             payload_diagnostics=(
                 PayloadSizeBreakdownOut.model_validate(m.payload_diagnostics)
                 if m.payload_diagnostics
@@ -240,6 +242,7 @@ async def stream_message(
         sandbox_id = conv.sandbox_id if conv else None
         if sandbox_id is not None:
             await ensure_sandbox_ready_for_chat(session, sandbox_id)
+        runtime_model = await uses_claude_cli_model(session, sandbox_id, body.model_id)
 
         stream = await uc.execute(
             conversation_id,
@@ -248,6 +251,7 @@ async def stream_message(
             user_role=current.role,
             cursor=cursor,
             override_model=body.model_id,
+            model_from_runtime=runtime_model,
             attachment_ids=body.attachment_ids,
             permission_mode=body.permission_mode,
             execution_profile=body.execution_profile,

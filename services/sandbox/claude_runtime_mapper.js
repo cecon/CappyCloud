@@ -142,6 +142,55 @@ function friendlyError(detail) {
   return `Claude CLI: ${text}`
 }
 
+/**
+ * Modelo principal do turno. O Claude Code também gasta tokens com modelos
+ * auxiliares (ex.: Haiku para tarefas internas), então a primeira chave de
+ * `modelUsage` nem sempre é o modelo que respondeu.
+ */
+function mainModel(modelUsage, initModel) {
+  const usage = modelUsage || {}
+  if (initModel && usage[initModel]) return initModel
+  let best = ''
+  let bestOutput = -1
+  for (const [model, item] of Object.entries(usage)) {
+    if ((item.outputTokens || 0) > bestOutput) {
+      best = model
+      bestOutput = item.outputTokens || 0
+    }
+  }
+  return best || initModel
+}
+
+/** Fração (0-1, como o Claude Code manda) ou percentual → percentual com 1 casa. */
+function toPercent(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  const pct = value <= 1 ? value * 100 : value
+  return Math.round(Math.min(Math.max(pct, 0), 100) * 10) / 10
+}
+
+/**
+ * Uso da assinatura (`claude login`) a partir do `rate_limit_event`: quanto
+ * das janelas de 5 horas e 7 dias já foi usado e quando cada uma renova.
+ */
+function planUsageFrom(info) {
+  if (!info || typeof info !== 'object') return null
+  const windows = { ...(info.unifiedWindows || {}) }
+  if (info.rateLimitType && !windows[info.rateLimitType]) {
+    windows[info.rateLimitType] = { utilization: info.utilization, resetsAt: info.resetsAt }
+  }
+  const usage = { status: info.status || null }
+  for (const name of ['five_hour', 'seven_day']) {
+    const window = windows[name]
+    if (!window) continue
+    const resetsAt = Number(window.resetsAt)
+    usage[name] = {
+      used_pct: toPercent(window.utilization),
+      resets_at: Number.isFinite(resetsAt) && resetsAt > 0 ? new Date(resetsAt * 1000).toISOString() : null,
+    }
+  }
+  return usage.five_hour || usage.seven_day ? usage : null
+}
+
 function sumUsage(modelUsage) {
   let promptTokens = 0
   let completionTokens = 0
@@ -157,13 +206,26 @@ function sumUsage(modelUsage) {
  * Cria um mapeador com estado (um por turno). `map(message)` devolve a lista
  * de eventos CappyCloud correspondentes à mensagem do SDK.
  */
-function createEventMapper({ requestedModel = '' } = {}) {
+/** Diferença do acumulado; se o total caiu (sessão nova), o próprio total. */
+function delta(current, previous) {
+  const before = Number(previous) || 0
+  return current >= before ? current - before : current
+}
+
+/**
+ * `modelUsage` e `total_cost_usd` do Claude Code são acumulados da sessão
+ * (restaurados no resume). `previousTotals` é o acumulado até o turno anterior;
+ * o `done` informa só o que este turno consumiu.
+ */
+function createEventMapper({ requestedModel = '', previousTotals = null } = {}) {
   const toolNames = new Map()
   const streamedMessages = new Set()
   let currentStreamMessageId = null
   let emittedText = false
   let initModel = ''
   let sessionId = ''
+  let planUsage = null
+  let totals = null
 
   function map(message) {
     if (!message || typeof message !== 'object') return []
@@ -171,6 +233,11 @@ function createEventMapper({ requestedModel = '' } = {}) {
 
     if (message.type === 'system' && message.subtype === 'init') {
       initModel = message.model || ''
+      return []
+    }
+
+    if (message.type === 'rate_limit_event') {
+      planUsage = planUsageFrom(message.rate_limit_info) || planUsage
       return []
     }
 
@@ -238,11 +305,17 @@ function createEventMapper({ requestedModel = '' } = {}) {
         events.push({ type: 'text', content: message.result })
       }
       const { promptTokens, completionTokens } = sumUsage(message.modelUsage)
+      const cost = typeof message.total_cost_usd === 'number' ? message.total_cost_usd : null
+      totals = { prompt_tokens: promptTokens, completion_tokens: completionTokens, cost_usd: cost }
+      const before = previousTotals || {}
       events.push({
         type: 'done',
-        prompt_tokens: promptTokens,
-        completion_tokens: completionTokens,
-        model_used: Object.keys(message.modelUsage || {})[0] || initModel || requestedModel,
+        prompt_tokens: delta(promptTokens, before.prompt_tokens),
+        completion_tokens: delta(completionTokens, before.completion_tokens),
+        model_used: mainModel(message.modelUsage, initModel) || requestedModel,
+        // Custo equivalente pela tabela da API da Anthropic (a assinatura não cobra por token).
+        ...(cost !== null ? { cost_usd: Math.round(delta(cost, before.cost_usd) * 1e6) / 1e6 } : {}),
+        ...(planUsage ? { plan_usage: planUsage } : {}),
       })
       return events
     }
@@ -250,7 +323,7 @@ function createEventMapper({ requestedModel = '' } = {}) {
     return []
   }
 
-  return { map, getSessionId: () => sessionId }
+  return { map, getSessionId: () => sessionId, getTotals: () => totals }
 }
 
 module.exports = {
@@ -261,6 +334,7 @@ module.exports = {
   modelAlias,
   sdkPermissionMode,
   userContentBlocks,
+  planUsageFrom,
   validateToolScope,
   workspaceReadOnlyDirs,
 }

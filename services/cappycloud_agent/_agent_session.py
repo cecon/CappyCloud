@@ -15,6 +15,9 @@ from ._grpc_helpers import PendingAction
 
 AGENT_RUNTIME_OPENCLAUDE = "openclaude"
 AGENT_RUNTIME_CLAUDE_CLI = "claude_cli"
+# Modelos do Claude CLI (assinatura do `claude login`): fora do catálogo ``ai_models``.
+# A API só os aceita em sandbox com runtime Claude CLI.
+CLAUDE_CLI_MODEL_IDS = frozenset({"claude-cli/opus", "claude-cli/sonnet", "claude-cli/haiku"})
 
 
 class AgentSession(Protocol):

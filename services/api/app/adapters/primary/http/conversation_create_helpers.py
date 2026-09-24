@@ -15,6 +15,7 @@ from app.adapters.secondary.persistence.sqlalchemy_ai_model_access_policy import
 )
 from app.application.use_cases.conversations import CreateConversation
 from app.domain.entities import Conversation, User, UserRole
+from app.domain.value_objects import is_claude_cli_model
 from app.infrastructure.orm_models_platform import AiModel
 from app.infrastructure.orm_models_workspaces import (
     UserWorkspaceAccess,
@@ -27,8 +28,12 @@ from app.schemas import ConversationCreate, ConversationOut
 async def resolve_ai_model_id(
     session: AsyncSession, current: User, model_id: str | None
 ) -> uuid.UUID | None:
-    """Valida o modelo pedido contra o acesso do utilizador e devolve o id ativo."""
-    if not model_id:
+    """Valida o modelo pedido contra o acesso do utilizador e devolve o id ativo.
+
+    Modelo do Claude CLI não está no catálogo: a conversa fica sem ``ai_model_id``
+    e o envio valida contra o runtime da sandbox.
+    """
+    if not model_id or is_claude_cli_model(model_id):
         return None
     try:
         resolved = await SQLAlchemyAiModelAccessPolicy(session).resolve_model_for_user(

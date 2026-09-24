@@ -19,6 +19,7 @@ from contextlib import suppress
 
 import httpx
 
+from ._agent_session import AGENT_RUNTIME_CLAUDE_CLI
 from ._grpc_helpers import (
     GRPC_CONNECTION_LOST,
     GRPC_UNEXPECTED_END,
@@ -29,6 +30,19 @@ from ._grpc_helpers import (
 log = logging.getLogger(__name__)
 
 _TERMINAL_EVENTS = {"done", "error"}
+
+
+def claude_cli_model_label(model_id: str | None) -> str:
+    """Modelo que o Claude CLI usa de fato para o modelo pedido.
+
+    Mesma regra de ``modelAlias`` em ``claude_runtime_mapper.js``: Opus, Haiku
+    ou Sonnet pelo nome; qualquer outro (ex.: GPT) cai no Sonnet.
+    """
+    name = (model_id or "").lower()
+    for family in ("opus", "haiku", "sonnet"):
+        if family in name:
+            return family.capitalize()
+    return "Sonnet"
 
 
 def _attachments_payload(attachments: list[dict] | None) -> list[dict]:
@@ -193,6 +207,10 @@ class ClaudeCliSession:
             self.pending_action = action
             await self._emit("action_required", action)
             return
+        if event_type == "done":
+            # O modelo vem da assinatura do `claude login`, não do catálogo: a API
+            # não trata a diferença para o modelo pedido como fallback proibido.
+            data = {**data, "runtime": AGENT_RUNTIME_CLAUDE_CLI}
         await self._emit(event_type, data)
 
     async def _emit(self, event_type: str, data: object) -> None:

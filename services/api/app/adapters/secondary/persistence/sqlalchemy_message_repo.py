@@ -41,6 +41,7 @@ class SQLAlchemyMessageRepository(MessageRepository):
         values["payload_diagnostics"] = (
             message.payload_diagnostics if message.payload_diagnostics is not None else null()
         )
+        values["plan_usage"] = message.plan_usage if message.plan_usage is not None else null()
         orm = MsgORM(**values)
         self._session.add(orm)
         await self._session.commit()
@@ -80,4 +81,5 @@ class SQLAlchemyMessageRepository(MessageRepository):
             completion_tokens=row.completion_tokens or 0,
             cost_usd=float(row.cost_usd or 0),
             payload_diagnostics=row.payload_diagnostics,
+            plan_usage=row.plan_usage,
         )
