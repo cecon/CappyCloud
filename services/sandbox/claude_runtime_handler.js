@@ -312,6 +312,13 @@ async function tryHandle(req, res, { json, readBody }) {
     json(res, 200, claudeStatus())
     return true
   }
+  // O agente pergunta antes do turno: com sessão guardada, manda só a mensagem
+  // (o contexto da primeira já está no histórico do Claude Code).
+  if (req.method === 'GET' && pathname === '/claude/sessions') {
+    const key = new URL(req.url, 'http://localhost').searchParams.get('key') || ''
+    json(res, 200, { exists: Boolean(storedSession(key).sessionId) })
+    return true
+  }
   if (req.method === 'POST' && pathname === '/claude/turns') {
     await handleTurn(req, res, readBody)
     return true

@@ -71,6 +71,7 @@ class TaskDispatcher:
         permission_mode: str = "bypass_permissions",
         sandbox_session_url: str = "",
         attachments: list[dict] | None = None,
+        user_message: str | None = None,
     ) -> str:
         """Cria uma agent_task e arranca o runner; retorna o task_id (UUID).
 
@@ -101,6 +102,7 @@ class TaskDispatcher:
                 permission_mode=permission_mode,
                 sandbox_session_url=sandbox_session_url,
                 attachments=attachments,
+                user_message=user_message,
             ),
             name=f"dispatch-{task_id[:8]}",
         )
@@ -196,6 +198,7 @@ class TaskDispatcher:
         permission_mode: str = "bypass_permissions",
         sandbox_session_url: str = "",
         attachments: list[dict] | None = None,
+        user_message: str | None = None,
     ) -> None:
         """Cria a sessão, inicia a GrpcSession e arranca o TaskRunner."""
         await launch_runner(
@@ -211,6 +214,7 @@ class TaskDispatcher:
             permission_mode=permission_mode,
             sandbox_session_url=sandbox_session_url,
             attachments=attachments,
+            user_message=user_message,
         )
 
     async def _reconnect_orphaned_tasks(self) -> None:

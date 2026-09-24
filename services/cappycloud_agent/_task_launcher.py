@@ -7,13 +7,10 @@ import time
 
 from ._agent_session import AGENT_RUNTIME_CLAUDE_CLI, AgentSession
 from ._claude_cli_session import ClaudeCliSession, claude_cli_model_label
-from ._evidence_prefetch import inject_evidence_prefetch
 from ._grpc_helpers import sanitize_permission_mode
 from ._grpc_session import GrpcSession
-from ._pipeline_helpers import (
-    build_prompt_with_worktree_context,
-    resolve_model_provider_runtime_config,
-)
+from ._claude_cli_resume import claude_cli_session_exists
+from ._pipeline_helpers import resolve_model_provider_runtime_config
 from ._task_events import (
     insert_error_event,
     insert_status_event,
@@ -21,7 +18,7 @@ from ._task_events import (
 )
 from ._task_runner import TaskRunner
 from ._workspace_paths import workspace_root_of
-from ._worktree_validation import validate_and_inject_worktree
+from ._task_context import prepare_turn_prompt
 
 log = logging.getLogger(__name__)
 
@@ -39,8 +36,13 @@ async def launch_runner(
     permission_mode: str = "bypass_permissions",
     sandbox_session_url: str = "",
     attachments: list[dict] | None = None,
+    user_message: str | None = None,
 ) -> None:
-    """Cria sessão, inicia gRPC e registra o runner ativo."""
+    """Cria sessão, inicia gRPC e registra o runner ativo.
+
+    ``user_message``: a pergunta sem o contexto montado pelo pipeline — é o que
+    vai para o Claude CLI quando a sessão dele é retomada.
+    """
     user_id = user_id or conversation_id or "system"
     chat_id = conversation_id or task_id
     repo_label = _repo_label(repos)
@@ -89,50 +91,29 @@ async def launch_runner(
         "[Dispatcher] working_directory=%r for task %s", working_directory, task_id[:8]
     )
 
-    user_prompt = prompt
     sandbox_session_url = f"http://{sandbox.grpc_host}:{sandbox.session_port}"
-    await _emit_phase(dispatcher, task_id, "context", "Preparando contexto", "active")
-    started = time.monotonic()
-    prompt = await build_prompt_with_worktree_context(
-        prompt,
-        sandbox_session_url,
-        repos or [],
-        session_root or sandbox.session_root,
+    agent_runtime = await dispatcher._env_manager.resolve_agent_runtime(sandbox_id)
+    resumed_cli_session = agent_runtime == AGENT_RUNTIME_CLAUDE_CLI and await (
+        claude_cli_session_exists(sandbox_session_url, f"{user_id}:{chat_id}")
     )
-
-    if sandbox_session_url and repos:
-        new_prompt = await validate_and_inject_worktree(
-            pool=dispatcher._pool,
-            task_id=task_id,
-            prompt=prompt,
-            repos=repos,
-            sandbox_session_url=sandbox_session_url,
-            session_root=session_root,
-            working_directory=working_directory,
-        )
-        if new_prompt is None:
-            return
-        prompt = new_prompt
-
-    prompt = await inject_evidence_prefetch(
-        prompt,
-        user_message=user_prompt,
+    prepared = await prepare_turn_prompt(
+        emit_phase=lambda *args, **kwargs: _emit_phase(dispatcher, *args, **kwargs),
+        pool=dispatcher._pool,
+        task_id=task_id,
+        prompt=prompt,
+        user_message=user_message,
+        resumed_cli_session=resumed_cli_session,
         sandbox_session_url=sandbox_session_url,
         repos=repos or [],
         session_root=session_root or sandbox.session_root,
+        working_directory=working_directory,
     )
-    await _emit_phase(
-        dispatcher,
-        task_id,
-        "context",
-        "Contexto preparado",
-        "done",
-        duration_ms=_elapsed_ms(started),
-    )
+    if prepared is None:
+        return
+    prompt = prepared
 
     effective_model = override_model or dispatcher._model
     resolved_permission_mode = sanitize_permission_mode(permission_mode)
-    agent_runtime = await dispatcher._env_manager.resolve_agent_runtime(sandbox_id)
     session: AgentSession
     if agent_runtime == AGENT_RUNTIME_CLAUDE_CLI:
         # Claude Code oficial: autentica com o `claude login` do sandbox,
