@@ -4,6 +4,7 @@
 // de escopo do worktree. Sem I/O — testadas com `node --test`.
 
 const path = require('path').posix
+const { isReadOnlyCommand } = require('./readonly_commands')
 
 /** Modos do CappyCloud → permissionMode do Agent SDK. */
 const PERMISSION_MODES = {
@@ -97,11 +98,17 @@ function validateToolScope(toolName, input, worktree) {
     if (/(^|[\s;&|])cd\s+\.\.(?:\/|\s|$)/.test(command) || /(^|[\s"'=])\.\.(?:\/|$)/.test(command)) {
       return `Tool blocked: command tries to leave the conversation worktree. Allowed worktree: ${worktree}.`
     }
+    // Repos somente leitura do workspace: Bash só com comandos de leitura (não há Grep/Glob).
+    const readableRoots = workspaceReadOnlyRoots(worktree)
+    const readOnly = readableRoots.length > 0 && isReadOnlyCommand(command)
     for (const rawPath of extractRepoPaths(command)) {
       const resolved = resolveToolPath(worktree, rawPath)
-      if (resolved && !isInsideWorktree(worktree, resolved)) {
-        return `Tool blocked: command references a repo path outside the conversation worktree. Allowed worktree: ${worktree}. Requested path: ${resolved}.`
-      }
+      if (!resolved || isInsideWorktree(worktree, resolved)) continue
+      if (readOnly && readableRoots.some((root) => isInsideWorktree(root, resolved))) continue
+      const hint = readableRoots.some((root) => isInsideWorktree(root, resolved))
+        ? ' Somente leitura: use só comandos de leitura (rg, grep, find, cat, sed -n, head, ls, git log/show), sem redirecionar para arquivo.'
+        : ''
+      return `Tool blocked: command references a repo path outside the conversation worktree. Allowed worktree: ${worktree}. Requested path: ${resolved}.${hint}`
     }
   }
   return null

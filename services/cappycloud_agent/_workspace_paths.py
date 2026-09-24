@@ -40,7 +40,10 @@ def render_workspace_section(session_root: str, repos: list[dict]) -> str:
         path = repo.get("worktree_path") or f"{session_root}/{alias}"
         lines.append(f"- `{alias}` → `{path}`")
     if read_only:
-        lines.append("Repositórios somente leitura (use Read/Grep/Glob; sem alterações nem PR):")
+        lines.append(
+            "Repositórios somente leitura (leia com Read ou Bash só de leitura: rg, grep, find,"
+            " cat, sed -n; sem alterações nem PR):"
+        )
         lines += read_only
     lines += [
         "Somente leitura (compartilhado do workspace; não edite):",

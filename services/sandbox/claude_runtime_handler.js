@@ -101,6 +101,9 @@ function sdkEnv() {
   }
   env.CLAUDE_CONFIG_DIR = CONFIG_DIR
   env.IS_SANDBOX = '1'
+  // A sessão acaba com o turno: subagente/Bash em segundo plano morreria sem
+  // entregar o resultado ("aguarde um instante" e nada mais). Tudo roda no turno.
+  env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = '1'
   return env
 }
 

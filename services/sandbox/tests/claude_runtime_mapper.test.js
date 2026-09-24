@@ -147,8 +147,10 @@ test('sessão de workspace: leitura do compartilhado, escrita e Bash só no work
     validateToolScope('Edit', { file_path: '/repos/workspaces/loja/repos/docs/a.md' }, session),
     /outside the conversation worktree/,
   )
+  // Bash só de leitura no repo somente leitura passa (não há Grep/Glob no Claude Code); escrita não.
+  assert.equal(validateToolScope('Bash', { command: 'cat /repos/workspaces/loja/repos/docs/a.md' }, session), null)
   assert.match(
-    validateToolScope('Bash', { command: 'cat /repos/workspaces/loja/repos/docs/a.md' }, session),
+    validateToolScope('Bash', { command: 'echo x > /repos/workspaces/loja/repos/docs/a.md' }, session),
     /outside the conversation worktree/,
   )
   assert.match(
