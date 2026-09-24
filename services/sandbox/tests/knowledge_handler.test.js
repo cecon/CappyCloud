@@ -24,7 +24,7 @@ function setup() {
 }
 
 /** git/graphify falsos: `update` grava graphify-out no clone como o graphify real. */
-function fakeExec(calls, { failUpdateOf = '' } = {}) {
+function fakeExec(calls, { failUpdateOf = '', unchanged = false } = {}) {
   return async (cmd, args) => {
     calls.push([cmd, ...args].join(' '))
     const graphifyArgs = cmd === 'flock' ? args.slice(3) : [cmd, ...args]
@@ -36,6 +36,7 @@ function fakeExec(calls, { failUpdateOf = '' } = {}) {
       fs.mkdirSync(path.join(clone, 'graphify-out'), { recursive: true })
       fs.writeFileSync(path.join(clone, 'graphify-out', 'graph.json'), '{"nodes":[]}')
       fs.writeFileSync(path.join(clone, 'graphify-out', 'GRAPH_REPORT.md'), `# ${path.basename(clone)}`)
+      if (unchanged) return { stdout: '[graphify watch] No code-graph topology changes detected; outputs left untouched.', stderr: '' }
       return { stdout: '[graphify watch] Rebuilt: 40 nodes, 70 edges, 3 communities', stderr: '' }
     }
     if (args[0] === 'merge-graphs') {
@@ -90,4 +91,13 @@ test('lista e lê só knowledge/ e memory/', { skip: !posix }, async () => {
   assert.equal(readFile(ws, 'memory/nota.md').content, 'lembrar')
   assert.throws(() => readFile(ws, 'repos/seller/.git/config'), /fora de knowledge/)
   assert.throws(() => readFile(ws, 'knowledge/../CLAUDE.md'), /fora de knowledge/)
+})
+
+test('sem mudança no código mantém a contagem da rodada anterior', { skip: !posix }, async () => {
+  const { reposRoot } = setup()
+  await buildKnowledge('loja', { reposRoot, exec: fakeExec([]) })
+  const status = await buildKnowledge('loja', { reposRoot, exec: fakeExec([], { unchanged: true }) })
+
+  assert.equal(status.state, 'done')
+  assert.deepEqual(status.repos.map((r) => [r.alias, r.nodes, r.unchanged]), [['pdv', 40, true], ['seller', 40, true]])
 })

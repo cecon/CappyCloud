@@ -73,7 +73,7 @@ function workspaceRepos(root) {
   })
 }
 
-async function buildRepo(repo, outDir, exec, locksDir) {
+async function buildRepo(repo, outDir, exec, locksDir, previous = {}) {
   const started = Date.now()
   const lock = path.join(locksDir, `${repo.slug}.lock`)
   const git = (args) => ['-w', '600', lock, 'git', '-C', repo.clone, ...args]
@@ -89,7 +89,12 @@ async function buildRepo(repo, outDir, exec, locksDir) {
     const { stdout, stderr } = await exec('flock', ['-w', '600', lock, GRAPHIFY, 'update', repo.clone], {
       cwd: repo.clone, timeout: 900_000, maxBuffer: 20 * 1024 * 1024,
     })
-    Object.assign(result, parseRebuilt(`${stdout}\n${stderr}`))
+    const output = `${stdout}\n${stderr}`
+    Object.assign(result, parseRebuilt(output))
+    // Sem mudança o graphify não reimprime a contagem: vale a da rodada anterior.
+    if (result.nodes === undefined && /No code-graph topology changes/.test(output)) {
+      Object.assign(result, { nodes: previous.nodes, edges: previous.edges, communities: previous.communities, unchanged: true })
+    }
     const report = path.join(repo.clone, 'graphify-out', 'GRAPH_REPORT.md')
     fs.mkdirSync(path.join(outDir, repo.alias), { recursive: true })
     if (fs.existsSync(report)) fs.copyFileSync(report, path.join(outDir, repo.alias, 'GRAPH_REPORT.md'))
@@ -106,9 +111,13 @@ async function buildKnowledge(slug, { reposRoot = '/repos', exec = run } = {}) {
   const root = workspaceRoot(slug, reposRoot)
   const outDir = graphDir(root)
   const started = new Date()
-  writeStatus(root, { ...readStatus(root), state: 'running', started_at: started.toISOString() })
+  const previous = readStatus(root)
+  const previousRepo = (alias) => (previous.repos || []).find((repo) => repo.alias === alias)
+  writeStatus(root, { ...previous, state: 'running', started_at: started.toISOString() })
   const repos = []
-  for (const repo of workspaceRepos(root)) repos.push(await buildRepo(repo, outDir, exec, path.join(reposRoot, '.locks')))
+  for (const repo of workspaceRepos(root)) {
+    repos.push(await buildRepo(repo, outDir, exec, path.join(reposRoot, '.locks'), previousRepo(repo.alias)))
+  }
   const built = repos.filter((repo) => repo.graph && fs.existsSync(repo.graph))
   const graphs = built.map((repo) => repo.graph)
   const status = { state: 'done', started_at: started.toISOString(), repos: repos.map(({ graph, ...rest }) => rest) }

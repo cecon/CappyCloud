@@ -11,6 +11,7 @@ import {
   type KnowledgeStatus,
   type WorkspaceKnowledge,
 } from '../api'
+import { WorkspaceMemoriesSection } from './WorkspaceMemoriesSection'
 
 const STATE_LABEL: Record<KnowledgeStatus['state'], { text: string; color: string }> = {
   never_built: { text: 'Ainda não gerado', color: 'gray' },
@@ -141,7 +142,7 @@ export function WorkspaceKnowledgeModal({ workspace, onClose }: { workspace: Adm
                       <Table.Td>{seconds(repo.duration_ms)}</Table.Td>
                       <Table.Td>
                         <Text size="xs" c={repo.error ? 'red' : 'dimmed'}>
-                          {repo.error ?? repo.warning ?? ''}
+                          {repo.error ?? repo.warning ?? (repo.unchanged ? 'sem mudanças no código' : '')}
                         </Text>
                       </Table.Td>
                     </Table.Tr>
@@ -151,6 +152,7 @@ export function WorkspaceKnowledgeModal({ workspace, onClose }: { workspace: Adm
             )}
           </Stack>
         )}
+        {workspaceId && <WorkspaceMemoriesSection workspaceId={workspaceId} />}
         {data && (
           <Stack gap="xs">
             <Text fw={600}>Arquivos (knowledge/ e memory/)</Text>

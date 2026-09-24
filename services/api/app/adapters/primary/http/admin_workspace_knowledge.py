@@ -3,8 +3,9 @@
   GET  /admin/workspaces/{id}/knowledge            → status do grafo e arquivos
   GET  /admin/workspaces/{id}/knowledge/file?path= → um arquivo de knowledge/ ou memory/
   POST /admin/workspaces/{id}/knowledge/build      → enfileira a reconstrução ("Atualizar agora")
+  GET  /admin/workspaces/{id}/knowledge/memories   → memórias do agentmemory deste workspace
 
-Os dados vêm do sandbox do workspace (``knowledge_handler.js``).
+Os dados vêm do sandbox do workspace (``knowledge_handler.js`` e ``memory_handler.js``).
 """
 
 from __future__ import annotations
@@ -57,7 +58,7 @@ async def _workspace_url(session: AsyncSession, workspace_id: uuid.UUID) -> tupl
     sandbox = await session.get(Sandbox, ws.sandbox_id)
     if sandbox is None:
         raise HTTPException(status_code=409, detail="O sandbox do workspace não existe mais.")
-    base = f"http://{sandbox.host}:{sandbox.session_port}/workspaces/{ws.slug}/knowledge"
+    base = f"http://{sandbox.host}:{sandbox.session_port}/workspaces/{ws.slug}"
     return ws, base
 
 
@@ -73,7 +74,7 @@ async def knowledge_overview(
     workspace_id: uuid.UUID, session: Session, sandbox_get: SandboxGetter
 ) -> Any:
     _, base = await _workspace_url(session, workspace_id)
-    return _reply(*await sandbox_get(base, {}))
+    return _reply(*await sandbox_get(f"{base}/knowledge", {}))
 
 
 @router.get("/file")
@@ -84,7 +85,7 @@ async def knowledge_file(
     path: Annotated[str, Query(min_length=1, max_length=512)],
 ) -> Any:
     _, base = await _workspace_url(session, workspace_id)
-    return _reply(*await sandbox_get(f"{base}/file", {"path": path}))
+    return _reply(*await sandbox_get(f"{base}/knowledge/file", {"path": path}))
 
 
 @router.post("/build", status_code=202)
@@ -93,3 +94,11 @@ async def knowledge_build(workspace_id: uuid.UUID, session: Session) -> dict:
     queued = await enqueue_knowledge_build(session, ws)
     await session.commit()
     return {"queued": queued}
+
+
+@router.get("/memories")
+async def knowledge_memories(
+    workspace_id: uuid.UUID, session: Session, sandbox_get: SandboxGetter
+) -> Any:
+    _, base = await _workspace_url(session, workspace_id)
+    return _reply(*await sandbox_get(f"{base}/memory", {}))
