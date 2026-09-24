@@ -3214,9 +3214,9 @@ function ActiveChat({
                   <Stack gap="xs">
                     {heavyStreamingReason && (
                       <AgentActivityCard
-                        title="Iteracao pesada"
+                        title="Iteração pesada"
                         status="warning"
-                        detail={`${heavyStreamingReason}. Considere usar Rapido para limitar a proxima rodada.`}
+                        detail={`${heavyStreamingReason}. Considere usar Rápido para limitar a próxima rodada.`}
                       />
                     )}
                     {contextProgress && (
@@ -3599,7 +3599,13 @@ function PaperMessage({
   const totalTokens = (promptTokens ?? 0) + (completionTokens ?? 0)
   const hasUsage =
     !isUser && (totalTokens > 0 || !!modelUsed)
-  const usageWarning = isUser ? null : heavyUsageReason(promptTokens, completionTokens, costUsd)
+  // Claude CLI (tem planUsage): os tokens de entrada são quase todos cache barato;
+  // só o custo equivalente indica uma resposta pesada.
+  const usageWarning = isUser
+    ? null
+    : planUsage
+      ? heavyUsageReason(0, 0, costUsd)
+      : heavyUsageReason(promptTokens, completionTokens, costUsd)
   // Claude CLI: o custo é o equivalente pela tabela da API (coberto pela assinatura);
   // o uso das janelas de 5h/7d fica na dica, sem ocupar espaço.
   const planBadge = planUsageBadge(planUsage)
@@ -3649,7 +3655,12 @@ function PaperMessage({
       {usageWarning && (
         <div className={styles.heavyUsageNotice} role="note">
           <span className={styles.icon} aria-hidden="true">speed</span>
-          <span>Iteracao pesada: {usageWarning}. Use Rapido quando quiser limitar a proxima rodada.</span>
+          <span>
+            Iteração pesada: {usageWarning}.{' '}
+            {planUsage
+              ? 'Um modelo menor (Sonnet ou Haiku) gasta menos da janela da assinatura.'
+              : 'Use Rápido quando quiser limitar a próxima rodada.'}
+          </span>
         </div>
       )}
       {hasUsage && (
