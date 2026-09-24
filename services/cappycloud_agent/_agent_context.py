@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import uuid
+from collections.abc import Collection
 
 import asyncpg
 import httpx
@@ -274,15 +275,15 @@ def build_prompt_with_agent(
     session_root: str = "",
     agent_profiles: list[dict] | None = None,
     execution_profile: str = "medium",
-    native_subagents: bool = False,
+    native_subagents: Collection[str] = (),
 ) -> str:
     """Monta o prompt do turno: só o que muda por sessão + a mensagem do usuário.
 
     As regras fixas ficam no CLAUDE.md base (memória do usuário). Inclui o
     caminho absoluto do worktree (workaround para bug de CWD do openclaude), o
     índice das skills do repositório e as ferramentas do servidor de sessão.
-    ``native_subagents``: o runtime carrega ``~/.claude/agents`` (Claude CLI),
-    então o perfil do arquiteto é citado, não colado.
+    ``native_subagents``: subagentes que o runtime já carrega (``~/.claude/agents``
+    no Claude CLI); esses perfis são citados, não colados.
     """
     parts: list[str] = []
 

@@ -16,6 +16,7 @@ const fs = require('fs')
 const path = require('path')
 const { execFileSync } = require('child_process')
 const { pathToFileURL } = require('url')
+const { agentNames } = require('./claude_runtime_subagents')
 
 const {
   createEventMapper,
@@ -317,6 +318,10 @@ async function tryHandle(req, res, { json, readBody }) {
   if (req.method === 'GET' && pathname === '/claude/sessions') {
     const key = new URL(req.url, 'http://localhost').searchParams.get('key') || ''
     json(res, 200, { exists: Boolean(storedSession(key).sessionId) })
+    return true
+  }
+  if (req.method === 'GET' && pathname === '/claude/agents') {
+    json(res, 200, { names: agentNames(path.join(CONFIG_DIR, 'agents')) })
     return true
   }
   if (req.method === 'POST' && pathname === '/claude/turns') {

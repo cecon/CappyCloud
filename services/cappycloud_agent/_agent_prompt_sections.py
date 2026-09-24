@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from urllib.parse import quote
 
 
@@ -73,30 +73,43 @@ def render_execution_profile(profile: str) -> str:
     )
 
 
-def render_repo_agents(agent_profiles: list[dict], native_subagents: bool = False) -> str:
-    """Perfis ``<repo>-architect``. No Claude CLI eles já são subagentes
-    (``~/.claude/agents``): o prompt só aponta; no openclaude o perfil é colado."""
+def _agent_line(agent: dict, with_model: bool) -> str:
+    line = f"- **{agent['name']}** (`{agent['slug']}`)"
+    if agent.get("description"):
+        line += f" — {agent['description']}"
+    if with_model and agent.get("default_model"):
+        line += f"  \n  Modelo preferencial: `{agent['default_model']}`"
+    return line
+
+
+def render_repo_agents(
+    agent_profiles: list[dict], native_subagents: Collection[str] = ()
+) -> str:
+    """Perfis ``<repo>-architect``.
+
+    ``native_subagents``: nomes que o runtime já carrega como subagente
+    (``~/.claude/agents`` no Claude CLI). Esses o prompt só cita; os demais
+    (openclaude, ou arquivo ainda não gravado no sandbox) vão colados.
+    """
+    native = [a for a in agent_profiles if a["name"] in native_subagents]
+    pasted = [a for a in agent_profiles if a["name"] not in native_subagents]
     lines = ["## Agente arquitetural do repositório"]
-    if native_subagents:
+    if native:
         lines.append(
             "Estes subagentes conhecem a arquitetura do(s) repositório(s) da sessão. "
             "Delegue a eles (ferramenta Agent, pelo nome) a investigação arquitetural "
             "e a validação de mudanças antes de consultar as skills."
         )
-    else:
+        lines.extend(_agent_line(agent, with_model=False) for agent in native)
+    if pasted:
         lines.append(
             "Estes perfis foram selecionados automaticamente pelo(s) repositório(s) "
             "da sessão. Use-os como estratégia de investigação e validação antes das skills."
         )
-    for agent in agent_profiles:
-        line = f"- **{agent['name']}** (`{agent['slug']}`)"
-        if agent.get("description"):
-            line += f" — {agent['description']}"
-        if agent.get("default_model") and not native_subagents:
-            line += f"  \n  Modelo preferencial: `{agent['default_model']}`"
-        lines.append(line)
-        if agent.get("system_prompt") and not native_subagents:
-            lines.append(f"\n{agent['system_prompt']}")
+        for agent in pasted:
+            lines.append(_agent_line(agent, with_model=True))
+            if agent.get("system_prompt"):
+                lines.append(f"\n{agent['system_prompt']}")
     return "\n".join(lines)
 
 

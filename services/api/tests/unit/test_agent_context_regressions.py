@@ -272,7 +272,9 @@ _ARCHITECT = {
 
 def test_claude_cli_cites_architect_subagent_instead_of_pasting_it() -> None:
     """No Claude CLI o perfil já é subagente em ~/.claude/agents: colar duplicaria."""
-    native = _agent_prompt_sections.render_repo_agents([_ARCHITECT], native_subagents=True)
+    native = _agent_prompt_sections.render_repo_agents(
+        [_ARCHITECT], native_subagents={"autosystem-architect"}
+    )
     pasted = _agent_prompt_sections.render_repo_agents([_ARCHITECT])
 
     assert "autosystem-architect" in native
@@ -291,3 +293,15 @@ def test_repo_skills_are_an_index_not_full_content() -> None:
     assert "`/skills/search`" in section
     assert "conteúdo longo" not in section
     assert "skills globais" not in section
+
+
+def test_architect_without_agent_file_is_still_pasted() -> None:
+    """Sem ~/.claude/agents gravado (sandbox sem boot), citar mandaria para o nada."""
+    other = {**_ARCHITECT, "slug": "pdv-architect", "name": "pdv-architect"}
+    other["system_prompt"] = "Mapa do PDV"
+    section = _agent_prompt_sections.render_repo_agents(
+        [_ARCHITECT, other], native_subagents={"autosystem-architect"}
+    )
+
+    assert "Mapa de investigação AutoSystem" not in section
+    assert "Mapa do PDV" in section
