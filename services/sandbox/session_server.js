@@ -33,6 +33,7 @@ const { execFile, execFileSync } = require('child_process')
 const { promisify } = require('util')
 
 const gitHandlers = require('./git_handlers')
+const { normalizeAzureUrl } = require('./git_urls')
 const claudeRuntimeHandler = require('./claude_runtime_handler')
 const globalsHandler = require('./globals_handler')
 const mcpHandler = require('./mcp_handler')
@@ -59,7 +60,8 @@ const activeSessions = new Set()
  * @param {string} providerType - github | azure_devops
  * @returns {string}
  */
-function injectToken(url, explicitToken = '', providerType = '') {
+function injectToken(rawUrl, explicitToken = '', providerType = '') {
+  const url = normalizeAzureUrl(rawUrl)
   const devopsToken = explicitToken && (providerType === 'azure_devops' || /dev\.azure\.com/.test(url))
     ? explicitToken
     : (process.env.DEVOPS_TOKEN || '')

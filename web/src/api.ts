@@ -1778,6 +1778,8 @@ export interface Repository {
   provider_id: string | null
   sandbox_id: string | null
   sandbox_status: string
+  /** Motivo da última falha de clone/sync (saída do git, sem credenciais). */
+  error_message?: string | null
   active: boolean
   created_at: string
   signoz_service_name?: string | null
