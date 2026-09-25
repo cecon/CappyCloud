@@ -31,6 +31,7 @@ from app.adapters.primary.http import conversation_activity as conv_activity_rou
 from app.adapters.primary.http import conversation_commands as conv_commands_router
 from app.adapters.primary.http import conversation_diff as conv_diff_router
 from app.adapters.primary.http import conversation_files as conv_files_router
+from app.adapters.primary.http import conversation_manage as conv_manage_router
 from app.adapters.primary.http import conversation_pr as conv_pr_router
 from app.adapters.primary.http import conversations as conv_router
 from app.adapters.primary.http import document_graph as document_graph_router
@@ -208,6 +209,7 @@ app.include_router(admin_ws_knowledge_router.router, prefix="/api")
 app.include_router(admin_ai_catalog_router.router, prefix="/api")
 app.include_router(attachments_router.router)
 app.include_router(conv_router.router, prefix="/api")
+app.include_router(conv_manage_router.router, prefix="/api")
 app.include_router(conv_activity_router.router, prefix="/api")
 app.include_router(conv_commands_router.router, prefix="/api")
 app.include_router(conv_diff_router.router, prefix="/api")

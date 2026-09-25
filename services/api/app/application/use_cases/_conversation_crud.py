@@ -17,10 +17,19 @@ class ListConversations:
     def __init__(self, conversations: ConversationRepository) -> None:
         self._conversations = conversations
 
-    async def execute(self, user_id: uuid.UUID, include_all: bool = False) -> list[Conversation]:
+    async def execute(
+        self, user_id: uuid.UUID, include_all: bool = False, archived: bool = False
+    ) -> list[Conversation]:
+        """Conversas ativas (padrão) ou só as arquivadas (``archived=True``).
+
+        O repositório devolve todas: abrir ou continuar uma conversa arquivada
+        segue funcionando; só a lista separa.
+        """
         if include_all:
-            return await self._conversations.list_all()
-        return await self._conversations.list_by_user(user_id)
+            rows = await self._conversations.list_all()
+        else:
+            rows = await self._conversations.list_by_user(user_id)
+        return [conv for conv in rows if (conv.archived_at is not None) is archived]
 
 
 class CreateConversation:

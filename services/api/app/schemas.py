@@ -192,6 +192,7 @@ from app.schemas_attachments import AttachmentOut  # noqa: E402, F401
 from app.schemas_conversations import (  # noqa: E402, F401
     ConversationCreate,
     ConversationOut,
+    ConversationPatch,
     ConversationUsage,
     MessageOut,
     PayloadSizeBreakdownOut,

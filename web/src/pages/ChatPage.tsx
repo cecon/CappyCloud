@@ -18,6 +18,7 @@ import {
   fetchAiModels,
   fetchConversationDiff,
   fetchConversations,
+  updateConversation,
   fetchConversationActivity,
   fetchConversationUsage,
   fetchMessages,
@@ -81,6 +82,8 @@ import {
   buildHistoryTraces,
 } from '../components/chat/thoughtSteps'
 import { CommandConfirmation } from '../components/chat/CommandConfirmation'
+import { ArchivedConversations } from '../components/chat/ArchivedConversations'
+import { ConversationListItem } from '../components/chat/ConversationListItem'
 import { ChatVerticalNavigation } from '../components/chat/ChatVerticalNavigation'
 import { SlashCommandMenu } from '../components/chat/SlashCommandMenu'
 import { slashCommandQuery, shouldOpenSlashCommands } from '../components/chat/SlashCommandMenu.utils'
@@ -666,6 +669,7 @@ export function ChatPage() {
 
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [archivedRefreshKey, setArchivedRefreshKey] = useState(0)
   const [mainMode, setMainMode] = useState<ChatMainMode>('chat')
   const [conversationSearch, setConversationSearch] = useState('')
   const [visibleConversationCount, setVisibleConversationCount] = useState(CONVERSATION_PAGE_SIZE)
@@ -1329,6 +1333,30 @@ export function ChatPage() {
   }, [handleNewChat])
 
   /** Seleciona uma conversa histórica sem deixar o streaming atual contaminar a UI. */
+  async function handleRenameConversation(conversation: Conversation, title: string) {
+    const token = getToken()
+    if (!token) return
+    const updated = await updateConversation(token, conversation.id, { title })
+    setConversations((prev) => prev.map((item) => (item.id === updated.id ? { ...item, title: updated.title } : item)))
+  }
+
+  async function handleArchiveConversation(conversation: Conversation, archived: boolean) {
+    const token = getToken()
+    if (!token) return
+    const updated = await updateConversation(token, conversation.id, { archived })
+    setConversations((prev) =>
+      prev.some((item) => item.id === updated.id)
+        ? prev.map((item) => (item.id === updated.id ? { ...item, archived_at: updated.archived_at } : item))
+        : [updated, ...prev],
+    )
+    setArchivedRefreshKey((key) => key + 1)
+  }
+
+  function handleOpenArchived(conversation: Conversation) {
+    setConversations((prev) => (prev.some((item) => item.id === conversation.id) ? prev : [...prev, conversation]))
+    handleSelectConversation(conversation.id)
+  }
+
   function handleSelectConversation(conversationId: string) {
     setMainMode('chat')
     if (conversationId === activeId) return
@@ -1867,9 +1895,12 @@ export function ChatPage() {
 
   const normalizedConversationSearch = conversationSearch.trim().toLocaleLowerCase('pt-BR')
   const filteredConversations = useMemo(() => {
-    if (!normalizedConversationSearch) return conversations
+    // Arquivadas ficam no estado (a conversa aberta continua funcionando), mas
+    // fora da lista: aparecem em "Arquivadas", no rodapé.
+    const active = conversations.filter((conversation) => !conversation.archived_at)
+    if (!normalizedConversationSearch) return active
 
-    return conversations.filter((conversation) => {
+    return active.filter((conversation) => {
       const repoText = conversation.repos
         ?.map((repo) => [repo.slug, repo.alias, repo.base_branch].filter(Boolean).join(' '))
         .join(' ') ?? ''
@@ -2017,23 +2048,25 @@ export function ChatPage() {
                 <h3 className={styles.groupLabel}>{g.label}</h3>
                 <div className={styles.groupItems}>
                   {g.items.map((c) => (
-                    <button
+                    <ConversationListItem
                       key={c.id}
-                      className={`${styles.sessionItem} ${c.id === activeId ? styles.sessionItemActive : ''}`}
-                      onClick={() => handleSelectConversation(c.id)}
-                    >
-                      <span className={`${styles.icon} ${styles.sessionIcon}`}>
-                        chat_bubble
-                      </span>
-                      <span className={styles.sessionLabel}>{c.title}</span>
-                      {c.repos?.[0]?.slug && (
-                        <span className={styles.sessionEnvDot} title={c.repos[0].slug} />
-                      )}
-                    </button>
+                      conversation={c}
+                      active={c.id === activeId}
+                      onSelect={() => handleSelectConversation(c.id)}
+                      onRename={(title) => handleRenameConversation(c, title)}
+                      onArchive={(archived) => handleArchiveConversation(c, archived)}
+                    />
                   ))}
                 </div>
               </section>
             ))}
+            <ArchivedConversations
+              activeId={activeId}
+              refreshKey={archivedRefreshKey}
+              onSelect={handleOpenArchived}
+              onRename={handleRenameConversation}
+              onUnarchive={(conversation) => handleArchiveConversation(conversation, false)}
+            />
             {hiddenConversationCount > 0 && (
               <div className={styles.sessionListFooter}>
                 <button

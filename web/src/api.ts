@@ -400,6 +400,8 @@ export type Conversation = {
   /** Conversa de workspace: abre todos os repositórios dele. */
   workspace_id?: string | null
   permission_mode: PermissionMode
+  /** Arquivada: fora da lista padrão, mas continua aberta e intacta. */
+  archived_at?: string | null
 }
 
 /** Workspace que o utilizador pode usar ao abrir uma conversa. */
@@ -862,12 +864,31 @@ function runtimeStateLabel(state: RuntimeStateKind): string {
   }
 }
 
+/** Renomeia e/ou arquiva a conversa (`archived: false` desarquiva). Só o dono. */
+export async function updateConversation(
+  token: string,
+  conversationId: string,
+  patch: { title?: string; archived?: boolean },
+): Promise<Conversation> {
+  const res = await apiFetch(`/api/conversations/${conversationId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Não foi possível atualizar a conversa')
+  }
+  return res.json()
+}
+
 export async function fetchConversations(
   token: string,
-  options: { scope?: 'own' | 'all' } = {},
+  options: { scope?: 'own' | 'all'; archived?: boolean } = {},
 ): Promise<Conversation[]> {
   const params = new URLSearchParams()
   if (options.scope) params.set('scope', options.scope)
+  if (options.archived) params.set('archived', 'true')
   const suffix = params.toString() ? `?${params.toString()}` : ''
   const res = await apiFetch(`/api/conversations${suffix}`, {
     headers: { Authorization: `Bearer ${token}` },

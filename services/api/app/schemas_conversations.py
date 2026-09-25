@@ -57,8 +57,16 @@ class ConversationOut(BaseModel):
     pr_approved: bool = False
     ci_status: str = "unknown"
     ci_url: str | None = None
+    archived_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ConversationPatch(BaseModel):
+    """Renomear e/ou arquivar (``archived=false`` desarquiva)."""
+
+    title: str | None = Field(default=None, max_length=512)
+    archived: bool | None = None
 
 
 class PayloadSizeCategoryOut(BaseModel):

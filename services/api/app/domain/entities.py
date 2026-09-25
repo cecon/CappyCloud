@@ -227,6 +227,8 @@ class Conversation:
     ci_status: str = "unknown"  # unknown | pending | running | passed | failed
     ci_url: str | None = None
     user_email: str | None = None
+    # Arquivada: some da lista do usuário, mas continua acessível e intacta.
+    archived_at: datetime | None = None
 
 
 @dataclass
