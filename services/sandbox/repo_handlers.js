@@ -11,6 +11,7 @@ const fs = require('fs')
 const path = require('path')
 const { execFile, execFileSync } = require('child_process')
 const { promisify } = require('util')
+const { normalizeAzureUrl, redactCredentials } = require('./git_urls')
 
 const execFileAsync = promisify(execFile)
 
@@ -62,7 +63,7 @@ async function postClone(body, json, res, injectToken) {
     return json(res, 400, { error: 'slug e clone_url são obrigatórios' })
   }
 
-  configureInsteadOf(token, provider_type, clone_url)
+  configureInsteadOf(token, provider_type, normalizeAzureUrl(clone_url))
 
   const repoPath = `/repos/${slug}`
   const authCloneUrl = injectToken(clone_url, token, provider_type)
@@ -96,7 +97,7 @@ async function postClone(body, json, res, injectToken) {
     }
     return json(res, 200, { cloned: true, slug, path: repoPath })
   } catch (err) {
-    const msg = ((err.stdout || '') + (err.stderr || '')).trim() || err.message
+    const msg = redactCredentials(((err.stdout || '') + (err.stderr || '')).trim() || err.message)
     console.error(`[session_server] clone failed ${slug}: ${msg}`)
     return json(res, 500, { error: msg })
   }

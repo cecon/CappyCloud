@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -18,6 +19,22 @@ from app.infrastructure.workspace_knowledge import enqueue_knowledge_build
 log = logging.getLogger(__name__)
 
 _MAX_RETRIES = 3
+_TIMEOUTS = {"clone_repo": 330}
+_CREDENTIALS_IN_URL = re.compile(r"(https?://)[^@\s/]+@", re.IGNORECASE)
+
+
+def error_detail(exc: Exception) -> str:
+    """Motivo legível da falha: o erro que o sandbox devolveu (ex.: a saída do git),
+    não só "500 Internal Server Error". Credenciais em URLs são removidas."""
+    detail = str(exc)
+    if isinstance(exc, httpx.HTTPStatusError):
+        try:
+            body = exc.response.json()
+            detail = str(body.get("error") or body) if isinstance(body, dict) else str(body)
+        except ValueError:
+            detail = exc.response.text or detail
+        detail = f"HTTP {exc.response.status_code}: {detail}"
+    return _CREDENTIALS_IN_URL.sub(r"\1***@", detail.strip())
 
 
 class SandboxWatchdog:
@@ -64,13 +81,13 @@ class SandboxWatchdog:
                 await self._sync_workspace_state(session, item)
             except Exception as exc:
                 item.retries += 1
-                item.last_error = str(exc)
+                item.last_error = error_detail(exc)
                 item.status = "error" if item.retries >= _MAX_RETRIES else "pending"
                 log.warning(
                     "[watchdog] %s failed (retry %d): %s", item.operation, item.retries, exc
                 )
-                await self._sync_repo_state(session, item, error=str(exc)[:500])
-                await self._sync_workspace_state(session, item, error=str(exc)[:500])
+                await self._sync_repo_state(session, item, error=item.last_error[:500])
+                await self._sync_workspace_state(session, item, error=item.last_error[:500])
 
         await session.commit()
 
@@ -130,7 +147,9 @@ class SandboxWatchdog:
     async def _execute(self, sandbox: Sandbox, operation: str, payload: dict[str, Any]) -> None:
         base = f"http://{sandbox.host}:{sandbox.session_port}"
 
-        async with httpx.AsyncClient(timeout=60) as client:
+        # O sandbox dá até 300 s ao git clone: esperar menos marcava erro e repetia
+        # o clone de repositório grande enquanto o primeiro ainda rodava.
+        async with httpx.AsyncClient(timeout=_TIMEOUTS.get(operation, 60)) as client:
             if operation == "clone_repo":
                 response = await client.post(f"{base}/repos/clone", json=payload)
                 response.raise_for_status()
