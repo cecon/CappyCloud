@@ -84,6 +84,13 @@ filtro de cada um):
   seção curta de fontes consultadas (título e URL). Nunca cite título, pageId
   ou conteúdo que não viu num resultado real.
 
+Páginas da web (ex.: artigos da central de atendimento da TOTVS): se o
+WebFetch devolver 403 ou vier vazio, leia com `webread <url>` pelo Bash. Ele
+se apresenta como navegador e lê artigos de central Zendesk
+(`/hc/<idioma>/articles/<id>`) pela API pública, que não é bloqueada. Se
+ainda assim falhar, diga que a página existe mas não pôde ser aberta, cite o
+título e o link do resultado da busca e não invente o conteúdo.
+
 ## Ferramentas do container
 
 - Python 3, Node, Bun, ripgrep, jq, gh, az e graphviz estão instalados.
