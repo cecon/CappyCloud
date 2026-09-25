@@ -183,7 +183,8 @@ COPY services/sandbox/terminal_pty.py /terminal_pty.py
 COPY services/sandbox/worktree_handlers.js /worktree_handlers.js
 COPY services/sandbox/confluence_mcp_lib.py /usr/local/bin/confluence_mcp_lib.py
 COPY services/sandbox/confluence_mcp_server.py /usr/local/bin/confluence-mcp-server
+COPY services/sandbox/webread.py /usr/local/bin/webread
 RUN sed -i 's/\r//' /env_init.sh /session_start.sh \
-    && chmod +x /env_init.sh /session_start.sh /usr/local/bin/confluence-mcp-server
+    && chmod +x /env_init.sh /session_start.sh /usr/local/bin/confluence-mcp-server /usr/local/bin/webread
 
 ENTRYPOINT ["/env_init.sh"]
