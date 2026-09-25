@@ -4,6 +4,7 @@
   GET  /admin/workspaces/{id}/knowledge/file?path= → um arquivo de knowledge/ ou memory/
   POST /admin/workspaces/{id}/knowledge/build      → enfileira a reconstrução ("Atualizar agora")
   GET  /admin/workspaces/{id}/knowledge/memories   → memórias do agentmemory deste workspace
+  GET  /admin/workspaces/{id}/knowledge/summary    → selos da lista (grafo e memória)
 
 Os dados vêm do sandbox do workspace (``knowledge_handler.js`` e ``memory_handler.js``).
 """
@@ -102,3 +103,28 @@ async def knowledge_memories(
 ) -> Any:
     _, base = await _workspace_url(session, workspace_id)
     return _reply(*await sandbox_get(f"{base}/memory", {}))
+
+
+@router.get("/summary")
+async def knowledge_summary(
+    workspace_id: uuid.UUID, session: Session, sandbox_get: SandboxGetter
+) -> dict:
+    """Grafo (estado, commits novos desde a geração) e memória (total, última gravação).
+
+    Nunca falha pela metade: o que o sandbox não responder vira ``available: false``.
+    """
+    _, base = await _workspace_url(session, workspace_id)
+    graph_code, graph = await sandbox_get(f"{base}/knowledge/summary", {})
+    memory_code, memory = await sandbox_get(f"{base}/memory", {})
+    memories = memory.get("memories", []) if memory_code < 400 else []
+    return {
+        "graph": graph if graph_code < 400 else {"available": False, "error": graph.get("error")},
+        "memory": {
+            "available": memory_code < 400,
+            "total": memory.get("total", 0) if memory_code < 400 else 0,
+            "last_at": (memories[0].get("updated_at") or memories[0].get("created_at"))
+            if memories
+            else None,
+            "error": None if memory_code < 400 else memory.get("error"),
+        },
+    }
