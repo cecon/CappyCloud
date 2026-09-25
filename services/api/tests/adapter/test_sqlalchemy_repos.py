@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -266,3 +267,15 @@ class TestConversationRepositoryContract:
         found = await conv_repo_impl.get(saved.id, uid)
         assert found is not None
         assert found.title == "Updated"
+
+    async def test_update_archived_at(self, conv_repo_impl: ConversationRepository) -> None:
+        uid = uuid.uuid4()
+        saved = await conv_repo_impl.save(Conversation(id=uuid.uuid4(), user_id=uid, title="A"))
+        saved.archived_at = datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
+        await conv_repo_impl.update(saved)
+        found = await conv_repo_impl.get(saved.id, uid)
+        assert found is not None and found.archived_at is not None
+        found.archived_at = None
+        await conv_repo_impl.update(found)
+        again = await conv_repo_impl.get(saved.id, uid)
+        assert again is not None and again.archived_at is None

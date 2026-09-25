@@ -58,9 +58,10 @@ async def list_conversations(
     current: Annotated[User, Depends(get_authenticated_user)],
     uc: Annotated[ListConversations, Depends(get_list_convs_uc)],
     scope: str = Query(default="own", pattern="^(own|all)$"),
+    archived: bool = Query(default=False, description="true = só as arquivadas"),
 ) -> list[ConversationOut]:
     include_all = current.role is UserRole.ADMIN and scope == "all"
-    convs = await uc.execute(current.id, include_all=include_all)
+    convs = await uc.execute(current.id, include_all=include_all, archived=archived)
     return [
         ConversationOut(
             id=c.id,
@@ -75,6 +76,7 @@ async def list_conversations(
             session_root=c.session_root,
             workspace_id=c.workspace_id,
             permission_mode=c.permission_mode,
+            archived_at=c.archived_at,
         )
         for c in convs
     ]
