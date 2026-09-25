@@ -305,3 +305,14 @@ def test_architect_without_agent_file_is_still_pasted() -> None:
 
     assert "Mapa de investigação AutoSystem" not in section
     assert "Mapa do PDV" in section
+
+
+def test_sandbox_claude_md_blocks_details_not_in_the_opened_source() -> None:
+    """Caso real: resposta citou FISA170/CJ2_INDOP que não estavam no artigo lido."""
+    from .agent_runtime_test_loader import ROOT
+
+    rules = (ROOT / "sandbox" / "CLAUDE.md").read_text(encoding="utf-8")
+
+    assert "só entram na\n  resposta se estiverem na fonte que você abriu" in rules
+    assert "Não confirmado na documentação:" in rules
+    assert "`webread <url>`" in rules
