@@ -78,7 +78,12 @@ export function ConversationListItem({ conversation, active, onSelect, onRename,
           <span className={`${styles.icon} ${styles.sessionIcon}`}>{archived ? 'inventory_2' : 'chat_bubble'}</span>
           <span className={styles.sessionLabel}>{conversation.title}</span>
           {!archived && conversation.repos?.[0]?.slug && (
-            <span className={styles.sessionEnvDot} title={conversation.repos[0].slug} />
+            // O ⋮ ocupa o mesmo canto: a bolinha some quando ele aparece (hover,
+            // menu aberto) e no celular, onde o ⋮ fica sempre visível.
+            <span
+              className={`${styles.sessionEnvDot} max-md:hidden md:group-hover:hidden md:group-has-[[data-state=open]]:hidden`}
+              title={conversation.repos[0].slug}
+            />
           )}
         </button>
       )}
