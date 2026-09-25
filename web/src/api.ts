@@ -1951,6 +1951,30 @@ export function fetchWorkspaceMemories(
   return workspaceRequest(token, `/${workspaceId}/knowledge/memories`, {}, 'Falha ao ler as memórias do workspace')
 }
 
+/** Selos da lista de workspaces (admin_workspace_knowledge.py /summary). */
+export interface WorkspaceKnowledgeSummary {
+  graph: {
+    available?: false
+    state?: KnowledgeStatus['state']
+    running?: boolean
+    finished_at?: string
+    nodes?: number
+    error?: string
+    /** Commits novos (desde o último fetch) em relação ao grafo; null se não dá para saber. */
+    behind?: number | null
+    /** Repositórios do workspace que ainda não entraram no grafo. */
+    missing?: string[]
+  }
+  memory: { available: boolean; total: number; last_at: string | null; error: string | null }
+}
+
+export function fetchWorkspaceKnowledgeSummary(
+  token: string,
+  workspaceId: string,
+): Promise<WorkspaceKnowledgeSummary> {
+  return workspaceRequest(token, `/${workspaceId}/knowledge/summary`, {}, 'Falha ao ler o resumo do conhecimento')
+}
+
 export function buildWorkspaceKnowledge(token: string, workspaceId: string): Promise<{ queued: boolean }> {
   return workspaceRequest(
     token,

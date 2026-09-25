@@ -139,3 +139,46 @@ async def test_admin_le_status_arquivo_e_atualiza(
     assert memories.status_code == 200
     assert seen[-1][0] == "http://sb:8080/workspaces/loja/memory"
     assert await _queued(factory) == [("build_knowledge", {"slug": "loja"})]
+
+
+async def test_resumo_junta_grafo_e_memoria_e_nao_falha_pela_metade(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    ws = await _seed(factory)
+    replies: dict[str, tuple[int, Any]] = {
+        "/knowledge/summary": (200, {"state": "done", "behind": 4, "missing": []}),
+        "/memory": (
+            200,
+            {"total": 2, "memories": [{"updated_at": "2026-09-25T10:00:00Z"}, {"created_at": "x"}]},
+        ),
+    }
+
+    async def fake_get(url: str, params: dict[str, str]) -> tuple[int, Any]:
+        return next(reply for suffix, reply in replies.items() if url.endswith(suffix))
+
+    async def session_dep() -> AsyncGenerator[AsyncSession]:
+        async with factory() as session:
+            yield session
+
+    app = FastAPI()
+    app.include_router(admin_workspace_knowledge.router, prefix="/api")
+    app.dependency_overrides[get_db_session] = session_dep
+    app.dependency_overrides[require_super_admin] = lambda: None
+    app.dependency_overrides[admin_workspace_knowledge.get_sandbox_get] = lambda: fake_get
+    url = f"/api/admin/workspaces/{ws.id}/knowledge/summary"
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as h:
+        ok = (await h.get(url)).json()
+        replies["/memory"] = (503, {"error": "memória indisponível"})
+        down = (await h.get(url)).json()
+
+    assert ok["graph"]["behind"] == 4
+    assert ok["memory"] == {
+        "available": True,
+        "total": 2,
+        "last_at": "2026-09-25T10:00:00Z",
+        "error": None,
+    }
+    assert down["graph"]["state"] == "done"
+    assert down["memory"]["available"] is False
+    assert down["memory"]["error"] == "memória indisponível"

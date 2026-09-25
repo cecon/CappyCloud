@@ -101,3 +101,20 @@ test('sem mudança no código mantém a contagem da rodada anterior', { skip: !p
   assert.equal(status.state, 'done')
   assert.deepEqual(status.repos.map((r) => [r.alias, r.nodes, r.unchanged]), [['pdv', 40, true], ['seller', 40, true]])
 })
+
+test('resumo conta commits novos desde o grafo e repositórios sem grafo', { skip: !posix }, async () => {
+  const { reposRoot, ws } = setup()
+  await buildKnowledge('loja', { reposRoot, exec: fakeExec([]) })
+  fs.mkdirSync(path.join(reposRoot, 'novo', '.git'), { recursive: true })
+  fs.symlinkSync(path.join(reposRoot, 'novo'), path.join(ws, 'repos', 'novo'))
+  const counts = { pdv: '3\n', seller: '0\n' }
+  const exec = async (cmd, args) => ({ stdout: counts[path.basename(args[1])] ?? '', stderr: '' })
+
+  const { graphSummary } = require('../knowledge_handler')
+  const summary = await graphSummary(ws, exec)
+
+  assert.equal(summary.state, 'done')
+  assert.equal(summary.behind, 3)
+  assert.deepEqual(summary.repos.map((r) => [r.alias, r.behind]), [['pdv', 3], ['seller', 0]])
+  assert.deepEqual(summary.missing, ['novo'])
+})

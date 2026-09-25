@@ -4,6 +4,7 @@
 //   POST /workspaces/:slug/knowledge/build   → inicia a reconstrução (202; uma por vez)
 //   GET  /workspaces/:slug/knowledge         → status + arquivos de knowledge/ e memory/
 //   GET  /workspaces/:slug/knowledge/file?path=knowledge/...   → conteúdo (texto, limitado)
+//   GET  /workspaces/:slug/knowledge/summary → estado + commits novos desde o grafo (lista)
 //
 // Para cada repositório do workspace (links em repos/), com a trava do clone:
 // traz o clone para a última versão do remoto (só fast-forward), roda
@@ -151,6 +152,37 @@ function startBuild(slug, options) {
   return true
 }
 
+/**
+ * Resumo para a lista de workspaces: estado do grafo e quantos commits cada
+ * repositório ganhou desde a geração. Conta só com as refs já baixadas (sem
+ * fetch): o número é "desde o último fetch", barato o bastante para cada linha.
+ */
+async function graphSummary(root, exec = run) {
+  const status = readStatus(root)
+  const clones = new Map(workspaceRepos(root).map((repo) => [repo.alias, repo.clone]))
+  const repos = []
+  for (const repo of status.repos || []) {
+    const clone = clones.get(repo.alias)
+    let behind = null
+    if (clone && repo.commit) {
+      const count = await exec('git', ['-C', clone, 'rev-list', '--count', `${repo.commit}..@{u}`], { timeout: 10_000 }).catch(() => null)
+      behind = count ? Number(count.stdout.trim()) : null
+    }
+    repos.push({ alias: repo.alias, commit: repo.commit, behind, error: repo.error })
+  }
+  const known = repos.filter((repo) => repo.behind !== null)
+  return {
+    state: status.state,
+    finished_at: status.finished_at,
+    nodes: status.nodes,
+    error: status.error || repos.find((repo) => repo.error)?.error,
+    // Repositório novo no workspace (ainda sem grafo) também conta como desatualizado.
+    missing: [...clones.keys()].filter((alias) => !repos.some((repo) => repo.alias === alias)),
+    behind: known.length ? known.reduce((total, repo) => total + repo.behind, 0) : null,
+    repos,
+  }
+}
+
 function listFiles(root) {
   const files = []
   const walk = (rel) => {
@@ -185,7 +217,7 @@ function readFile(root, relPath) {
 
 async function tryHandle(req, res, { json }) {
   const url = new URL(req.url || '/', 'http://localhost')
-  const match = url.pathname.match(/^\/workspaces\/([^/]+)\/knowledge(\/build|\/file)?$/)
+  const match = url.pathname.match(/^\/workspaces\/([^/]+)\/knowledge(\/build|\/file|\/summary)?$/)
   if (!match) return false
   try {
     const slug = decodeURIComponent(match[1])
@@ -193,6 +225,8 @@ async function tryHandle(req, res, { json }) {
     if (req.method === 'POST' && match[2] === '/build') {
       const started = startBuild(slug)
       json(res, 202, { started, running: building.has(slug) })
+    } else if (req.method === 'GET' && match[2] === '/summary') {
+      json(res, 200, { ...(await graphSummary(root)), running: building.has(slug) })
     } else if (req.method === 'GET' && match[2] === '/file') {
       json(res, 200, readFile(root, url.searchParams.get('path')))
     } else if (req.method === 'GET' && !match[2]) {
@@ -206,4 +240,4 @@ async function tryHandle(req, res, { json }) {
   return true
 }
 
-module.exports = { buildKnowledge, listFiles, parseRebuilt, readFile, tryHandle, workspaceRepos }
+module.exports = { buildKnowledge, graphSummary, listFiles, parseRebuilt, readFile, tryHandle, workspaceRepos }

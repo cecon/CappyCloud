@@ -34,6 +34,7 @@ import {
   type WorkspaceRepositoryLink,
 } from '../api'
 import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
+import { WorkspaceKnowledgeBadges } from '../components/WorkspaceKnowledgeBadges'
 import { WorkspaceKnowledgeModal } from '../components/WorkspaceKnowledgeModal'
 
 type RepoChoice = { selected: boolean; alias: string; base_branch: string; read_only: boolean }
@@ -243,6 +244,7 @@ export function AdminWorkspacesPage() {
                   <Table.Th>Sandbox</Table.Th>
                   <Table.Th>Repositórios</Table.Th>
                   <Table.Th style={{ width: 120 }}>Sincronização</Table.Th>
+                  <Table.Th>Conhecimento</Table.Th>
                   <ActionsHeader width={140} />
                 </Table.Tr>
               </Table.Thead>
@@ -289,6 +291,9 @@ export function AdminWorkspacesPage() {
                           {ws.sync_error.slice(0, 60)}
                         </Text>
                       )}
+                    </Table.Td>
+                    <Table.Td>
+                      <WorkspaceKnowledgeBadges workspaceId={ws.id} onOpen={() => setKnowledgeOf(ws)} />
                     </Table.Td>
                     <ActionsCell>
                       <RowActionIcon
