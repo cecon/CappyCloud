@@ -17,7 +17,7 @@ import {
   TextInput,
   Title,
 } from '@/components/ui/legacy'
-import { IconPencil, IconRefresh, IconTrash } from '@tabler/icons-react'
+import { IconBrain, IconPencil, IconRefresh, IconTrash } from '@tabler/icons-react'
 import {
   type AdminWorkspace,
   createAdminWorkspace,
@@ -34,6 +34,7 @@ import {
   type WorkspaceRepositoryLink,
 } from '../api'
 import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
+import { WorkspaceKnowledgeModal } from '../components/WorkspaceKnowledgeModal'
 
 type RepoChoice = { selected: boolean; alias: string; base_branch: string; read_only: boolean }
 
@@ -89,6 +90,7 @@ export function AdminWorkspacesPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [knowledgeOf, setKnowledgeOf] = useState<AdminWorkspace | null>(null)
 
   const reload = useCallback(async () => {
     const token = getToken()
@@ -297,6 +299,9 @@ export function AdminWorkspacesPage() {
                       >
                         <IconPencil size={16} />
                       </RowActionIcon>
+                      <RowActionIcon label="Conhecimento (grafo e memória)" color="violet" onClick={() => setKnowledgeOf(ws)}>
+                        <IconBrain size={16} />
+                      </RowActionIcon>
                       <RowActionIcon
                         label="Sincronizar no sandbox"
                         color="blue"
@@ -325,6 +330,8 @@ export function AdminWorkspacesPage() {
           )}
         </Paper>
       </Stack>
+
+      <WorkspaceKnowledgeModal key={knowledgeOf?.id ?? 'none'} workspace={knowledgeOf} onClose={() => setKnowledgeOf(null)} />
 
       <Modal
         opened={formOpen}

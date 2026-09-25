@@ -55,6 +55,12 @@ RUN pip3 install --no-cache-dir --break-system-packages \
         libcst==1.8.6 \
         basedpyright==1.39.4
 
+# graphify: grafo de código dos workspaces (knowledge_handler.js). venv próprio
+# porque as libs acima fixam networkx 3.3.
+RUN python3 -m venv /opt/graphify \
+    && /opt/graphify/bin/pip install --no-cache-dir graphifyy==0.9.51 \
+    && ln -s /opt/graphify/bin/graphify /usr/local/bin/graphify
+
 # Semantic code tooling (on-demand LSP/AST helpers).
 RUN npm install -g \
         typescript@6.0.3 \
@@ -170,6 +176,7 @@ COPY services/sandbox/claude_runtime_subagents.js /claude_runtime_subagents.js
 COPY services/sandbox/session_cleanup.js /session_cleanup.js
 COPY services/sandbox/session_paths.js /session_paths.js
 COPY services/sandbox/workspace_handler.js /workspace_handler.js
+COPY services/sandbox/knowledge_handler.js /knowledge_handler.js
 COPY services/sandbox/terminal_handler.js /terminal_handler.js
 COPY services/sandbox/terminal_pty.py /terminal_pty.py
 COPY services/sandbox/worktree_handlers.js /worktree_handlers.js

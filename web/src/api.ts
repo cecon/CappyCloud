@@ -1875,6 +1875,71 @@ export function deleteAdminWorkspace(token: string, workspaceId: string): Promis
   return workspaceRequest(token, `/${workspaceId}`, { method: 'DELETE' }, 'Falha ao remover workspace')
 }
 
+/** Grafo do graphify de um repositório do workspace (knowledge_handler.js). */
+export interface KnowledgeRepoStatus {
+  alias: string
+  slug: string
+  commit?: string
+  nodes?: number
+  edges?: number
+  communities?: number
+  duration_ms?: number
+  warning?: string
+  error?: string
+}
+
+export interface KnowledgeStatus {
+  state: 'never_built' | 'running' | 'done' | 'partial' | 'error'
+  running?: boolean
+  started_at?: string
+  finished_at?: string
+  duration_ms?: number
+  nodes?: number
+  edges?: number
+  error?: string
+  repos?: KnowledgeRepoStatus[]
+}
+
+export interface KnowledgeFile {
+  path: string
+  size: number
+  modified_at: string
+}
+
+export interface WorkspaceKnowledge {
+  status: KnowledgeStatus
+  files: KnowledgeFile[]
+}
+
+export interface KnowledgeFileContent {
+  path: string
+  size: number
+  truncated: boolean
+  content: string
+}
+
+export function fetchWorkspaceKnowledge(token: string, workspaceId: string): Promise<WorkspaceKnowledge> {
+  return workspaceRequest(token, `/${workspaceId}/knowledge`, {}, 'Falha ao ler o conhecimento do workspace')
+}
+
+export function fetchWorkspaceKnowledgeFile(
+  token: string,
+  workspaceId: string,
+  path: string,
+): Promise<KnowledgeFileContent> {
+  const query = new URLSearchParams({ path }).toString()
+  return workspaceRequest(token, `/${workspaceId}/knowledge/file?${query}`, {}, 'Falha ao abrir o arquivo')
+}
+
+export function buildWorkspaceKnowledge(token: string, workspaceId: string): Promise<{ queued: boolean }> {
+  return workspaceRequest(
+    token,
+    `/${workspaceId}/knowledge/build`,
+    { method: 'POST' },
+    'Falha ao pedir a atualização do grafo',
+  )
+}
+
 export async function fetchRepositories(token: string): Promise<Repository[]> {
   const res = await apiFetch('/api/repositories', {
     headers: { Authorization: `Bearer ${token}` },

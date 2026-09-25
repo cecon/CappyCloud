@@ -9,7 +9,10 @@ const READ_COMMANDS = new Set([
   'cat', 'head', 'tail', 'less', 'nl', 'wc', 'grep', 'egrep', 'fgrep', 'rg', 'find', 'ls', 'tree',
   'sed', 'awk', 'sort', 'uniq', 'cut', 'tr', 'file', 'stat', 'du', 'jq', 'diff', 'xargs', 'git',
   'echo', 'printf', 'basename', 'dirname', 'realpath', 'readlink', 'pwd', 'cd', 'true', 'test',
+  'graphify',
 ])
+// graphify só consulta o grafo do workspace; update/merge-graphs escrevem.
+const GRAPHIFY_READ = new Set(['query', 'path', 'explain', 'god-nodes', 'affected'])
 const GIT_READ = new Set(['log', 'show', 'grep', 'ls-files', 'blame', 'diff', 'rev-parse', 'cat-file', 'ls-tree', 'status', 'describe'])
 const FORBIDDEN = [
   /(^|\s)-(delete|exec|execdir|ok|okdir|fprint|fprintf|fls)(\s|$)/, // find
@@ -99,6 +102,7 @@ function isReadOnlyCommand(command) {
       const sub = args.find((arg) => !arg.startsWith('-') && !arg.startsWith('/'))
       if (!sub || !GIT_READ.has(sub)) return false
     }
+    if (name === 'graphify' && !GRAPHIFY_READ.has(args.find((arg) => !arg.startsWith('-')))) return false
     if (name === 'xargs') {
       const target = args.find((arg) => !arg.startsWith('-'))
       if (!target || target === 'xargs' || !READ_COMMANDS.has(target.split('/').pop())) return false

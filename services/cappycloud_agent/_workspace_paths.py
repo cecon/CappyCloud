@@ -51,5 +51,14 @@ def render_workspace_section(session_root: str, repos: list[dict]) -> str:
         f"- Conhecimento: `{root}/knowledge/`",
         f"- Memória: `{root}/memory/`",
         "Edite apenas dentro dos worktrees listados acima.",
+        "",
+        "Grafo de código do workspace (graphify, gerado da branch principal de cada "
+        "repositório): use-o para localizar módulos, dependências e quem chama o quê "
+        "antes de buscas amplas. Pode não refletir mudanças desta conversa.",
+        f"- `graphify query \"<pergunta>\" --graph {root}/knowledge/graphify/graph.json "
+        "--budget 1500`",
+        f"- `graphify explain \"<símbolo>\" --graph {root}/knowledge/graphify/graph.json`",
+        f"- Visão geral por repositório: `{root}/knowledge/graphify/<alias>/GRAPH_REPORT.md`",
+        "Se o arquivo do grafo não existir, siga sem ele.",
     ]
     return "\n".join(lines)
