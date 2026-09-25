@@ -24,6 +24,10 @@ const BROWSABLE = ['knowledge', 'memory']
 const MAX_FILE_BYTES = 200_000
 const MAX_LIST = 500
 const building = new Map()
+// Uma geração por vez no sandbox: em paralelo os workspaces disputavam CPU e a
+// trava dos clones, e repositórios grandes estouravam o tempo limite.
+let queue = Promise.resolve()
+const UPDATE_TIMEOUT_MS = Number(process.env.GRAPHIFY_TIMEOUT_MS) || 45 * 60_000
 
 function workspaceRoot(slug, reposRoot = '/repos') {
   if (!WORKSPACE_SLUG.test(String(slug || ''))) throw new Error(`workspace slug inválido: ${slug}`)
@@ -88,7 +92,7 @@ async function buildRepo(repo, outDir, exec, locksDir, previous = {}) {
     result.commit = head.trim()
     excludeGraphifyOut(repo.clone)
     const { stdout, stderr } = await exec('flock', ['-w', '600', lock, GRAPHIFY, 'update', repo.clone], {
-      cwd: repo.clone, timeout: 900_000, maxBuffer: 20 * 1024 * 1024,
+      cwd: repo.clone, timeout: UPDATE_TIMEOUT_MS, maxBuffer: 20 * 1024 * 1024,
     })
     const output = `${stdout}\n${stderr}`
     Object.assign(result, parseRebuilt(output))
@@ -101,7 +105,9 @@ async function buildRepo(repo, outDir, exec, locksDir, previous = {}) {
     if (fs.existsSync(report)) fs.copyFileSync(report, path.join(outDir, repo.alias, 'GRAPH_REPORT.md'))
     result.graph = path.join(repo.clone, 'graphify-out', 'graph.json')
   } catch (err) {
-    result.error = String(err.stderr || err.message || err).trim().slice(-500)
+    result.error = err.killed
+      ? `tempo esgotado após ${Math.round(UPDATE_TIMEOUT_MS / 60_000)} min (repositório grande ou sandbox ocupado)`
+      : String(err.stderr || err.message || err).trim().slice(-500)
   }
   result.duration_ms = Date.now() - started
   return result
@@ -144,10 +150,12 @@ async function buildKnowledge(slug, { reposRoot = '/repos', exec = run } = {}) {
 
 function startBuild(slug, options) {
   if (building.has(slug)) return false
-  const job = buildKnowledge(slug, options)
+  const job = queue
+    .then(() => buildKnowledge(slug, options))
     .then((status) => console.log(`[knowledge] ${slug}: ${status.state} (${status.nodes || 0} nós, ${status.duration_ms} ms)`))
     .catch((err) => console.error(`[knowledge] ${slug}: ${err.message}`))
     .finally(() => building.delete(slug))
+  queue = job
   building.set(slug, job)
   return true
 }
@@ -240,4 +248,4 @@ async function tryHandle(req, res, { json }) {
   return true
 }
 
-module.exports = { buildKnowledge, graphSummary, listFiles, parseRebuilt, readFile, tryHandle, workspaceRepos }
+module.exports = { buildKnowledge, graphSummary, listFiles, parseRebuilt, readFile, startBuild, tryHandle, workspaceRepos }
