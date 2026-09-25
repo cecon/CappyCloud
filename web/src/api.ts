@@ -1886,6 +1886,8 @@ export interface KnowledgeRepoStatus {
   duration_ms?: number
   warning?: string
   error?: string
+  /** Código igual ao da rodada anterior (contagem repetida). */
+  unchanged?: boolean
 }
 
 export interface KnowledgeStatus {
@@ -1929,6 +1931,24 @@ export function fetchWorkspaceKnowledgeFile(
 ): Promise<KnowledgeFileContent> {
   const query = new URLSearchParams({ path }).toString()
   return workspaceRequest(token, `/${workspaceId}/knowledge/file?${query}`, {}, 'Falha ao abrir o arquivo')
+}
+
+/** Memória do workspace no agentmemory (memory_handler.js). */
+export interface WorkspaceMemory {
+  id: string
+  type: string
+  content: string
+  concepts: string[]
+  files: string[]
+  created_at: string
+  updated_at?: string
+}
+
+export function fetchWorkspaceMemories(
+  token: string,
+  workspaceId: string,
+): Promise<{ total: number; memories: WorkspaceMemory[] }> {
+  return workspaceRequest(token, `/${workspaceId}/knowledge/memories`, {}, 'Falha ao ler as memórias do workspace')
 }
 
 export function buildWorkspaceKnowledge(token: string, workspaceId: string): Promise<{ queued: boolean }> {

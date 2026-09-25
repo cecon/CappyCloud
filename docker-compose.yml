@@ -69,9 +69,33 @@ services:
       CONFLUENCE_API_TOKEN: ${CONFLUENCE_API_TOKEN:-}
       CONFLUENCE_BASE_URL: ${CONFLUENCE_BASE_URL:-}
       CONFLUENCE_MAIN_MENU_URL: ${CONFLUENCE_MAIN_MENU_URL:-}
+      # Memória dos workspaces (memory_handler.js → serviço agentmemory).
+      AGENTMEMORY_URL: http://agentmemory:3111
+      AGENTMEMORY_SECRET: ${AGENTMEMORY_SECRET:-cappy-local-agentmemory}
     volumes:
       - repos_data:/repos
       - ./sandbox/CLAUDE.md:/app/CLAUDE.md:ro
+    networks:
+      - cappycloud_net
+
+  # Memória dos workspaces. Só o sandbox fala com ele (rede interna, sem porta publicada).
+  agentmemory:
+    build:
+      context: services/agentmemory
+      args:
+        AGENTMEMORY_VERSION: "0.9.29"
+        III_VERSION: "0.11.2"
+        III_SDK_VERSION: "0.11.2"
+    container_name: cappycloud-agentmemory
+    restart: unless-stopped
+    environment:
+      AGENTMEMORY_SECRET: ${AGENTMEMORY_SECRET:-cappy-local-agentmemory}
+      # Busca e gravação presas ao agentId (= workspace), ver memory_handler.js.
+      AGENTMEMORY_AGENT_SCOPE: isolated
+      AGENTMEMORY_AUTO_COMPRESS: "false"
+      AGENTMEMORY_ALLOW_AGENT_SDK: "false"
+    volumes:
+      - agentmemory_data:/data
     networks:
       - cappycloud_net
 
@@ -137,6 +161,7 @@ volumes:
   postgres_data:
   redis_data:
   repos_data: # apenas o sandbox monta isto em /repos
+  agentmemory_data:
 
 networks:
   cappycloud_net:

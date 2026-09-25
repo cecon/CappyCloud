@@ -21,6 +21,7 @@
 //   *      /claude/*               → claude_runtime_handler.js (runtime Claude CLI via Agent SDK)
 //   POST   /workspaces/sync        → workspace_handler.js (árvore /repos/workspaces/<slug>)
 //   *      /workspaces/:slug/knowledge → knowledge_handler.js (grafo graphify, arquivos)
+//   *      /memory/*, /workspaces/:slug/memory → memory_handler.js (agentmemory)
 //   *      /terminal/*             → terminal_handler.js (terminal web do admin, ex.: claude login)
 //   GET    /health                 → liveness probe
 // ──────────────────────────────────────────────────────────────
@@ -43,6 +44,7 @@ const { assertInsideSession, sessionRootInfo } = require('./session_paths')
 const worktreeHandlers = require('./worktree_handlers')
 const workspaceHandler = require('./workspace_handler')
 const knowledgeHandler = require('./knowledge_handler')
+const memoryHandler = require('./memory_handler')
 const terminalHandler = require('./terminal_handler')
 
 const execFileAsync = promisify(execFile)
@@ -499,6 +501,7 @@ const server = http.createServer(async (req, res) => {
 
     if (await claudeRuntimeHandler.tryHandle(req, res, { json, readBody })) return
     if (await knowledgeHandler.tryHandle(req, res, { json })) return
+    if (await memoryHandler.tryHandle(req, res, { json, readBody })) return
     if (await workspaceHandler.tryHandle(req, res, { json, readBody })) return
     if (await terminalHandler.tryHandle(req, res, { json, readBody })) return
 

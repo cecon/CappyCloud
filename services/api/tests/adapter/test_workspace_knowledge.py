@@ -129,10 +129,13 @@ async def test_admin_le_status_arquivo_e_atualiza(
         blocked = await h.get(f"{base}/file", params={"path": "repos/x"})
         build = await h.post(f"{base}/build")
         missing = await h.get(f"/api/admin/workspaces/{uuid.uuid4()}/knowledge")
+        memories = await h.get(f"{base}/memories")
 
     assert overview.json()["status"]["nodes"] == 80
     assert seen[0][0] == "http://sb:8080/workspaces/loja/knowledge"
     assert blocked.status_code == 400
     assert build.status_code == 202 and build.json() == {"queued": True}
     assert missing.status_code == 404
+    assert memories.status_code == 200
+    assert seen[-1][0] == "http://sb:8080/workspaces/loja/memory"
     assert await _queued(factory) == [("build_knowledge", {"slug": "loja"})]

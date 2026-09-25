@@ -12,6 +12,8 @@ import re
 
 WORKSPACES_ROOT = "/repos/workspaces"
 _SESSION_RE = re.compile(r"^/repos/workspaces/([a-z0-9][a-z0-9-]{1,62})/sessions/[^/]+$")
+# O agente roda no mesmo container do session_server (porta fixa nos stacks).
+_MEMORY_URL = "http://127.0.0.1:8080/memory"
 
 
 def workspace_root_of(session_root: str | None) -> str | None:
@@ -26,6 +28,7 @@ def render_workspace_section(session_root: str, repos: list[dict]) -> str:
     root = workspace_root_of(session_root)
     if not root:
         return ""
+    slug = posixpath.basename(root)
     lines = [
         "## Workspace",
         f"Pasta de trabalho desta conversa: `{session_root}` (todos os repositórios abaixo).",
@@ -60,5 +63,17 @@ def render_workspace_section(session_root: str, repos: list[dict]) -> str:
         f"- `graphify explain \"<símbolo>\" --graph {root}/knowledge/graphify/graph.json`",
         f"- Visão geral por repositório: `{root}/knowledge/graphify/<alias>/GRAPH_REPORT.md`",
         "Se o arquivo do grafo não existir, siga sem ele.",
+        "",
+        "Memória do workspace (compartilhada entre as conversas deste workspace): busque "
+        "antes de investigar do zero e grave o que valer para as próximas conversas "
+        "(decisão, causa de bug, regra confirmada no código). Não grave segredos nem dados "
+        "de clientes.",
+        f"- Buscar: `curl -s -G {_MEMORY_URL}/search --data-urlencode workspace={slug} "
+        "--data-urlencode 'q=<termos>'` (sem resultados = nada gravado sobre isso)",
+        f"- Gravar: `curl -s -X POST {_MEMORY_URL}/save -H 'Content-Type: application/json' "
+        f"-d '{{\"workspace\":\"{slug}\",\"type\":\"fact\",\"content\":\"<o que lembrar>\","
+        "\"files\":\"<alias>/<caminho relativo>\"}'` (type: fact, bug, architecture, pattern, workflow "
+        "ou preference)",
+        "Se a memória responder erro, siga sem ela.",
     ]
     return "\n".join(lines)
