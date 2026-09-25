@@ -10,6 +10,7 @@ import urllib.request
 from typing import Any
 
 from app.domain.entities import ContainerStatus, Sandbox
+from app.domain.value_objects import AgentRuntime
 from app.ports.sandbox_runtime import RuntimeFailureError, RuntimeProbe
 
 
@@ -34,7 +35,10 @@ def probe_session_server(sandbox: Sandbox) -> RuntimeProbe | None:
             if 200 <= response.status < 300:
                 data = json.loads(response.read().decode("utf-8") or "{}")
                 active_sessions = _int_from_health(data.get("sessions"))
-                if data.get("openclaude") == "stopped":
+                # openclaude parado só conta se é ele que atende o chat: no Claude CLI
+                # esse processo é irrelevante e derrubava a sandbox para "parada".
+                uses_openclaude = sandbox.agent_runtime is not AgentRuntime.CLAUDE_CLI
+                if uses_openclaude and data.get("openclaude") == "stopped":
                     return RuntimeProbe(
                         status=ContainerStatus.STOPPED,
                         runtime_ref=url,
