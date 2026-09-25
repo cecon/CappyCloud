@@ -14,6 +14,7 @@
 import { useState } from 'react'
 import type { TurnPhaseStage } from '../api'
 import styles from './chat.module.css'
+import { knowledgeKind, knowledgeLabel, knowledgeSummary } from './chat/knowledgeTools'
 
 export type ThoughtStep =
   | {
@@ -55,12 +56,16 @@ interface Props {
 
 const SUBAGENT_TOOLS = new Set(['agent', 'task'])
 
-/** Nome do passo para o usuário: a ferramenta Agent/Task é um subagente. */
-function displayToolName(name: string): string {
+/** Nome do passo para o usuário: Agent/Task é um subagente; grafo e memória pelo nome. */
+function displayToolName(name: string, raw = ''): string {
+  const kind = knowledgeKind(name, raw)
+  if (kind) return knowledgeLabel(kind).name
   return SUBAGENT_TOOLS.has(name.toLowerCase()) ? 'Subagente' : name
 }
 
 function summarizeToolInput(name: string, raw: string): string {
+  const kind = knowledgeKind(name, raw)
+  if (kind) return knowledgeSummary(kind, raw)
   let parsed: Record<string, unknown> | null = null
   try {
     parsed = JSON.parse(raw)
@@ -107,8 +112,10 @@ function describeActiveStep(step: ThoughtStep): string {
   }
   const lname = step.name.toLowerCase()
   const summary = summarizeToolInput(step.name, step.input)
-  const verb =
-    lname === 'grep'
+  const kind = knowledgeKind(step.name, step.input)
+  const verb = kind
+    ? knowledgeLabel(kind).verb
+    : lname === 'grep'
       ? 'Pesquisando'
       : lname === 'read'
         ? 'Lendo'
@@ -138,7 +145,8 @@ function countByTool(steps: ThoughtStep[]): Array<[string, number]> {
   const counts: Record<string, number> = {}
   for (const s of steps) {
     if (s.kind !== 'tool') continue
-    counts[s.name] = (counts[s.name] ?? 0) + 1
+    const name = displayToolName(s.name, s.input)
+    counts[name] = (counts[name] ?? 0) + 1
   }
   return Object.entries(counts).sort((a, b) => b[1] - a[1])
 }
@@ -373,7 +381,7 @@ function ThinkingToolStep({
         <span className={styles.thinkingStreamToolMark} aria-hidden="true">
           {step.isError ? '✗' : step.done ? '▸' : '⟳'}
         </span>
-        <span className={styles.thinkingStreamToolName}>{displayToolName(step.name)}</span>
+        <span className={styles.thinkingStreamToolName}>{displayToolName(step.name, step.input)}</span>
         <span className={styles.thinkingStreamToolSummary}>{summary}</span>
         <span className={styles.thinkingStreamToolChevron} aria-hidden="true">
           {expanded ? '−' : '+'}
