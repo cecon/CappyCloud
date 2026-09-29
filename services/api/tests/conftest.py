@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Generator
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -102,6 +103,7 @@ class InMemoryUserRepository(UserRepository):
         hashed_password: str,
         *,
         must_change_password: bool,
+        reset_expires_at: datetime | None = None,
     ) -> User | None:
         current = self._store.get(user_id)
         if current is None:
@@ -112,6 +114,7 @@ class InMemoryUserRepository(UserRepository):
             current,
             hashed_password=hashed_password,
             must_change_password=must_change_password,
+            password_reset_expires_at=reset_expires_at,
         )
         self._store[user_id] = updated
         return updated

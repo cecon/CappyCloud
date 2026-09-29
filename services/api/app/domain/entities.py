@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from app.domain.entities_catalog import ConversationArtifactChunk, GlobalSkill  # noqa: F401
 from app.domain.value_objects import DEFAULT_PERMISSION_MODE, AgentRuntime, SandboxRuntime
 
 
@@ -44,6 +45,8 @@ class User:
     is_super_admin: bool = False
     must_change_password: bool = False
     created_at: datetime = field(default_factory=_utcnow)
+    # Senha temporária da redefinição pelo admin: vale até aqui (depois, nova redefinição).
+    password_reset_expires_at: datetime | None = None
 
     @property
     def is_admin(self) -> bool:
@@ -280,33 +283,6 @@ class MessageAttachment:
     vision_model_used: str | None = None
     uploaded_by: uuid.UUID | None = None
     uploaded_at: datetime = field(default_factory=_utcnow)
-
-
-@dataclass
-class ConversationArtifactChunk:
-    id: uuid.UUID
-    attachment_id: uuid.UUID
-    conversation_id: uuid.UUID
-    chunk_index: int
-    content: str
-    line_start: int | None = None
-    line_end: int | None = None
-    page_start: int | None = None
-    page_end: int | None = None
-    meta: dict = field(default_factory=dict)
-    created_at: datetime = field(default_factory=_utcnow)
-
-
-@dataclass
-class GlobalSkill:
-    id: uuid.UUID
-    name: str
-    description: str = ""
-    content: str = ""
-    enabled: bool = True
-    sandbox_ids: list[uuid.UUID] = field(default_factory=list)
-    created_at: datetime = field(default_factory=_utcnow)
-    updated_at: datetime = field(default_factory=_utcnow)
 
 
 @dataclass
