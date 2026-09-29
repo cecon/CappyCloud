@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,12 +62,14 @@ class SQLAlchemyUserRepository(UserRepository):
         hashed_password: str,
         *,
         must_change_password: bool,
+        reset_expires_at: datetime | None = None,
     ) -> UserEntity | None:
         row = await self._session.get(UserORM, user_id)
         if row is None:
             return None
         row.hashed_password = hashed_password
         row.must_change_password = must_change_password
+        row.password_reset_expires_at = reset_expires_at
         await self._session.commit()
         await self._session.refresh(row)
         return self._to_entity(row)
@@ -81,6 +84,7 @@ class SQLAlchemyUserRepository(UserRepository):
             is_super_admin=bool(row.is_super_admin),
             must_change_password=bool(row.must_change_password),
             created_at=row.created_at,
+            password_reset_expires_at=getattr(row, "password_reset_expires_at", None),
         )
 
 

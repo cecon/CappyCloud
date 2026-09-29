@@ -238,6 +238,19 @@ export interface AdminUser {
 }
 
 /** Lista todos os utilizadores (admin only). */
+/** Volta a senha para a temporária padrão (vale 24 h) e obriga a troca. Só super admin. */
+export async function resetAdminUserPassword(token: string, userId: string): Promise<AdminUser> {
+  const res = await apiFetch(`/api/admin/users/${userId}/reset-password`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao redefinir a senha')
+  }
+  return (await res.json()) as AdminUser
+}
+
 export async function fetchAdminUsers(token: string): Promise<AdminUser[]> {
   const res = await apiFetch('/api/admin/users', {
     headers: { Authorization: `Bearer ${token}` },
