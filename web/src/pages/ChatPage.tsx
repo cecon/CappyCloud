@@ -84,6 +84,7 @@ import {
 import { CommandConfirmation } from '../components/chat/CommandConfirmation'
 import { ArchivedConversations } from '../components/chat/ArchivedConversations'
 import { ConversationListItem } from '../components/chat/ConversationListItem'
+import { TicketNumberField } from '../components/chat/TicketNumberField'
 import { ChatVerticalNavigation } from '../components/chat/ChatVerticalNavigation'
 import { SlashCommandMenu } from '../components/chat/SlashCommandMenu'
 import { slashCommandQuery, shouldOpenSlashCommands } from '../components/chat/SlashCommandMenu.utils'
@@ -692,6 +693,7 @@ export function ChatPage() {
   // Workspaces (pasta com vários repos) — `workspaces` acima é o catálogo de repositórios.
   const [projectWorkspaces, setProjectWorkspaces] = useState<AccessibleWorkspace[]>([])
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('')
+  const [ticketNumber, setTicketNumber] = useState('')
   const [newChatError, setNewChatError] = useState<string | null>(null)
   const [selectedBranch, setSelectedBranch] = useState<string>('')
   const [models, setModels] = useState<AiModel[]>([])
@@ -992,6 +994,10 @@ export function ChatPage() {
   const stopRequestedRef = useRef(false)
   const optimisticConversationIdRef = useRef<string | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const ticketRef = useRef<HTMLInputElement>(null)
+  // Conversa nova em workspace que exige o número do chamado.
+  const requireTicket =
+    !activeId && !!projectWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId)?.require_ticket
   const chatPrefsRef = useRef<ChatPreferenceState>(readChatPrefs())
   /** Comprimento do `accumulated` text ja aplicado na timeline thoughtSteps. */
   const lastTextOffsetRef = useRef(0)
@@ -1408,7 +1414,15 @@ export function ChatPage() {
     try {
       setNewChatError(null)
       rememberWorkspace(selectedWorkspaceId)
-      c = await createConversation(token, [], modelForRequest || null, null, selectedWorkspaceId)
+      c = await createConversation(
+        token,
+        [],
+        modelForRequest || null,
+        null,
+        selectedWorkspaceId,
+        ticketNumber.trim() || null,
+      )
+      setTicketNumber('')
     } catch (err) {
       if (err instanceof AuthError) {
         redirectToLogin()
@@ -2122,6 +2136,10 @@ export function ChatPage() {
             setSelectedWorkspaceId={setSelectedWorkspaceId}
             newChatError={newChatError}
             selectedSlug={selectedSlug}
+            requireTicket={requireTicket}
+            ticketNumber={ticketNumber}
+            setTicketNumber={setTicketNumber}
+            ticketRef={ticketRef}
             permissionMode={permissionMode}
             setPermissionMode={setPermissionMode}
             planModeEnabled={planModeEnabled}
@@ -2164,7 +2182,9 @@ export function ChatPage() {
               activeEnvSlug={activeEnvSlug}
               activeEnvName={
                 activeProjectWorkspace
-                  ? `${activeProjectWorkspace.name} · ${activeProjectWorkspace.repositories.length} repositórios`
+                  ? `${activeProjectWorkspace.name} · ${activeProjectWorkspace.repositories.length} repositórios${
+                      activeConv?.ticket_number ? ` · Chamado ${activeConv.ticket_number}` : ''
+                    }`
                   : workspaces.find(w => w.slug === activeEnvSlug)?.name ?? activeEnvSlug ?? workspaces[0]?.name ?? null
               }
               activeBaseBranch={activeConv?.repos?.[0]?.base_branch ?? null}
@@ -2358,6 +2378,10 @@ interface EmptyStateProps {
   setSelectedWorkspaceId: (id: string) => void
   newChatError: string | null
   selectedSlug: string
+  requireTicket: boolean
+  ticketNumber: string
+  setTicketNumber: (value: string) => void
+  ticketRef: React.RefObject<HTMLInputElement | null>
   permissionMode: PermissionMode
   setPermissionMode: (mode: PermissionMode) => void
   planModeEnabled: boolean
@@ -2404,12 +2428,18 @@ function EmptyState({
   selectableWorkspaces,
   projectWorkspaces, selectedWorkspaceId, setSelectedWorkspaceId, newChatError,
   selectedSlug,
+  requireTicket, ticketNumber, setTicketNumber, ticketRef,
   token,
   permissionMode, setPermissionMode, planModeEnabled, executionProfile, setExecutionProfile, permissionWarningRuntimeConfirmed,
   trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
 }: EmptyStateProps) {
   const [suggestions, setSuggestions] = useState<ProjectSuggestionCard[]>([])
   const [suggestionsSlug, setSuggestionsSlug] = useState('')
+  const [ticketTouched, setTicketTouched] = useState(false)
+  // Workspace que exige chamado: o cursor já começa no campo do número.
+  useEffect(() => {
+    if (requireTicket && !ticketRef.current?.value) ticketRef.current?.focus()
+  }, [requireTicket, ticketRef])
   const selectedWorkspace = useMemo(
     () => selectableWorkspaces.find((workspace) => workspace.slug === selectedSlug) ?? null,
     [selectableWorkspaces, selectedSlug],
@@ -2421,6 +2451,7 @@ function EmptyState({
   const chosenWorkspace = projectWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null
   const canExecute =
     !!chosenWorkspace?.ready &&
+    (!requireTicket || !!ticketNumber.trim()) &&
     (!!input.trim() || hasSendableAttachment) &&
     !hasUploadInProgress &&
     !streaming
@@ -2447,6 +2478,12 @@ function EmptyState({
   function handleKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey && !streaming) {
       e.preventDefault()
+      // Falta o chamado: Enter leva ao campo em vez de enviar.
+      if (requireTicket && !ticketNumber.trim()) {
+        setTicketTouched(true)
+        ticketRef.current?.focus()
+        return
+      }
       if (canExecute) onExecute(input)
     }
   }
@@ -2530,6 +2567,16 @@ function EmptyState({
               <div className={styles.chatStateCardError} role="alert" style={{ padding: '0.5rem 0.75rem', fontSize: '0.8rem' }}>
                 {newChatError}
               </div>
+            )}
+            {requireTicket && (
+              <TicketNumberField
+                value={ticketNumber}
+                onChange={setTicketNumber}
+                onDone={() => inputRef.current?.focus()}
+                inputRef={ticketRef}
+                missing={ticketTouched && !ticketNumber.trim()}
+                disabled={streaming}
+              />
             )}
             <div className={styles.commandInputRow}>
               <span className={`${styles.icon} ${styles.boltIcon}`}>bolt</span>

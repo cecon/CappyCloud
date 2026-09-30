@@ -51,6 +51,7 @@ from app.adapters.primary.http import user_mcp_servers as user_mcp_servers_route
 from app.adapters.primary.http import user_preferences as user_preferences_router
 from app.adapters.primary.http import user_workspaces as user_workspaces_router
 from app.adapters.primary.http import webhooks as webhooks_router
+from app.adapters.primary.http import workspace_tickets as workspace_tickets_router
 from app.adapters.primary.http import workspaces as workspaces_router
 from app.adapters.primary.http import workspaces_accessible as workspaces_accessible_router
 from app.infrastructure.config import cors_origins_list, get_settings
@@ -221,6 +222,7 @@ app.include_router(tasks_router.router, prefix="/api")
 app.include_router(webhooks_router.router, prefix="/api")
 app.include_router(sandboxes_router.router, prefix="/api")
 app.include_router(workspaces_accessible_router.router, prefix="/api")
+app.include_router(workspace_tickets_router.router, prefix="/api")
 app.include_router(workspaces_router.router, prefix="/api")
 app.include_router(git_providers_router.router, prefix="/api")
 app.include_router(ai_models_router.router, prefix="/api")

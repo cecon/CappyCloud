@@ -78,6 +78,7 @@ async def list_conversations(
             workspace_id=c.workspace_id,
             permission_mode=c.permission_mode,
             archived_at=c.archived_at,
+            ticket_number=c.ticket_number,
         )
         for c in convs
     ]

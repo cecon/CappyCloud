@@ -31,6 +31,8 @@ class ConversationCreate(BaseModel):
     repos: list[RepoSelection] = Field(default_factory=list)
     # Workspace: ignora `repos`/`sandbox_id` e abre todos os repositórios dele.
     workspace_id: uuid.UUID | None = None
+    # Número do chamado; obrigatório quando o workspace exige.
+    ticket_number: str | None = Field(default=None, max_length=64)
 
 
 class ConversationOut(BaseModel):
@@ -58,6 +60,7 @@ class ConversationOut(BaseModel):
     ci_status: str = "unknown"
     ci_url: str | None = None
     archived_at: datetime | None = None
+    ticket_number: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -67,6 +70,8 @@ class ConversationPatch(BaseModel):
 
     title: str | None = Field(default=None, max_length=512)
     archived: bool | None = None
+    # Corrige o número do chamado (vazio remove).
+    ticket_number: str | None = Field(default=None, max_length=80)
 
 
 class PayloadSizeCategoryOut(BaseModel):

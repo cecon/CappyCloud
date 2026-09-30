@@ -73,10 +73,15 @@ export function ConversationListItem({ conversation, active, onSelect, onRename,
           className={`${styles.sessionItem} ${active ? styles.sessionItemActive : ''} pr-8`}
           onClick={onSelect}
           onDoubleClick={() => setEditing(true)}
-          title={conversation.title}
+          title={conversation.ticket_number ? `Chamado ${conversation.ticket_number} · ${conversation.title}` : conversation.title}
         >
           <span className={`${styles.icon} ${styles.sessionIcon}`}>{archived ? 'inventory_2' : 'chat_bubble'}</span>
-          <span className={styles.sessionLabel}>{conversation.title}</span>
+          <span className={styles.sessionLabel}>
+            {conversation.ticket_number && (
+              <span className="mr-1 font-mono text-xs opacity-70">#{conversation.ticket_number}</span>
+            )}
+            {conversation.title}
+          </span>
           {!archived && conversation.repos?.[0]?.slug && (
             // O ⋮ ocupa o mesmo canto: a bolinha some quando ele aparece (hover,
             // menu aberto) e no celular, onde o ⋮ fica sempre visível.

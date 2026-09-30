@@ -232,6 +232,8 @@ class Conversation:
     user_email: str | None = None
     # Arquivada: some da lista do usuário, mas continua acessível e intacta.
     archived_at: datetime | None = None
+    # Número do chamado (ex.: Zendesk) que originou a conversa.
+    ticket_number: str | None = None
 
 
 @dataclass

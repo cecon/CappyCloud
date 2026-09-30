@@ -148,6 +148,7 @@ class Conversation(Base):
     archived_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
     )
+    ticket_number: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     # Multi-repo: lista de {slug, alias, base_branch, branch_name, worktree_path}
     repos: Mapped[list] = mapped_column(JSONBType, nullable=False, server_default="[]")
     # Diretório raiz da sessão: /repos/sessions/<id>/ ou, em workspace,
@@ -273,36 +274,6 @@ class MessageAttachment(Base):
     )
 
 
-class ConversationArtifactChunk(Base):
-    """Chunk pesquisável de um arquivo anexado a uma conversa."""
-
-    __tablename__ = "conversation_artifact_chunks"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
-    attachment_id: Mapped[uuid.UUID] = mapped_column(
-        UUIDType,
-        ForeignKey("message_attachments.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    conversation_id: Mapped[uuid.UUID] = mapped_column(
-        UUIDType,
-        ForeignKey("conversations.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    line_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    line_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    page_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    page_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    meta: Mapped[dict] = mapped_column(JSONBType, nullable=False, server_default="{}")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-
-
 # Import sub-modules last — registers tables with Base.metadata for Alembic.
 from app.infrastructure.orm_models_access import (  # noqa: F401, E402
     UserAiModelAccess,
@@ -311,6 +282,9 @@ from app.infrastructure.orm_models_access import (  # noqa: F401, E402
 )
 from app.infrastructure.orm_models_agent import (  # noqa: F401, E402
     Skill,
+)
+from app.infrastructure.orm_models_artifacts import (  # noqa: F401, E402
+    ConversationArtifactChunk,
 )
 from app.infrastructure.orm_models_document_graph import (  # noqa: F401, E402
     DocumentGraphEdge,

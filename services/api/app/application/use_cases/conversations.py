@@ -122,6 +122,9 @@ class StreamMessage:
 
         attachments_payload: list[dict] | None = None
         injected_prompt = await inject_diff_comments(conversation_id, content)
+        # O agente sabe o chamado (cita no commit/PR); o histórico guarda só a mensagem.
+        if conv.ticket_number and not action_reply:
+            injected_prompt = f"[Chamado {conv.ticket_number}]\n\n{injected_prompt}"
         # Modelo do runtime (Claude CLI): não está no catálogo; a rota já validou a sandbox.
         if model_from_runtime:
             effective_model, resolved_model_uuid = override_model, None

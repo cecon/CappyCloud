@@ -27,6 +27,7 @@ class WorkspaceCreate(BaseModel):
     sandbox_id: uuid.UUID
     claude_md: str = Field(default="", max_length=50000)
     plan_mode_enabled: bool = False
+    require_ticket: bool = False
     repositories: list[WorkspaceRepositoryIn] = Field(default_factory=list)
 
 
@@ -37,6 +38,7 @@ class WorkspaceUpdate(BaseModel):
     claude_md: str | None = Field(default=None, max_length=50000)
     active: bool | None = None
     plan_mode_enabled: bool | None = None
+    require_ticket: bool | None = None
     repositories: list[WorkspaceRepositoryIn] | None = None
 
 
@@ -59,6 +61,7 @@ class WorkspaceOut(BaseModel):
     claude_md: str
     active: bool
     plan_mode_enabled: bool = False
+    require_ticket: bool = False
     sync_status: str
     sync_error: str | None
     last_sync_at: datetime | None
