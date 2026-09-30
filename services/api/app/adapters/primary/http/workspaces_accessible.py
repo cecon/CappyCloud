@@ -39,6 +39,8 @@ class AccessibleWorkspace(BaseModel):
     ready: bool
     # Desligado, o chat não oferece o modo de planejamento neste workspace.
     plan_mode_enabled: bool = False
+    # Conversa nova pede o número do chamado.
+    require_ticket: bool = False
     repositories: list[AccessibleWorkspaceRepo]
 
 
@@ -75,6 +77,7 @@ async def list_accessible_workspaces(
             sandbox_name=names.get(ws.sandbox_id, ""),
             ready=ws.sync_status == "synced" and bool(ws.repositories),
             plan_mode_enabled=ws.plan_mode_enabled,
+            require_ticket=ws.require_ticket,
             repositories=[
                 AccessibleWorkspaceRepo(
                     alias=link.alias, slug=link.repository.slug, read_only=link.read_only

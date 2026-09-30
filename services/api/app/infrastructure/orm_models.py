@@ -148,6 +148,8 @@ class Conversation(Base):
     archived_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
     )
+    # Número do chamado (ex.: Zendesk) — para cruzar o que a Cappy resolveu.
+    ticket_number: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     # Multi-repo: lista de {slug, alias, base_branch, branch_name, worktree_path}
     repos: Mapped[list] = mapped_column(JSONBType, nullable=False, server_default="[]")
     # Diretório raiz da sessão: /repos/sessions/<id>/ ou, em workspace,

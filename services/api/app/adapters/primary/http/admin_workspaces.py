@@ -55,6 +55,7 @@ def _serialize(ws: Workspace) -> WorkspaceOut:
         claude_md=ws.claude_md,
         active=ws.active,
         plan_mode_enabled=ws.plan_mode_enabled,
+        require_ticket=ws.require_ticket,
         sync_status=ws.sync_status,
         sync_error=ws.sync_error,
         last_sync_at=ws.last_sync_at,
@@ -189,6 +190,7 @@ async def create_workspace(body: WorkspaceCreate, session: Session) -> Workspace
         claude_md=body.claude_md,
         active=True,
         plan_mode_enabled=body.plan_mode_enabled,
+        require_ticket=body.require_ticket,
         repositories=[],
     )
     session.add(ws)
@@ -211,6 +213,8 @@ async def update_workspace(
         ws.active = body.active
     if body.plan_mode_enabled is not None:
         ws.plan_mode_enabled = body.plan_mode_enabled
+    if body.require_ticket is not None:
+        ws.require_ticket = body.require_ticket
     if body.repositories is not None:
         await _set_repositories(session, ws, body.repositories)
     await _enqueue_sync(session, ws)

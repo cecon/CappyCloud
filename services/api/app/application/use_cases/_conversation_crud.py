@@ -50,6 +50,7 @@ class CreateConversation:
         repos: list[dict] | None = None,
         workspace_id: uuid.UUID | None = None,
         workspace_slug: str | None = None,
+        ticket_number: str | None = None,
     ) -> Conversation:
         conv_id = uuid.uuid4()
         short_id = conv_id.hex[:12]
@@ -97,6 +98,7 @@ class CreateConversation:
             repos=resolved_repos,
             session_root=session_root,
             workspace_id=workspace_id,
+            ticket_number=ticket_number,
         )
         return await self._conversations.save(conv)
 
