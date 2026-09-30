@@ -238,6 +238,19 @@ export interface AdminUser {
 }
 
 /** Lista todos os utilizadores (admin only). */
+/** Volta a senha para a temporária padrão (vale 24 h) e obriga a troca. Só super admin. */
+export async function resetAdminUserPassword(token: string, userId: string): Promise<AdminUser> {
+  const res = await apiFetch(`/api/admin/users/${userId}/reset-password`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao redefinir a senha')
+  }
+  return (await res.json()) as AdminUser
+}
+
 export async function fetchAdminUsers(token: string): Promise<AdminUser[]> {
   const res = await apiFetch('/api/admin/users', {
     headers: { Authorization: `Bearer ${token}` },
@@ -414,6 +427,8 @@ export interface AccessibleWorkspace {
   sandbox_name?: string
   /** Sincronizado no sandbox e com repositórios. */
   ready: boolean
+  /** Desligado, o chat não oferece o modo de planejamento neste workspace. */
+  plan_mode_enabled?: boolean
   repositories: Array<{ alias: string; slug: string; read_only?: boolean }>
 }
 
@@ -1821,6 +1836,7 @@ export interface AdminWorkspace {
   sandbox_id: string
   claude_md: string
   active: boolean
+  plan_mode_enabled: boolean
   sync_status: 'pending' | 'synced' | 'error' | string
   sync_error: string | null
   last_sync_at: string | null
@@ -1842,6 +1858,7 @@ export interface AdminWorkspaceCreate {
   name: string
   sandbox_id: string
   claude_md?: string
+  plan_mode_enabled?: boolean
   repositories?: WorkspaceRepositoryLink[]
 }
 
@@ -1849,6 +1866,7 @@ export interface AdminWorkspaceUpdate {
   name?: string
   claude_md?: string
   active?: boolean
+  plan_mode_enabled?: boolean
   repositories?: WorkspaceRepositoryLink[]
 }
 

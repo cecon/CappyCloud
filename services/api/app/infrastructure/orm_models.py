@@ -110,6 +110,9 @@ class User(Base):
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false", default=False
     )
+    password_reset_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversations: Mapped[list[Conversation]] = relationship(

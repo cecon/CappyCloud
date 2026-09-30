@@ -681,7 +681,7 @@ export function ChatPage() {
   const [loading, setLoading] = useState(true)
   const [userDefaultPermissionMode, setUserDefaultPermissionMode] =
     useState<PermissionMode>(DEFAULT_PERMISSION_MODE)
-  const [permissionMode, setPermissionModeState] = useState<PermissionMode>(DEFAULT_PERMISSION_MODE)
+  const [chosenPermissionMode, setPermissionModeState] = useState<PermissionMode>(DEFAULT_PERMISSION_MODE)
   const [permissionWarningRuntimeConfirmed, setPermissionWarningRuntimeConfirmed] = useState(false)
   const [executionProfile, setExecutionProfileState] = useState<ExecutionProfile>(DEFAULT_EXECUTION_PROFILE)
 
@@ -708,6 +708,15 @@ export function ChatPage() {
   const runtimeSandboxId = activeId
     ? conversations.find((conversation) => conversation.id === activeId)?.sandbox_id
     : projectWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId)?.sandbox_id
+  // Modo de planejamento: ligado por workspace; conversa antiga (sem workspace) segue como era.
+  const permissionWorkspaceId = activeId
+    ? conversations.find((conversation) => conversation.id === activeId)?.workspace_id
+    : selectedWorkspaceId
+  const planModeEnabled = permissionWorkspaceId
+    ? !!projectWorkspaces.find((workspace) => workspace.id === permissionWorkspaceId)?.plan_mode_enabled
+    : true
+  const permissionMode: PermissionMode =
+    chosenPermissionMode === 'plan' && !planModeEnabled ? DEFAULT_PERMISSION_MODE : chosenPermissionMode
   const onClaudeCli = usesClaudeCli(sandboxes.find((sandbox) => sandbox.id === runtimeSandboxId)?.agent_runtime)
   // Escolha do Claude CLI fica separada: não troca o modelo das sandboxes openclaude.
   const [claudeCliModelId, setClaudeCliModelId] = useState(() => {
@@ -2115,6 +2124,7 @@ export function ChatPage() {
             selectedSlug={selectedSlug}
             permissionMode={permissionMode}
             setPermissionMode={setPermissionMode}
+            planModeEnabled={planModeEnabled}
             executionProfile={executionProfile}
             setExecutionProfile={setExecutionProfile}
             permissionWarningRuntimeConfirmed={permissionWarningRuntimeConfirmed}
@@ -2174,6 +2184,7 @@ export function ChatPage() {
               setSelectedModelId={onClaudeCli ? chooseClaudeCliModel : setSelectedModelId}
               permissionMode={permissionMode}
               setPermissionMode={setPermissionMode}
+              planModeEnabled={planModeEnabled}
               executionProfile={executionProfile}
               setExecutionProfile={setExecutionProfile}
               permissionWarningRuntimeConfirmed={permissionWarningRuntimeConfirmed}
@@ -2202,10 +2213,12 @@ function PermissionModeControl({
   onChange,
   disabled,
   runtimeConfirmed: _runtimeConfirmed,
+  planModeEnabled,
   compact = false,
 }: {
   value: PermissionMode
   onChange: (mode: PermissionMode) => void
+  planModeEnabled: boolean
   disabled: boolean
   runtimeConfirmed: boolean
   compact?: boolean
@@ -2242,7 +2255,7 @@ function PermissionModeControl({
           <DropdownMenuLabel className={styles.permissionModeMenuLabel}>
             Permissões do agente
           </DropdownMenuLabel>
-          {PERMISSION_MODE_OPTIONS.map((mode) => {
+          {PERMISSION_MODE_OPTIONS.filter((mode) => planModeEnabled || mode.value !== 'plan').map((mode) => {
             const selected = mode.value === value
             const toneClass =
               mode.tone === 'danger'
@@ -2347,6 +2360,7 @@ interface EmptyStateProps {
   selectedSlug: string
   permissionMode: PermissionMode
   setPermissionMode: (mode: PermissionMode) => void
+  planModeEnabled: boolean
   executionProfile: ExecutionProfile
   setExecutionProfile: (profile: ExecutionProfile) => void
   permissionWarningRuntimeConfirmed: boolean
@@ -2391,7 +2405,7 @@ function EmptyState({
   projectWorkspaces, selectedWorkspaceId, setSelectedWorkspaceId, newChatError,
   selectedSlug,
   token,
-  permissionMode, setPermissionMode, executionProfile, setExecutionProfile, permissionWarningRuntimeConfirmed,
+  permissionMode, setPermissionMode, planModeEnabled, executionProfile, setExecutionProfile, permissionWarningRuntimeConfirmed,
   trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
 }: EmptyStateProps) {
   const [suggestions, setSuggestions] = useState<ProjectSuggestionCard[]>([])
@@ -2617,6 +2631,7 @@ function EmptyState({
                 <PermissionModeControl
                   value={permissionMode}
                   onChange={setPermissionMode}
+                  planModeEnabled={planModeEnabled}
                   disabled={streaming}
                   runtimeConfirmed={permissionWarningRuntimeConfirmed}
                 />
@@ -2813,6 +2828,7 @@ interface ActiveChatProps {
   setSelectedModelId: (id: string) => void
   permissionMode: PermissionMode
   setPermissionMode: (mode: PermissionMode) => void
+  planModeEnabled: boolean
   executionProfile: ExecutionProfile
   setExecutionProfile: (profile: ExecutionProfile) => void
   permissionWarningRuntimeConfirmed: boolean
@@ -2847,7 +2863,7 @@ function ActiveChat({
   activeTitle: _activeTitle,
   token, conversationId,
   models, selectedModelId, setSelectedModelId,
-  permissionMode, setPermissionMode, executionProfile, setExecutionProfile, permissionWarningRuntimeConfirmed,
+  permissionMode, setPermissionMode, planModeEnabled, executionProfile, setExecutionProfile, permissionWarningRuntimeConfirmed,
   convUsage, liveUsage,
   trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
 }: ActiveChatProps) {
@@ -3457,6 +3473,7 @@ function ActiveChat({
             <PermissionModeControl
               value={permissionMode}
               onChange={setPermissionMode}
+              planModeEnabled={planModeEnabled}
               disabled={streaming}
               runtimeConfirmed={permissionWarningRuntimeConfirmed}
               compact

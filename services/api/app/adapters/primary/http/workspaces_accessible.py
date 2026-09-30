@@ -37,6 +37,8 @@ class AccessibleWorkspace(BaseModel):
     # A conversa roda na sandbox do workspace; o nome aparece no seletor.
     sandbox_name: str = ""
     ready: bool
+    # Desligado, o chat não oferece o modo de planejamento neste workspace.
+    plan_mode_enabled: bool = False
     repositories: list[AccessibleWorkspaceRepo]
 
 
@@ -72,6 +74,7 @@ async def list_accessible_workspaces(
             sandbox_id=ws.sandbox_id,
             sandbox_name=names.get(ws.sandbox_id, ""),
             ready=ws.sync_status == "synced" and bool(ws.repositories),
+            plan_mode_enabled=ws.plan_mode_enabled,
             repositories=[
                 AccessibleWorkspaceRepo(
                     alias=link.alias, slug=link.repository.slug, read_only=link.read_only
