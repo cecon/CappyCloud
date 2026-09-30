@@ -427,6 +427,8 @@ export interface AccessibleWorkspace {
   sandbox_name?: string
   /** Sincronizado no sandbox e com repositórios. */
   ready: boolean
+  /** Desligado, o chat não oferece o modo de planejamento neste workspace. */
+  plan_mode_enabled?: boolean
   repositories: Array<{ alias: string; slug: string; read_only?: boolean }>
 }
 
@@ -1834,6 +1836,7 @@ export interface AdminWorkspace {
   sandbox_id: string
   claude_md: string
   active: boolean
+  plan_mode_enabled: boolean
   sync_status: 'pending' | 'synced' | 'error' | string
   sync_error: string | null
   last_sync_at: string | null
@@ -1855,6 +1858,7 @@ export interface AdminWorkspaceCreate {
   name: string
   sandbox_id: string
   claude_md?: string
+  plan_mode_enabled?: boolean
   repositories?: WorkspaceRepositoryLink[]
 }
 
@@ -1862,6 +1866,7 @@ export interface AdminWorkspaceUpdate {
   name?: string
   claude_md?: string
   active?: boolean
+  plan_mode_enabled?: boolean
   repositories?: WorkspaceRepositoryLink[]
 }
 

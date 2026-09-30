@@ -28,6 +28,7 @@ from app.adapters.primary.http.deps import (
     get_list_msgs_uc,
     get_stream_msg_uc,
 )
+from app.adapters.primary.http.workspace_plan_mode import allowed_permission_mode
 from app.adapters.secondary.persistence.sqlalchemy_user_access_repo import (
     SQLAlchemyUserRepositoryAccessRepository,
     SQLAlchemyUserSandboxAccessRepository,
@@ -245,6 +246,11 @@ async def stream_message(
         if sandbox_id is not None:
             await ensure_sandbox_ready_for_chat(session, sandbox_id)
         runtime_model = await uses_claude_cli_model(session, sandbox_id, body.model_id)
+        permission_mode = await allowed_permission_mode(
+            session,
+            conv.workspace_id if conv else None,
+            body.permission_mode or (conv.permission_mode if conv else None),
+        )
 
         stream = await uc.execute(
             conversation_id,
@@ -255,7 +261,7 @@ async def stream_message(
             override_model=body.model_id,
             model_from_runtime=runtime_model,
             attachment_ids=body.attachment_ids,
-            permission_mode=body.permission_mode,
+            permission_mode=permission_mode,
             execution_profile=body.execution_profile,
             action_reply=body.action_reply,
         )
