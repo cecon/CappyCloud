@@ -110,7 +110,6 @@ import {
 } from '../components/ui/select'
 import { useCurrentUser } from '../hooks/useCurrentUser'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { useTypeToFocus } from '../hooks/useTypeToFocus'
 import styles from '../components/chat.module.css'
 
 const ALLOWED_ATTACHMENT_MIME = new Set([
@@ -999,8 +998,6 @@ export function ChatPage() {
   // Conversa nova em workspace que exige o número do chamado.
   const requireTicket =
     !activeId && !!projectWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId)?.require_ticket
-  // Sem mouse: com nada focado, digitar ou Enter vai para o chamado (se faltar) ou para a mensagem.
-  useTypeToFocus(() => (requireTicket && !ticketNumber.trim() ? ticketRef.current : inputRef.current))
   const chatPrefsRef = useRef<ChatPreferenceState>(readChatPrefs())
   /** Comprimento do `accumulated` text ja aplicado na timeline thoughtSteps. */
   const lastTextOffsetRef = useRef(0)
