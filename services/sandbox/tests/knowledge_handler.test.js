@@ -118,3 +118,45 @@ test('resumo conta commits novos desde o grafo e repositórios sem grafo', { ski
   assert.deepEqual(summary.repos.map((r) => [r.alias, r.behind]), [['pdv', 3], ['seller', 0]])
   assert.deepEqual(summary.missing, ['novo'])
 })
+
+test('tempo esgotado vira mensagem clara', { skip: !posix }, async () => {
+  const { reposRoot } = setup()
+  const base = fakeExec([])
+  const exec = async (cmd, args, opts) => {
+    if (cmd === 'flock' && args[4] === 'update') throw Object.assign(new Error('killed'), { killed: true, stderr: 'warning: …' })
+    return base(cmd, args, opts)
+  }
+  const status = await buildKnowledge('loja', { reposRoot, exec })
+
+  assert.equal(status.state, 'error')
+  assert.match(status.repos[0].error, /^tempo esgotado após \d+ min/)
+})
+
+test('gerações pedidas juntas rodam uma de cada vez', { skip: !posix }, async () => {
+  const { startBuild } = require('../knowledge_handler')
+  const { reposRoot } = setup()
+  const second = path.join(reposRoot, 'workspaces', 'pdv')
+  fs.mkdirSync(path.join(second, 'repos'), { recursive: true })
+  fs.symlinkSync(path.join(reposRoot, 'pdv'), path.join(second, 'repos', 'pdv'))
+  let running = 0
+  let peak = 0
+  const base = fakeExec([])
+  const exec = async (cmd, args, opts) => {
+    running += 1
+    peak = Math.max(peak, running)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    running -= 1
+    return base(cmd, args, opts)
+  }
+
+  assert.equal(startBuild('loja', { reposRoot, exec }), true)
+  assert.equal(startBuild('pdv', { reposRoot, exec }), true)
+  assert.equal(startBuild('loja', { reposRoot, exec }), false) // já na fila
+  await new Promise((resolve) => setTimeout(resolve, 400))
+
+  assert.equal(peak, 1)
+  for (const slug of ['loja', 'pdv']) {
+    const status = JSON.parse(fs.readFileSync(path.join(reposRoot, 'workspaces', slug, 'knowledge/graphify/status.json'), 'utf8'))
+    assert.equal(status.state, 'done')
+  }
+})

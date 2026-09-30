@@ -58,7 +58,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 # graphify: grafo de código dos workspaces (knowledge_handler.js). venv próprio
 # porque as libs acima fixam networkx 3.3.
 RUN python3 -m venv /opt/graphify \
-    && /opt/graphify/bin/pip install --no-cache-dir graphifyy==0.9.51 \
+    && /opt/graphify/bin/pip install --no-cache-dir "graphifyy[sql]==0.9.51" \
     && ln -s /opt/graphify/bin/graphify /usr/local/bin/graphify
 
 # Semantic code tooling (on-demand LSP/AST helpers).
