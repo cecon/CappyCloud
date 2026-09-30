@@ -11,6 +11,7 @@ import {
   Paper,
   Select,
   Stack,
+  Switch,
   Table,
   Text,
   Textarea,
@@ -44,10 +45,11 @@ type FormState = {
   name: string
   sandbox_id: string
   claude_md: string
+  plan_mode_enabled: boolean
   repos: Record<string, RepoChoice>
 }
 
-const EMPTY_FORM: FormState = { slug: '', name: '', sandbox_id: '', claude_md: '', repos: {} }
+const EMPTY_FORM: FormState = { slug: '', name: '', sandbox_id: '', claude_md: '', plan_mode_enabled: false, repos: {} }
 
 const SYNC_COLORS: Record<string, string> = { synced: 'green', pending: 'yellow', error: 'red' }
 
@@ -61,7 +63,7 @@ function formFromWorkspace(ws: AdminWorkspace): FormState {
       read_only: link.read_only,
     }
   }
-  return { slug: ws.slug, name: ws.name, sandbox_id: ws.sandbox_id, claude_md: ws.claude_md, repos }
+  return { slug: ws.slug, name: ws.name, sandbox_id: ws.sandbox_id, claude_md: ws.claude_md, plan_mode_enabled: ws.plan_mode_enabled, repos }
 }
 
 function linksFromForm(form: FormState): WorkspaceRepositoryLink[] {
@@ -165,6 +167,7 @@ export function AdminWorkspacesPage() {
         await updateAdminWorkspace(token, editing.id, {
           name: form.name,
           claude_md: form.claude_md,
+          plan_mode_enabled: form.plan_mode_enabled,
           repositories,
         })
       } else {
@@ -173,6 +176,7 @@ export function AdminWorkspacesPage() {
           name: form.name,
           sandbox_id: form.sandbox_id,
           claude_md: form.claude_md,
+          plan_mode_enabled: form.plan_mode_enabled,
           repositories,
         })
       }
@@ -425,6 +429,18 @@ export function AdminWorkspacesPage() {
                 )
               })
             )}
+          </Stack>
+
+          <Stack gap={4}>
+            <Switch
+              label="Modo de planejamento"
+              checked={form.plan_mode_enabled}
+              onChange={(e) => setForm({ ...form, plan_mode_enabled: e.currentTarget.checked })}
+            />
+            <Text size="xs" c="dimmed">
+              Para workspaces onde se programa. Desligado, o chat não oferece o modo e as perguntas são
+              respondidas direto.
+            </Text>
           </Stack>
 
           <Textarea

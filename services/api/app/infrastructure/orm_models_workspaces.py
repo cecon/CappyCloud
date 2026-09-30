@@ -29,6 +29,10 @@ class Workspace(Base):
     )
     claude_md: Mapped[str] = mapped_column(Text, nullable=False, server_default="", default="")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Modo de planejamento é para quem programa; desligado, a conversa não o oferece.
+    plan_mode_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     sync_status: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default="pending", default="pending"
     )
