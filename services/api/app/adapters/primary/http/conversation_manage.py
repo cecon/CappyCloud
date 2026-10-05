@@ -35,7 +35,11 @@ async def update_conversation(
 ) -> ConversationOut:
     try:
         conv = await UpdateConversation(repo).execute(
-            conversation_id, current.id, title=body.title, archived=body.archived
+            conversation_id,
+            current.id,
+            title=body.title,
+            archived=body.archived,
+            ticket_number=body.ticket_number,
         )
     except ConversationNotFoundError as exc:
         raise HTTPException(

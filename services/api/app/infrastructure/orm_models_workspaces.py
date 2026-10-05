@@ -33,6 +33,10 @@ class Workspace(Base):
     plan_mode_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Conversa nova só abre com o número do chamado.
+    require_ticket: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     sync_status: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default="pending", default="pending"
     )

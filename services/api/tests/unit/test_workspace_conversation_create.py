@@ -47,6 +47,7 @@ def _workspace(**overrides):
         "slug": "loja",
         "active": True,
         "sync_status": "synced",
+        "require_ticket": False,
         "sandbox_id": uuid.uuid4(),
         "repositories": [_link("backend", base="develop"), _link("docs", read_only=True)],
     }
@@ -69,8 +70,10 @@ def _no_sandbox(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(helpers, "resolve_ai_model_id", model)
 
 
-def _body():
-    return SimpleNamespace(workspace_id=uuid.uuid4(), title=None, model_id=None)
+def _body(ticket_number=None):
+    return SimpleNamespace(
+        workspace_id=uuid.uuid4(), title=None, model_id=None, ticket_number=ticket_number
+    )
 
 
 async def test_repassa_todos_os_repos_com_read_only() -> None:
@@ -100,3 +103,22 @@ async def test_recusa_workspace_inacessivel(values, role, status) -> None:
             _Session(*values), _user(role), _UseCase(), _body()
         )
     assert exc.value.status_code == status
+
+
+async def test_workspace_que_exige_chamado_recusa_sem_numero() -> None:
+    ws = _workspace(require_ticket=True)
+    with pytest.raises(HTTPException) as exc:
+        await helpers.create_workspace_conversation(
+            _Session(ws, uuid.uuid4()), _user(), _UseCase(), _body("  #  ")
+        )
+    assert exc.value.status_code == 400
+    assert "chamado" in exc.value.detail
+
+
+async def test_grava_o_chamado_sem_cerquilha_nem_espacos() -> None:
+    uc = _UseCase()
+    ws = _workspace(require_ticket=True)
+    await helpers.create_workspace_conversation(
+        _Session(ws, uuid.uuid4()), _user(), uc, _body(" #12345 ")
+    )
+    assert uc.kwargs["ticket_number"] == "12345"

@@ -85,3 +85,19 @@ async def test_so_o_dono_altera(
 
     assert r.status_code == 404
     assert await _titles(client, owner) == ["Minha"]
+
+
+async def test_corrige_e_remove_o_numero_do_chamado(client: AsyncClient, owner: dict) -> None:
+    conv_id = await _create(client, owner, "Chamado")
+
+    r = await client.patch(
+        f"/api/conversations/{conv_id}", json={"ticket_number": " #987 "}, headers=owner
+    )
+    assert r.status_code == 200 and r.json()["ticket_number"] == "987"
+    listed = (await client.get("/api/conversations", headers=owner)).json()
+    assert listed[0]["ticket_number"] == "987"
+
+    r = await client.patch(
+        f"/api/conversations/{conv_id}", json={"ticket_number": ""}, headers=owner
+    )
+    assert r.json()["ticket_number"] is None

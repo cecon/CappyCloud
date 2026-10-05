@@ -415,6 +415,8 @@ export type Conversation = {
   permission_mode: PermissionMode
   /** Arquivada: fora da lista padrão, mas continua aberta e intacta. */
   archived_at?: string | null
+  /** Número do chamado (ex.: Zendesk) que originou a conversa. */
+  ticket_number?: string | null
 }
 
 /** Workspace que o utilizador pode usar ao abrir uma conversa. */
@@ -429,6 +431,8 @@ export interface AccessibleWorkspace {
   ready: boolean
   /** Desligado, o chat não oferece o modo de planejamento neste workspace. */
   plan_mode_enabled?: boolean
+  /** Conversa nova só abre com o número do chamado. */
+  require_ticket?: boolean
   repositories: Array<{ alias: string; slug: string; read_only?: boolean }>
 }
 
@@ -883,7 +887,7 @@ function runtimeStateLabel(state: RuntimeStateKind): string {
 export async function updateConversation(
   token: string,
   conversationId: string,
-  patch: { title?: string; archived?: boolean },
+  patch: { title?: string; archived?: boolean; ticket_number?: string },
 ): Promise<Conversation> {
   const res = await apiFetch(`/api/conversations/${conversationId}`, {
     method: 'PATCH',
@@ -918,8 +922,10 @@ export async function createConversation(
   modelId?: string | null,
   sandboxId?: string | null,
   workspaceId?: string | null,
+  ticketNumber?: string | null,
 ): Promise<Conversation> {
   const body: Record<string, unknown> = { repos }
+  if (ticketNumber) body.ticket_number = ticketNumber
   if (modelId) body.model_id = modelId
   if (sandboxId) body.sandbox_id = sandboxId
   if (workspaceId) body.workspace_id = workspaceId
@@ -1837,6 +1843,7 @@ export interface AdminWorkspace {
   claude_md: string
   active: boolean
   plan_mode_enabled: boolean
+  require_ticket: boolean
   sync_status: 'pending' | 'synced' | 'error' | string
   sync_error: string | null
   last_sync_at: string | null
@@ -1859,6 +1866,7 @@ export interface AdminWorkspaceCreate {
   sandbox_id: string
   claude_md?: string
   plan_mode_enabled?: boolean
+  require_ticket?: boolean
   repositories?: WorkspaceRepositoryLink[]
 }
 
@@ -1867,6 +1875,7 @@ export interface AdminWorkspaceUpdate {
   claude_md?: string
   active?: boolean
   plan_mode_enabled?: boolean
+  require_ticket?: boolean
   repositories?: WorkspaceRepositoryLink[]
 }
 
@@ -1910,6 +1919,23 @@ export function updateAdminWorkspace(
 
 export function syncAdminWorkspace(token: string, workspaceId: string): Promise<AdminWorkspace> {
   return workspaceRequest(token, `/${workspaceId}/sync`, { method: 'POST' }, 'Falha ao sincronizar workspace')
+}
+
+/** CSV das conversas do workspace com o número do chamado (admin). */
+export async function downloadWorkspaceTickets(token: string, workspaceId: string, slug: string): Promise<void> {
+  const res = await apiFetch(`/api/admin/workspaces/${workspaceId}/tickets.csv`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao exportar os chamados')
+  }
+  const url = URL.createObjectURL(await res.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `chamados-${slug}.csv`
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 export function deleteAdminWorkspace(token: string, workspaceId: string): Promise<void> {

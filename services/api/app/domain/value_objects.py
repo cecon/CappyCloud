@@ -104,6 +104,19 @@ def validate_permission_mode(raw: object | None) -> str:
         raise ValueError(f"modo de permissão inválido. Use um de: {allowed}.") from exc
 
 
+TICKET_NUMBER_MAX_LEN = 64
+
+
+def normalize_ticket_number(raw: object | None) -> str | None:
+    """Número do chamado sem espaços nem ``#`` na frente; vazio vira ``None``."""
+    if raw is None:
+        return None
+    value = str(raw).strip().lstrip("#").strip()
+    if len(value) > TICKET_NUMBER_MAX_LEN:
+        raise ValueError(f"Número do chamado com mais de {TICKET_NUMBER_MAX_LEN} caracteres.")
+    return value or None
+
+
 def validate_execution_profile(raw: object | None) -> str:
     """Normaliza e valida o perfil de execucao da mensagem."""
     if raw is None:

@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, datetime
 
 from app.domain.entities import Conversation
+from app.domain.value_objects import normalize_ticket_number
 from app.ports.repositories import ConversationRepository
 
 TITLE_MAX_LEN = 200
@@ -30,6 +31,7 @@ class UpdateConversation:
         *,
         title: str | None = None,
         archived: bool | None = None,
+        ticket_number: str | None = None,
     ) -> Conversation:
         conv = await self._conversations.get(conversation_id, user_id)
         if conv is None:
@@ -39,6 +41,8 @@ class UpdateConversation:
             if not cleaned:
                 raise InvalidConversationTitleError("O título não pode ficar vazio.")
             conv.title = cleaned
+        if ticket_number is not None:
+            conv.ticket_number = normalize_ticket_number(ticket_number)
         if archived is not None and archived != (conv.archived_at is not None):
             conv.archived_at = datetime.now(UTC) if archived else None
         return await self._conversations.update(conv)

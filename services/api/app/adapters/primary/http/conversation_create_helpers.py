@@ -15,7 +15,7 @@ from app.adapters.secondary.persistence.sqlalchemy_ai_model_access_policy import
 )
 from app.application.use_cases.conversations import CreateConversation
 from app.domain.entities import Conversation, User, UserRole
-from app.domain.value_objects import is_claude_cli_model
+from app.domain.value_objects import is_claude_cli_model, normalize_ticket_number
 from app.infrastructure.orm_models_platform import AiModel
 from app.infrastructure.orm_models_workspaces import (
     UserWorkspaceAccess,
@@ -95,6 +95,16 @@ async def create_workspace_conversation(
             detail="Workspace ainda não foi sincronizado no sandbox. Tente em instantes.",
         )
 
+    try:
+        ticket_number = normalize_ticket_number(body.ticket_number)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if ws.require_ticket and not ticket_number:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Informe o número do chamado para abrir a conversa neste workspace.",
+        )
+
     await ensure_sandbox_ready_for_chat(session, ws.sandbox_id)
     ai_model_id = await resolve_ai_model_id(session, current, body.model_id)
     repos = [
@@ -114,6 +124,7 @@ async def create_workspace_conversation(
         repos=repos,
         workspace_id=ws.id,
         workspace_slug=ws.slug,
+        ticket_number=ticket_number,
     )
 
 
@@ -129,4 +140,5 @@ def conversation_out(conv: Conversation) -> ConversationOut:
         session_root=conv.session_root,
         workspace_id=conv.workspace_id,
         permission_mode=conv.permission_mode,
+        ticket_number=conv.ticket_number,
     )

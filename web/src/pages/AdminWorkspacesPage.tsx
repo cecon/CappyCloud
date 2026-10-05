@@ -18,11 +18,12 @@ import {
   TextInput,
   Title,
 } from '@/components/ui/legacy'
-import { IconBrain, IconPencil, IconRefresh, IconTrash } from '@tabler/icons-react'
+import { IconBrain, IconFileSpreadsheet, IconPencil, IconRefresh, IconTrash } from '@tabler/icons-react'
 import {
   type AdminWorkspace,
   createAdminWorkspace,
   deleteAdminWorkspace,
+  downloadWorkspaceTickets,
   errorToUserMessage,
   fetchAdminWorkspaces,
   fetchRepositories,
@@ -46,10 +47,11 @@ type FormState = {
   sandbox_id: string
   claude_md: string
   plan_mode_enabled: boolean
+  require_ticket: boolean
   repos: Record<string, RepoChoice>
 }
 
-const EMPTY_FORM: FormState = { slug: '', name: '', sandbox_id: '', claude_md: '', plan_mode_enabled: false, repos: {} }
+const EMPTY_FORM: FormState = { slug: '', name: '', sandbox_id: '', claude_md: '', plan_mode_enabled: false, require_ticket: false, repos: {} }
 
 const SYNC_COLORS: Record<string, string> = { synced: 'green', pending: 'yellow', error: 'red' }
 
@@ -63,7 +65,10 @@ function formFromWorkspace(ws: AdminWorkspace): FormState {
       read_only: link.read_only,
     }
   }
-  return { slug: ws.slug, name: ws.name, sandbox_id: ws.sandbox_id, claude_md: ws.claude_md, plan_mode_enabled: ws.plan_mode_enabled, repos }
+  return { slug: ws.slug, name: ws.name, sandbox_id: ws.sandbox_id, claude_md: ws.claude_md, plan_mode_enabled: ws.plan_mode_enabled,
+    require_ticket: ws.require_ticket,
+    repos,
+  }
 }
 
 function linksFromForm(form: FormState): WorkspaceRepositoryLink[] {
@@ -168,6 +173,7 @@ export function AdminWorkspacesPage() {
           name: form.name,
           claude_md: form.claude_md,
           plan_mode_enabled: form.plan_mode_enabled,
+          require_ticket: form.require_ticket,
           repositories,
         })
       } else {
@@ -177,6 +183,7 @@ export function AdminWorkspacesPage() {
           sandbox_id: form.sandbox_id,
           claude_md: form.claude_md,
           plan_mode_enabled: form.plan_mode_enabled,
+          require_ticket: form.require_ticket,
           repositories,
         })
       }
@@ -249,7 +256,7 @@ export function AdminWorkspacesPage() {
                   <Table.Th>Repositórios</Table.Th>
                   <Table.Th style={{ width: 120 }}>Sincronização</Table.Th>
                   <Table.Th>Conhecimento</Table.Th>
-                  <ActionsHeader width={140} />
+                  <ActionsHeader width={172} />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -310,6 +317,14 @@ export function AdminWorkspacesPage() {
                       </RowActionIcon>
                       <RowActionIcon label="Conhecimento (grafo e memória)" color="violet" onClick={() => setKnowledgeOf(ws)}>
                         <IconBrain size={16} />
+                      </RowActionIcon>
+                      <RowActionIcon
+                        label="Exportar chamados (CSV)"
+                        color="green"
+                        disabled={busyId !== null}
+                        onClick={() => void runAction(ws.id, (t) => downloadWorkspaceTickets(t, ws.id, ws.slug))}
+                      >
+                        <IconFileSpreadsheet size={16} />
                       </RowActionIcon>
                       <RowActionIcon
                         label="Sincronizar no sandbox"
@@ -440,6 +455,17 @@ export function AdminWorkspacesPage() {
             <Text size="xs" c="dimmed">
               Para workspaces onde se programa. Desligado, o chat não oferece o modo e as perguntas são
               respondidas direto.
+            </Text>
+          </Stack>
+          <Stack gap={4}>
+            <Switch
+              label="Exigir número do chamado"
+              checked={form.require_ticket}
+              onChange={(e) => setForm({ ...form, require_ticket: e.currentTarget.checked })}
+            />
+            <Text size="xs" c="dimmed">
+              A conversa nova só abre com o número do chamado, que fica gravado nela e sai na exportação
+              de chamados.
             </Text>
           </Stack>
 
