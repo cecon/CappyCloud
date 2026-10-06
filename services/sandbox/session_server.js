@@ -46,6 +46,7 @@ const worktreeHandlers = require('./worktree_handlers')
 const workspaceHandler = require('./workspace_handler')
 const knowledgeHandler = require('./knowledge_handler')
 const memoryHandler = require('./memory_handler')
+const memoryExtract = require('./memory_extract')
 const terminalHandler = require('./terminal_handler')
 
 const execFileAsync = promisify(execFile)
@@ -503,6 +504,7 @@ const server = http.createServer(async (req, res) => {
 
     if (await claudeRuntimeHandler.tryHandle(req, res, { json, readBody })) return
     if (await knowledgeHandler.tryHandle(req, res, { json })) return
+    if (await memoryExtract.tryHandle(req, res, { json, readBody })) return
     if (await memoryHandler.tryHandle(req, res, { json, readBody })) return
     if (await workspaceHandler.tryHandle(req, res, { json, readBody })) return
     if (await terminalHandler.tryHandle(req, res, { json, readBody })) return

@@ -12,6 +12,7 @@
 
 const fs = require('fs')
 const path = require('path').posix
+const { composeClaudeMd } = require('./workspace_claude_md')
 
 const WORKSPACE_SLUG = /^[a-z0-9][a-z0-9-]{1,62}$/
 const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
@@ -35,9 +36,8 @@ function syncWorkspace({ slug, claude_md = '', repos = [] }, { reposRoot = '/rep
 
   for (const dir of SUBDIRS) fs.mkdirSync(path.join(root, dir), { recursive: true })
 
-  const claudeMd = path.join(root, 'CLAUDE.md')
-  if (String(claude_md).trim()) fs.writeFileSync(claudeMd, claude_md, 'utf8')
-  else fs.rmSync(claudeMd, { force: true })
+  // Instruções do admin + seção fixa de ferramentas (busca, grafo, memória).
+  fs.writeFileSync(path.join(root, 'CLAUDE.md'), composeClaudeMd(slug, claude_md), 'utf8')
 
   const reposDir = path.join(root, 'repos')
   for (const entry of fs.readdirSync(reposDir, { withFileTypes: true })) {

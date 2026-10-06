@@ -34,7 +34,11 @@ test('cria a árvore, o CLAUDE.md e links para os clones do catálogo', { skip: 
   const ws = path.join(root, 'workspaces', 'loja')
 
   for (const dir of ['.claude/skills', 'knowledge', 'memory', 'sessions']) assert.ok(fs.existsSync(path.join(ws, dir)))
-  assert.equal(fs.readFileSync(path.join(ws, 'CLAUDE.md'), 'utf8'), '# Loja')
+  const claudeMd = fs.readFileSync(path.join(ws, 'CLAUDE.md'), 'utf8')
+  assert.ok(claudeMd.startsWith('# Loja\n\n## Ferramentas do workspace'))
+  assert.match(claudeMd, /rg -L -n/)
+  assert.match(claudeMd, /workspace=loja/)
+  assert.match(claudeMd, /\/repos\/workspaces\/loja\/knowledge\/graphify\/graph\.json/)
   assert.equal(fs.readlinkSync(path.join(ws, 'repos', 'backend')), path.join(root, 'seller'))
   assert.deepEqual(result.repos.map((r) => [r.alias, r.cloned]), [['backend', true], ['pdv', false]])
 })
@@ -50,7 +54,9 @@ test('ressincronizar troca links, remove os que saíram e preserva pastas reais'
   assert.ok(!fs.existsSync(path.join(reposDir, 'backend')))
   assert.equal(fs.readlinkSync(path.join(reposDir, 'pdv')), path.join(root, 'smartpos'))
   assert.ok(fs.existsSync(path.join(reposDir, 'manual')))
-  assert.ok(!fs.existsSync(path.join(root, 'workspaces', 'loja', 'CLAUDE.md')))
+  // Sem texto do admin, o CLAUDE.md fica só com a seção de ferramentas.
+  const claudeMd = fs.readFileSync(path.join(root, 'workspaces', 'loja', 'CLAUDE.md'), 'utf8')
+  assert.ok(claudeMd.startsWith('## Ferramentas do workspace'))
   assert.ok(fs.existsSync(path.join(root, 'seller', '.git')), 'clone do catálogo intacto')
 })
 
