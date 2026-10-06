@@ -177,8 +177,10 @@ COPY services/sandbox/claude_runtime_subagents.js /claude_runtime_subagents.js
 COPY services/sandbox/session_cleanup.js /session_cleanup.js
 COPY services/sandbox/session_paths.js /session_paths.js
 COPY services/sandbox/workspace_handler.js /workspace_handler.js
+COPY services/sandbox/workspace_claude_md.js /workspace_claude_md.js
 COPY services/sandbox/knowledge_handler.js /knowledge_handler.js
 COPY services/sandbox/memory_handler.js /memory_handler.js
+COPY services/sandbox/memory_extract.js /memory_extract.js
 COPY services/sandbox/terminal_handler.js /terminal_handler.js
 COPY services/sandbox/terminal_pty.py /terminal_pty.py
 COPY services/sandbox/worktree_handlers.js /worktree_handlers.js

@@ -16,6 +16,7 @@ from ._task_events import (
     insert_status_event,
     update_task_status,
 )
+from ._memory_capture import memory_capture_for
 from ._task_runner import TaskRunner
 from ._workspace_paths import workspace_root_of
 from ._task_context import prepare_turn_prompt
@@ -171,6 +172,13 @@ async def launch_runner(
         db_url=dispatcher._db_url,
         model_used=effective_model,
         conversation_id=conversation_id,
+        memory_capture=memory_capture_for(
+            session_url=sandbox_session_url,
+            session_root=session_root or sandbox.session_root,
+            question=user_message or prompt,
+            model=effective_model,
+            claude_cli=agent_runtime == AGENT_RUNTIME_CLAUDE_CLI,
+        ),
     )
     dispatcher._runners[task_id] = runner
     await runner.start()

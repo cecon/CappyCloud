@@ -61,18 +61,9 @@ def test_repo_somente_leitura_aponta_para_o_clone_do_workspace() -> None:
     assert f"{_WS_SESSION}/docs" not in section
 
 
-def test_secao_ensina_a_consultar_o_grafo_do_workspace() -> None:
+def test_secao_aponta_as_ferramentas_do_claude_md_do_workspace() -> None:
     section = _paths.render_workspace_section(_WS_SESSION, _REPOS)
-    graph = "/repos/workspaces/loja/knowledge/graphify/graph.json"
-    assert f'graphify query "<pergunta>" --graph {graph}' in section
-    assert "Se o arquivo do grafo não existir, siga sem ele." in section
-
-
-def test_secao_ensina_a_usar_a_memoria_do_workspace() -> None:
-    section = _paths.render_workspace_section(_WS_SESSION, _REPOS)
-    # --data-urlencode: termos com espaço ou acento quebravam a URL e a busca voltava vazia.
-    assert (
-        "curl -s -G http://127.0.0.1:8080/memory/search --data-urlencode workspace=loja "
-        "--data-urlencode 'q=<termos>'"
-    ) in section
-    assert '-d \'{"workspace":"loja","type":"fact"' in section
+    # Grafo, memória e busca ficam no CLAUDE.md: valem em retomadas e subagentes.
+    assert '"Ferramentas do workspace" de `/repos/workspaces/loja/CLAUDE.md`' in section
+    assert "rg -L" in section
+    assert "graphify query" not in section

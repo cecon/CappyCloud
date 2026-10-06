@@ -356,4 +356,4 @@ async function tryHandle(req, res, { json, readBody }) {
   return true
 }
 
-module.exports = { tryHandle, claudeStatus }
+module.exports = { tryHandle, claudeStatus, authorized, claudeExecutable, loadSdk, sdkEnv }

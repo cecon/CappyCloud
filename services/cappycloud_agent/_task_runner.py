@@ -24,6 +24,7 @@ import asyncpg
 
 from ._agent_session import AgentSession
 from ._grpc_helpers import PendingAction
+from ._memory_capture import MemoryCapture, schedule_turn_memory
 from ._task_final_message import persist_final_message_if_missing
 from ._task_usage import persist_usage
 
@@ -47,8 +48,10 @@ class TaskRunner:
         db_url: str,
         model_used: str = "",
         conversation_id: str | None = None,
+        memory_capture: MemoryCapture | None = None,
     ) -> None:
         self._task_id = task_id
+        self._memory_capture = memory_capture
         self._session = session
         self._db_url = db_url
         self._model_used = model_used
@@ -181,6 +184,7 @@ class TaskRunner:
                 elif event_type in ("done",):
                     await self._update_task(status="done", completed_at=_now())
                     await self._persist_final_message()
+                    schedule_turn_memory(self._memory_capture, "".join(self._text_parts))
                     return
 
                 elif event_type in ("error", "timeout"):
