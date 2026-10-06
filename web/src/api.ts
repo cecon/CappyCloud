@@ -325,6 +325,69 @@ export interface AdminDashboard {
   recent_conversations: AdminDashboardConversation[]
 }
 
+// ── Admin · Conversas (leitura de qualquer conversa) ─────────────────────────
+
+export interface AdminConversationItem {
+  id: string
+  title: string
+  user_email: string | null
+  workspace_slug: string | null
+  workspace_name: string | null
+  ticket_number: string | null
+  created_at: string
+  last_message_at: string | null
+  questions: number
+  message_count: number
+  cost_usd: number
+  pr_url: string | null
+  archived: boolean
+}
+
+export interface AdminConversationMessage {
+  id: string
+  role: string
+  content: string
+  created_at: string
+  model_used: string | null
+  prompt_tokens: number
+  completion_tokens: number
+  cost_usd: number
+}
+
+export interface AdminConversationDetail extends AdminConversationItem {
+  messages: AdminConversationMessage[]
+}
+
+export async function fetchAdminConversations(
+  token: string,
+  filters: { q?: string; workspaceId?: string; limit?: number; offset?: number } = {},
+): Promise<{ total: number; items: AdminConversationItem[] }> {
+  const params = new URLSearchParams()
+  if (filters.q) params.set('q', filters.q)
+  if (filters.workspaceId) params.set('workspace_id', filters.workspaceId)
+  params.set('limit', String(filters.limit ?? 50))
+  params.set('offset', String(filters.offset ?? 0))
+  const res = await apiFetch(`/api/admin/conversations?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao listar conversas')
+  }
+  return res.json()
+}
+
+export async function fetchAdminConversation(token: string, id: string): Promise<AdminConversationDetail> {
+  const res = await apiFetch(`/api/admin/conversations/${encodeURIComponent(id)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao abrir a conversa')
+  }
+  return res.json()
+}
+
 export async function fetchAdminDashboard(
   token: string,
   limit = 12,

@@ -23,6 +23,9 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ defa
 const AdminUsersPage = lazy(() =>
   import('./pages/AdminUsersPage').then((m) => ({ default: m.AdminUsersPage })),
 )
+const AdminConversationsPage = lazy(() =>
+  import('./pages/AdminConversationsPage').then((m) => ({ default: m.AdminConversationsPage })),
+)
 const AdminDashboardPage = lazy(() =>
   import('./pages/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage })),
 )
@@ -175,6 +178,14 @@ export default function App() {
           element={
             <AdminPage>
               <AdminDashboardPage />
+            </AdminPage>
+          }
+        />
+        <Route
+          path="/admin/conversations"
+          element={
+            <AdminPage>
+              <AdminConversationsPage />
             </AdminPage>
           }
         />
