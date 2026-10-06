@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ComponentType } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Activity,
   AlertTriangle,
@@ -206,7 +207,9 @@ function ConversationRow({ conversation }: { conversation: AdminDashboardConvers
     <article className="grid gap-3 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="truncate text-sm font-semibold">{title}</h3>
+          <Link to={`/admin/conversations?open=${conversation.id}`} className="truncate text-sm font-semibold hover:underline">
+            {title}
+          </Link>
           <StatusBadge value={conversation.ci_status} kind="ci" />
           <StatusBadge value={conversation.pr_status} kind="pr" />
         </div>

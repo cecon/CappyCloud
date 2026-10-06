@@ -9,11 +9,13 @@ export type ChatMessageProps = {
   content: string
   streaming?: boolean
   meta?: React.ReactNode
+  /** Nome no topo do balão (padrão: "Voce" / "Agente"). */
+  authorLabel?: string
   onCopy?: () => void
   className?: string
 }
 
-export function ChatMessage({ role, content, streaming, meta, onCopy, className }: ChatMessageProps) {
+export function ChatMessage({ role, content, streaming, meta, authorLabel, onCopy, className }: ChatMessageProps) {
   const user = role === 'user'
   return (
     <article className={cn('group flex gap-3', user && 'justify-end', className)}>
@@ -32,7 +34,7 @@ export function ChatMessage({ role, content, streaming, meta, onCopy, className 
       >
         <div className="mb-1 flex items-center justify-between gap-3">
           <span className="text-[11px] font-semibold uppercase text-current opacity-70">
-            {user ? 'Voce' : 'Agente'}
+            {authorLabel ?? (user ? 'Voce' : 'Agente')}
           </span>
           {onCopy && !user && (
             <Button type="button" variant="ghost" size="icon" className="size-7 opacity-0 group-hover:opacity-100" onClick={onCopy}>
