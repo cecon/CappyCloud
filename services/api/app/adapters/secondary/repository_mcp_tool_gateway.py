@@ -15,8 +15,8 @@ from app.infrastructure.embeddings import embed_text
 from app.infrastructure.orm_models import Repository, Sandbox, Skill
 from app.ports.repository_mcp import RepositoryMcpToolGateway
 
-_SKILL_SUMMARY_LIMIT = 300
-_DOCUMENT_SUMMARY_LIMIT = 2000
+# Trecho de documento e skill manual chegam inteiros ao agente (até o tamanho do trecho).
+_RESULT_CONTENT_LIMIT = 6000
 
 
 class SQLAlchemyRepositoryMcpToolGateway(RepositoryMcpToolGateway):
@@ -210,6 +210,4 @@ class SQLAlchemyRepositoryMcpToolGateway(RepositoryMcpToolGateway):
 
 
 def _skill_summary(skill: Skill) -> str:
-    if skill.document_id is not None:
-        return (skill.content or skill.summary or "")[:_DOCUMENT_SUMMARY_LIMIT]
-    return (skill.summary or skill.content or "")[:_SKILL_SUMMARY_LIMIT]
+    return (skill.content or skill.summary or "")[:_RESULT_CONTENT_LIMIT]

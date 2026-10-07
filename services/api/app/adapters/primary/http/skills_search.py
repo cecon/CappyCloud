@@ -20,8 +20,8 @@ from app.schemas import SkillSearchResult
 router = APIRouter(prefix="/skills", tags=["skills"])
 
 _INTERNAL_TOKEN = os.getenv("INTERNAL_API_TOKEN", "").strip()
-_SKILL_SUMMARY_LIMIT = 300
-_DOCUMENT_SUMMARY_LIMIT = 2000
+# Trecho de documento e skill manual chegam inteiros ao agente (até o tamanho do trecho).
+_RESULT_CONTENT_LIMIT = 6000
 
 
 def _row_to_result(skill: Skill, score: float) -> SkillSearchResult:
@@ -36,9 +36,7 @@ def _row_to_result(skill: Skill, score: float) -> SkillSearchResult:
 
 
 def _result_summary(skill: Skill) -> str:
-    if skill.document_id is not None:
-        return (skill.content or skill.summary or "")[:_DOCUMENT_SUMMARY_LIMIT]
-    return (skill.summary or skill.content or "")[:_SKILL_SUMMARY_LIMIT]
+    return (skill.content or skill.summary or "")[:_RESULT_CONTENT_LIMIT]
 
 
 async def do_search(
