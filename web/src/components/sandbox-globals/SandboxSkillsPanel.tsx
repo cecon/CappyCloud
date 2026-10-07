@@ -1,4 +1,5 @@
-﻿import { useCallback, useEffect, useState } from 'react'
+﻿import { MarkdownEditor } from '../MarkdownEditor'
+import { useCallback, useEffect, useState } from 'react'
 import {
   ActionIcon,
   Alert,
@@ -10,7 +11,6 @@ import {
   Switch,
   Table,
   Text,
-  Textarea,
   TextInput,
 } from '@/components/ui/legacy'
 import {
@@ -261,16 +261,12 @@ export function SandboxSkillsPanel({ sandbox, canManage = true }: Props) {
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.currentTarget.value })}
           />
-          <Textarea
+          <MarkdownEditor
             label="Conteúdo (markdown)"
             description="Corpo do SKILL.md. O Claude CLI carrega as skills sozinho; o openclaude não usa skills globais."
-            placeholder="# Naming&#10;- Python: snake_case&#10;- TS: camelCase"
+            placeholder={'# Naming\n- Python: snake_case\n- TS: camelCase'}
             value={form.content}
-            onChange={(e) => setForm({ ...form, content: e.currentTarget.value })}
-            autosize
-            minRows={6}
-            maxRows={20}
-            styles={{ input: { fontFamily: 'monospace' } }}
+            onChange={(content) => setForm({ ...form, content })}
           />
           <Switch
             label="Ativo (entra em ~/.claude/skills/ no próximo boot)"

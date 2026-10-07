@@ -3,6 +3,7 @@ import remarkGfm from 'remark-gfm'
 import { Copy, UserRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import chatStyles from '../chat.module.css'
 
 export type ChatMessageProps = {
   role: 'user' | 'assistant' | 'system' | string
@@ -46,7 +47,7 @@ export function ChatMessage({ role, content, streaming, meta, authorLabel, onCop
         {user ? (
           <p className="whitespace-pre-wrap leading-6">{content}</p>
         ) : (
-          <div className="prose prose-sm max-w-none prose-pre:overflow-x-auto dark:prose-invert">
+          <div className={cn(chatStyles.markdownBody, 'overflow-x-auto')}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
             {streaming && <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-primary align-middle" />}
           </div>
