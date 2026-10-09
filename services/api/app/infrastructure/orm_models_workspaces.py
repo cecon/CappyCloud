@@ -15,7 +15,7 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.infrastructure.orm_base import Base, UUIDType
+from app.infrastructure.orm_base import Base, JSONBType, UUIDType
 
 
 class Workspace(Base):
@@ -37,6 +37,9 @@ class Workspace(Base):
     require_ticket: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Temas do relatório de uso: modelo pronto e, se houver, regras próprias.
+    report_theme_preset: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    report_themes: Mapped[list | None] = mapped_column(JSONBType, nullable=True)
     sync_status: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default="pending", default="pending"
     )

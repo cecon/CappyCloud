@@ -29,6 +29,12 @@ const AdminConversationsPage = lazy(() =>
 const AdminDashboardPage = lazy(() =>
   import('./pages/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage })),
 )
+const AdminReportsPage = lazy(() =>
+  import('./pages/AdminReportsPage').then((m) => ({ default: m.AdminReportsPage })),
+)
+const AdminReportPrintPage = lazy(() =>
+  import('./pages/AdminReportPrintPage').then((m) => ({ default: m.AdminReportPrintPage })),
+)
 const AdminSandboxesPage = lazy(() =>
   import('./pages/AdminSandboxesPage').then((m) => ({ default: m.AdminSandboxesPage })),
 )
@@ -187,6 +193,24 @@ export default function App() {
             <AdminPage>
               <AdminConversationsPage />
             </AdminPage>
+          }
+        />
+        <Route
+          path="/admin/reports"
+          element={
+            <AdminPage>
+              <AdminReportsPage />
+            </AdminPage>
+          }
+        />
+        <Route
+          path="/admin/reports/print"
+          element={
+            <AuthenticatedBarePage>
+              <RequireAdmin>
+                <AdminReportPrintPage />
+              </RequireAdmin>
+            </AuthenticatedBarePage>
           }
         />
         <Route
