@@ -13,6 +13,8 @@ export const authenticatedRouteCoverage: RouteCoverageItem[] = [
   { route: '/mcp', access: 'authenticated', presentation: 'overlay' },
   { route: '/settings', access: 'super-admin', presentation: 'account' },
   { route: '/change-password', access: 'authenticated', presentation: 'account' },
+  { route: '/admin/reports', access: 'admin', presentation: 'overlay' },
+  { route: '/admin/reports/print', access: 'admin', presentation: 'account' },
   { route: '/admin/users', access: 'admin', presentation: 'overlay' },
   { route: '/admin/sandboxes', access: 'admin', presentation: 'overlay' },
   { route: '/admin/workspaces', access: 'super-admin', presentation: 'overlay' },

@@ -9,7 +9,7 @@ let loginRedirectInFlight = false
  * Extrai texto legível do corpo JSON de erro da FastAPI (422, etc.).
  * Evita `[object Object]` quando `msg` é objeto ou a lista contém strings misturadas.
  */
-function formatApiErrorPayload(data: unknown): string {
+export function formatApiErrorPayload(data: unknown): string {
   if (typeof data !== 'object' || data === null) {
     return typeof data === 'string' ? data.trim() : 'Pedido inválido'
   }
@@ -120,7 +120,7 @@ export class AuthError extends Error {
  * Wrapper sobre `fetch` que lança `AuthError` em 401
  * e erros genéricos nos outros casos de falha.
  */
-async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+export async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(url, init)
   if (res.status === 401) throw new AuthError()
   return res

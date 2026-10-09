@@ -17,6 +17,7 @@ from app.adapters.primary.http import admin_ai_catalog as admin_ai_catalog_route
 from app.adapters.primary.http import admin_conversations as admin_conversations_router
 from app.adapters.primary.http import admin_dashboard as admin_dashboard_router
 from app.adapters.primary.http import admin_mcp_telemetry as admin_mcp_telemetry_router
+from app.adapters.primary.http import admin_reports as admin_reports_router
 from app.adapters.primary.http import admin_sandbox_globals as admin_sandbox_globals_router
 from app.adapters.primary.http import admin_sandbox_mcps as admin_sandbox_mcps_router
 from app.adapters.primary.http import admin_sandbox_terminal as admin_sandbox_terminal_router
@@ -200,6 +201,7 @@ app.add_middleware(
 
 app.include_router(auth_router.router, prefix="/api")
 app.include_router(admin_dashboard_router.router, prefix="/api")
+app.include_router(admin_reports_router.router, prefix="/api")
 app.include_router(admin_conversations_router.router, prefix="/api")
 app.include_router(admin_users_router.router, prefix="/api")
 app.include_router(admin_mcp_telemetry_router.router, prefix="/api")

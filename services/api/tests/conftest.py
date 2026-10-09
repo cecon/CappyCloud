@@ -51,6 +51,9 @@ from .fakes_attachments import (  # noqa: F401
     InMemoryAttachmentStorage,
 )
 
+# Fake da port do relatório de uso por workspace (``fakes_reports.py``).
+from .fakes_reports import InMemoryWorkspaceReportRepository  # noqa: F401
+
 # Re-export dos fakes de sandbox/MCP/skills/agents (definidos em
 # ``fakes_sandbox.py``) — mesmo objetivo: limitar tamanho do conftest.
 from .fakes_sandbox import (  # noqa: F401
