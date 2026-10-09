@@ -18,7 +18,10 @@ from app.application.use_cases.workspace_report import BuiltReport
 
 USD_FORMAT = '"US$" #,##0.0000'
 BRL_FORMAT = '"R$" #,##0.00'
-COST_SOURCE = "Custo em US$ somado de messages.cost_usd (custo real informado pelo provedor)."
+COST_SOURCE = (
+    "Custo em US$ somado de messages.cost_usd: preço da tabela oficial da API da Claude "
+    "por modelo e tipo de token (entrada, cache e saída), calculado pelo runtime a cada turno."
+)
 
 CONVERSATION_COLUMNS = [
     "workspace",

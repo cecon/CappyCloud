@@ -40,6 +40,29 @@ para fins de semana e feriados). Cotações passadas ficam em cache no processo.
 Falha da fonte → relatório em US$ com aviso. É a única chamada de rede nova da
 API.
 
+## Conferência — custo equivale à API da Claude (2026-10-09)
+
+Em prod as conversas rodam no runtime Claude CLI numa assinatura
+(`messages.plan_usage` traz os limites de 5 h / 7 dias), que não cobra por
+token. O `cost_usd` gravado é o `total_cost_usd` do Claude Code
+(`services/sandbox/claude_runtime_mapper.js`), calculado com o catálogo de
+preços embutido no CLI, por modelo e tipo de token, incluindo cache.
+
+Catálogo do Claude Code 2.1.281 (sandbox de prod) comparado à página oficial
+https://platform.claude.com/docs/en/about-claude/pricing (US$/MTok):
+
+| Modelo | Entrada | Cache 5 min | Cache 1 h | Leitura de cache | Saída | Confere |
+|---|---|---|---|---|---|---|
+| Claude Opus 5.5 | 4 | 5 | 8 | 0,20 | 20 | sim |
+| Claude Sonnet 5 | 2 | 2,50 | 4 | 0,20 | 10 | sim |
+
+Modelos usados nas conversas com workspace em prod: `claude-sonnet-5` (127
+respostas), `claude-opus-5-5` (15) e um `gpt-5.4` (1, via OpenRouter, preço do
+OpenRouter). Por isso o relatório usa `cost_usd` sem recálculo e diz que é o
+custo pela tabela da API da Claude. A base não guarda a quebra entre entrada,
+leitura e gravação de cache (`prompt_tokens` soma as três), então não dá para
+recalcular por fora; se um dia for preciso, o runtime teria de gravar essa quebra.
+
 ## Decisão 1 — Classificação por regras, não por LLM
 
 - **Escolha**: lista ordenada de temas, cada um com expressões regulares,

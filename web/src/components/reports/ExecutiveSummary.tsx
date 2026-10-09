@@ -176,7 +176,7 @@ export function ExecutiveSummary({ report }: { report: WorkspaceReport }) {
           hint={`Perguntas realizadas à Cappy no período, em ${formatCount(totals.conversations)} conversas.`} />
         <Tile tone="cyan" icon={Users} label="Analistas" value={formatCount(totals.analysts)} hint={analystsHint(report)} />
         <Tile tone="purple" icon={Database} label="Custo total" value={formatMoney(totals.cost_usd, brl)}
-          hint={`Custo com processamento das consultas no período${brl ? ` (${formatUsd(totals.cost_usd)})` : ''}.`} />
+          hint={`Custo das consultas no período pela tabela da API da Claude${brl ? ` (${formatUsd(totals.cost_usd)})` : ''}.`} />
         <Tile tone="orange" icon={CircleDollarSign} label="Custo médio por consulta"
           value={formatMoney(totals.avg_cost_per_question, brl)} hint="Valor médio por pergunta feita à Cappy." />
       </div>
@@ -191,7 +191,7 @@ export function ExecutiveSummary({ report }: { report: WorkspaceReport }) {
       </div>
 
       <p className="text-[11px] leading-snug text-slate-500">
-        Custo real informado pelo provedor do modelo (US$).{' '}
+        Custo pela tabela oficial da API da Claude, por modelo e tipo de token (entrada, cache e saída), em US$.{' '}
         {brl
           ? `Convertido em R$ pela ${brl.source} de ${formatDate(brl.quoted_on)}: R$ ${brl.rate.toLocaleString('pt-BR', { minimumFractionDigits: 4 })} por US$ 1.`
           : 'Sem cotação do Banco Central no momento: valores em US$.'}{' '}
