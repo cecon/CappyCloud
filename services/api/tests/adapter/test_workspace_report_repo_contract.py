@@ -77,8 +77,8 @@ async def _seed_fake(ids: dict[str, uuid.UUID]) -> InMemoryWorkspaceReportReposi
                 conv_id, ws_id, "ana@linx.com", title, None, branches_from_repos(repos), first
             ),
             *(
-                ReportMessage(conv_id, T0 + timedelta(minutes=m), cost)
-                for _role, _content, m, cost in msgs
+                ReportMessage(conv_id, T0 + timedelta(minutes=m), cost, role == "user")
+                for role, _content, m, cost in msgs
             ),
         )
     return repo
@@ -161,10 +161,10 @@ async def test_accessible_workspace_ids(seed: Seed) -> None:
 
 async def test_period_messages_start_inclusive_end_exclusive(seed: Seed) -> None:
     msgs = await seed.repo.list_period_messages([seed.proteus], T0, T0 + timedelta(minutes=60))
-    assert sorted((m.created_at, m.cost_usd) for m in msgs) == [
-        (T0, 0.0),
-        (T0 + timedelta(minutes=5), 1.25),
-        (T0 + timedelta(minutes=10), 0.0),
+    assert sorted((m.created_at, m.cost_usd, m.is_question) for m in msgs) == [
+        (T0, 0.0, True),
+        (T0 + timedelta(minutes=5), 1.25, False),
+        (T0 + timedelta(minutes=10), 0.0, True),
     ]
     assert all(m.conversation_id == seed.conv_main for m in msgs)
     assert await seed.repo.list_period_messages([], T0, T0 + timedelta(days=1)) == []

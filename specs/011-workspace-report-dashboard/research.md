@@ -23,6 +23,23 @@ fiscal (PIS/COFINS, SPED, NF-e, MDF-e, CIAP), banco (tabela, procedure
 `sp_*`), integrações (API, Scanntech, Selcon), desempenho (lentidão),
 arquitetura e documentação (Lei do Bem, Confluence/Linx Share).
 
+## Revisão — pedido oficial (slide da Diretoria)
+
+O slide do time Protheus define o formato: "Total de consultas" = perguntas,
+analistas, custo total e custo médio por consulta em R$, colunas por semana
+(blocos de 7 dias desde o início do período) e distribuição por tema em %.
+
+Conferência em prod (só leitura) no mesmo período do slide (01/09 a 08/10/2026):
+o proteus tem 36 perguntas de 3 usuários e US$ 18,87 em `messages.cost_usd`; o
+slide mostra 428 perguntas, 1 analista e R$ 8,56. Os números do slide não saem
+desta base, então a tela da Cappy vai mostrar valores diferentes dos do slide.
+
+**Câmbio**: PTAX venda do Banco Central (API pública Olinda,
+`CotacaoDolarPeriodo`), última cotação até o fim do período (janela de 10 dias
+para fins de semana e feriados). Cotações passadas ficam em cache no processo.
+Falha da fonte → relatório em US$ com aviso. É a única chamada de rede nova da
+API.
+
 ## Decisão 1 — Classificação por regras, não por LLM
 
 - **Escolha**: lista ordenada de temas, cada um com expressões regulares,
@@ -42,12 +59,12 @@ arquitetura e documentação (Lei do Bem, Confluence/Linx Share).
 - Duas colunas em `workspaces`: `report_theme_preset` (nome de um modelo pronto
   no código) e `report_themes` (regras próprias em JSON).
 - Resolução: regras próprias → modelo do workspace → modelo `generico`.
-- A migration aponta o proteus para o modelo `nfse-protheus`; nada mais é
+- A migration aponta o proteus para o modelo `protheus-tss` (formato da Diretoria); nada mais é
   específico de workspace no código.
 - Só o super admin edita (JSON validado: chave em slug, regex que compila,
   até 30 temas, até 30 padrões de até 200 caracteres).
 
-### Modelo `generico` (qualquer workspace)
+### Modelo `por-assunto` (opcional; era o `generico` inicial)
 
 | Ordem | Chave | Rótulo | Exemplos de padrão |
 |------|-------|--------|---------------------|
@@ -60,7 +77,7 @@ arquitetura e documentação (Lei do Bem, Confluence/Linx Share).
 | 7 | arquitetura | Arquitetura / visão do projeto | `arquitetura`, `\bstacks?\b`, `projeto`, `fluxo`, `rotina` |
 | 8 | documentacao | Documentação / relatório técnico | `documenta`, `confluence`, `linx ?share`, `artigo`, `lei do bem` |
 
-### Modelo `nfse-protheus` (proteus)
+### Modelo `nfse-detalhado` (opcional; era `nfse-protheus`)
 
 | Ordem | Chave | Rótulo | Exemplos de padrão |
 |------|-------|--------|---------------------|
@@ -78,6 +95,15 @@ mesmo" vão para "Outros".
 
 "Por prefeitura" é outra dimensão (cruza com qualquer tema) e fica como
 evolução: extrair o município do texto exige lista de municípios.
+
+### Modelos no formato da Diretoria (atuais)
+
+`generico` (todos os workspaces) e `protheus-tss` (proteus, via migration) usam
+as chaves do slide, nesta ordem: `erros-rejeicoes`, `analise-codigo`,
+`configuracoes`, `validacoes-regras`, `duvidas-gerais` e, sem casamento,
+`outros`. O `protheus-tss` usa rótulos e padrões do Protheus/TSS (`.prw`,
+`advpl`, `MV_`, `tssnewnfse`, `cod_mun`, ISS, IBS/CBS, retenções). Os padrões
+estão em `services/api/app/domain/report_theme_presets.py`.
 
 ## Decisão 3 — Agregação em Python sobre mensagens do período
 

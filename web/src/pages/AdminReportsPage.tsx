@@ -3,20 +3,14 @@ import { AlertTriangle, FileSpreadsheet, FileText, Printer, RefreshCw, Tags } fr
 import { errorToUserMessage, getToken } from '../api'
 import { AdminConsole } from '../components/admin/AdminConsole'
 import { ReportFiltersBar } from '../components/reports/ReportFiltersBar'
-import {
-  AnalystsTable,
-  ConsultationsTable,
-  ReportKpis,
-  ThemeDistribution,
-  WeeklyEvolution,
-  WorkspacesTable,
-} from '../components/reports/ReportSections'
+import { ExecutiveSummary } from '../components/reports/ExecutiveSummary'
+import { AnalystsTable, ConversationsTable, WorkspacesTable } from '../components/reports/ReportSections'
 import { ThemeRulesDialog } from '../components/reports/ThemeRulesDialog'
 import { useWorkspaceReport } from '../components/reports/useWorkspaceReport'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
 import { cn } from '../lib/utils'
-import { describeFilters, downloadWorkspaceReport, filtersToSearch } from '../reportsApi'
+import { downloadWorkspaceReport, filtersToSearch } from '../reportsApi'
 
 export function AdminReportsPage() {
   const { filters, setFilters, report, options, loading, error, reload } = useWorkspaceReport()
@@ -43,7 +37,7 @@ export function AdminReportsPage() {
   return (
     <AdminConsole
       title="Relatórios"
-      description="Uso do CappyCloud por workspace: consultas, analistas, custo real do provedor, evolução semanal e temas."
+      description="Uso da Cappy por workspace, branch e período, no formato do resumo levado à Diretoria."
       actions={
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => void reload()} disabled={loading}>
@@ -83,26 +77,22 @@ export function AdminReportsPage() {
       )}
 
       {loading && !report ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, idx) => (
-            <Skeleton key={idx} className="h-24 w-full" />
-          ))}
+        <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <Skeleton key={idx} className="h-28 w-full" />
+            ))}
+          </div>
+          <Skeleton className="h-64 w-full" />
         </div>
       ) : report ? (
         <div className={cn('space-y-4', loading && 'opacity-60')}>
-          <p className="text-xs text-muted-foreground">
-            {describeFilters(report)} · valores em US$ (custo real do provedor, sem conversão)
-          </p>
-          <ReportKpis report={report} />
-          <div className="grid gap-4 xl:grid-cols-2">
-            <WeeklyEvolution report={report} />
-            <ThemeDistribution report={report} />
-          </div>
+          <ExecutiveSummary report={report} />
           <div className="grid gap-4 xl:grid-cols-2">
             <AnalystsTable report={report} />
             {!report.filters.workspace_id && <WorkspacesTable report={report} />}
           </div>
-          <ConsultationsTable rows={report.consultations} showWorkspace={!report.filters.workspace_id} />
+          <ConversationsTable report={report} rows={report.conversations} />
         </div>
       ) : null}
 

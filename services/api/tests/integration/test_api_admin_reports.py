@@ -6,10 +6,10 @@ import csv
 import io
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from app.adapters.primary.http.admin_reports import get_workspace_report_repo
+from app.adapters.primary.http.admin_reports import get_usd_brl_rates, get_workspace_report_repo
 from app.adapters.primary.http.deps import get_db_session
 from app.domain.entities import UserRole
 from app.infrastructure.orm_models import Base, Conversation, Message, Sandbox
@@ -22,14 +22,15 @@ from openpyxl import load_workbook
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from tests.conftest import InMemoryUserRepository
-from tests.fakes_reports import InMemoryWorkspaceReportRepository
+from tests.fakes_reports import FakeUsdBrlRateProvider, InMemoryWorkspaceReportRepository
 from tests.integration.conftest import seed_user
 
-PROTEUS = ReportWorkspace(uuid.uuid4(), "proteus", "PROTEUS", "nfse-protheus")
+PROTEUS = ReportWorkspace(uuid.uuid4(), "proteus", "PROTEUS", "nfse-detalhado")
 SELLER = ReportWorkspace(uuid.uuid4(), "seller", "SELLER")
 # 2026-09-01 12:00 em São Paulo; o período dos testes é 2026-09-01 a 2026-09-14.
 T0 = datetime(2026, 9, 1, 15, tzinfo=UTC)
 PERIOD = {"start": "2026-09-01", "end": "2026-09-14"}
+RATES = FakeUsdBrlRateProvider({date(2026, 9, 11): 5.0})
 
 
 def _conv(ws: ReportWorkspace, email: str, title: str, branch: str) -> ReportConversation:
@@ -47,13 +48,24 @@ def report_repo() -> AsyncGenerator[InMemoryWorkspaceReportRepository]:
         (_conv(PROTEUS, "ana@linx.com", "ola", "release"), [(-2, 7.0), (3, 0.25)]),
         (_conv(SELLER, "carla@linx.com", "como ativar o sap", "master"), [(1, 4.0)]),
     ]
+    # Cada item vira uma pergunta e a resposta (com o custo) um minuto depois.
     for conv, msgs in rows:
         repo.add_conversation(
-            conv, *(ReportMessage(conv.id, T0 + timedelta(days=d), c) for d, c in msgs)
+            conv,
+            *(
+                msg
+                for d, c in msgs
+                for msg in (
+                    ReportMessage(conv.id, T0 + timedelta(days=d), 0.0, is_question=True),
+                    ReportMessage(conv.id, T0 + timedelta(days=d, minutes=1), c),
+                )
+            ),
         )
     fastapi_app.dependency_overrides[get_workspace_report_repo] = lambda: repo
+    fastapi_app.dependency_overrides[get_usd_brl_rates] = lambda: RATES
     yield repo
     fastapi_app.dependency_overrides.pop(get_workspace_report_repo, None)
+    fastapi_app.dependency_overrides.pop(get_usd_brl_rates, None)
 
 
 async def _headers(
@@ -84,28 +96,30 @@ async def test_report_metrics_for_one_workspace(
     assert body["filters"]["currency"] == "USD"
     assert body["filters"]["timezone"] == "America/Sao_Paulo"
     assert body["totals"] == {
-        "consultations": 3,
+        "questions": 4,
+        "conversations": 3,
         "analysts": 2,
-        "messages": 4,
+        "messages": 8,
         "cost_usd": 3.75,
-        "avg_cost_per_consultation": 1.25,
+        "avg_cost_per_question": 0.9375,
+        "avg_cost_per_conversation": 1.25,
         "avg_cost_per_analyst": 1.875,
     }
-    assert [(a["label"], a["consultations"], a["cost_usd"]) for a in body["analysts"]] == [
+    assert body["brl"] == {"rate": 5.0, "quoted_on": "2026-09-11", "source": "PTAX fake"}
+    assert [(a["label"], a["questions"], a["cost_usd"]) for a in body["analysts"]] == [
+        ("ana", 3, 1.75),
         ("bruno", 1, 2.0),
-        ("ana", 2, 1.75),
     ]
-    assert [(w["week"], w["consultations"], w["cost_usd"]) for w in body["weeks"]] == [
-        ("2026-W36", 3, 3.25),
-        ("2026-W37", 1, 0.5),
-        ("2026-W38", 0, 0.0),
+    assert [(w["label"], w["questions"], w["cost_usd"]) for w in body["weeks"]] == [
+        ("01-07/09", 3, 3.25),
+        ("08-14/09", 1, 0.5),
     ]
-    assert [(t["key"], t["consultations"]) for t in body["themes"]] == [
-        ("nfse-schema-xml", 1),
-        ("nfse-retencoes", 1),
-        ("outros", 1),
+    assert [(t["key"], t["questions"], t["share"]) for t in body["themes"]] == [
+        ("nfse-retencoes", 2, 0.5),
+        ("nfse-schema-xml", 1, 0.25),
+        ("outros", 1, 0.25),
     ]
-    assert len(body["consultations"]) == 3
+    assert len(body["conversations"]) == 3
 
 
 async def test_branch_and_period_filters(
@@ -116,12 +130,12 @@ async def test_branch_and_period_filters(
     headers, _ = await _headers(client, user_repo, super_admin=True)
     params = {"workspace_id": str(PROTEUS.id), "branch": "release", **PERIOD}
     body = (await client.get("/api/admin/reports/workspace", headers=headers, params=params)).json()
-    assert [c["title"] for c in body["consultations"]] == ["ola"]
+    assert [c["title"] for c in body["conversations"]] == ["ola"]
     # A mensagem de 7.0 é anterior ao período: só 0.25 conta.
     assert body["totals"]["cost_usd"] == 0.25
     params = {"start": "2026-09-02", "end": "2026-09-02"}
     body = (await client.get("/api/admin/reports/workspace", headers=headers, params=params)).json()
-    assert [c["workspace_slug"] for c in body["consultations"]] == ["seller"]
+    assert [c["workspace_slug"] for c in body["conversations"]] == ["seller"]
 
 
 async def test_invalid_period_returns_422(
@@ -153,7 +167,7 @@ async def test_regular_admin_is_restricted_to_granted_workspaces(
     assert res.status_code == 403
     body = (await client.get("/api/admin/reports/workspace", headers=headers, params=PERIOD)).json()
     assert [w["slug"] for w in body["workspaces"]] == ["proteus"]
-    assert body["totals"]["consultations"] == 3
+    assert body["totals"]["questions"] == 4
     options = (await client.get("/api/admin/reports/options", headers=headers)).json()
     assert [w["slug"] for w in options["workspaces"]] == ["proteus"]
     assert options["branches"] == ["main", "release"]
@@ -186,8 +200,13 @@ async def test_theme_editing_is_super_admin_only(
     assert (await client.put(url, headers=admin, json=rules)).status_code == 403
     root, _ = await _headers(client, user_repo, super_admin=True)
     current = (await client.get(url, headers=root)).json()
-    assert (current["preset"], current["custom"]) == ("nfse-protheus", False)
-    assert [p["key"] for p in current["presets"]] == ["generico", "nfse-protheus"]
+    assert (current["preset"], current["custom"]) == ("nfse-detalhado", False)
+    assert [p["key"] for p in current["presets"]] == [
+        "generico",
+        "protheus-tss",
+        "nfse-detalhado",
+        "por-assunto",
+    ]
     bad = await client.put(
         url, headers=root, json={"rules": [{"key": "x", "label": "X", "patterns": ["("]}]}
     )
@@ -202,9 +221,9 @@ async def test_theme_editing_is_super_admin_only(
             params={"workspace_id": str(PROTEUS.id), **PERIOD},
         )
     ).json()
-    assert [(t["key"], t["consultations"]) for t in body["themes"]] == [
-        ("saudacao", 1),
-        ("outros", 2),
+    assert [(t["key"], t["questions"], t["conversations"]) for t in body["themes"]] == [
+        ("saudacao", 1, 1),
+        ("outros", 3, 2),
     ]
     assert (await client.put(url, headers=root, json={"preset": "x"})).status_code == 422
 
@@ -226,18 +245,28 @@ async def test_exports_match_report(
     )
     rows = list(csv.reader(io.StringIO(res.content.decode("utf-8-sig")), delimiter=";"))
     assert rows[0][:3] == ["workspace", "analista", "chamado"]
-    assert sorted(float(r[7]) for r in rows[1:]) == [0.25, 1.5, 2.0]
+    assert rows[0][6:10] == [
+        "perguntas_no_periodo",
+        "mensagens_no_periodo",
+        "custo_usd",
+        "custo_brl",
+    ]
+    assert sorted(float(r[8]) for r in rows[1:]) == [0.25, 1.5, 2.0]
+    assert sorted(float(r[9]) for r in rows[1:]) == [1.25, 7.5, 10.0]
 
     res = await client.get("/api/admin/reports/workspace/export", headers=headers, params=PERIOD)
     assert res.status_code == 200
     assert "relatorio-todos-" in res.headers["content-disposition"]
     wb = load_workbook(io.BytesIO(res.content))
-    assert wb.sheetnames == ["Resumo", "Analistas", "Semanas", "Temas", "Workspaces", "Consultas"]
+    assert wb.sheetnames == ["Resumo", "Analistas", "Semanas", "Temas", "Workspaces", "Conversas"]
     summary = {row[0]: row[1] for row in wb["Resumo"].iter_rows(min_row=2, values_only=True)}
-    assert summary["Consultas"] == 4
+    assert summary["Total de consultas (perguntas)"] == 5
+    assert summary["Conversas"] == 4
     assert summary["Custo total (US$)"] == 7.75
+    assert summary["Custo total (R$)"] == 38.75
+    assert summary["Cotação"] == "R$ 5.0000 por US$ (PTAX fake, 11/09/2026)."
     assert "messages.cost_usd" in summary["Fonte do custo"]
-    assert wb["Consultas"].max_row == 5
+    assert wb["Conversas"].max_row == 5
 
 
 @pytest.fixture
@@ -255,6 +284,7 @@ async def sql_session() -> AsyncGenerator[AsyncSession]:
 async def test_real_repository_wiring(
     client: AsyncClient, user_repo: InMemoryUserRepository, sql_session: AsyncSession
 ) -> None:
+    fastapi_app.dependency_overrides[get_usd_brl_rates] = lambda: FakeUsdBrlRateProvider()
     headers, _ = await _headers(client, user_repo, super_admin=True)
     sandbox = Sandbox(id=uuid.uuid4(), name="sb", host="sb", session_port=8080)
     user = UserORM(id=uuid.uuid4(), email="ana@linx.com", hashed_password="x")
@@ -263,7 +293,7 @@ async def test_real_repository_wiring(
         slug="proteus",
         name="PROTEUS",
         sandbox_id=sandbox.id,
-        report_theme_preset="nfse-protheus",
+        report_theme_preset="nfse-detalhado",
     )
     conv = Conversation(
         id=uuid.uuid4(),
@@ -292,7 +322,9 @@ async def test_real_repository_wiring(
 
     body = (await client.get("/api/admin/reports/workspace", headers=headers, params=PERIOD)).json()
     assert body["totals"]["cost_usd"] == 0.5
-    assert body["consultations"][0]["theme_key"] == "nfse-schema-xml"
-    assert body["consultations"][0]["branches"] == ["main"]
+    assert body["conversations"][0]["theme_key"] == "nfse-schema-xml"
+    assert body["conversations"][0]["branches"] == ["main"]
+    assert body["brl"] is None
     options = (await client.get("/api/admin/reports/options", headers=headers)).json()
     assert options["branches"] == ["main"]
+    fastapi_app.dependency_overrides.pop(get_usd_brl_rates, None)

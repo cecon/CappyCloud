@@ -6,11 +6,11 @@
 
 | Coluna | Tipo | Nulo | Uso |
 |--------|------|------|-----|
-| `report_theme_preset` | varchar(64) | sim | nome do modelo pronto (`generico`, `nfse-protheus`) |
+| `report_theme_preset` | varchar(64) | sim | nome do modelo pronto (`generico`, `protheus-tss`, `nfse-detalhado`, `por-assunto`) |
 | `report_themes` | jsonb | sim | regras próprias; quando preenchida, vale sobre o modelo |
 
 Migration: adiciona as colunas e faz
-`UPDATE workspaces SET report_theme_preset = 'nfse-protheus' WHERE slug = 'proteus'`.
+`UPDATE workspaces SET report_theme_preset = 'protheus-tss' WHERE slug = 'proteus'`.
 
 ## Regra de tema (JSON)
 
@@ -33,14 +33,17 @@ Migration: adiciona as colunas e faz
 
 ## Relatório (saída)
 
-- `totals`: `consultations`, `analysts`, `messages`, `cost_usd`,
-  `avg_cost_per_consultation`, `avg_cost_per_analyst`.
-- `analysts[]`: `email`, `label` (parte antes do @), `consultations`,
-  `cost_usd`, `avg_cost_usd`.
-- `weeks[]`: `week` (`2026-W40`), `start` (segunda-feira), `consultations`,
-  `cost_usd` — todas as semanas que tocam o período.
-- `themes[]`: `key`, `label`, `consultations`, `cost_usd` ("Outros" por último).
-- `workspaces[]`: `id`, `slug`, `name`, `consultations`, `cost_usd`.
-- `consultations[]`: `conversation_id`, `workspace_slug`, `analyst_email`,
+- `brl`: `rate`, `quoted_on`, `source` (PTAX venda) ou `null`.
+- `totals`: `questions` (consultas), `conversations`, `analysts`, `messages`,
+  `cost_usd`, `avg_cost_per_question`, `avg_cost_per_conversation`,
+  `avg_cost_per_analyst`.
+- `analysts[]`: `email`, `label` (parte antes do @), `questions`,
+  `conversations`, `cost_usd`, `avg_cost_per_question`.
+- `weeks[]`: `start`, `end`, `label` (`01-07/09`), `questions`,
+  `conversations`, `cost_usd` — blocos de 7 dias a partir de `start`.
+- `themes[]`: `key`, `label`, `questions`, `conversations`, `cost_usd`,
+  `share` (fração das perguntas; "Outros" por último).
+- `workspaces[]`: `id`, `slug`, `name`, `questions`, `conversations`, `cost_usd`.
+- `conversations[]`: `conversation_id`, `workspace_slug`, `analyst_email`,
   `ticket_number`, `title`, `theme_key`, `theme_label`, `branches`,
-  `messages`, `cost_usd`, `first_message_at`, `last_message_at`.
+  `questions`, `messages`, `cost_usd`, `first_message_at`, `last_message_at`.

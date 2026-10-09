@@ -6,7 +6,7 @@
 
 Nova página Admin → Relatórios com filtros de workspace, branch e período,
 métricas de consultas, analistas, custo (só `messages.cost_usd`), evolução por
-semana ISO e distribuição por tema, exportação XLSX/CSV e versão imprimível.
+semana (blocos de 7 dias) e distribuição por tema, no formato do slide da Diretoria e com R$ pela PTAX, exportação XLSX/CSV e versão imprimível.
 O cálculo vive num use case puro sobre uma port de leitura; o tema sai de
 regras regex determinísticas por workspace (modelo pronto ou regras próprias),
 com "Outros" de reserva. Admin comum só vê os workspaces que tem em

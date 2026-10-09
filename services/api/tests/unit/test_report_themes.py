@@ -17,8 +17,10 @@ from app.domain.report_themes import (
     validate_theme_rules,
 )
 
-NFSE = ThemeClassifier(preset_rules("nfse-protheus"))
-GENERIC = ThemeClassifier(preset_rules(DEFAULT_PRESET))
+NFSE = ThemeClassifier(preset_rules("nfse-detalhado"))
+GENERIC = ThemeClassifier(preset_rules("por-assunto"))
+TSS = ThemeClassifier(preset_rules("protheus-tss"))
+DIRETORIA = ThemeClassifier(preset_rules(DEFAULT_PRESET))
 
 # Títulos / começo da primeira mensagem reais do proteus (prod, 2026-10-09).
 PROTEUS_SAMPLES = [
@@ -106,8 +108,48 @@ def test_nfse_preset_classifies_real_proteus_questions(text: str, expected: str)
         ("ola", OTHER_THEME_KEY),
     ],
 )
-def test_generic_preset_classifies_other_workspaces(text: str, expected: str) -> None:
+def test_por_assunto_preset_classifies_other_workspaces(text: str, expected: str) -> None:
     assert GENERIC.classify(text)[0] == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (PROTEUS_SAMPLES[0][0], "erros-rejeicoes"),
+        (PROTEUS_SAMPLES[4][0], "erros-rejeicoes"),
+        (PROTEUS_SAMPLES[7][0], "erros-rejeicoes"),
+        ("Teste: na NFS-e de São Paulo o TSS devolve o erro de schema", "erros-rejeicoes"),
+        ("Qual fonte .PRW monta o XML do RPS? Explique o fluxo da função", "analise-codigo"),
+        ("Como configurar o parâmetro MV_NFSEAMB no TSS?", "configuracoes"),
+        (
+            "Cliente informou que a tag indDest estava sendo montada incorretamente",
+            "validacoes-regras",
+        ),
+        ("O Protheus manda o repasse só em vDedRed e a base do ISS sai menor", "validacoes-regras"),
+        ("me fale sobre esse projeto", "duvidas-gerais"),
+        ("ola", OTHER_THEME_KEY),
+    ],
+)
+def test_protheus_tss_preset_follows_board_taxonomy(text: str, expected: str) -> None:
+    assert TSS.classify(text)[0] == expected
+
+
+def test_generic_preset_uses_board_taxonomy() -> None:
+    assert [r.key for r in preset_rules(DEFAULT_PRESET)] == [
+        "erros-rejeicoes",
+        "analise-codigo",
+        "configuracoes",
+        "validacoes-regras",
+        "duvidas-gerais",
+    ]
+    assert DIRETORIA.classify("como ativar o sap no seller")[0] == "configuracoes"
+    assert DIRETORIA.classify("o pis e cofins de saída devem ser preenchidos?")[0] == (
+        "validacoes-regras"
+    )
+    assert DIRETORIA.classify("existe documentação da importação de produtos?")[0] == (
+        "duvidas-gerais"
+    )
+    assert DIRETORIA.classify("ola")[0] == OTHER_THEME_KEY
 
 
 def test_classification_ignores_case_and_accents() -> None:
@@ -132,7 +174,12 @@ def test_first_matching_rule_wins() -> None:
 def test_presets_have_unique_keys_and_valid_patterns() -> None:
     for _label, rules in PRESETS.values():
         validate_theme_rules([rule.as_dict() for rule in rules])
-    assert [key for key, _ in preset_choices()] == ["generico", "nfse-protheus"]
+    assert [key for key, _ in preset_choices()] == [
+        "generico",
+        "protheus-tss",
+        "nfse-detalhado",
+        "por-assunto",
+    ]
 
 
 def test_unknown_preset_is_rejected() -> None:
@@ -142,13 +189,13 @@ def test_unknown_preset_is_rejected() -> None:
 
 def test_resolve_rules_prefers_custom_then_preset_then_generic() -> None:
     custom = [{"key": "meu", "label": "Meu", "patterns": ["x"]}]
-    assert [r.key for r in resolve_rules("nfse-protheus", custom)] == ["meu"]
-    assert resolve_rules("nfse-protheus", None) == preset_rules("nfse-protheus")
+    assert [r.key for r in resolve_rules("nfse-detalhado", custom)] == ["meu"]
+    assert resolve_rules("nfse-detalhado", None) == preset_rules("nfse-detalhado")
     assert resolve_rules(None, None) == preset_rules(DEFAULT_PRESET)
     assert resolve_rules("sumiu", []) == preset_rules(DEFAULT_PRESET)
     # Regras gravadas que ficaram inválidas não derrubam o relatório.
     broken = [{"key": "x", "label": "X", "patterns": ["("]}]
-    assert resolve_rules("nfse-protheus", broken) == preset_rules("nfse-protheus")
+    assert resolve_rules("nfse-detalhado", broken) == preset_rules("nfse-detalhado")
 
 
 def _rule(**overrides: object) -> dict[str, object]:

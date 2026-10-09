@@ -17,27 +17,32 @@ export type ReportOptions = {
 }
 
 export type ReportTotals = {
-  consultations: number
+  questions: number
+  conversations: number
   analysts: number
   messages: number
   cost_usd: number
-  avg_cost_per_consultation: number
+  avg_cost_per_question: number
+  avg_cost_per_conversation: number
   avg_cost_per_analyst: number
 }
 
 export type ReportAnalyst = {
   email: string
   label: string
-  consultations: number
+  questions: number
+  conversations: number
   cost_usd: number
-  avg_cost_usd: number
+  avg_cost_per_question: number
 }
 
-export type ReportWeek = { week: string; start: string; consultations: number; cost_usd: number }
-export type ReportTheme = { key: string; label: string; consultations: number; cost_usd: number }
-export type ReportWorkspaceTotals = ReportWorkspaceOption & { consultations: number; cost_usd: number }
+type Usage = { questions: number; conversations: number; cost_usd: number }
 
-export type ReportConsultation = {
+export type ReportWeek = Usage & { start: string; end: string; label: string }
+export type ReportTheme = Usage & { key: string; label: string; share: number }
+export type ReportWorkspaceTotals = ReportWorkspaceOption & Usage
+
+export type ReportConversation = {
   conversation_id: string
   workspace_slug: string
   analyst_email: string
@@ -46,11 +51,15 @@ export type ReportConsultation = {
   theme_key: string
   theme_label: string
   branches: string[]
+  questions: number
   messages: number
   cost_usd: number
   first_message_at: string
   last_message_at: string
 }
+
+/** Cotação PTAX usada para os valores em R$ (`null` se o Banco Central não respondeu). */
+export type BrlRate = { rate: number; quoted_on: string; source: string }
 
 export type WorkspaceReport = {
   generated_at: string
@@ -63,12 +72,13 @@ export type WorkspaceReport = {
     timezone: string
     currency: 'USD'
   }
+  brl: BrlRate | null
   totals: ReportTotals
   analysts: ReportAnalyst[]
   weeks: ReportWeek[]
   themes: ReportTheme[]
   workspaces: ReportWorkspaceTotals[]
-  consultations: ReportConsultation[]
+  conversations: ReportConversation[]
 }
 
 export type ThemeRule = { key: string; label: string; patterns: string[] }
@@ -181,6 +191,15 @@ export function formatUsd(value: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: value !== 0 && Math.abs(value) < 1 ? 4 : 2,
   }).format(value)
+}
+
+export function formatBrl(value: number): string {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
+}
+
+/** Valor em R$ quando há cotação; senão em US$. */
+export function formatMoney(usd: number, brl: BrlRate | null): string {
+  return brl ? formatBrl(usd * brl.rate) : formatUsd(usd)
 }
 
 export function formatCount(value: number): string {

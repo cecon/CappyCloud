@@ -5,9 +5,10 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from dataclasses import replace
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
+from app.ports.exchange_rates import ExchangeRate, UsdBrlRateProvider
 from app.ports.workspace_report import (
     ReportConversation,
     ReportMessage,
@@ -76,3 +77,19 @@ class InMemoryWorkspaceReportRepository(WorkspaceReportRepository):
             return None
         self.workspaces[workspace_id] = replace(ws, theme_preset=preset, theme_rules=rules)
         return self.workspaces[workspace_id]
+
+
+class FakeUsdBrlRateProvider(UsdBrlRateProvider):
+    """Cotação fixa por dia; registra os dias pedidos."""
+
+    def __init__(self, rates: dict[date, float] | None = None) -> None:
+        self.rates = rates or {}
+        self.asked: list[date] = []
+
+    async def rate_on_or_before(self, day: date) -> ExchangeRate | None:
+        self.asked.append(day)
+        known = [d for d in self.rates if d <= day]
+        if not known:
+            return None
+        quoted = max(known)
+        return ExchangeRate(rate=self.rates[quoted], quoted_on=quoted, source="PTAX fake")

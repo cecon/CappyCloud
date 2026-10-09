@@ -67,7 +67,7 @@ class SQLAlchemyWorkspaceReportRepository(WorkspaceReportRepository):
         if not workspace_ids:
             return []
         rows = await self._session.execute(
-            select(Message.conversation_id, Message.created_at, Message.cost_usd)
+            select(Message.conversation_id, Message.created_at, Message.cost_usd, Message.role)
             .join(Conversation, Conversation.id == Message.conversation_id)
             .where(
                 Conversation.workspace_id.in_(list(workspace_ids)),
@@ -80,6 +80,7 @@ class SQLAlchemyWorkspaceReportRepository(WorkspaceReportRepository):
                 conversation_id=row.conversation_id,
                 created_at=_utc(row.created_at),
                 cost_usd=_as_float(row.cost_usd),
+                is_question=row.role == "user",
             )
             for row in rows
         ]

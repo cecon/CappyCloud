@@ -1,26 +1,21 @@
 import { useEffect } from 'react'
 import { Printer } from 'lucide-react'
-import {
-  AnalystsTable,
-  ConsultationsTable,
-  ReportKpis,
-  ThemeDistribution,
-  WeeklyEvolution,
-  WorkspacesTable,
-} from '../components/reports/ReportSections'
+import { ExecutiveSummary } from '../components/reports/ExecutiveSummary'
+import { AnalystsTable, ConversationsTable, WorkspacesTable } from '../components/reports/ReportSections'
 import { useWorkspaceReport } from '../components/reports/useWorkspaceReport'
 import { Button } from '../components/ui/button'
 import { applyTheme } from '../lib/theme'
 import { describeFilters } from '../reportsApi'
 
 const PRINT_CSS = `
-@page { size: A4; margin: 14mm; }
+@page { size: A4 landscape; margin: 10mm; }
 @media print {
   .no-print { display: none !important; }
   html, body { background: #fff !important; }
   .report-print { padding: 0 !important; max-width: none !important; }
   .report-section, .report-kpi { break-inside: avoid; box-shadow: none !important; }
-  .report-bar { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .report-slide { break-after: page; border: none !important; box-shadow: none !important; padding: 0 !important; }
+  .report-bar, .report-tile, .report-slide * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
 `
 
@@ -41,7 +36,7 @@ export function AdminReportPrintPage() {
   }, [report])
 
   return (
-    <main className="report-print mx-auto max-w-5xl space-y-4 bg-background p-6 text-foreground">
+    <main className="report-print mx-auto max-w-6xl space-y-4 bg-background p-6 text-foreground">
       <style>{PRINT_CSS}</style>
       <div className="no-print flex items-center justify-between gap-3 rounded-lg border border-border bg-muted p-3 text-sm">
         <span>Use "Salvar como PDF" no destino da impressão para gerar o arquivo.</span>
@@ -56,21 +51,16 @@ export function AdminReportPrintPage() {
 
       {report && (
         <>
-          <header className="border-b border-border pb-3">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">CappyCloud</p>
-            <h1 className="mt-1 text-2xl font-semibold">Relatório de uso</h1>
-            <p className="mt-1 text-sm">{describeFilters(report)}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Gerado em {new Date(report.generated_at).toLocaleString('pt-BR')} · datas em {report.filters.timezone} ·
-              valores em US$, somados do custo real informado pelo provedor (sem conversão de moeda)
+          <ExecutiveSummary report={report} />
+          <header className="border-b border-border pb-2">
+            <h2 className="text-lg font-semibold">Detalhamento</h2>
+            <p className="text-xs text-muted-foreground">
+              {describeFilters(report)} · gerado em {new Date(report.generated_at).toLocaleString('pt-BR')}
             </p>
           </header>
-          <ReportKpis report={report} />
-          <WeeklyEvolution report={report} />
-          <ThemeDistribution report={report} />
           <AnalystsTable report={report} />
           {!report.filters.workspace_id && <WorkspacesTable report={report} />}
-          <ConsultationsTable rows={report.consultations} showWorkspace={!report.filters.workspace_id} />
+          <ConversationsTable report={report} rows={report.conversations} />
         </>
       )}
     </main>

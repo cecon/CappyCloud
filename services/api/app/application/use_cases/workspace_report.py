@@ -26,6 +26,7 @@ from app.domain.report_themes import (
     resolve_rules,
     validate_theme_rules,
 )
+from app.ports.exchange_rates import ExchangeRate, UsdBrlRateProvider
 from app.ports.workspace_report import ReportWorkspace, WorkspaceReportRepository
 
 MAX_PERIOD_DAYS = 366
@@ -68,6 +69,8 @@ class BuiltReport:
     end: date
     timezone: str
     report: WorkspaceReport
+    # Cotação usada para mostrar R$; ``None`` quando a fonte não respondeu.
+    brl: ExchangeRate | None = None
 
 
 @dataclass(frozen=True)
@@ -129,8 +132,13 @@ class GetWorkspaceReportOptions:
 
 
 class BuildWorkspaceReport:
-    def __init__(self, repo: WorkspaceReportRepository) -> None:
+    """Monta o relatório; com ``rates``, anexa a cotação US$→R$ do fim do período."""
+
+    def __init__(
+        self, repo: WorkspaceReportRepository, rates: UsdBrlRateProvider | None = None
+    ) -> None:
         self._repo = repo
+        self._rates = rates
 
     async def execute(
         self,
@@ -142,7 +150,8 @@ class BuildWorkspaceReport:
         end: date | None,
         now: datetime,
     ) -> BuiltReport:
-        start, end = resolve_period(start, end, now.astimezone(REPORT_TZ).date())
+        today = now.astimezone(REPORT_TZ).date()
+        start, end = resolve_period(start, end, today)
         scope = await resolve_scope(self._repo, viewer, workspace_id)
         branch = (branch or "").strip() or None
         since, until = period_bounds(start, end)
@@ -169,6 +178,7 @@ class BuildWorkspaceReport:
             end=end,
             timezone=str(REPORT_TZ),
             report=report,
+            brl=await self._rates.rate_on_or_before(min(end, today)) if self._rates else None,
         )
 
 

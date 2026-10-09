@@ -1,4 +1,4 @@
-"""Arquivos do relatório de uso: XLSX (abas para a Diretoria) e CSV (consultas)."""
+"""Arquivos do relatório de uso: XLSX (abas para a Diretoria) e CSV (conversas)."""
 
 from __future__ import annotations
 
@@ -17,17 +17,20 @@ from openpyxl.worksheet.worksheet import Worksheet
 from app.application.use_cases.workspace_report import BuiltReport
 
 USD_FORMAT = '"US$" #,##0.0000'
-COST_SOURCE = "Valores em US$, somados de messages.cost_usd (custo real informado pelo provedor)."
+BRL_FORMAT = '"R$" #,##0.00'
+COST_SOURCE = "Custo em US$ somado de messages.cost_usd (custo real informado pelo provedor)."
 
-CONSULTATION_COLUMNS = [
+CONVERSATION_COLUMNS = [
     "workspace",
     "analista",
     "chamado",
     "titulo",
     "tema",
     "branches",
+    "perguntas_no_periodo",
     "mensagens_no_periodo",
     "custo_usd",
+    "custo_brl",
     "primeira_mensagem",
     "ultima_mensagem",
 ]
@@ -42,7 +45,18 @@ def _local(value: datetime) -> datetime:
     return value.replace(tzinfo=None)
 
 
-def _consultation_values(built: BuiltReport) -> list[list[Any]]:
+def _brl(built: BuiltReport, usd: float) -> float | None:
+    return round(usd * built.brl.rate, 2) if built.brl else None
+
+
+def rate_note(built: BuiltReport) -> str:
+    if built.brl is None:
+        return "Sem cotação: a fonte do câmbio não respondeu; valores só em US$."
+    quoted = built.brl.quoted_on.strftime("%d/%m/%Y")
+    return f"R$ {built.brl.rate:.4f} por US$ ({built.brl.source}, {quoted})."
+
+
+def _conversation_values(built: BuiltReport) -> list[list[Any]]:
     return [
         [
             row.workspace_slug,
@@ -51,12 +65,14 @@ def _consultation_values(built: BuiltReport) -> list[list[Any]]:
             row.title,
             row.theme_label,
             ", ".join(row.branches),
+            row.questions,
             row.messages,
             row.cost_usd,
+            _brl(built, row.cost_usd),
             _local(row.first_message_at),
             _local(row.last_message_at),
         ]
-        for row in built.report.consultations
+        for row in built.report.conversations
     ]
 
 
@@ -64,11 +80,12 @@ def report_csv(built: BuiltReport) -> bytes:
     buffer = io.StringIO()
     # Ponto e vírgula: o Excel em português abre direto em colunas.
     writer = csv.writer(buffer, delimiter=";")
-    writer.writerow(CONSULTATION_COLUMNS)
-    for values in _consultation_values(built):
-        values[7] = f"{values[7]:.6f}"
-        values[8] = values[8].isoformat(timespec="seconds")
-        values[9] = values[9].isoformat(timespec="seconds")
+    writer.writerow(CONVERSATION_COLUMNS)
+    for values in _conversation_values(built):
+        values[8] = f"{values[8]:.6f}"
+        values[9] = "" if values[9] is None else f"{values[9]:.2f}"
+        values[10] = values[10].isoformat(timespec="seconds")
+        values[11] = values[11].isoformat(timespec="seconds")
         writer.writerow(values)
     # BOM para o Excel reconhecer UTF-8 (acentos dos títulos).
     return codecs.BOM_UTF8 + buffer.getvalue().encode("utf-8")
@@ -79,7 +96,7 @@ def _sheet(
     title: str,
     header: Sequence[str],
     rows: Sequence[Sequence[Any]],
-    money_cols: Sequence[int] = (),
+    formats: dict[int, str] | None = None,
 ) -> Worksheet:
     ws = wb.create_sheet(title)
     ws.append(list(header))
@@ -87,9 +104,9 @@ def _sheet(
         cell.font = Font(bold=True)
     for values in rows:
         ws.append(list(values))
-    for col in money_cols:
+    for col, number_format in (formats or {}).items():
         for (cell,) in ws.iter_rows(min_row=2, min_col=col, max_col=col):
-            cell.number_format = USD_FORMAT
+            cell.number_format = number_format
     for idx, name in enumerate(header, start=1):
         ws.column_dimensions[ws.cell(row=1, column=idx).column_letter].width = max(
             14, min(60, len(name) + 4)
@@ -97,20 +114,24 @@ def _sheet(
     return ws
 
 
-def _summary_rows(built: BuiltReport) -> list[list[Any]]:
-    totals = built.report.totals
+def _summary_rows(built: BuiltReport) -> list[tuple[str, Any, str | None]]:
+    t = built.report.totals
+    generated = built.generated_at.astimezone(ZoneInfo(built.timezone))
     return [
-        ["Workspace", built.workspace_name or "Todos os workspaces visíveis"],
-        ["Branch", built.branch or "Todas"],
-        ["Período", f"{built.start.isoformat()} a {built.end.isoformat()} ({built.timezone})"],
-        ["Gerado em", _local(built.generated_at.astimezone(ZoneInfo(built.timezone)))],
-        ["Consultas", totals.consultations],
-        ["Analistas distintos", totals.analysts],
-        ["Mensagens no período", totals.messages],
-        ["Custo total (US$)", totals.cost_usd],
-        ["Custo médio por consulta (US$)", totals.avg_cost_per_consultation],
-        ["Custo médio por analista (US$)", totals.avg_cost_per_analyst],
-        ["Fonte do custo", COST_SOURCE],
+        ("Workspace", built.workspace_name or "Todos os workspaces visíveis", None),
+        ("Branch", built.branch or "Todas", None),
+        ("Período", f"{built.start:%d/%m/%Y} a {built.end:%d/%m/%Y} ({built.timezone})", None),
+        ("Gerado em", _local(generated), None),
+        ("Total de consultas (perguntas)", t.questions, None),
+        ("Conversas", t.conversations, None),
+        ("Analistas", t.analysts, None),
+        ("Custo total (US$)", t.cost_usd, USD_FORMAT),
+        ("Custo total (R$)", _brl(built, t.cost_usd), BRL_FORMAT),
+        ("Custo médio por consulta (US$)", t.avg_cost_per_question, USD_FORMAT),
+        ("Custo médio por consulta (R$)", _brl(built, t.avg_cost_per_question), BRL_FORMAT),
+        ("Custo médio por analista (US$)", t.avg_cost_per_analyst, USD_FORMAT),
+        ("Cotação", rate_note(built), None),
+        ("Fonte do custo", COST_SOURCE, None),
     ]
 
 
@@ -118,41 +139,62 @@ def report_xlsx(built: BuiltReport) -> bytes:
     report = built.report
     wb = Workbook()
     wb.remove(wb.active)
-    summary = _sheet(wb, "Resumo", ["Indicador", "Valor"], _summary_rows(built))
-    for row in (9, 10, 11):
-        summary.cell(row=row, column=2).number_format = USD_FORMAT
+    rows = _summary_rows(built)
+    summary = _sheet(wb, "Resumo", ["Indicador", "Valor"], [r[:2] for r in rows])
+    for idx, (_label, _value, number_format) in enumerate(rows, start=2):
+        if number_format:
+            summary.cell(row=idx, column=2).number_format = number_format
     summary.column_dimensions["A"].width = 34
-    summary.column_dimensions["B"].width = 60
+    summary.column_dimensions["B"].width = 70
+    money = {4: USD_FORMAT, 5: BRL_FORMAT}
     _sheet(
         wb,
         "Analistas",
-        ["Analista", "E-mail", "Consultas", "Custo (US$)", "Custo médio (US$)"],
-        [[a.label, a.email, a.consultations, a.cost_usd, a.avg_cost_usd] for a in report.analysts],
-        money_cols=(4, 5),
+        ["Analista", "E-mail", "Consultas", "Custo (US$)", "Custo (R$)", "Conversas"],
+        [
+            [a.label, a.email, a.questions, a.cost_usd, _brl(built, a.cost_usd), a.conversations]
+            for a in report.analysts
+        ],
+        money,
     )
     _sheet(
         wb,
         "Semanas",
-        ["Semana ISO", "Início (segunda)", "Consultas", "Custo (US$)"],
-        [[w.week, w.start, w.consultations, w.cost_usd] for w in report.weeks],
-        money_cols=(4,),
+        ["Semana", "Início", "Consultas", "Custo (US$)", "Custo (R$)", "Fim"],
+        [
+            [w.label, w.start, w.questions, w.cost_usd, _brl(built, w.cost_usd), w.end]
+            for w in report.weeks
+        ],
+        money,
     )
     _sheet(
         wb,
         "Temas",
-        ["Tema", "Consultas", "Custo (US$)"],
-        [[t.label, t.consultations, t.cost_usd] for t in report.themes],
-        money_cols=(3,),
+        ["Tema", "Participação", "Consultas", "Custo (US$)", "Custo (R$)", "Conversas"],
+        [
+            [t.label, t.share, t.questions, t.cost_usd, _brl(built, t.cost_usd), t.conversations]
+            for t in report.themes
+        ],
+        {2: "0%", **money},
     )
     if built.workspace_id is None:
         _sheet(
             wb,
             "Workspaces",
-            ["Workspace", "Consultas", "Custo (US$)"],
-            [[w.name, w.consultations, w.cost_usd] for w in report.workspaces],
-            money_cols=(3,),
+            ["Workspace", "Slug", "Consultas", "Custo (US$)", "Custo (R$)", "Conversas"],
+            [
+                [w.name, w.slug, w.questions, w.cost_usd, _brl(built, w.cost_usd), w.conversations]
+                for w in report.workspaces
+            ],
+            money,
         )
-    _sheet(wb, "Consultas", CONSULTATION_COLUMNS, _consultation_values(built), money_cols=(8,))
+    _sheet(
+        wb,
+        "Conversas",
+        CONVERSATION_COLUMNS,
+        _conversation_values(built),
+        {9: USD_FORMAT, 10: BRL_FORMAT},
+    )
     buffer = io.BytesIO()
     wb.save(buffer)
     return buffer.getvalue()

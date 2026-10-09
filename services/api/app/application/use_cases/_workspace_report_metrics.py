@@ -1,8 +1,10 @@
 """Cálculo do relatório de uso: função pura sobre os dados crus da port.
 
-Consulta = conversa do escopo com ao menos uma mensagem no período. Custo =
-soma de ``messages.cost_usd`` das mensagens do período (dado do provedor).
-Datas e semanas ISO no fuso do relatório.
+Consulta = pergunta do usuário (mensagem ``role='user'``) dentro do período,
+como no relatório que o time leva à Diretoria. Conversa = conversa do escopo com
+ao menos uma mensagem no período. Custo = soma de ``messages.cost_usd`` das
+mensagens do período (dado do provedor). Semanas são blocos de 7 dias contados
+a partir do início do período; o último pode ser menor.
 """
 
 from __future__ import annotations
@@ -23,11 +25,13 @@ _COST_DIGITS = 6
 
 @dataclass(frozen=True)
 class ReportTotals:
-    consultations: int
+    questions: int
+    conversations: int
     analysts: int
     messages: int
     cost_usd: float
-    avg_cost_per_consultation: float
+    avg_cost_per_question: float
+    avg_cost_per_conversation: float
     avg_cost_per_analyst: float
 
 
@@ -35,16 +39,19 @@ class ReportTotals:
 class AnalystRow:
     email: str
     label: str
-    consultations: int
+    questions: int
+    conversations: int
     cost_usd: float
-    avg_cost_usd: float
+    avg_cost_per_question: float
 
 
 @dataclass(frozen=True)
 class WeekRow:
-    week: str
     start: date
-    consultations: int
+    end: date
+    label: str
+    questions: int
+    conversations: int
     cost_usd: float
 
 
@@ -52,8 +59,10 @@ class WeekRow:
 class ThemeRow:
     key: str
     label: str
-    consultations: int
+    questions: int
+    conversations: int
     cost_usd: float
+    share: float  # fração das perguntas do período (0 a 1)
 
 
 @dataclass(frozen=True)
@@ -61,12 +70,13 @@ class WorkspaceRow:
     id: uuid.UUID
     slug: str
     name: str
-    consultations: int
+    questions: int
+    conversations: int
     cost_usd: float
 
 
 @dataclass(frozen=True)
-class ConsultationRow:
+class ConversationRow:
     conversation_id: uuid.UUID
     workspace_slug: str
     analyst_email: str
@@ -75,6 +85,7 @@ class ConsultationRow:
     theme_key: str
     theme_label: str
     branches: list[str]
+    questions: int
     messages: int
     cost_usd: float
     first_message_at: datetime
@@ -88,7 +99,7 @@ class WorkspaceReport:
     weeks: list[WeekRow]
     themes: list[ThemeRow]
     workspaces: list[WorkspaceRow]
-    consultations: list[ConsultationRow]
+    conversations: list[ConversationRow]
 
 
 def period_bounds(start: date, end: date, tz: ZoneInfo = REPORT_TZ) -> tuple[datetime, datetime]:
@@ -99,18 +110,20 @@ def period_bounds(start: date, end: date, tz: ZoneInfo = REPORT_TZ) -> tuple[dat
     )
 
 
-def week_label(day: date) -> str:
-    iso = day.isocalendar()
-    return f"{iso.year}-W{iso.week:02d}"
+def week_label(start: date, end: date) -> str:
+    """``01-07/09`` no mesmo mês; ``29/09-05/10`` quando vira o mês."""
+    if start.month == end.month:
+        return f"{start.day:02d}-{end.day:02d}/{end.month:02d}"
+    return f"{start.day:02d}/{start.month:02d}-{end.day:02d}/{end.month:02d}"
 
 
-def iso_weeks(start: date, end: date) -> list[tuple[str, date]]:
-    """Todas as semanas ISO (rótulo, segunda-feira) que tocam o período."""
-    monday = start - timedelta(days=start.weekday())
-    weeks: list[tuple[str, date]] = []
-    while monday <= end:
-        weeks.append((week_label(monday), monday))
-        monday += timedelta(days=7)
+def period_weeks(start: date, end: date) -> list[tuple[date, date]]:
+    """Blocos de 7 dias a partir de ``start``; o último termina em ``end``."""
+    weeks: list[tuple[date, date]] = []
+    cursor = start
+    while cursor <= end:
+        weeks.append((cursor, min(cursor + timedelta(days=6), end)))
+        cursor += timedelta(days=7)
     return weeks
 
 
@@ -126,13 +139,13 @@ def _analyst_label(email: str) -> str:
     return email.split("@", 1)[0] or email
 
 
-def _consultations(
+def _conversations(
     workspaces: Sequence[ReportWorkspace],
     conversations: Sequence[ReportConversation],
     messages: Sequence[ReportMessage],
     branch: str | None,
     tz: ZoneInfo,
-) -> tuple[list[ConsultationRow], dict[uuid.UUID, list[ReportMessage]]]:
+) -> tuple[list[ConversationRow], dict[uuid.UUID, list[ReportMessage]]]:
     by_ws = {ws.id: ws for ws in workspaces}
     classifiers = {
         ws.id: ThemeClassifier(resolve_rules(ws.theme_preset, ws.theme_rules)) for ws in workspaces
@@ -146,14 +159,14 @@ def _consultations(
     for msg in messages:
         if msg.conversation_id in in_scope:
             grouped[msg.conversation_id].append(msg)
-    rows: list[ConsultationRow] = []
+    rows: list[ConversationRow] = []
     for conv_id, msgs in grouped.items():
         conv = in_scope[conv_id]
         theme_key, theme_label = classifiers[conv.workspace_id].classify(
             f"{conv.title}\n{conv.first_user_message}"
         )
         rows.append(
-            ConsultationRow(
+            ConversationRow(
                 conversation_id=conv.id,
                 workspace_slug=by_ws[conv.workspace_id].slug,
                 analyst_email=conv.user_email,
@@ -162,6 +175,7 @@ def _consultations(
                 theme_key=theme_key,
                 theme_label=theme_label,
                 branches=sorted(conv.branches),
+                questions=sum(1 for m in msgs if m.is_question),
                 messages=len(msgs),
                 cost_usd=_money(sum(m.cost_usd for m in msgs)),
                 first_message_at=min(m.created_at for m in msgs).astimezone(tz),
@@ -175,27 +189,37 @@ def _consultations(
 def _weeks(
     grouped: dict[uuid.UUID, list[ReportMessage]], start: date, end: date, tz: ZoneInfo
 ) -> list[WeekRow]:
-    convs: dict[str, set[uuid.UUID]] = defaultdict(set)
-    costs: dict[str, float] = defaultdict(float)
+    blocks = period_weeks(start, end)
+    questions = [0] * len(blocks)
+    costs = [0.0] * len(blocks)
+    convs: list[set[uuid.UUID]] = [set() for _ in blocks]
     for conv_id, msgs in grouped.items():
         for msg in msgs:
-            label = week_label(msg.created_at.astimezone(tz).date())
-            convs[label].add(conv_id)
-            costs[label] += msg.cost_usd
+            days = (msg.created_at.astimezone(tz).date() - start).days
+            idx = min(max(days, 0) // 7, len(blocks) - 1)
+            convs[idx].add(conv_id)
+            costs[idx] += msg.cost_usd
+            questions[idx] += msg.is_question
     return [
         WeekRow(
-            week=label, start=monday, consultations=len(convs[label]), cost_usd=_money(costs[label])
+            start=first,
+            end=last,
+            label=week_label(first, last),
+            questions=questions[idx],
+            conversations=len(convs[idx]),
+            cost_usd=_money(costs[idx]),
         )
-        for label, monday in iso_weeks(start, end)
+        for idx, (first, last) in enumerate(blocks)
     ]
 
 
-def _group_rows(rows: Sequence[ConsultationRow], key: str) -> dict[str, tuple[int, float]]:
-    totals: dict[str, tuple[int, float]] = {}
+def _group_rows(rows: Sequence[ConversationRow], key: str) -> dict[str, tuple[int, int, float]]:
+    """``valor da chave → (conversas, perguntas, custo)``."""
+    totals: dict[str, tuple[int, int, float]] = {}
     for row in rows:
         value = getattr(row, key)
-        count, cost = totals.get(value, (0, 0.0))
-        totals[value] = (count + 1, cost + row.cost_usd)
+        convs, questions, cost = totals.get(value, (0, 0, 0.0))
+        totals[value] = (convs + 1, questions + row.questions, cost + row.cost_usd)
     return totals
 
 
@@ -209,46 +233,60 @@ def aggregate_report(
     branch: str | None = None,
     tz: ZoneInfo = REPORT_TZ,
 ) -> WorkspaceReport:
-    rows, grouped = _consultations(workspaces, conversations, messages, branch, tz)
+    rows, grouped = _conversations(workspaces, conversations, messages, branch, tz)
     total_cost = sum(row.cost_usd for row in rows)
+    total_questions = sum(row.questions for row in rows)
 
     analysts = [
         AnalystRow(
             email=email,
             label=_analyst_label(email),
-            consultations=count,
+            questions=questions,
+            conversations=convs,
             cost_usd=_money(cost),
-            avg_cost_usd=_avg(cost, count),
+            avg_cost_per_question=_avg(cost, questions),
         )
-        for email, (count, cost) in _group_rows(rows, "analyst_email").items()
+        for email, (convs, questions, cost) in _group_rows(rows, "analyst_email").items()
     ]
-    analysts.sort(key=lambda a: (-a.cost_usd, -a.consultations, a.email))
+    analysts.sort(key=lambda a: (-a.questions, -a.cost_usd, a.email))
 
     labels = {row.theme_key: row.theme_label for row in rows}
     themes = [
-        ThemeRow(key=key, label=labels[key], consultations=count, cost_usd=_money(cost))
-        for key, (count, cost) in _group_rows(rows, "theme_key").items()
+        ThemeRow(
+            key=key,
+            label=labels[key],
+            questions=questions,
+            conversations=convs,
+            cost_usd=_money(cost),
+            share=round(questions / total_questions, 4) if total_questions else 0.0,
+        )
+        for key, (convs, questions, cost) in _group_rows(rows, "theme_key").items()
     ]
-    themes.sort(key=lambda t: (t.key == OTHER_THEME_KEY, -t.consultations, -t.cost_usd, t.label))
+    themes.sort(key=lambda t: (t.key == OTHER_THEME_KEY, -t.questions, -t.conversations, t.label))
 
     per_ws = _group_rows(rows, "workspace_slug")
-    ws_rows = [
-        WorkspaceRow(
-            id=ws.id,
-            slug=ws.slug,
-            name=ws.name,
-            consultations=per_ws.get(ws.slug, (0, 0.0))[0],
-            cost_usd=_money(per_ws.get(ws.slug, (0, 0.0))[1]),
+    ws_rows = []
+    for ws in workspaces:
+        convs, questions, cost = per_ws.get(ws.slug, (0, 0, 0.0))
+        ws_rows.append(
+            WorkspaceRow(
+                id=ws.id,
+                slug=ws.slug,
+                name=ws.name,
+                questions=questions,
+                conversations=convs,
+                cost_usd=_money(cost),
+            )
         )
-        for ws in workspaces
-    ]
 
     totals = ReportTotals(
-        consultations=len(rows),
+        questions=total_questions,
+        conversations=len(rows),
         analysts=len(analysts),
         messages=sum(row.messages for row in rows),
         cost_usd=_money(total_cost),
-        avg_cost_per_consultation=_avg(total_cost, len(rows)),
+        avg_cost_per_question=_avg(total_cost, total_questions),
+        avg_cost_per_conversation=_avg(total_cost, len(rows)),
         avg_cost_per_analyst=_avg(total_cost, len(analysts)),
     )
     return WorkspaceReport(
@@ -257,5 +295,5 @@ def aggregate_report(
         weeks=_weeks(grouped, start, end, tz),
         themes=themes,
         workspaces=ws_rows,
-        consultations=rows,
+        conversations=rows,
     )

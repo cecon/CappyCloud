@@ -47,6 +47,14 @@
 - [x] T022 Verificação visual da página e da versão imprimível no navegador
 - [x] T023 Atualizar `docs/` se houver índice de rotas admin; PR contra `main`
 
+## Phase 8: Pedido oficial (slide da Diretoria)
+
+- [x] T024 Consulta = pergunta: `ReportMessage.is_question`, totais/analistas/semanas/temas por perguntas
+- [x] T025 Semanas em blocos de 7 dias desde o início do período (`01-07/09`)
+- [x] T026 Port `UsdBrlRateProvider` + adapter PTAX (`bcb_ptax.py`) + fake + testes; `brl` no relatório e nas exportações
+- [x] T027 Modelos de tema no formato da Diretoria (`generico`, `protheus-tss`) em `report_theme_presets.py`; migration aponta o proteus para `protheus-tss`
+- [x] T028 `ExecutiveSummary.tsx` (slide) na página e na 1ª página da impressão (A4 paisagem)
+
 ## Dependencies
 
 - T002 → T005; T003, T004 → T005–T009; T009 → T010 → T012/T014/T016.

@@ -4,7 +4,9 @@ import {
   describeFilters,
   filtersFromSearch,
   filtersToSearch,
+  formatBrl,
   formatDate,
+  formatMoney,
   formatUsd,
   isoDaysAgo,
 } from './reportsApi'
@@ -35,6 +37,13 @@ describe('reportsApi helpers', () => {
     expect(formatUsd(0.0123)).toBe('$0.0123')
     expect(formatUsd(12.5)).toBe('$12.50')
     expect(formatDate('2026-09-07T10:00:00-03:00')).toBe('07/09/2026')
+  })
+
+  it('shows R$ when there is a PTAX quote and US$ otherwise', () => {
+    const brl = { rate: 5.0119, quoted_on: '2026-10-08', source: 'PTAX' }
+    expect(formatBrl(8.56).replace(/\s/g, ' ')).toBe('R$ 8,56')
+    expect(formatMoney(2, brl).replace(/\s/g, ' ')).toBe('R$ 10,02')
+    expect(formatMoney(2, null)).toBe('$2.00')
   })
 
   it('describes the applied filters', () => {

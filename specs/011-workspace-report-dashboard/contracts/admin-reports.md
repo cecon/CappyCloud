@@ -25,7 +25,8 @@ Query: `workspace_id` (opcional, ausente = todos visíveis), `branch`
 (opcional), `start`, `end` (`YYYY-MM-DD`, inclusivas, fuso America/Sao_Paulo;
 padrão: últimos 30 dias até hoje).
 
-200: relatório descrito em [data-model.md](../data-model.md), mais
+200: relatório descrito em [data-model.md](../data-model.md) (inclui `brl`,
+a cotação PTAX usada para os valores em R$, ou `null`), mais
 `generated_at`, `filters` (`workspace_id`, `workspace_name`, `branch`, `start`,
 `end`, `timezone`, `currency` = `USD`).
 
@@ -45,7 +46,7 @@ Mesmos erros do relatório.
 ```json
 {
   "workspace_id": "…",
-  "preset": "nfse-protheus",
+  "preset": "protheus-tss",
   "custom": false,
   "rules": [{ "key": "…", "label": "…", "patterns": ["…"] }],
   "presets": [{ "key": "generico", "label": "Genérico" }]
@@ -59,7 +60,7 @@ Mesmos erros do relatório.
 Só super admin (403 para os demais). Corpo:
 
 ```json
-{ "preset": "nfse-protheus", "rules": null }
+{ "preset": "protheus-tss", "rules": null }
 ```
 
 - `rules` preenchido: grava regras próprias (validadas; 422 se inválidas).

@@ -24,6 +24,8 @@ class ReportMessage:
     conversation_id: uuid.UUID
     created_at: datetime
     cost_usd: float
+    # Mensagem do usuário = uma pergunta (a "consulta" do relatório).
+    is_question: bool = False
 
 
 @dataclass(frozen=True)

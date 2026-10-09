@@ -2,7 +2,7 @@
 
 Temas do relatório de uso por workspace: modelo pronto (``report_theme_preset``)
 e regras próprias em JSON (``report_themes``). O proteus nasce com o modelo
-de NFS-e; os demais usam o genérico até o super admin escolher.
+Protheus/TSS (formato da Diretoria); os demais usam o genérico até o super admin escolher.
 
 Revision ID: 54191f35ea27
 Revises: 8ed57121871e
@@ -28,7 +28,7 @@ def upgrade() -> None:
         "workspaces",
         sa.Column("report_themes", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     )
-    op.execute("UPDATE workspaces SET report_theme_preset = 'nfse-protheus' WHERE slug = 'proteus'")
+    op.execute("UPDATE workspaces SET report_theme_preset = 'protheus-tss' WHERE slug = 'proteus'")
 
 
 def downgrade() -> None:

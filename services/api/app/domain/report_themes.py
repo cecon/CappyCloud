@@ -14,6 +14,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from app.domain.report_theme_presets import PRESET_DATA
+
 OTHER_THEME_KEY = "outros"
 OTHER_THEME_LABEL = "Outros"
 DEFAULT_PRESET = "generico"
@@ -45,153 +47,15 @@ def normalize_text(text: str) -> str:
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).lower()
 
 
-def _rule(key: str, label: str, *patterns: str) -> ThemeRule:
-    return ThemeRule(key=key, label=label, patterns=patterns)
+def _rules_from_data(data: Sequence[dict[str, Any]]) -> tuple[ThemeRule, ...]:
+    return tuple(
+        ThemeRule(key=item["key"], label=item["label"], patterns=tuple(item["patterns"]))
+        for item in data
+    )
 
 
 PRESETS: dict[str, tuple[str, tuple[ThemeRule, ...]]] = {
-    DEFAULT_PRESET: (
-        "Genérico",
-        (
-            _rule(
-                "desempenho",
-                "Desempenho / lentidão",
-                r"\blent(o|a|idao)\b",
-                r"demor",
-                r"performance",
-                r"timeout",
-            ),
-            _rule(
-                "erro-rejeicao",
-                "Erro / rejeição",
-                r"rejei",
-                r"\berros?\b",
-                r"falha",
-                r"exception",
-                r"\be\d{3}\b",
-            ),
-            _rule(
-                "fiscal",
-                "Fiscal / tributário",
-                r"\bnf[cs]?-?e\b",
-                r"\bsped\b",
-                r"\bicms\b",
-                r"\bpis\b",
-                r"\bcofins\b",
-                r"\bibs\b",
-                r"\bcbs\b",
-                r"tribut",
-                r"\bciap\b",
-                r"\bmdf-?es?\b",
-                r"fiscal",
-            ),
-            _rule(
-                "integracao",
-                "Integração / API",
-                r"\bapis?\b",
-                r"integra",
-                r"webhook",
-                r"sincron",
-            ),
-            _rule(
-                "dados",
-                "Banco de dados / consultas",
-                r"tabela",
-                r"procedure",
-                r"\bsp_",
-                r"\bsql\b",
-                r"consulta",
-            ),
-            _rule(
-                "configuracao",
-                "Configuração / parâmetros",
-                r"configura",
-                r"parametr",
-                r"\bativ(ar|amos|o)\b",
-                r"habilit",
-                r"\bmenu\b",
-                r"atalho",
-            ),
-            _rule(
-                "arquitetura",
-                "Arquitetura / visão do projeto",
-                r"arquitetura",
-                r"\bstacks?\b",
-                r"projeto",
-                r"fluxo",
-                r"rotina",
-            ),
-            _rule(
-                "documentacao",
-                "Documentação / relatório técnico",
-                r"documenta",
-                r"confluence",
-                r"linx ?share",
-                r"artigo",
-                r"lei do bem",
-            ),
-        ),
-    ),
-    "nfse-protheus": (
-        "NFS-e (Protheus)",
-        (
-            _rule(
-                "nfse-emissor-nacional",
-                "NFS-e: Emissor / padrão nacional",
-                r"emissor nacional",
-                r"padrao nacional",
-                r"sefin",
-                r"\bdps\b",
-                r"9000009",
-            ),
-            _rule(
-                "nfse-reforma-tributaria",
-                "NFS-e: Reforma tributária (IBS/CBS)",
-                r"\bibs\b",
-                r"\bcbs\b",
-                r"ibscbs",
-                r"classificacao tributaria",
-                r"reforma tributaria",
-                r"_rt\b",
-            ),
-            _rule(
-                "nfse-retencoes",
-                "NFS-e: Retenções e ISS",
-                r"retenc",
-                r"retid[oa]",
-                r"\biss\b",
-                r"deduc",
-                r"vdedred",
-            ),
-            _rule(
-                "nfse-schema-xml",
-                "NFS-e: Schema / layout XML",
-                r"schema",
-                r"layout",
-                r"\bxml\b",
-                r"\btag\b",
-                r"element",
-                r"inddest",
-                r"clocprestacao",
-            ),
-            _rule(
-                "nfse-rejeicao-codigo",
-                "NFS-e: Rejeição por código",
-                r"rejei",
-                r"\be\d{3}\b",
-                r"\b\d{3,4} ?- ",
-                r"falha",
-                r"\berros?\b",
-            ),
-            _rule(
-                "visao-projeto",
-                "Visão geral / exploração",
-                r"(sobre|explique?) (esse|este|o) projeto",
-                r"arquitetura",
-                r"\bstacks?\b",
-            ),
-        ),
-    ),
+    key: (label, _rules_from_data(data)) for key, (label, data) in PRESET_DATA.items()
 }
 
 

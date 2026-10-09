@@ -28,6 +28,31 @@ Resolvidas com as decisões do dono do produto (sem pergunta bloqueante):
   consultas. PDF pela página imprimível do navegador.
 - Q: R$? → A: fora desta entrega (sem fonte de câmbio configurada).
 
+### Session 2026-10-09 (pedido oficial do Alef)
+
+O pedido oficial veio com o slide "Resumo de uso e investimento" que o time
+Protheus leva à Diretoria/Presidência ("a gente filtra a branch e o período e
+exibe essas informações"). Estas decisões **substituem** as anteriores onde
+conflitam:
+
+- Q: O que é "consulta"? → A: **pergunta** do analista (mensagem do usuário) no
+  período, como no slide ("Perguntas realizadas"). Conversas continuam no
+  detalhe. Custo médio por consulta = custo total ÷ perguntas.
+- Q: Como são as semanas? → A: blocos de 7 dias a partir do início do período
+  (01-07/09, 08-14/09 … o último pode ser menor), como no slide; não semana ISO.
+- Q: Moeda? → A: R$, convertido pela **PTAX venda do Banco Central** do último
+  dia útil até o fim do período; o relatório mostra a cotação, a data e a fonte.
+  Sem resposta do Banco Central, cai para US$. O custo continua vindo só de
+  `messages.cost_usd`.
+- Q: Temas? → A: a taxonomia do slide (Erros de emissão / Rejeições, Análise de
+  código, Configurações / Parâmetros, Validações e regras de negócio, Dúvidas
+  gerais, Outros) vira o modelo `protheus-tss` (proteus) e o `generico` (demais);
+  distribuição em % das perguntas. NFS-e detalhado e "por assunto" ficam como
+  modelos opcionais.
+- Q: Formato? → A: bloco "Resumo de uso e investimento" (4 cartões, colunas por
+  semana, barras de tema com %) no topo da página e na 1ª página da impressão
+  (A4 paisagem); detalhe (analistas, workspaces, conversas) abaixo.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Ver o uso de um workspace num período (Priority: P1)
