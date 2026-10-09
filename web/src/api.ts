@@ -319,9 +319,20 @@ export interface AdminDashboardConversation {
   pr_status: string
 }
 
+/** Custo real registrado nas mensagens dos últimos `days` dias. */
+export interface AdminDashboardCostPeriod {
+  days: number
+  cost_usd: number
+  prompt_tokens: number
+  completion_tokens: number
+  conversations: number
+}
+
 export interface AdminDashboard {
   generated_at: string
+  workspace_id: string | null
   totals: AdminDashboardTotals
+  cost_periods: AdminDashboardCostPeriod[]
   recent_conversations: AdminDashboardConversation[]
 }
 
@@ -390,10 +401,11 @@ export async function fetchAdminConversation(token: string, id: string): Promise
 
 export async function fetchAdminDashboard(
   token: string,
-  limit = 12,
+  opts: { limit?: number; workspaceId?: string } = {},
 ): Promise<AdminDashboard> {
   const params = new URLSearchParams()
-  params.set('limit', String(limit))
+  params.set('limit', String(opts.limit ?? 12))
+  if (opts.workspaceId) params.set('workspace_id', opts.workspaceId)
   const res = await apiFetch(`/api/admin/dashboard?${params.toString()}`, {
     headers: { Authorization: `Bearer ${token}` },
   })

@@ -13,9 +13,12 @@ import {
   Users,
 } from 'lucide-react'
 import {
+  type AccessibleWorkspace,
   type AdminDashboard,
   type AdminDashboardConversation,
+  type AdminDashboardCostPeriod,
   errorToUserMessage,
+  fetchAccessibleWorkspaces,
   fetchAdminDashboard,
   getToken,
 } from '../api'
@@ -34,11 +37,14 @@ type MetricCardProps = {
 }
 
 const EMPTY_TITLE = 'Nova conversa'
+const ALL_WORKSPACES = ''
 
 export function AdminDashboardPage() {
   const [data, setData] = useState<AdminDashboard | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [workspaceId, setWorkspaceId] = useState(ALL_WORKSPACES)
+  const [workspaces, setWorkspaces] = useState<AccessibleWorkspace[]>([])
 
   const load = useCallback(async () => {
     const token = getToken()
@@ -46,32 +52,53 @@ export function AdminDashboardPage() {
     setLoading(true)
     setError(null)
     try {
-      setData(await fetchAdminDashboard(token))
+      setData(await fetchAdminDashboard(token, { workspaceId: workspaceId || undefined }))
     } catch (err) {
       setError(errorToUserMessage(err))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [workspaceId])
 
   useEffect(() => {
     void load()
   }, [load])
 
+  useEffect(() => {
+    const token = getToken()
+    if (token) void fetchAccessibleWorkspaces(token).then(setWorkspaces)
+  }, [])
+
   const generatedAt = useMemo(
     () => (data ? formatDateTime(data.generated_at) : null),
     [data],
   )
+  const workspaceName = workspaces.find((ws) => ws.id === workspaceId)?.name
 
   return (
     <AdminConsole
       title="Dashboard admin"
       description="Visão rápida das conversas, execução dos agentes e capacidade operacional."
       actions={
-        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-          <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
-          Atualizar
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            value={workspaceId}
+            onChange={(e) => setWorkspaceId(e.target.value)}
+            aria-label="Filtrar custo por workspace"
+          >
+            <option value={ALL_WORKSPACES}>Todos os workspaces</option>
+            {workspaces.map((ws) => (
+              <option key={ws.id} value={ws.id}>
+                {ws.name}
+              </option>
+            ))}
+          </select>
+          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+            <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
+            Atualizar
+          </Button>
+        </div>
       }
     >
       {error && (
@@ -80,6 +107,19 @@ export function AdminDashboardPage() {
           <span>{error}</span>
         </div>
       )}
+
+      <section aria-labelledby="cost-periods-title" className="space-y-2">
+        <h2 id="cost-periods-title" className="text-sm font-medium text-muted-foreground">
+          Custo {workspaceName ? `do workspace ${workspaceName}` : 'de todos os workspaces'}
+        </h2>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {loading && !data
+            ? Array.from({ length: 3 }).map((_, idx) => <MetricSkeleton key={idx} />)
+            : (data?.cost_periods ?? []).map((period) => (
+                <CostPeriodCard key={period.days} period={period} />
+              ))}
+        </div>
+      </section>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {loading && !data ? (
@@ -132,7 +172,7 @@ export function AdminDashboardPage() {
               icon={DollarSign}
               label="Custo"
               value={formatCurrency(data.totals.total_cost_usd)}
-              hint="Total registrado nas mensagens"
+              hint={workspaceName ? `Total do workspace ${workspaceName}` : 'Total registrado nas mensagens'}
             />
           </>
         ) : null}
@@ -186,6 +226,18 @@ function MetricCard({ label, value, hint, icon: Icon }: MetricCardProps) {
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+function CostPeriodCard({ period }: { period: AdminDashboardCostPeriod }) {
+  const tokens = period.prompt_tokens + period.completion_tokens
+  return (
+    <MetricCard
+      icon={DollarSign}
+      label={`Últimos ${period.days} dias`}
+      value={formatCurrency(period.cost_usd)}
+      hint={`${formatNumber(period.conversations)} ${period.conversations === 1 ? 'conversa' : 'conversas'} · ${formatCompact(tokens)} tokens`}
+    />
   )
 }
 
