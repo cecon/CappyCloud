@@ -88,7 +88,9 @@ test('traduz um turno completo do SDK para eventos do CappyCloud', () => {
   assert.deepEqual(events.map((e) => e.type), ['text', 'tool_start', 'tool_result', 'done'])
   assert.equal(events[1].input, '{"file_path":"a.py"}')
   assert.deepEqual(events[2], { type: 'tool_result', name: 'Read', output: 'print(1)', is_error: false, id: 't1' })
-  assert.deepEqual(events[3], { type: 'done', prompt_tokens: 15, completion_tokens: 7, model_used: 'claude-sonnet-5' })
+  assert.deepEqual(events[3], {
+    type: 'done', prompt_tokens: 15, completion_tokens: 7, cache_read_tokens: 5, cache_write_tokens: 0, model_used: 'claude-sonnet-5',
+  })
   assert.equal(mapper.getSessionId(), 's-1')
 })
 
@@ -235,15 +237,47 @@ test('sessão retomada: tokens e custo do turno, não o acumulado da sessão', (
   // Números medidos no Claude Code: 2º turno com --resume soma o 1º.
   const usage = { 'claude-haiku-4-5': { inputTokens: 20, cacheReadInputTokens: 39630, cacheCreationInputTokens: 3732, outputTokens: 130 } }
   const result = { type: 'result', subtype: 'success', is_error: false, result: 'DOIS', modelUsage: usage, total_cost_usd: 0.0121 }
-  const previousTotals = { prompt_tokens: 21625, completion_tokens: 86, cost_usd: 0.00944 }
+  const previousTotals = {
+    prompt_tokens: 21625, completion_tokens: 86, cache_read_tokens: 17890, cache_write_tokens: 3720, cost_usd: 0.00944,
+  }
   const mapper = createEventMapper({ previousTotals })
   const done = mapper.map(result).at(-1)
   assert.equal(done.prompt_tokens, 43382 - 21625)
   assert.equal(done.completion_tokens, 44)
+  assert.equal(done.cache_read_tokens, 39630 - 17890)
+  assert.equal(done.cache_write_tokens, 3732 - 3720)
   assert.equal(done.cost_usd, 0.00266)
-  assert.deepEqual(mapper.getTotals(), { prompt_tokens: 43382, completion_tokens: 130, cost_usd: 0.0121 })
+  assert.deepEqual(mapper.getTotals(), {
+    prompt_tokens: 43382, completion_tokens: 130, cache_read_tokens: 39630, cache_write_tokens: 3732, cost_usd: 0.0121,
+  })
   // Sem totais anteriores (sessão nova): o próprio total.
-  assert.equal(createEventMapper().map(result).at(-1).prompt_tokens, 43382)
+  const fresh = createEventMapper().map(result).at(-1)
+  assert.equal(fresh.prompt_tokens, 43382)
+  assert.equal(fresh.cache_read_tokens, 39630)
+  assert.equal(fresh.cache_write_tokens, 3732)
+})
+
+test('cache somado entre modelos do turno (principal + auxiliar)', () => {
+  const usage = {
+    'claude-sonnet-5': { inputTokens: 10, cacheReadInputTokens: 1000, cacheCreationInputTokens: 200, outputTokens: 50 },
+    'claude-haiku-4-5': { inputTokens: 5, cacheReadInputTokens: 30, cacheCreationInputTokens: 0, outputTokens: 2 },
+  }
+  const done = createEventMapper().map({ type: 'result', subtype: 'success', is_error: false, result: 'ok', modelUsage: usage }).at(-1)
+  assert.equal(done.prompt_tokens, 1245)
+  assert.equal(done.cache_read_tokens, 1030)
+  assert.equal(done.cache_write_tokens, 200)
+})
+
+test('totais gravados antes da quebra de cache: turno sai sem quebra, não com o acumulado', () => {
+  const usage = { 'claude-sonnet-5': { inputTokens: 20, cacheReadInputTokens: 39630, cacheCreationInputTokens: 3732, outputTokens: 130 } }
+  const previousTotals = { prompt_tokens: 21625, completion_tokens: 86, cost_usd: 0.00944 }
+  const mapper = createEventMapper({ previousTotals })
+  const done = mapper.map({ type: 'result', subtype: 'success', is_error: false, result: 'ok', modelUsage: usage }).at(-1)
+  assert.equal(done.prompt_tokens, 43382 - 21625)
+  assert.equal('cache_read_tokens' in done, false)
+  assert.equal('cache_write_tokens' in done, false)
+  // O próximo turno já tem a base com cache.
+  assert.equal(mapper.getTotals().cache_read_tokens, 39630)
 })
 
 test('lista os subagentes gravados em ~/.claude/agents', () => {

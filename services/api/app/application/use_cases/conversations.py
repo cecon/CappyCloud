@@ -24,6 +24,7 @@ from app.application.use_cases._stream_helpers import (
     enrich_repos_for_pipeline,
     ensure_repo_ids,
     inject_diff_comments,
+    optional_tokens,
 )
 from app.application.use_cases.user_workspaces import (
     EnsureUserRepositoryWorkspace,
@@ -342,6 +343,8 @@ class StreamMessage:
                         prompt_tokens=int(usage.get("prompt_tokens") or 0),
                         completion_tokens=int(usage.get("completion_tokens") or 0),
                         cost_usd=cost_usd,
+                        cache_read_tokens=usage.get("cache_read_tokens"),
+                        cache_write_tokens=usage.get("cache_write_tokens"),
                         payload_diagnostics=latest_payload_diagnostics,
                         plan_usage=usage.get("plan_usage") or None,
                     )
@@ -459,6 +462,8 @@ class StreamMessage:
                                 else None
                             ),
                             "cost_usd": evt.get("cost_usd"),
+                            "cache_read_tokens": optional_tokens(evt.get("cache_read_tokens")),
+                            "cache_write_tokens": optional_tokens(evt.get("cache_write_tokens")),
                         }
                         save_before_yield = True
                 except Exception:
