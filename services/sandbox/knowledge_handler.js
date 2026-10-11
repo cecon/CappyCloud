@@ -5,6 +5,7 @@
 //   GET  /workspaces/:slug/knowledge         → status + arquivos de knowledge/ e memory/
 //   GET  /workspaces/:slug/knowledge/file?path=knowledge/...   → conteúdo (texto, limitado)
 //   GET  /workspaces/:slug/knowledge/summary → estado + commits novos desde o grafo (lista)
+//   GET  /workspaces/:slug/knowledge/query?q=&budget= → `graphify query` no grafo (texto)
 //
 // Para cada repositório do workspace (links em repos/), com a trava do clone:
 // traz o clone para a última versão do remoto (só fast-forward), roda
@@ -223,9 +224,28 @@ function readFile(root, relPath) {
   return { path: relPath, size, truncated: size > MAX_FILE_BYTES, content: buffer.toString('utf8') }
 }
 
+const QUERY_TIMEOUT_MS = 10_000
+const MAX_QUERY_TEXT = 6000
+
+/**
+ * Consulta o grafo com a pergunta do usuário (a API injeta o resultado no
+ * prompt). Sem grafo gerado, ou sem resposta, devolve texto vazio.
+ */
+async function queryGraph(root, question, budget, exec = run) {
+  const q = String(question || '').trim().slice(0, 300)
+  const graph = path.join(graphDir(root), 'graph.json')
+  if (!q || !fs.existsSync(graph)) return { text: '' }
+  const tokens = Math.min(Math.max(Number(budget) || 600, 100), 2000)
+  const { stdout } = await exec(GRAPHIFY, ['query', q, '--graph', graph, '--budget', String(tokens)], {
+    timeout: QUERY_TIMEOUT_MS,
+    maxBuffer: 4 * 1024 * 1024,
+  })
+  return { text: String(stdout || '').trim().slice(0, MAX_QUERY_TEXT) }
+}
+
 async function tryHandle(req, res, { json }) {
   const url = new URL(req.url || '/', 'http://localhost')
-  const match = url.pathname.match(/^\/workspaces\/([^/]+)\/knowledge(\/build|\/file|\/summary)?$/)
+  const match = url.pathname.match(/^\/workspaces\/([^/]+)\/knowledge(\/build|\/file|\/summary|\/query)?$/)
   if (!match) return false
   try {
     const slug = decodeURIComponent(match[1])
@@ -235,6 +255,8 @@ async function tryHandle(req, res, { json }) {
       json(res, 202, { started, running: building.has(slug) })
     } else if (req.method === 'GET' && match[2] === '/summary') {
       json(res, 200, { ...(await graphSummary(root)), running: building.has(slug) })
+    } else if (req.method === 'GET' && match[2] === '/query') {
+      json(res, 200, await queryGraph(root, url.searchParams.get('q'), url.searchParams.get('budget')))
     } else if (req.method === 'GET' && match[2] === '/file') {
       json(res, 200, readFile(root, url.searchParams.get('path')))
     } else if (req.method === 'GET' && !match[2]) {
@@ -248,4 +270,4 @@ async function tryHandle(req, res, { json }) {
   return true
 }
 
-module.exports = { buildKnowledge, graphSummary, listFiles, parseRebuilt, readFile, startBuild, tryHandle, workspaceRepos }
+module.exports = { buildKnowledge, graphSummary, listFiles, parseRebuilt, queryGraph, readFile, startBuild, tryHandle, workspaceRepos }

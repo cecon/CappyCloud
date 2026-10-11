@@ -10,7 +10,12 @@ import pytest
 
 from tests.unit.agent_runtime_test_loader import ROOT, load_agent_module
 
-_DEPS = ("_evidence_prefetch", "_pipeline_helpers", "_worktree_validation")
+_DEPS = (
+    "_evidence_prefetch",
+    "_knowledge_prefetch",
+    "_pipeline_helpers",
+    "_worktree_validation",
+)
 
 
 def _load_task_context():
@@ -27,6 +32,7 @@ def _load_task_context():
         stub = types.ModuleType(name)
         for attr in (
             "inject_evidence_prefetch",
+            "inject_workspace_knowledge",
             "add_workspace_section",
             "inject_repo_context",
             "validate_and_inject_worktree",
@@ -55,7 +61,7 @@ _resume = load_agent_module(
 
 @pytest.fixture
 def calls(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
-    seen = {"workspace": 0, "validate": 0, "evidence": 0, "add": 0}
+    seen = {"workspace": 0, "validate": 0, "evidence": 0, "add": 0, "knowledge": 0}
 
     def workspace(prompt, *_args):
         seen["workspace"] += 1
@@ -73,6 +79,11 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
         seen["evidence"] += 1
         return prompt + "\n[evidências]"
 
+    async def knowledge(prompt, **kwargs):
+        seen["knowledge"] += 1
+        return f"[conhecimento: {kwargs['user_message']}]\n" + prompt
+
+    monkeypatch.setattr(_context, "inject_workspace_knowledge", knowledge)
     monkeypatch.setattr(_context, "add_workspace_section", workspace)
     monkeypatch.setattr(_context, "inject_repo_context", add_lines)
     monkeypatch.setattr(_context, "validate_and_inject_worktree", validate)
@@ -102,18 +113,19 @@ async def _prepare(resumed: bool, phases: list, openclaude: bool = False) -> str
 async def test_sessao_retomada_manda_so_a_pergunta(calls: dict[str, int]) -> None:
     phases: list = []
     prompt = await _prepare(True, phases)
-    assert prompt == "qual a versão do banco?"
-    # Worktree continua conferido; estrutura e evidências não são recalculadas.
-    assert calls == {"workspace": 0, "validate": 1, "evidence": 0, "add": 0}
+    assert prompt == "[conhecimento: qual a versão do banco?]\nqual a versão do banco?"
+    # Worktree continua conferido; estrutura e evidências não são recalculadas,
+    # mas memória e grafo da pergunta nova são consultados.
+    assert calls == {"workspace": 0, "validate": 1, "evidence": 0, "add": 0, "knowledge": 1}
     assert phases == [("Retomando a sessão", "active"), ("Sessão retomada", "done")]
 
 
 async def test_primeira_mensagem_leva_o_contexto_completo(calls: dict[str, int]) -> None:
     phases: list = []
     prompt = await _prepare(False, phases)
-    assert "[instruções e contexto do pipeline]" in prompt
+    assert prompt.startswith("[conhecimento: qual a versão do banco?]\n[instruções")
     assert prompt.endswith("[workspace]\n[worktree ok]\n[evidências]")
-    assert calls == {"workspace": 1, "validate": 1, "evidence": 1, "add": 0}
+    assert calls == {"workspace": 1, "validate": 1, "evidence": 1, "add": 0, "knowledge": 1}
     assert phases[-1] == ("Contexto preparado", "done")
 
 

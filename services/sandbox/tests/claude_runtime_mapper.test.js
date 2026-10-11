@@ -257,3 +257,27 @@ test('lista os subagentes gravados em ~/.claude/agents', () => {
   assert.deepEqual(agentNames(dir), ['seller-architect'])
   assert.deepEqual(agentNames(path.join(dir, 'nao-existe')), [])
 })
+
+test('teto de passos não vira erro: avisa que parou e registra o custo', () => {
+  const events = createEventMapper().map({
+    type: 'result', subtype: 'error_max_turns', is_error: true, modelUsage: {}, total_cost_usd: 0.31,
+  })
+  assert.deepEqual(events.map((e) => e.type), ['text', 'done'])
+  assert.match(events[0].content, /Parei aqui/)
+  assert.equal(events[1].cost_usd, 0.31)
+})
+
+test('teto de passos vem de CLAUDE_MAX_TURNS e cai para 40 quando inválido', () => {
+  const { maxTurnsPerQuestion } = require('../claude_runtime_mapper')
+  const saved = process.env.CLAUDE_MAX_TURNS
+  try {
+    for (const [value, expected] of [['12', 12], ['1', 1], ['0', 40], ['-3', 40], ['2.5', 40], ['x', 40], [undefined, 40]]) {
+      if (value === undefined) delete process.env.CLAUDE_MAX_TURNS
+      else process.env.CLAUDE_MAX_TURNS = value
+      assert.equal(maxTurnsPerQuestion(), expected, `CLAUDE_MAX_TURNS=${value}`)
+    }
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_MAX_TURNS
+    else process.env.CLAUDE_MAX_TURNS = saved
+  }
+})

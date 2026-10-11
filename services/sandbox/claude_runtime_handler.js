@@ -23,6 +23,7 @@ const {
   friendlyError,
   isYesReply,
   modelAlias,
+  maxTurnsPerQuestion,
   sdkPermissionMode,
   userContentBlocks,
   validateToolScope,
@@ -105,6 +106,9 @@ function sdkEnv() {
   // A sessão acaba com o turno: subagente/Bash em segundo plano morreria sem
   // entregar o resultado ("aguarde um instante" e nada mais). Tudo roda no turno.
   env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = '1'
+  // Compacta a conversa ao chegar perto deste tamanho, em vez da janela "auto"
+  // do modelo (que pode ir a 1M): cada passo do agente relê a janela inteira.
+  env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || '150000'
   return env
 }
 
@@ -178,6 +182,8 @@ async function runTurn(body, write, turn) {
         // Sessão de workspace: leitura do conhecimento/skills/repos somente leitura (o guard barra escrita).
         additionalDirectories: workspaceReadOnlyDirs(worktree),
         model: alias,
+        // Teto de passos por pergunta: cada chamada de ferramenta reenvia o contexto inteiro.
+        maxTurns: maxTurnsPerQuestion(),
         permissionMode: mode,
         allowDangerouslySkipPermissions: mode === 'bypassPermissions',
         // Em bypassPermissions o SDK aprova tudo antes do callback; só registra quando pode perguntar.

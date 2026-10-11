@@ -1,7 +1,7 @@
 'use strict'
 // Gravação automática da memória do workspace ao fim de cada turno.
 //
-//   POST /memory/extract  {workspace, question, answer, model?}   (X-Internal-Token)
+//   POST /memory/extract  {workspace, question, answer}   (X-Internal-Token; `model` é ignorado)
 //
 // O agente quase nunca grava por conta própria, então o pipeline chama esta rota
 // depois do "done". Um passo separado do Claude (sem ferramentas, uma volta) lê
@@ -92,13 +92,19 @@ async function askClaude(prompt, model) {
   return text
 }
 
-async function extractAndSave(call, { workspace, question, answer, model }, ask = askClaude) {
+// Extrair fatos de uma resposta pronta é tarefa simples: roda no modelo barato,
+// e não no da conversa (que pode ser Opus). MEMORY_EXTRACT_MODEL troca o padrão.
+function extractionModel() {
+  return process.env.MEMORY_EXTRACT_MODEL || 'haiku'
+}
+
+async function extractAndSave(call, { workspace, question, answer }, ask = askClaude) {
   if (!String(answer || '').trim() || !String(question || '').trim()) return { saved: 0, memories: [] }
   // O que já existe sobre o assunto entra no prompt para não gravar repetido.
   const related = await searchMemory(call, { workspace, q: String(question).slice(0, 300), limit: 5 })
     .then((found) => found.results)
     .catch(() => [])
-  const items = parseItems(await ask(buildPrompt({ question, answer, existing: related }), model))
+  const items = parseItems(await ask(buildPrompt({ question, answer, existing: related }), extractionModel()))
   const memories = []
   for (const item of items) {
     const { id } = await saveMemory(call, { workspace, ...item })
@@ -125,4 +131,4 @@ async function tryHandle(req, res, { json, readBody }, call = createClient()) {
   return true
 }
 
-module.exports = { askClaude, buildPrompt, extractAndSave, parseItems, tryHandle }
+module.exports = { askClaude, buildPrompt, extractAndSave, extractionModel, parseItems, tryHandle }
