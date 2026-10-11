@@ -36,7 +36,8 @@ test('grava o que o extrator devolveu, com o que já existe no prompt', async ()
   let prompt = ''
   const ask = async (p, model) => {
     prompt = p
-    assert.equal(model, 'claude-sonnet-5')
+    // O modelo da conversa (Sonnet) não vale aqui: a extração usa o barato.
+    assert.equal(model, 'haiku')
     return '[{"type":"fact","content":"O lote de RPS é transmitido ao TSS pela função TSSEnvLote em TSSNFSE.prw","files":["PROTEUS/TSSNFSE.prw"],"concepts":["rps","tss"]}]'
   }
 

@@ -23,6 +23,7 @@ const {
   friendlyError,
   isYesReply,
   modelAlias,
+  maxTurnsPerQuestion,
   sdkPermissionMode,
   userContentBlocks,
   validateToolScope,
@@ -178,6 +179,8 @@ async function runTurn(body, write, turn) {
         // Sessão de workspace: leitura do conhecimento/skills/repos somente leitura (o guard barra escrita).
         additionalDirectories: workspaceReadOnlyDirs(worktree),
         model: alias,
+        // Teto de passos por pergunta: cada chamada de ferramenta reenvia o contexto inteiro.
+        maxTurns: maxTurnsPerQuestion(),
         permissionMode: mode,
         allowDangerouslySkipPermissions: mode === 'bypassPermissions',
         // Em bypassPermissions o SDK aprova tudo antes do callback; só registra quando pode perguntar.

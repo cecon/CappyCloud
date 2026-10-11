@@ -26,7 +26,7 @@ Gerado da branch principal de cada repositório; não reflete mudanças desta co
 Linguagens que o graphify não lê (ex.: ADVPL/TLPP) não entram no grafo: se ele não souber, busque com rg.
 
 ### Memória do workspace (agentmemory)
-Compartilhada entre as conversas deste workspace. Busque antes de investigar do zero:
+Compartilhada entre as conversas deste workspace. A cada pergunta o CappyCloud já consulta a memória e o grafo e põe os achados na seção "Conhecimento do workspace" do prompt; comece por ela. Para buscar outro termo:
 \`curl -s -G ${MEMORY_URL}/search --data-urlencode workspace=${slug} --data-urlencode 'q=<termos>'\` (sem resultados = nada gravado sobre isso).
 A gravação é automática: ao fim de cada resposta o CappyCloud guarda o que foi confirmado no código. Para gravar algo explicitamente:
 \`curl -s -X POST ${MEMORY_URL}/save -H 'Content-Type: application/json' -d '{"workspace":"${slug}","type":"fact","content":"<o que lembrar>","files":"<alias>/<caminho>"}'\`

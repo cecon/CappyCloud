@@ -6,6 +6,7 @@ import time
 from collections.abc import Awaitable, Callable
 
 from ._evidence_prefetch import inject_evidence_prefetch
+from ._knowledge_prefetch import inject_workspace_knowledge
 from ._pipeline_helpers import add_workspace_section, inject_repo_context
 from ._worktree_validation import validate_and_inject_worktree
 
@@ -70,8 +71,16 @@ async def prepare_turn_prompt(
             repos=repos,
             session_root=session_root,
         )
-        if openclaude:
-            prompt = inject_repo_context(prompt, repos, session_root)
+    # Memória e grafo dependem da pergunta: vão em todo turno, inclusive retomado.
+    prompt = await inject_workspace_knowledge(
+        prompt,
+        user_message=user_message or pipeline_prompt,
+        sandbox_session_url=sandbox_session_url,
+        session_root=session_root,
+    )
+    if not lean and openclaude:
+        # Por último: as linhas /add do openclaude precisam abrir o prompt.
+        prompt = inject_repo_context(prompt, repos, session_root)
     done_label = "Sessão retomada" if lean else "Contexto preparado"
     await emit_phase(task_id, "context", done_label, "done", duration_ms=_elapsed_ms(started))
     return prompt
