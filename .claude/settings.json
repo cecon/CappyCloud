@@ -1,1 +1,1 @@
-{"permissions":{"allow":["Bash(ssh -i * -p 2499 claude@191.235.116.32 *)","Bash(printenv PROD_SSH_KEY*)"]}}
+{"permissions":{"allow":["Bash(ssh cappy-prod *)"]}}
