@@ -106,6 +106,9 @@ function sdkEnv() {
   // A sessão acaba com o turno: subagente/Bash em segundo plano morreria sem
   // entregar o resultado ("aguarde um instante" e nada mais). Tudo roda no turno.
   env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = '1'
+  // Compacta a conversa ao chegar perto deste tamanho, em vez da janela "auto"
+  // do modelo (que pode ir a 1M): cada passo do agente relê a janela inteira.
+  env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || '150000'
   return env
 }
 

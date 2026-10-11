@@ -36,6 +36,13 @@ Pediu que a consulta fique automática.
 - Q: Qual o teto de passos? → A: 40 por pergunta (`CLAUDE_MAX_TURNS`). Ao bater
   no teto, a resposta sai com o que já tem, um aviso e o custo registrado. Não
   vira erro.
+- Q: Como controlar o tamanho da janela da conversa? → A: o Claude CLI
+  (2.1.281) compacta sozinho quando a janela chega perto do limite, mas o padrão
+  "auto" segue a janela do modelo, que pode chegar a 1M de tokens. O sandbox passa
+  `CLAUDE_CODE_AUTO_COMPACT_WINDOW=150000` (sobrescrevível pelo ambiente). Não há
+  controle para descartar resultados de ferramenta antigos: nessa versão a gestão
+  de contexto pela API (`USE_API_CONTEXT_MANAGEMENT`) está desligada no código.
+  O cache de prompt já é de 1 hora na assinatura (padrão automático do CLI).
 - Q: Qual modelo extrai memória? → A: Haiku (`MEMORY_EXTRACT_MODEL`), seja qual
   for o modelo da conversa.
 
@@ -52,6 +59,8 @@ Pediu que a consulta fique automática.
 - **FR-004**: O Claude CLI roda com `maxTurns` (padrão 40). Parar no teto é um
   fim normal, com aviso ao usuário.
 - **FR-005**: A extração de memória usa o modelo barato, não o da conversa.
+- **FR-006**: O Claude CLI compacta a conversa ao chegar perto de 150 mil tokens
+  (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`), em vez da janela cheia do modelo.
 
 ## Success Criteria
 

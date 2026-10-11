@@ -7,4 +7,5 @@
 - [x] T003 Chamar a injeção em todo turno em `_task_context.py`, atualizando `test_claude_cli_lean_resume.py`
 - [x] T004 `maxTurns` no `query()` do Claude CLI e fim no teto sem erro, com testes do mapper
 - [x] T005 Extração de memória no modelo barato, com teste
-- [ ] T006 Depois do deploy: comparar o custo médio por pergunta do proteus (SC-003)
+- [x] T006 Janela de compactação de 150 mil tokens no `sdkEnv` do sandbox, com `tests/claude_runtime_env.test.js`
+- [ ] T007 Depois do deploy: comparar o custo médio por pergunta do proteus (SC-003)
