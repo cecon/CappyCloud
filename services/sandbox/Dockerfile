@@ -172,6 +172,7 @@ COPY services/sandbox/repo_handlers.js /repo_handlers.js
 COPY services/sandbox/runtime_handler.js /runtime_handler.js
 COPY services/sandbox/claude_runtime_handler.js /claude_runtime_handler.js
 COPY services/sandbox/claude_runtime_mapper.js /claude_runtime_mapper.js
+COPY services/sandbox/claude_runtime_usage.js /claude_runtime_usage.js
 COPY services/sandbox/readonly_commands.js /readonly_commands.js
 COPY services/sandbox/claude_runtime_subagents.js /claude_runtime_subagents.js
 COPY services/sandbox/session_cleanup.js /session_cleanup.js

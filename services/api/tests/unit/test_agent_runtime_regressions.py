@@ -507,6 +507,8 @@ async def test_clean_existing_final_message_refreshes_usage_metadata() -> None:
         "prompt_tokens": 100,
         "completion_tokens": 25,
         "cost_usd": Decimal("0"),
+        "cache_read_tokens": 80,
+        "cache_write_tokens": 15,
     }
 
     class FakeConn:
@@ -530,5 +532,7 @@ async def test_clean_existing_final_message_refreshes_usage_metadata() -> None:
         100,
         25,
         Decimal("0"),
+        80,
+        15,
         message_id,
     )

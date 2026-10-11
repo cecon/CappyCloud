@@ -264,6 +264,9 @@ class Message:
     completion_tokens: int = 0
     cost_usd: float = 0.0
     payload_diagnostics: dict[str, object] | None = None
+    # Parcelas de cache dentro de prompt_tokens; None = o runtime não informou.
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
     # Claude CLI: uso das janelas da assinatura (5h/7d) ao fim da resposta.
     plan_usage: dict[str, object] | None = None
 
