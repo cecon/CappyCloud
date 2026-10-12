@@ -26,7 +26,6 @@ import {
   updateUserMcpServer,
   type Repository,
   type UserMcpServer,
-  type UserMcpServerPayload,
 } from '../api'
 import { McpConnectionPanel } from '../components/McpConnectionPanel'
 import {
@@ -37,50 +36,17 @@ import { McpTokenModal } from '../components/McpTokenModal'
 import { UserMcpServerCard } from '../components/UserMcpServerCard'
 import { copyText } from '../lib/clipboard'
 import styles from './mcp-server.module.css'
-
-type SecretState = {
-  serverId: string
-  serverName: string
-  token: string
-}
-
-const EMPTY_FORM: McpServerFormState = { name: '', repository_id: '', enabled: true }
-const PUBLIC_BASE_KEY = 'cappycloud_mcp_public_base_url'
-
-function isLocalUrl(value: string): boolean {
-  try {
-    const host = new URL(value).hostname
-    return ['localhost', '127.0.0.1', '::1'].includes(host)
-  } catch {
-    return false
-  }
-}
-
-function normaliseBaseUrl(value: string): string {
-  return value.trim().replace(/\/+$/, '')
-}
-
-function endpointUrl(serverId: string, publicBaseUrl: string): string {
-  const base = normaliseBaseUrl(publicBaseUrl) || window.location.origin
-  return `${base}/api/mcp/servers/${serverId}`
-}
-
-function fallbackEndpointUrl(serverId: string, publicBaseUrl: string, token: string): string {
-  const base = normaliseBaseUrl(publicBaseUrl) || window.location.origin
-  return `${base}/api/mcp/token/${encodeURIComponent(token)}/servers/${serverId}`
-}
-
-function staticClientId(serverId: string): string {
-  return serverId
-}
-
-function payloadFromForm(form: McpServerFormState): UserMcpServerPayload {
-  return {
-    name: form.name.trim(),
-    repository_id: form.repository_id,
-    enabled: form.enabled,
-  }
-}
+import {
+  EMPTY_FORM,
+  endpointUrl,
+  fallbackEndpointUrl,
+  isLocalUrl,
+  normaliseBaseUrl,
+  payloadFromForm,
+  PUBLIC_BASE_KEY,
+  type SecretState,
+  staticClientId,
+} from './mcp-server/helpers'
 
 export function McpServerPage() {
   const [servers, setServers] = useState<UserMcpServer[] | null>(null)
