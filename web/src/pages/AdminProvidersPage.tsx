@@ -1,26 +1,16 @@
 ﻿import { useCallback, useEffect, useState } from 'react'
 import {
   Alert,
-  Badge,
   Button,
   Container,
-  Divider,
   Group,
   Loader,
-  Modal,
-  MultiSelect,
-  NumberInput,
   Paper,
-  PasswordInput,
-  Select,
   Stack,
-  Switch,
-  Table,
   Text,
-  TextInput,
   Title,
 } from '@/components/ui/legacy'
-import { IconPencil, IconPlus, IconRefresh } from '@tabler/icons-react'
+import { IconPlus } from '@tabler/icons-react'
 import {
   createAdminProvider,
   type AdminAiProvider,
@@ -32,62 +22,10 @@ import {
   patchAdminProvider,
   syncAdminProvider,
 } from '../api'
-import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
 import { useCurrentUser } from '../hooks/useCurrentUser'
-
-function formatTimestamp(iso: string | null): string {
-  if (!iso) return '—'
-  try {
-    return new Date(iso).toLocaleString('pt-PT')
-  } catch {
-    return iso
-  }
-}
-
-function authStateColor(state: AdminAiProvider['auth_state']): string {
-  if (state === 'configured') return 'green'
-  if (state === 'catalog-only') return 'blue'
-  if (state === 'inactive') return 'gray'
-  return 'yellow'
-}
-
-type ProviderFormState = {
-  name: string
-  base_url: string
-  api_format: 'chat_completions' | 'responses'
-  api_key: string
-  model_id: string
-  display_name: string
-  context_window: number
-  capabilities: string[]
-  active: boolean
-  is_default_text: boolean
-  is_default_embedding: boolean
-}
-
-const EMPTY_FORM: ProviderFormState = {
-  name: '',
-  base_url: '',
-  api_format: 'chat_completions',
-  api_key: '',
-  model_id: '',
-  display_name: '',
-  context_window: 200000,
-  capabilities: ['text'],
-  active: true,
-  is_default_text: false,
-  is_default_embedding: false,
-}
-
-function formFromProvider(provider: AdminAiProvider): ProviderFormState {
-  return {
-    ...EMPTY_FORM,
-    name: provider.name,
-    base_url: provider.base_url,
-    api_format: provider.api_format,
-    active: provider.active,
-  }
-}
+import { EMPTY_FORM, formFromProvider, type ProviderFormState } from './admin-providers/form'
+import { ProviderFormModal } from './admin-providers/ProviderFormModal'
+import { ProvidersTable } from './admin-providers/ProvidersTable'
 
 export function AdminProvidersPage() {
   const currentUser = useCurrentUser()
@@ -148,14 +86,6 @@ export function AdminProvidersPage() {
     setForm(formFromProvider(provider))
     setActionError(null)
     setFormOpened(true)
-  }
-
-  function updateBaseUrl(value: string) {
-    setForm((prev) => ({
-      ...prev,
-      base_url: value,
-      api_format: value.toLowerCase().includes('/responses') ? 'responses' : prev.api_format,
-    }))
   }
 
   async function handleSaveProvider() {
@@ -260,230 +190,26 @@ export function AdminProvidersPage() {
               Nenhum provider cadastrado.
             </Text>
           ) : (
-            <Table verticalSpacing="sm" highlightOnHover>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Nome</Table.Th>
-                  <Table.Th>Base URL</Table.Th>
-                  <Table.Th style={{ width: 140 }}>Formato</Table.Th>
-                  <Table.Th style={{ width: 90 }}>Modelos</Table.Th>
-                  <Table.Th style={{ width: 90 }}>Estado</Table.Th>
-                  <Table.Th style={{ width: 190 }}>Autenticação</Table.Th>
-                  <Table.Th style={{ width: 180 }}>Último sync</Table.Th>
-                  <ActionsHeader width={112} />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {providers.map((p) => (
-                  <Table.Tr key={p.id}>
-                    <Table.Td>
-                      <Text fw={500}>{p.name}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="xs" c="dimmed">
-                        {p.base_url}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Badge variant="light" color={p.api_format === 'responses' ? 'cyan' : 'gray'}>
-                        {p.api_format === 'responses' ? 'Responses' : 'Chat'}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td>
-                      <Badge variant="light" color="blue">
-                        {p.models_count}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td>
-                      <Badge color={p.active ? 'green' : 'gray'} variant={p.active ? 'filled' : 'light'}>
-                        {p.active ? 'ativo' : 'inativo'}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td>
-                      <Stack gap={2}>
-                        <Badge color={authStateColor(p.auth_state)} variant="light">
-                          {p.auth_label}
-                        </Badge>
-                        <Text size="xs" c="dimmed">
-                          {p.auth_next_action}
-                        </Text>
-                      </Stack>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="xs">{formatTimestamp(p.last_synced_at)}</Text>
-                    </Table.Td>
-                    <ActionsCell>
-                      <RowActionIcon
-                        label="Editar provider"
-                        color="gray"
-                        disabled={!canSyncProviders || syncing !== null}
-                        onClick={() => openEditForm(p)}
-                      >
-                        <IconPencil size={16} />
-                      </RowActionIcon>
-                      <RowActionIcon
-                        label="Sincronizar provider"
-                        color="blue"
-                        loading={syncing === p.id}
-                        disabled={!canSyncProviders || syncing !== null || !p.active}
-                        onClick={() => void handleSync(p.id)}
-                      >
-                        <IconRefresh size={16} />
-                      </RowActionIcon>
-                    </ActionsCell>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
+            <ProvidersTable
+              providers={providers}
+              canSyncProviders={canSyncProviders}
+              syncing={syncing}
+              onEdit={openEditForm}
+              onSync={(providerId) => void handleSync(providerId)}
+            />
           )}
         </Paper>
 
-        <Modal
+        <ProviderFormModal
           opened={formOpened}
+          editingProvider={editingProvider}
+          form={form}
+          setForm={setForm}
+          saving={saving}
+          canSubmit={canSubmit}
           onClose={() => setFormOpened(false)}
-          title={editingProvider ? 'Editar provider LLM' : 'Adicionar provider LLM'}
-          size="lg"
-        >
-          <Stack gap="md">
-            <TextInput
-              label="Nome"
-              placeholder="Azure Eduar"
-              value={form.name}
-              onChange={(event) => setForm((prev) => ({ ...prev, name: event.currentTarget.value }))}
-              required
-            />
-            <TextInput
-              label="Endpoint / Base URL"
-              placeholder="https://.../openai/v1/responses"
-              value={form.base_url}
-              onChange={(event) => updateBaseUrl(event.currentTarget.value)}
-              required
-            />
-            <Select
-              label="Formato da API"
-              data={[
-                { value: 'chat_completions', label: 'Chat Completions' },
-                { value: 'responses', label: 'Responses' },
-              ]}
-              value={form.api_format}
-              onChange={(value) =>
-                value &&
-                setForm((prev) => ({
-                  ...prev,
-                  api_format: value as ProviderFormState['api_format'],
-                }))
-              }
-              allowDeselect={false}
-            />
-            <PasswordInput
-              label="Chave"
-              placeholder={editingProvider ? 'Deixe em branco para manter a chave atual' : 'API key'}
-              value={form.api_key}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, api_key: event.currentTarget.value }))
-              }
-            />
-
-            {!editingProvider && (
-              <>
-                <Divider />
-                <Group grow align="flex-start">
-                  <TextInput
-                    label="Modelo / deployment"
-                    placeholder="gpt-5.4-mini"
-                    value={form.model_id}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, model_id: event.currentTarget.value }))
-                    }
-                    required
-                  />
-                  <TextInput
-                    label="Nome exibido"
-                    placeholder="Azure GPT-5.4 Mini"
-                    value={form.display_name}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, display_name: event.currentTarget.value }))
-                    }
-                  />
-                </Group>
-                <Group grow align="flex-start">
-                  <NumberInput
-                    label="Context window"
-                    min={1}
-                    value={form.context_window}
-                    onChange={(value) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        context_window: typeof value === 'number' ? value : prev.context_window,
-                      }))
-                    }
-                  />
-                  <Switch
-                    label="Modelo padrão para texto"
-                    checked={form.is_default_text}
-                    disabled={!form.capabilities.includes('text')}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        is_default_text: event.currentTarget.checked,
-                      }))
-                    }
-                    mt="xl"
-                  />
-                </Group>
-                <MultiSelect
-                  label="Capabilities do modelo"
-                  data={[
-                    { value: 'text', label: 'Texto' },
-                    { value: 'embedding', label: 'Embedding' },
-                    { value: 'vision', label: 'Visão' },
-                    { value: 'audio', label: 'Áudio' },
-                    { value: 'video', label: 'Vídeo' },
-                    { value: 'image', label: 'Imagem' },
-                  ]}
-                  value={form.capabilities}
-                  onChange={(value) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      capabilities: value.length > 0 ? value : prev.capabilities,
-                      is_default_text: value.includes('text') && prev.is_default_text,
-                      is_default_embedding:
-                        value.includes('embedding') && prev.is_default_embedding,
-                    }))
-                  }
-                  clearable={false}
-                />
-                <Switch
-                  label="Modelo padrão para embedding"
-                  checked={form.is_default_embedding}
-                  disabled={!form.capabilities.includes('embedding')}
-                  onChange={(event) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      is_default_embedding: event.currentTarget.checked,
-                    }))
-                  }
-                />
-              </>
-            )}
-
-            <Switch
-              label="Provider ativo"
-              checked={form.active}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, active: event.currentTarget.checked }))
-              }
-            />
-            <Group justify="flex-end">
-              <Button variant="default" onClick={() => setFormOpened(false)}>
-                Cancelar
-              </Button>
-              <Button loading={saving} disabled={!canSubmit} onClick={() => void handleSaveProvider()}>
-                Salvar
-              </Button>
-            </Group>
-          </Stack>
-        </Modal>
+          onSave={() => void handleSaveProvider()}
+        />
       </Stack>
     </Container>
   )
