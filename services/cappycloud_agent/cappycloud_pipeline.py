@@ -17,14 +17,6 @@ from collections.abc import Generator
 
 from pydantic import BaseModel, Field
 
-from ._agent_context import (
-    build_prompt_with_agent,
-    load_agent_context,
-    load_repo_agent_profiles,
-)
-from ._agent_runtime_lookup import resolve_agent_runtime
-from ._agent_session import AGENT_RUNTIME_CLAUDE_CLI
-from ._claude_cli_resume import claude_cli_agent_names
 from ._environment_manager import EnvironmentManager
 from ._pipeline_event_stream import stream_task_events
 from ._pipeline_helpers import (
@@ -33,19 +25,15 @@ from ._pipeline_helpers import (
     resolve_text_model_id,
     sse,
 )
+from ._pipeline_prompt import PipelinePromptMixin
 from ._session_store import SessionStore
-from ._signoz_context import (
-    build_signoz_context_section,
-    fetch_signoz_service_names,
-    has_enabled_signoz_mcp,
-)
 from ._task_dispatcher import TaskDispatcher
 from ._grpc_helpers import sanitize_permission_mode
 
 log = logging.getLogger(__name__)
 
 
-class Pipeline:
+class Pipeline(PipelinePromptMixin):
     class Valves(BaseModel):
         OPENROUTER_API_KEY: str = Field(default="")
         OPENROUTER_MODEL: str = Field(default="anthropic/claude-3.5-sonnet")
@@ -121,17 +109,6 @@ class Pipeline:
             timeout=timeout
         )
 
-    def _native_subagents(self, sandbox_id: str, session_url: str) -> set[str]:
-        """Subagentes que o Claude CLI carrega de ~/.claude/agents neste sandbox."""
-        try:
-            runtime = self._run(resolve_agent_runtime(db_url(), sandbox_id), timeout=5)
-            if runtime != AGENT_RUNTIME_CLAUDE_CLI:
-                return set()
-            return self._run(claude_cli_agent_names(session_url), timeout=10)
-        except Exception as exc:
-            log.warning("Falha ao listar os subagentes da sandbox %s: %s", sandbox_id, exc)
-            return set()
-
     def cancel_conversation(self, conversation_id: str) -> bool:
         if self._dispatcher is None:
             return False
@@ -202,87 +179,9 @@ class Pipeline:
             yield sse({"type": "done", "model_used": None})
             return
 
-        repo_ids: list[str] = [r["repo_id"] for r in repos if r.get("repo_id")]
-
-        skills_top: list[dict] = []
-        agent_profiles: list[dict] = []
-        if repo_ids:
-            try:
-                skills_top = self._run(
-                    load_agent_context(
-                        self.valves.DATABASE_URL,
-                        user_message,
-                        repo_ids=repo_ids or None,
-                    ),
-                    timeout=10,
-                )
-            except Exception as exc:
-                log.warning("Falha ao carregar agent_context: %s", exc)
-        if repos:
-            try:
-                agent_profiles = self._run(
-                    load_repo_agent_profiles(
-                        self.valves.DATABASE_URL,
-                        repos,
-                        sandbox_id=sandbox_id,
-                    ),
-                    timeout=5,
-                )
-            except Exception as exc:
-                log.warning("Falha ao carregar repo_agent_profiles: %s", exc)
-
-        sandbox_host = self.valves.SANDBOX_HOST
-        sandbox_session_port = self.valves.SANDBOX_SESSION_PORT
-        if self._env_manager is not None:
-            try:
-                sandbox_host, _, sandbox_session_port, _ = self._run(
-                    self._env_manager._resolve_sandbox_endpoint(sandbox_id),
-                    timeout=5,
-                )
-            except Exception as exc:
-                log.warning("Falha ao resolver endpoint da sandbox %s: %s", sandbox_id, exc)
-        sandbox_session_url = f"http://{sandbox_host}:{sandbox_session_port}"
-
-        # NOTA: a estrutura top-level do worktree é injetada pelo dispatcher,
-        # depois de o worktree ser efetivamente criado pelo EnvironmentManager.
-        # Tentar obtê-la aqui falha sempre na primeira mensagem (worktree ainda
-        # não existe → /worktree/ls-files devolve 500).
-        prompt = build_prompt_with_agent(
-            user_message,
-            skills_top,
-            sandbox_session_url,
-            repos=repos,
-            session_root=session_root,
-            agent_profiles=agent_profiles,
-            execution_profile=execution_profile,
-            native_subagents=(
-                self._native_subagents(sandbox_id, sandbox_session_url) if agent_profiles else set()
-            ),
+        prompt, sandbox_session_url = self._build_pipe_prompt(
+            user_message, repos, session_root, sandbox_id, execution_profile
         )
-
-        # Injeta contexto SigNoz (service.name por repo) se houver configuração.
-        repo_ids_for_signoz = [r["repo_id"] for r in repos if r.get("repo_id")]
-        if repo_ids_for_signoz:
-            try:
-                signoz_names = self._run(
-                    fetch_signoz_service_names(db_url(), repo_ids_for_signoz),
-                    timeout=5,
-                )
-                signoz_mcp_available = self._run(
-                    has_enabled_signoz_mcp(db_url(), sandbox_id),
-                    timeout=5,
-                )
-                signoz_section = build_signoz_context_section(
-                    repos,
-                    signoz_names,
-                    mcp_available=signoz_mcp_available,
-                )
-                if signoz_section:
-                    from ._agent_context import inject_section_before_user_message
-
-                    prompt = inject_section_before_user_message(prompt, signoz_section)
-            except Exception as exc:
-                log.warning("[Signoz] falha ao injetar contexto: %s", exc)
 
         task_id: str | None = self._run(
             self._dispatcher.get_active_task_id(conversation_id or "__none__"),
