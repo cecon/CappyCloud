@@ -53,10 +53,21 @@ def test_sandbox_bootstrap_does_not_require_opengateway_key() -> None:
     assert "${requestedProviderApiKey}" not in ENV_INIT_TEXT
 
 
-def test_sandbox_startup_provider_uses_openai_compatible_fallback() -> None:
-    assert "CappyCloud default startup provider" in ENV_INIT_TEXT
-    assert "env[DEFAULT_STARTUP_PROVIDER_ENV_VAR] = 'custom'" in ENV_INIT_TEXT
-    assert "getRouteDefaultBaseUrl('custom')" in ENV_INIT_TEXT
+def test_sandbox_startup_env_is_a_concrete_openai_provider_selection() -> None:
+    # OpenClaude only falls back to its Opengateway default profile when the
+    # env does not already select a provider (hasConcreteProviderSelection).
+    assert 'CLAUDE_CODE_USE_OPENAI="${CLAUDE_CODE_USE_OPENAI:-1}"' in ENV_INIT_TEXT
+    assert 'OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}"' in ENV_INIT_TEXT
+    assert 'export CLAUDE_CODE_USE_OPENAI="${CLAUDE_CODE_USE_OPENAI}"' in ENV_INIT_TEXT
+    assert 'export OPENAI_BASE_URL="${OPENAI_BASE_URL}"' in ENV_INIT_TEXT
+    assert "/openclaude/src/utils/providerProfile.ts" not in ENV_INIT_TEXT
+
+
+def test_azure_foundry_v1_patch_targets_request_executor() -> None:
+    assert "/openclaude/src/services/api/openaiShim/requestExecutor.ts" in ENV_INIT_TEXT
+    assert "CappyCloud Azure AI Foundry v1" in ENV_INIT_TEXT
+    assert "isAzure && !isAzureOpenAIV1" in ENV_INIT_TEXT
+    assert "return `${normalizedBaseUrl}/chat/completions`" in ENV_INIT_TEXT
 
 
 def test_dynamic_model_and_provider_overrides_are_reset_after_request() -> None:
