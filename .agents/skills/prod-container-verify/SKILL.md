@@ -47,7 +47,7 @@ A successful verification should report:
 - `cappycloud_sandbox` service at `1/1`;
 - sandbox container status `healthy`;
 - sandbox image `ghcr.io/cecon/cappycloud-sandbox:latest@sha256:...`;
-- `0.28.0 (OpenClaude)` or the version being validated;
+- `0.32.0 (OpenClaude)` or the version being validated;
 - runtime status JSON with `openclaude` equal to `running`.
 
 ## Failure Notes
