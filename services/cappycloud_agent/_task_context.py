@@ -34,8 +34,8 @@ async def prepare_turn_prompt(
     """Prompt do turno, ou ``None`` se o worktree não pôde ser validado.
 
     Sessão do Claude CLI retomada: vai só a mensagem do usuário — o contexto da
-    primeira mensagem (workspace, estrutura dos repositórios, evidências) já
-    está no histórico do Claude Code. Os worktrees continuam sendo conferidos.
+    primeira mensagem (workspace, estrutura dos repositórios) já está no
+    histórico do Claude Code. Os worktrees continuam sendo conferidos.
     """
     started = time.monotonic()
     pipeline_prompt = prompt
@@ -63,7 +63,10 @@ async def prepare_turn_prompt(
         if not lean:
             prompt = validated
 
-    if not lean:
+    # Claude CLI busca evidências, memória e grafo sob demanda, pelas ferramentas
+    # do MCP ``cappy`` (services/sandbox/evidence_mcp_server.py). Só o openclaude
+    # ainda recebe a busca prévia no prompt.
+    if openclaude:
         prompt = await inject_evidence_prefetch(
             prompt,
             user_message=pipeline_prompt,
@@ -71,13 +74,12 @@ async def prepare_turn_prompt(
             repos=repos,
             session_root=session_root,
         )
-    # Memória e grafo dependem da pergunta: vão em todo turno, inclusive retomado.
-    prompt = await inject_workspace_knowledge(
-        prompt,
-        user_message=user_message or pipeline_prompt,
-        sandbox_session_url=sandbox_session_url,
-        session_root=session_root,
-    )
+        prompt = await inject_workspace_knowledge(
+            prompt,
+            user_message=user_message or pipeline_prompt,
+            sandbox_session_url=sandbox_session_url,
+            session_root=session_root,
+        )
     if not lean and openclaude:
         # Por último: as linhas /add do openclaude precisam abrir o prompt.
         prompt = inject_repo_context(prompt, repos, session_root)

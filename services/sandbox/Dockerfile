@@ -51,6 +51,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
         pyyaml==6.0.2 \
         jinja2==3.1.4 \
         requests==2.32.3 \
+        httpx==0.28.1 \
         ruff==0.15.13 \
         libcst==1.8.6 \
         basedpyright==1.39.4
@@ -171,6 +172,7 @@ COPY services/sandbox/confluence_handler.js /confluence_handler.js
 COPY services/sandbox/repo_handlers.js /repo_handlers.js
 COPY services/sandbox/runtime_handler.js /runtime_handler.js
 COPY services/sandbox/claude_runtime_handler.js /claude_runtime_handler.js
+COPY services/sandbox/claude_runtime_setup.js /claude_runtime_setup.js
 COPY services/sandbox/claude_runtime_mapper.js /claude_runtime_mapper.js
 COPY services/sandbox/readonly_commands.js /readonly_commands.js
 COPY services/sandbox/claude_runtime_subagents.js /claude_runtime_subagents.js
@@ -187,6 +189,11 @@ COPY services/sandbox/worktree_handlers.js /worktree_handlers.js
 COPY services/sandbox/confluence_mcp_lib.py /usr/local/bin/confluence_mcp_lib.py
 COPY services/sandbox/confluence_mcp_server.py /usr/local/bin/confluence-mcp-server
 COPY services/sandbox/webread.py /usr/local/bin/webread
+# MCP `cappy` (evidências, memória e grafo sob demanda): reaproveita os módulos
+# de busca do agente. __init__ vazio: o do pacote importa o pipeline inteiro.
+COPY services/sandbox/evidence_mcp_server.py /opt/cappy_tools/evidence_mcp_server.py
+COPY services/cappycloud_agent/_evidence_*.py services/cappycloud_agent/_knowledge_search.py services/cappycloud_agent/_workspace_paths.py /opt/cappy_tools/cappycloud_agent/
+RUN touch /opt/cappy_tools/cappycloud_agent/__init__.py
 RUN sed -i 's/\r//' /env_init.sh /session_start.sh \
     && chmod +x /env_init.sh /session_start.sh /usr/local/bin/confluence-mcp-server /usr/local/bin/webread
 

@@ -15,7 +15,6 @@ const crypto = require('crypto')
 const fs = require('fs')
 const path = require('path')
 const { execFileSync } = require('child_process')
-const { pathToFileURL } = require('url')
 const { agentNames } = require('./claude_runtime_subagents')
 
 const {
@@ -30,87 +29,12 @@ const {
   workspaceReadOnlyDirs,
 } = require('./claude_runtime_mapper')
 
-const CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(process.env.HOME || '/root', '.claude')
-const SESSIONS_FILE = path.join(CONFIG_DIR, 'cappycloud-sessions.json')
-const OPENCLAUDE_CONFIG = path.join(process.env.HOME || '/root', '.openclaude.json')
-// Variáveis do openclaude (provider OpenAI-compatível) que não podem vazar para o CLI oficial.
-const STRIPPED_ENV = /^(OPENAI_|CLAUDE_CODE_USE_OPENAI$|CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED$)/
+const {
+  CONFIG_DIR, EVIDENCE_TOOLS, OPENCLAUDE_CONFIG, claudeExecutable, evidenceServer, loadSdk,
+  readJson, rememberSession, sdkEntry, sdkEnv, storedSession,
+} = require('./claude_runtime_setup')
 
 const turns = new Map()
-let sdkPromise = null
-
-const SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk'
-
-/**
- * Caminho do entrypoint ESM do SDK instalado globalmente. Nem import() nem
- * require.resolve() acham o pacote via NODE_PATH (o `exports` dele só expõe a
- * condição `default` para .mjs), então procuramos o package.json nas raízes globais.
- */
-function sdkEntry() {
-  const roots = [...(process.env.NODE_PATH || '').split(path.delimiter), '/usr/local/lib/node_modules']
-  for (const root of roots.filter(Boolean)) {
-    const pkgDir = path.join(root, SDK_PACKAGE)
-    const pkg = readJson(path.join(pkgDir, 'package.json'), null)
-    if (!pkg) continue
-    const exported = pkg.exports && pkg.exports['.']
-    const target = (exported && (exported.import || exported.default)) || pkg.main || 'sdk.mjs'
-    return path.join(pkgDir, target)
-  }
-  throw new Error(`${SDK_PACKAGE} não está instalado no sandbox`)
-}
-
-function loadSdk() {
-  if (!sdkPromise) {
-    sdkPromise = import(pathToFileURL(sdkEntry()).href)
-    sdkPromise.catch(() => { sdkPromise = null })
-  }
-  return sdkPromise
-}
-
-function claudeExecutable() {
-  try {
-    return execFileSync('sh', ['-c', 'command -v claude'], { encoding: 'utf8' }).trim() || null
-  } catch {
-    return null
-  }
-}
-
-function readJson(file, fallback) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return fallback }
-}
-
-// Valor por conversa: { session_id, totals } (antes era só o id da sessão).
-function storedSession(conversationKey) {
-  const raw = conversationKey ? readJson(SESSIONS_FILE, {})[conversationKey] : null
-  if (!raw) return { sessionId: null, totals: null }
-  if (typeof raw === 'string') return { sessionId: raw, totals: null }
-  return { sessionId: raw.session_id || null, totals: raw.totals || null }
-}
-
-function rememberSession(conversationKey, sessionId, totals = null) {
-  if (!conversationKey) return
-  const sessions = readJson(SESSIONS_FILE, {})
-  if (sessionId) sessions[conversationKey] = { session_id: sessionId, totals }
-  else delete sessions[conversationKey]
-  fs.mkdirSync(CONFIG_DIR, { recursive: true })
-  fs.writeFileSync(SESSIONS_FILE, JSON.stringify(sessions, null, 2), 'utf8')
-}
-
-function sdkEnv() {
-  const env = {}
-  for (const [key, value] of Object.entries(process.env)) {
-    if (!STRIPPED_ENV.test(key)) env[key] = value
-  }
-  env.CLAUDE_CONFIG_DIR = CONFIG_DIR
-  env.IS_SANDBOX = '1'
-  // A sessão acaba com o turno: subagente/Bash em segundo plano morreria sem
-  // entregar o resultado ("aguarde um instante" e nada mais). Tudo roda no turno.
-  env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = '1'
-  // Compacta a conversa ao chegar perto deste tamanho, em vez da janela "auto"
-  // do modelo (que pode ir a 1M): cada passo do agente relê a janela inteira.
-  env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || '150000'
-  return env
-}
 
 function authorized(req) {
   const expected = process.env.INTERNAL_API_TOKEN || ''
@@ -159,7 +83,10 @@ async function runTurn(body, write, turn) {
     })
   }
 
-  const mcpServers = readJson(OPENCLAUDE_CONFIG, {}).mcpServers || {}
+  const mcpServers = {
+    ...(readJson(OPENCLAUDE_CONFIG, {}).mcpServers || {}),
+    ...evidenceServer(body.tool_context),
+  }
   const mode = sdkPermissionMode(body.permission_mode)
   const content = userContentBlocks(body.prompt, body.attachments)
 
@@ -206,6 +133,8 @@ async function runTurn(body, write, turn) {
           }],
         },
         mcpServers,
+        // Aprova sem perguntar; não restringe as outras ferramentas.
+        ...(mcpServers.cappy ? { allowedTools: EVIDENCE_TOOLS } : {}),
         settingSources: ['user', 'project'],
         systemPrompt: { type: 'preset', preset: 'claude_code' },
         includePartialMessages: true,
@@ -362,4 +291,4 @@ async function tryHandle(req, res, { json, readBody }) {
   return true
 }
 
-module.exports = { tryHandle, claudeStatus, authorized, claudeExecutable, loadSdk, sdkEnv }
+module.exports = { tryHandle, claudeStatus, authorized, claudeExecutable, loadSdk, sdkEnv, evidenceServer }

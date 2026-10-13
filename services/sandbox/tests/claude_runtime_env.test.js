@@ -3,7 +3,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-const { sdkEnv } = require('../claude_runtime_handler')
+const { sdkEnv } = require('../claude_runtime_setup')
 
 test('janela de compactação padrão de 150 mil tokens, sobrescrita pelo ambiente', () => {
   const saved = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
