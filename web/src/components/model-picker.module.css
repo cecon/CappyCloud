@@ -114,7 +114,7 @@
 }
 
 .popoverCompact {
-  width: min(240px, calc(100vw - 16px)) !important;
+  width: min(280px, calc(100vw - 16px)) !important;
   padding: 8px;
   gap: 2px;
 }
@@ -219,15 +219,17 @@
 .popoverCompact .rowMeta,
 .popoverCompact .rowStats,
 .popoverCompact .rowSubtle,
+.popoverCompact .stateBadge,
+.popoverCompact .visionBadge,
 .popoverCompact .footer {
   display: none;
 }
 
 .popoverCompact .rowName {
   color: var(--muted-foreground);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12.5px;
-  font-weight: 700;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .popoverCompact .rowSelected,
