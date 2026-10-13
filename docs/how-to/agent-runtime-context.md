@@ -126,18 +126,37 @@ O custo deve usar dados reais:
 
 Nao usar estimativa local de tokens como custo principal.
 
-## OpenClaude 0.28.0
+## OpenClaude 0.32.0
 
-Para a feature `008-openclaude-current-upgrade`, o runtime da sandbox fica
-pinado no commit `6e30b40de00868a968bdcaa0c3d0dd915d69d357`, correspondente ao
-alvo OpenClaude `0.28.0`. A linha de base operacional observada antes da
-mudanca e OpenClaude `0.24.0`; o Dockerfile local anterior apontava para um
-commit mais antigo e foi avancado diretamente para o alvo congelado.
+O runtime da sandbox fica pinado no commit
+`88baafe316d610f8f7eadcc186ecd044e718a1b9`, a tag `v0.32.0`. O projeto mudou de
+`Gitlawb/openclaude` para `Twigpine/openclaude` (o endereco antigo redireciona);
+o Dockerfile clona do novo.
 
-Versoes posteriores a `0.28.0` exigem nova decisao explicita de produto e nova
-avaliacao de UI antes de entrar neste escopo. A implementacao atual valida
-localmente o sandbox, o contrato de eventos e a UI; rollout de producao deve
-seguir o runbook especifico.
+Historico: a feature `008-openclaude-current-upgrade` levou o runtime de
+`0.24.0` para `0.28.0` (`6e30b40de00868a968bdcaa0c3d0dd915d69d357`). Em
+2026-10-13 o produto pediu a atualizacao para `0.32.0`. Impacto das notas de
+versao 0.29.0 a 0.32.0 para o CappyCloud:
+
+- 0.29.1 para de quebrar o cache de prompt e reduz o contexto por turno.
+- 0.30.0 e 0.32.0 corrigem o shim OpenAI-compativel (uso no fim do stream,
+  `store` em modelos Anthropic por rotas OpenAI).
+- 0.31.0 encaminha pedidos de permissao de subagentes para a sessao principal e
+  resolve nomes de servidores MCP pela propria chave.
+- 0.32.0 deduplica leituras de arquivos identicos; a busca web padrao passa a
+  ser Exa (o agente do CappyCloud usa WebFetch/`webread`).
+- Provedores, gateways, onboarding e catalogos novos nao afetam o CappyCloud:
+  modelo e provider continuam vindo do catalogo autorizado.
+
+Patches: so `multimodal-grpc-handler.patch` precisou ser refeito (o
+`server.ts` upstream ganhou tipagem em `handleChat` e no `catch`), e a
+substituicao do `catch` no Dockerfile acompanhou o novo formato
+`err instanceof Error ? err.message : ...`. Conferido passo a passo que cada
+patch e cada `perl -0pi` do Dockerfile produzem em `0.32.0` o mesmo diff que em
+`0.28.0` (as substituicoes `perl` nao falham quando nao casam).
+
+Nova versao exige o mesmo procedimento: ler as notas, reaplicar os passos do
+Dockerfile e comparar o resultado com a versao atual antes de trocar o pin.
 
 Recursos novos do OpenClaude que envolvam cache de conversa, persistencia de
 sessao, descoberta de modelos, fallback de provider, subagents, contexto em
