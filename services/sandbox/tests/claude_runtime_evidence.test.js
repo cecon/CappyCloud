@@ -10,6 +10,7 @@ test('servidor cappy leva o contexto da conversa para o MCP', () => {
   const { cappy } = evidenceServer(context)
   assert.equal(cappy.type, 'stdio')
   assert.equal(cappy.command, 'python3')
+  assert.equal(cappy.alwaysLoad, true)
   assert.match(cappy.args[0], /evidence_mcp_server\.py$/)
   assert.deepEqual(JSON.parse(cappy.env.CAPPY_TOOL_CONTEXT), context)
   assert.ok(cappy.env.PYTHONPATH)
