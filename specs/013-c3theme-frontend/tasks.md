@@ -9,33 +9,33 @@ Cada tela portada é um PR próprio que também marca o estado no inventário.
 
 ## Phase 1: Setup
 
-- [ ] T001 Criar `web-c3/` (Vite 8 + React 19 + TS 6) com `package.json`, `tsconfig.json`, `vite.config.ts` (`base: '/c3/'`, porta 5175, proxy `/api`) e `index.html`
-- [ ] T002 Adicionar `@c3theme/ui` por git com commit fixo e os peers do tema (MUI 9, Emotion, React Router 8, react-intl, SWR) em `web-c3/package.json`, conforme `contracts/theme-dependency.md`
-- [ ] T003 [P] Configurar ESLint (flat) e scripts `lint`, `typecheck`, `build`, `test` em `web-c3/package.json` e `web-c3/eslint.config.js`
-- [ ] T004 [P] Adicionar `web-c3` em `.claude/launch.json` e `web-c3/README.md` com o quickstart
+- [x] T001 Criar `web-c3/` (Vite 8 + React 19 + TS 6) com `package.json`, `tsconfig.json`, `vite.config.ts` (`base: '/c3/'`, porta 5175, proxy `/api`) e `index.html`
+- [x] T002 Adicionar `@c3theme/ui` por git com commit fixo e os peers do tema (MUI 9, Emotion, React Router 8, react-intl, SWR) em `web-c3/package.json`, conforme `contracts/theme-dependency.md`
+- [x] T003 [P] Configurar ESLint (flat) e scripts `lint`, `typecheck`, `build`, `test` em `web-c3/package.json` e `web-c3/eslint.config.js`
+- [x] T004 [P] Adicionar `web-c3` em `.claude/launch.json` e `web-c3/README.md` com o quickstart
 
 ## Phase 2: Foundational
 
-- [ ] T005 Criar `web-c3/src/data/` reexportando cliente HTTP, sessão e validações de `web/src` pelo alias `@cappy` (R3), em `web-c3/src/data/index.ts`
-- [ ] T006 Criar `web-c3/src/App.tsx` com `C3ThemeProvider` (branding CappyCloud, `storageKey` próprio, `ptBR`), `Locales` e router; `web-c3/src/config.ts`
-- [ ] T007 [P] Criar `web-c3/src/utils/locales/pt.json` com os textos `c3.*` do tema e os do app
-- [ ] T008 Criar `web-c3/src/routes/ported.ts` e `web-c3/src/routes/index.tsx` com guardas por nível (logado, admin, super admin) e o redirecionamento de tela pendente para o `web/` (contracts/route-map.md, regras 1–4)
-- [ ] T009 [P] Testes Vitest das regras de rota e acesso em `web-c3/src/routes/routes.test.ts`
-- [ ] T010 Construir `web/` e `web-c3/` na mesma imagem: `web/Dockerfile` (BuildKit secret `c3theme_token` só no `pnpm install` do `web-c3`) e `location /c3/` em `web/nginx.conf`
-- [ ] T011 CI: segredo `C3THEME_READ_TOKEN` no build da imagem web (`.github/workflows/container-images.yml`) e lint/typecheck/build do `web-c3` no CI de frontend
-- [ ] T012 [P] Verificação de vazamento do tema (R6) em `scripts/check_c3theme_leak.py`, chamada no CI de frontend e no hook local
+- [x] T005 Criar `web-c3/src/data/` reexportando cliente HTTP, sessão e validações de `web/src` pelo alias `@cappy` (R3), em `web-c3/src/data/index.ts`
+- [x] T006 Criar `web-c3/src/App.tsx` com `C3ThemeProvider` (branding CappyCloud, `storageKey` próprio, `ptBR`), `Locales` e router; `web-c3/src/config.ts`
+- [x] T007 [P] Criar `web-c3/src/utils/locales/pt.json` com os textos `c3.*` do tema e os do app
+- [x] T008 Criar `web-c3/src/routes/ported.ts` e `web-c3/src/routes/index.tsx` com guardas por nível (logado, admin, super admin) e o redirecionamento de tela pendente para o `web/` (contracts/route-map.md, regras 1–4)
+- [x] T009 [P] Testes Vitest das regras de rota e acesso em `web-c3/src/routes/routes.test.ts`
+- [x] T010 Construir `web/` e `web-c3/` na mesma imagem: `web/Dockerfile` (BuildKit secret `c3theme_token` só no `pnpm install` do `web-c3`) e `location /c3/` em `web/nginx.conf`
+- [x] T011 CI: segredo `C3THEME_READ_TOKEN` no build da imagem web (`.github/workflows/container-images.yml`) e lint/typecheck/build do `web-c3` no CI de frontend
+- [x] T012 [P] Verificação de vazamento do tema (R6) em `scripts/check_c3theme_leak.py`, chamada no CI de frontend e no hook local
 
 ## Phase 3: User Story 1 - Entrar no CappyCloud com a cara do C3 (P1) 🎯 MVP
 
 **Independent Test**: quickstart.md, "Validar o esqueleto".
 
-- [ ] T013 [US1] Layout: `DashboardLayout` do pacote com header e `NavUser` (e-mail, papel, sair, tema) em `web-c3/src/layout/`
-- [ ] T014 [US1] Menu com todas as telas por nível de acesso, abrindo `/c3/` ou o `web/` conforme `ported.ts`, em `web-c3/src/menu-items/index.ts`
-- [ ] T015 [US1] Tela de login ligada à API, com erros em português, em `web-c3/src/pages/auth/LoginPage.tsx`
-- [ ] T016 [US1] Troca de senha obrigatória em `web-c3/src/pages/auth/ChangePasswordPage.tsx`
-- [ ] T017 [US1] Marca CappyCloud (logo e ícone) em `web-c3/src/assets/` e `branding` do `App.tsx`
-- [ ] T018 [US1] Redirecionamentos do `web/` replicados em `web-c3/src/routes/index.tsx`
-- [ ] T019 [US1] Executar o quickstart do esqueleto e marcar `/login` e `/change-password` em `data-model.md`
+- [x] T013 [US1] Layout: `DashboardLayout` do pacote com header e `NavUser` (e-mail, papel, sair, tema) em `web-c3/src/layout/`
+- [x] T014 [US1] Menu com todas as telas por nível de acesso, abrindo `/c3/` ou o `web/` conforme `ported.ts`, em `web-c3/src/menu-items/index.ts`
+- [x] T015 [US1] Tela de login ligada à API, com erros em português, em `web-c3/src/pages/auth/LoginPage.tsx`
+- [x] T016 [US1] Troca de senha obrigatória em `web-c3/src/pages/auth/ChangePasswordPage.tsx`
+- [x] T017 [US1] Marca CappyCloud (logo e ícone) em `web-c3/src/assets/` e `branding` do `App.tsx`
+- [x] T018 [US1] Redirecionamentos do `web/` replicados em `web-c3/src/routes/index.tsx`
+- [x] T019 [US1] Executar o quickstart do esqueleto e marcar `/login` e `/change-password` em `data-model.md`
 
 ## Phase 4: User Story 2 - Chat (P2)
 

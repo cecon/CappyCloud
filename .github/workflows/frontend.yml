@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "web/**"
+      - "web-c3/**"
       - ".github/workflows/frontend.yml"
   pull_request:
 
@@ -29,3 +30,55 @@ jobs:
 
       - name: ESLint
         run: npm run lint
+
+  web-c3:
+    name: web-c3 (C3Theme)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-c3
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: web-c3/pnpm-lock.yaml
+
+      # Tema do repositório privado cecon/C3Theme (specs/013-c3theme-frontend/contracts/theme-dependency.md).
+      - name: Install dependencies
+        env:
+          TOKEN: ${{ secrets.C3THEME_READ_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Segredo C3THEME_READ_TOKEN ausente: sem ele não há acesso ao tema privado."
+            exit 1
+          fi
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0="url.https://x-access-token:${TOKEN}@github.com/cecon/C3Theme.insteadOf" \
+          GIT_CONFIG_VALUE_0="https://github.com/cecon/C3Theme" \
+          pnpm install --frozen-lockfile
+
+      - name: Theme leak check
+        run: python3 ../scripts/check_c3theme_leak.py
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format
+        run: pnpm format:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build

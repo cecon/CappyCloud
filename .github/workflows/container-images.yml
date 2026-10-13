@@ -10,6 +10,7 @@ on:
       - "services/agentmemory/**"
       - "sandbox/**"
       - "web/**"
+      - "web-c3/**"
       - "proto/**"
       - "infra/swarm/**"
       - ".github/workflows/container-images.yml"
@@ -73,6 +74,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          # Só o web usa: tema privado cecon/C3Theme (specs/013-c3theme-frontend).
+          secrets: |
+            c3theme_token=${{ secrets.C3THEME_READ_TOKEN }}
 
   redeploy-dokploy:
     name: Redeploy Dokploy stack

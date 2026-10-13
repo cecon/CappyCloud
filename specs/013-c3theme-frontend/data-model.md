@@ -7,8 +7,8 @@ Estados: `pendente` → `em andamento` → `paridade` (checklist da tela aprovad
 
 | # | Rota `web/` | Página atual | Acesso | História | Estado |
 |---|---|---|---|---|---|
-| 1 | `/login` | `LoginPage` | aberto | US1 | pendente |
-| 2 | `/change-password` | `ChangePasswordPage` | logado | US1 | pendente |
+| 1 | `/login` | `LoginPage` | aberto | US1 | paridade |
+| 2 | `/change-password` | `ChangePasswordPage` | logado | US1 | paridade |
 | 3 | `/chat` | `ChatPage` | logado | US2 | pendente |
 | 4 | `/skills` | `SkillsPage` | logado | US3 | pendente |
 | 5 | `/runs` | `RunsPage` | logado | US3 | pendente |
