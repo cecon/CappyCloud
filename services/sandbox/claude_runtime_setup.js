@@ -84,6 +84,9 @@ function evidenceServer(toolContext) {
       type: 'stdio',
       command: 'python3',
       args: [path.join(EVIDENCE_DIR, 'evidence_mcp_server.py')],
+      // Descrição completa no prompt desde o 1º passo, sem passar pelo ToolSearch:
+      // escondida, o modelo só vê o nome e quase nunca escolhe a ferramenta sozinho.
+      alwaysLoad: true,
       env: {
         CAPPY_TOOL_CONTEXT: JSON.stringify(toolContext),
         PYTHONPATH: EVIDENCE_DIR,
