@@ -113,26 +113,29 @@ async def _prepare(resumed: bool, phases: list, openclaude: bool = False) -> str
 async def test_sessao_retomada_manda_so_a_pergunta(calls: dict[str, int]) -> None:
     phases: list = []
     prompt = await _prepare(True, phases)
-    assert prompt == "[conhecimento: qual a versão do banco?]\nqual a versão do banco?"
-    # Worktree continua conferido; estrutura e evidências não são recalculadas,
-    # mas memória e grafo da pergunta nova são consultados.
-    assert calls == {"workspace": 0, "validate": 1, "evidence": 0, "add": 0, "knowledge": 1}
+    assert prompt == "qual a versão do banco?"
+    # Worktree continua conferido; nada é buscado antes do turno.
+    assert calls == {"workspace": 0, "validate": 1, "evidence": 0, "add": 0, "knowledge": 0}
     assert phases == [("Retomando a sessão", "active"), ("Sessão retomada", "done")]
 
 
-async def test_primeira_mensagem_leva_o_contexto_completo(calls: dict[str, int]) -> None:
+async def test_claude_cli_nao_busca_evidencias_antes_do_turno(calls: dict[str, int]) -> None:
+    # Evidências, memória e grafo viraram ferramentas do MCP `cappy`: o modelo
+    # decide se busca. Antes do turno vão só workspace e worktree.
     phases: list = []
     prompt = await _prepare(False, phases)
-    assert prompt.startswith("[conhecimento: qual a versão do banco?]\n[instruções")
-    assert prompt.endswith("[workspace]\n[worktree ok]\n[evidências]")
-    assert calls == {"workspace": 1, "validate": 1, "evidence": 1, "add": 0, "knowledge": 1}
+    assert prompt is not None and prompt.startswith("[instruções")
+    assert prompt.endswith("[workspace]\n[worktree ok]")
+    assert calls == {"workspace": 1, "validate": 1, "evidence": 0, "add": 0, "knowledge": 0}
     assert phases[-1] == ("Contexto preparado", "done")
 
 
-async def test_add_so_vai_para_o_openclaude(calls: dict[str, int]) -> None:
+async def test_openclaude_continua_com_a_busca_previa(calls: dict[str, int]) -> None:
     prompt = await _prepare(False, [], openclaude=True)
     assert prompt is not None and prompt.startswith("/add /repos/x")
-    assert calls["add"] == 1
+    assert "[conhecimento: qual a versão do banco?]" in prompt
+    assert prompt.endswith("[evidências]")
+    assert calls == {"workspace": 1, "validate": 1, "evidence": 1, "add": 1, "knowledge": 1}
 
 
 _REAL_CLIENT = httpx.AsyncClient
