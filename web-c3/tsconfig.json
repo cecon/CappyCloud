@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "useDefineForClassFields": true,
+    "noEmit": true,
+    "types": ["vite/client", "node"],
+    "paths": {
+      // código do app: imports a partir de src/ (padrão do C3Theme)
+      "*": ["./src/*"],
+      // camada de dados do frontend atual (só lógica), enquanto os dois apps convivem
+      "@cappy/*": ["../web/src/*"],
+      "@/*": ["../web/src/*"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}

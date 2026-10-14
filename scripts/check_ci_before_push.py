@@ -17,6 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 API_DIR = ROOT / "services" / "api"
 WEB_DIR = ROOT / "web"
+WEB_C3_DIR = ROOT / "web-c3"
 
 CI_ENV = {
     "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
@@ -131,6 +132,34 @@ def run_frontend_ci(dry_run: bool) -> None:
     _run("Frontend ESLint", [manager, "run", "lint"], cwd=WEB_DIR, dry_run=dry_run)
 
 
+def run_web_c3_ci(dry_run: bool) -> None:
+    """Frontend C3Theme (specs/013): checagem de vazamento sempre; o resto se instalado.
+
+    As dependências vêm do repositório privado cecon/C3Theme; quem não tem acesso
+    não consegue instalá-las, e o CI cobre esses checks.
+    """
+    if not WEB_C3_DIR.is_dir():
+        return
+    _run(
+        "web-c3 theme leak check",
+        [sys.executable, str(ROOT / "scripts" / "check_c3theme_leak.py")],
+        dry_run=dry_run,
+    )
+    if not (WEB_C3_DIR / "node_modules").is_dir():
+        print("\n==> web-c3: node_modules ausente (pnpm --dir web-c3 install); lint/build ficam para o CI.")
+        return
+    pnpm = shutil.which("pnpm")
+    if not pnpm:
+        raise SystemExit("Command not found: pnpm")
+    for label, script in (
+        ("web-c3 lint", "lint"),
+        ("web-c3 format", "format:check"),
+        ("web-c3 typecheck", "typecheck"),
+        ("web-c3 tests", "test"),
+    ):
+        _run(label, [pnpm, "run", script], cwd=WEB_C3_DIR, dry_run=dry_run)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run local CI gates before pushing a PR branch.")
     parser.add_argument(
@@ -160,6 +189,7 @@ def main() -> int:
         run_api_ci(args.dry_run)
     if not args.skip_frontend:
         run_frontend_ci(args.dry_run)
+        run_web_c3_ci(args.dry_run)
 
     print("\nLocal CI gates passed.")
     return 0
