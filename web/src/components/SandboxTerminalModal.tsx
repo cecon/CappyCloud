@@ -15,7 +15,9 @@ import {
   type Sandbox,
   type SandboxTerminalEvent,
 } from '../api'
-import { findLastUrl, type TerminalLine } from './terminalLinks'
+import { findLastUrl } from './terminalLinks'
+import { decodeBase64, openLink, visibleLines } from './sandbox-terminal/helpers'
+import { TerminalContextMenu } from './sandbox-terminal/TerminalContextMenu'
 
 type Status = 'connecting' | 'open' | 'closed' | 'error'
 
@@ -24,25 +26,6 @@ const STATUS_TEXT: Record<Status, string> = {
   open: 'Conectado',
   closed: 'Sessão encerrada',
   error: 'Erro',
-}
-
-function decodeBase64(data: string): Uint8Array {
-  return Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
-}
-
-function visibleLines(term: Terminal): TerminalLine[] {
-  const buffer = term.buffer.active
-  const lines: TerminalLine[] = []
-  const start = Math.max(0, buffer.length - 300)
-  for (let i = start; i < buffer.length; i++) {
-    const line = buffer.getLine(i)
-    if (line) lines.push({ text: line.translateToString(false), wrapped: line.isWrapped })
-  }
-  return lines
-}
-
-function openLink(url: string) {
-  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 /**
@@ -291,23 +274,11 @@ function TerminalView({ sandbox }: { sandbox: Sandbox }) {
           style={{ height: 'min(55dvh, 480px)', background: '#141210', borderRadius: 6, padding: 6, overflow: 'hidden' }}
         />
         {menu && (
-          <div
-            role="menu"
-            style={{
-              position: 'absolute',
-              left: menu.x,
-              top: menu.y,
-              zIndex: 5,
-              display: 'grid',
-              minWidth: 160,
-              padding: 4,
-              borderRadius: 6,
-              background: 'var(--popover, #221f1b)',
-              border: '1px solid var(--border, #3a352e)',
-              boxShadow: '0 6px 20px rgba(0,0,0,.35)',
-            }}
-          >
-            {[
+          <TerminalContextMenu
+            x={menu.x}
+            y={menu.y}
+            onClose={() => setMenu(null)}
+            items={[
               { label: 'Copiar', run: () => void copy(controls.current?.selection() ?? '', 'Texto') },
               { label: 'Colar', run: () => void pasteFromClipboard() },
               ...(link
@@ -316,31 +287,8 @@ function TerminalView({ sandbox }: { sandbox: Sandbox }) {
                     { label: 'Copiar link', run: () => void copy(link, 'Link') },
                   ]
                 : []),
-            ].map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMenu(null)
-                  item.run()
-                }}
-                style={{
-                  textAlign: 'left',
-                  padding: '6px 10px',
-                  border: 0,
-                  borderRadius: 4,
-                  background: 'transparent',
-                  color: 'inherit',
-                  cursor: 'pointer',
-                  font: 'inherit',
-                  fontSize: 13,
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
+            ]}
+          />
         )}
       </div>
 

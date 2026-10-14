@@ -7,7 +7,6 @@ import {
   Group,
   Loader,
   Modal,
-  PasswordInput,
   Stack,
   Switch,
   Table,
@@ -25,47 +24,10 @@ import {
   type Sandbox,
   updateSandboxMcp,
 } from '../../api'
+import { EMPTY_FORM, envEntriesToRecord, envRecordToEntries, parseArgs, type FormState } from './mcps/form'
+import { McpEnvEditor } from './mcps/McpEnvEditor'
 
 type Props = { sandbox: Sandbox }
-
-type FormState = {
-  id: string | null
-  name: string
-  command: string
-  args: string
-  envEntries: { key: string; value: string }[]
-  enabled: boolean
-}
-
-const EMPTY_FORM: FormState = {
-  id: null,
-  name: '',
-  command: '',
-  args: '',
-  envEntries: [{ key: '', value: '' }],
-  enabled: true,
-}
-
-function envEntriesToRecord(entries: { key: string; value: string }[]): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const { key, value } of entries) {
-    const k = key.trim()
-    if (k) out[k] = value
-  }
-  return out
-}
-
-function envRecordToEntries(env: Record<string, string>): { key: string; value: string }[] {
-  const items = Object.entries(env).map(([key, value]) => ({ key, value }))
-  return items.length === 0 ? [{ key: '', value: '' }] : items
-}
-
-function parseArgs(text: string): string[] {
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-}
 
 export function SandboxMcpsPanel({ sandbox }: Props) {
   const [items, setItems] = useState<McpServer[] | null>(null)
@@ -287,63 +249,7 @@ export function SandboxMcpsPanel({ sandbox }: Props) {
             autosize
             minRows={3}
           />
-          <Stack gap={6}>
-            <Text size="sm" fw={500}>
-              Variáveis de ambiente
-            </Text>
-            {form.envEntries.map((row, idx) => (
-              <Group key={idx} gap="xs">
-                <TextInput
-                  placeholder="KEY"
-                  value={row.key}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      envEntries: form.envEntries.map((r, i) =>
-                        i === idx ? { ...r, key: e.currentTarget.value } : r,
-                      ),
-                    })
-                  }
-                  style={{ flex: 1 }}
-                />
-                <PasswordInput
-                  placeholder="valor"
-                  value={row.value}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      envEntries: form.envEntries.map((r, i) =>
-                        i === idx ? { ...r, value: e.currentTarget.value } : r,
-                      ),
-                    })
-                  }
-                  style={{ flex: 2 }}
-                />
-                <ActionIcon
-                  variant="subtle"
-                  color="red"
-                  onClick={() =>
-                    setForm({
-                      ...form,
-                      envEntries: form.envEntries.filter((_, i) => i !== idx),
-                    })
-                  }
-                  disabled={form.envEntries.length === 1}
-                >
-                  ×
-                </ActionIcon>
-              </Group>
-            ))}
-            <Button
-              size="xs"
-              variant="default"
-              onClick={() =>
-                setForm({ ...form, envEntries: [...form.envEntries, { key: '', value: '' }] })
-              }
-            >
-              + adicionar variável
-            </Button>
-          </Stack>
+          <McpEnvEditor form={form} setForm={setForm} />
           <Switch
             label="Ativo"
             checked={form.enabled}
