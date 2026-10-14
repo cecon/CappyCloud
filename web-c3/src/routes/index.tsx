@@ -9,6 +9,7 @@ import { HIDDEN_SCREENS, REDIRECTS, SCREENS, type Screen } from 'routes/screens'
 
 const LoginPage = Loadable(lazy(() => import('pages/auth/LoginPage')));
 const ChangePasswordPage = Loadable(lazy(() => import('pages/auth/ChangePasswordPage')));
+const HomePage = Loadable(lazy(() => import('pages/HomePage')));
 
 /** Telas portadas: caminho → componente (preenchido no PR de cada tela). */
 const PAGES: Record<string, ReturnType<typeof Loadable>> = {};
@@ -39,13 +40,13 @@ export const routes: RouteObject[] = [
       </RequireAuth>
     ),
     children: [
-      { index: true, element: <Navigate to="/chat" replace /> },
+      { index: true, element: <HomePage /> },
       { path: 'change-password', element: <ChangePasswordPage /> },
       ...[...SCREENS, ...HIDDEN_SCREENS].map(screenRoute),
       ...Object.entries(REDIRECTS).map(([from, to]) => ({ path: from.slice(1), element: <Navigate to={to} replace /> }))
     ]
   },
-  { path: '*', element: <Navigate to="/chat" replace /> }
+  { path: '*', element: <Navigate to="/" replace /> }
 ];
 
 export default createBrowserRouter(routes, { basename: '/c3' });

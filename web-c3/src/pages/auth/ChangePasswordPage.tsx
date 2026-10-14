@@ -13,6 +13,7 @@ import { MainCard } from '@c3theme/ui';
 import { changePasswordRequest, getToken } from 'data';
 import { useAuth } from 'data/auth';
 import AuthLayout from 'layout/Auth';
+import { APP_DEFAULT_PATH } from 'config';
 
 // Mesma regra do web/src/pages/ChangePasswordPage.tsx.
 const MIN_LENGTH = 8;
@@ -47,7 +48,7 @@ export default function ChangePasswordPage() {
     setBusy(true);
     try {
       setUser(await changePasswordRequest(token, current, next));
-      navigate('/chat', { replace: true });
+      navigate(APP_DEFAULT_PATH, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : intl.formatMessage({ id: 'password.error' }));
     } finally {

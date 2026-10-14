@@ -8,6 +8,7 @@ import TextField from '@mui/material/TextField';
 
 import { useAuth } from 'data/auth';
 import AuthLayout from 'layout/Auth';
+import { APP_DEFAULT_PATH } from 'config';
 
 export default function LoginPage() {
   const intl = useIntl();
@@ -26,7 +27,7 @@ export default function LoginPage() {
     try {
       const user = await login(email.trim().toLowerCase(), password);
       const from = (location.state as { from?: string } | null)?.from;
-      navigate(user.must_change_password ? '/change-password' : from || '/chat', { replace: true });
+      navigate(user.must_change_password ? '/change-password' : from || APP_DEFAULT_PATH, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : intl.formatMessage({ id: 'login.error' }));
     } finally {

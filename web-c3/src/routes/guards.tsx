@@ -3,6 +3,7 @@ import { Navigate, useLocation } from 'react-router';
 
 import { Loader } from '@c3theme/ui';
 import { useAuth } from 'data/auth';
+import { APP_DEFAULT_PATH } from 'config';
 import { canAccess, type Access } from 'routes/screens';
 
 /** Exige sessão; manda trocar a senha antes de qualquer tela quando obrigatório. */
@@ -18,11 +19,11 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-/** Mesmo nível de acesso do frontend atual; sem permissão volta para o chat. */
+/** Mesmo nível de acesso do frontend atual; sem permissão volta para o início. */
 export function RequireAccess({ access, children }: { access: Access; children: ReactNode }) {
   const { state } = useAuth();
   if (state.status !== 'ready') return <Loader />;
-  if (!canAccess(state.user, access)) return <Navigate to="/chat" replace />;
+  if (!canAccess(state.user, access)) return <Navigate to={APP_DEFAULT_PATH} replace />;
   return <>{children}</>;
 }
 
@@ -30,7 +31,7 @@ export function RequireAccess({ access, children }: { access: Access; children: 
 export function GuestOnly({ children }: { children: ReactNode }) {
   const { state } = useAuth();
   if (state.status === 'loading') return <Loader />;
-  if (state.status === 'ready') return <Navigate to="/chat" replace />;
+  if (state.status === 'ready') return <Navigate to={APP_DEFAULT_PATH} replace />;
   return <>{children}</>;
 }
 

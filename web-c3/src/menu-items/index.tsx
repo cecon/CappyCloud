@@ -14,7 +14,8 @@ import {
   Setting2,
   Stickynote,
   Messages2,
-  Code1
+  Code1,
+  Home2
 } from 'iconsax-reactjs';
 
 import type { NavItemType } from '@c3theme/ui';
@@ -57,7 +58,10 @@ export function menuFor(user: CurrentUser): NavItemType[] {
       id: 'main',
       title: <FormattedMessage id="menu.group.main" />,
       type: 'group',
-      children: visible.filter((s) => s.group === 'main').map(toItem)
+      children: [
+        { id: 'home', title: <FormattedMessage id="menu.home" />, type: 'item', url: '/', icon: Home2, breadcrumbs: false },
+        ...visible.filter((s) => s.group === 'main').map(toItem)
+      ]
     }
   ];
   const admin = visible.filter((s) => s.group === 'admin');
