@@ -127,6 +127,8 @@ def _summary_rows(built: BuiltReport) -> list[tuple[str, Any, str | None]]:
         ("Gerado em", _local(generated), None),
         ("Total de consultas (perguntas)", t.questions, None),
         ("Conversas", t.conversations, None),
+        ("Tickets (chamados distintos)", t.tickets, None),
+        ("Conversas sem ticket", t.conversations_without_ticket, None),
         ("Analistas", t.analysts, None),
         ("Custo total (US$)", t.cost_usd, USD_FORMAT),
         ("Custo total (R$)", _brl(built, t.cost_usd), BRL_FORMAT),

@@ -53,6 +53,22 @@ conflitam:
   semana, barras de tema com %) no topo da página e na 1ª página da impressão
   (A4 paisagem); detalhe (analistas, workspaces, conversas) abaixo.
 
+### Session 2026-10-15 (retorno do Alef)
+
+O Alef viu o relatório em produção. Estas decisões **substituem** as anteriores
+onde conflitam:
+
+- Q: As semanas estão coerentes? → A: Não: com o período começando numa quarta,
+  todo "bloco de 7 dias" começava na quarta e o gráfico mostrava uma semana
+  "começando ontem". Semanas passam a ser **de calendário, de segunda a
+  domingo**, recortadas ao período (a primeira e a última podem ser menores;
+  um dia só vira `14/10`).
+- Q: Card de tickets? → A: novo card **Tickets** = números de chamado
+  distintos (`conversations.ticket_number`) das conversas com mensagem no
+  período; o texto do card mostra quantas conversas ficaram sem chamado. O card
+  some quando não há nenhum chamado no escopo (workspaces sem `require_ticket`).
+  Também entra na aba Resumo do XLSX.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Ver o uso de um workspace num período (Priority: P1)

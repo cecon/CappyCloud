@@ -3,13 +3,15 @@
 Consulta = pergunta do usuário (mensagem ``role='user'``) dentro do período,
 como no relatório que o time leva à Diretoria. Conversa = conversa do escopo com
 ao menos uma mensagem no período. Custo = soma de ``messages.cost_usd`` das
-mensagens do período (dado do provedor). Semanas são blocos de 7 dias contados
-a partir do início do período; o último pode ser menor.
+mensagens do período (dado do provedor). Ticket = número de chamado distinto das
+conversas do escopo. Semanas são de calendário (segunda a domingo), recortadas
+ao período: a primeira e a última podem ser menores.
 """
 
 from __future__ import annotations
 
 import uuid
+from bisect import bisect_right
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -27,6 +29,8 @@ _COST_DIGITS = 6
 class ReportTotals:
     questions: int
     conversations: int
+    tickets: int
+    conversations_without_ticket: int
     analysts: int
     messages: int
     cost_usd: float
@@ -111,19 +115,22 @@ def period_bounds(start: date, end: date, tz: ZoneInfo = REPORT_TZ) -> tuple[dat
 
 
 def week_label(start: date, end: date) -> str:
-    """``01-07/09`` no mesmo mês; ``29/09-05/10`` quando vira o mês."""
+    """``01-07/09`` no mesmo mês; ``29/09-05/10`` quando vira o mês; ``14/10`` num dia só."""
+    if start == end:
+        return f"{start.day:02d}/{start.month:02d}"
     if start.month == end.month:
         return f"{start.day:02d}-{end.day:02d}/{end.month:02d}"
     return f"{start.day:02d}/{start.month:02d}-{end.day:02d}/{end.month:02d}"
 
 
 def period_weeks(start: date, end: date) -> list[tuple[date, date]]:
-    """Blocos de 7 dias a partir de ``start``; o último termina em ``end``."""
+    """Semanas de segunda a domingo, recortadas a ``start``..``end``."""
     weeks: list[tuple[date, date]] = []
     cursor = start
     while cursor <= end:
-        weeks.append((cursor, min(cursor + timedelta(days=6), end)))
-        cursor += timedelta(days=7)
+        sunday = cursor + timedelta(days=6 - cursor.weekday())
+        weeks.append((cursor, min(sunday, end)))
+        cursor = sunday + timedelta(days=1)
     return weeks
 
 
@@ -190,13 +197,14 @@ def _weeks(
     grouped: dict[uuid.UUID, list[ReportMessage]], start: date, end: date, tz: ZoneInfo
 ) -> list[WeekRow]:
     blocks = period_weeks(start, end)
+    starts = [first for first, _ in blocks]
     questions = [0] * len(blocks)
     costs = [0.0] * len(blocks)
     convs: list[set[uuid.UUID]] = [set() for _ in blocks]
     for conv_id, msgs in grouped.items():
         for msg in msgs:
-            days = (msg.created_at.astimezone(tz).date() - start).days
-            idx = min(max(days, 0) // 7, len(blocks) - 1)
+            day = msg.created_at.astimezone(tz).date()
+            idx = max(bisect_right(starts, day) - 1, 0)
             convs[idx].add(conv_id)
             costs[idx] += msg.cost_usd
             questions[idx] += msg.is_question
@@ -282,6 +290,8 @@ def aggregate_report(
     totals = ReportTotals(
         questions=total_questions,
         conversations=len(rows),
+        tickets=len({row.ticket_number for row in rows if row.ticket_number}),
+        conversations_without_ticket=sum(1 for row in rows if not row.ticket_number),
         analysts=len(analysts),
         messages=sum(row.messages for row in rows),
         cost_usd=_money(total_cost),
