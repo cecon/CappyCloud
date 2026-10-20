@@ -163,3 +163,10 @@ async def test_image_kind_can_be_detected_by_extension_when_mime_is_missing() ->
     assert attachment.processing_status == "described"
     assert attachment.vision_description is not None
     assert "imagem processada" in attachment.vision_description
+
+
+def test_config_text_files_are_accepted_as_text_artifacts() -> None:
+    from app.application.use_cases.artifact_processing import detect_artifact_kind
+
+    for name in ("nfse_3505708.ini", "nfse_3505708.cfg", "app.conf", "query.sql"):
+        assert detect_artifact_kind(name, "") == "text"

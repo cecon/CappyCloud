@@ -139,10 +139,25 @@ const ALLOWED_ATTACHMENT_EXT = new Set([
   '.yaml',
   '.yml',
   '.csv',
+  '.tsv',
   '.xml',
+  '.ini',
+  '.cfg',
+  '.conf',
+  '.properties',
+  '.toml',
+  '.sql',
   '.pdf',
   '.docx',
 ])
+const ATTACHMENT_ACCEPT = [
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/gif',
+  ...ALLOWED_ATTACHMENT_EXT,
+].join(',')
 const MAX_IMAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024
 const MAX_ARTIFACT_ATTACHMENT_BYTES = 50 * 1024 * 1024
 const IMAGE_ONLY_PROMPT =
@@ -2549,7 +2564,7 @@ function EmptyState({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,.txt,.md,.markdown,.log,.json,.yaml,.yml,.csv,.xml,.pdf,.docx"
+              accept={ATTACHMENT_ACCEPT}
               multiple
               style={{ display: 'none' }}
               onChange={(e) => {
@@ -3420,7 +3435,7 @@ function ActiveChat({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,.txt,.md,.markdown,.log,.json,.yaml,.yml,.csv,.xml,.pdf,.docx"
+            accept={ATTACHMENT_ACCEPT}
             multiple
             style={{ display: 'none' }}
             onChange={(e) => {
