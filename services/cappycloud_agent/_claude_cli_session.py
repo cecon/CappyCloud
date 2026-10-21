@@ -68,6 +68,7 @@ class ClaudeCliSession:
         model: str,
         working_directory: str,
         permission_mode: str = "bypass_permissions",
+        tool_context: dict | None = None,
         internal_token: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
@@ -76,6 +77,7 @@ class ClaudeCliSession:
         self._model = model
         self._wd = working_directory
         self._permission_mode = sanitize_permission_mode(permission_mode)
+        self._tool_context = tool_context
         self._headers = {
             "X-Internal-Token": internal_token
             if internal_token is not None
@@ -105,6 +107,8 @@ class ClaudeCliSession:
             "permission_mode": self._permission_mode,
             "attachments": _attachments_payload(attachments),
         }
+        if self._tool_context:
+            payload["tool_context"] = self._tool_context
         self._task = asyncio.create_task(self._run(payload))
 
     async def next_event(self) -> tuple[str, object]:

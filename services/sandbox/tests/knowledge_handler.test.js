@@ -7,7 +7,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 
-const { buildKnowledge, listFiles, parseRebuilt, readFile } = require('../knowledge_handler')
+const { buildKnowledge, listFiles, parseRebuilt, queryGraph, readFile } = require('../knowledge_handler')
 
 const posix = process.platform !== 'win32'
 
@@ -159,4 +159,28 @@ test('gerações pedidas juntas rodam uma de cada vez', { skip: !posix }, async 
     const status = JSON.parse(fs.readFileSync(path.join(reposRoot, 'workspaces', slug, 'knowledge/graphify/status.json'), 'utf8'))
     assert.equal(status.state, 'done')
   }
+})
+
+test('queryGraph roda graphify query no grafo do workspace, com orçamento limitado', async () => {
+  const { ws } = setup()
+  const calls = []
+  const exec = async (cmd, args) => {
+    calls.push([cmd, ...args])
+    return { stdout: '  NODE TSSEnvLote [TSSNFSE.prw]\n', stderr: '' }
+  }
+  // Sem grafo gerado: não chama o graphify.
+  assert.deepEqual(await queryGraph(ws, 'onde envia o lote?', 600, exec), { text: '' })
+  assert.equal(calls.length, 0)
+
+  fs.mkdirSync(path.join(ws, 'knowledge', 'graphify'), { recursive: true })
+  fs.writeFileSync(path.join(ws, 'knowledge', 'graphify', 'graph.json'), '{}')
+  assert.deepEqual(await queryGraph(ws, '  onde envia o lote?  ', '50000', exec), { text: 'NODE TSSEnvLote [TSSNFSE.prw]' })
+  const graph = path.join(ws, 'knowledge', 'graphify', 'graph.json')
+  assert.deepEqual(calls[0], ['graphify', 'query', 'onde envia o lote?', '--graph', graph, '--budget', '2000'])
+
+  await queryGraph(ws, 'x', undefined, exec)
+  assert.equal(calls[1].at(-1), '600')
+  // Pergunta vazia não consulta.
+  assert.deepEqual(await queryGraph(ws, '   ', 600, exec), { text: '' })
+  assert.equal(calls.length, 2)
 })

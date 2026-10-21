@@ -40,6 +40,14 @@ function workspaceReadOnlyRoots(worktree) {
   return dirs.length ? [...dirs, `${path.dirname(dirs[0])}/CLAUDE.md`] : []
 }
 
+const DEFAULT_MAX_TURNS = 40
+
+/** Teto de passos por pergunta (CLAUDE_MAX_TURNS); inválido ou ausente → 40. */
+function maxTurnsPerQuestion() {
+  const value = Number(process.env.CLAUDE_MAX_TURNS)
+  return Number.isInteger(value) && value > 0 ? value : DEFAULT_MAX_TURNS
+}
+
 function sdkPermissionMode(mode) {
   return PERMISSION_MODES[mode] || 'bypassPermissions'
 }
@@ -59,6 +67,8 @@ function modelAlias(modelId) {
   if (id.includes('sonnet')) return { alias: 'sonnet', known: true }
   return { alias: 'sonnet', known: id.includes('claude') }
 }
+
+const MAX_TURNS_NOTE = '\n\n_Parei aqui para não alongar demais a investigação. Se precisar, peça para eu continuar._'
 
 function isInsideWorktree(worktree, candidate) {
   const relative = path.relative(worktree, candidate)
@@ -249,7 +259,9 @@ function createEventMapper({ requestedModel = '', previousTotals = null } = {}) 
 
     if (message.type === 'result') {
       const events = []
-      const failed = message.subtype !== 'success' || message.is_error
+      // Bater no teto de passos não é erro: entrega o que já tem e registra o custo.
+      const stoppedAtLimit = message.subtype === 'error_max_turns'
+      const failed = !stoppedAtLimit && (message.subtype !== 'success' || message.is_error)
       if (failed) {
         const detail = message.result || (message.errors || []).join('; ') || message.subtype
         return [{ type: 'error', message: friendlyError(detail) }]
@@ -257,6 +269,7 @@ function createEventMapper({ requestedModel = '', previousTotals = null } = {}) 
       if (!emittedText && message.result) {
         events.push({ type: 'text', content: message.result })
       }
+      if (stoppedAtLimit) events.push({ type: 'text', content: MAX_TURNS_NOTE })
       const { promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens } = sumUsage(message.modelUsage)
       const cost = typeof message.total_cost_usd === 'number' ? message.total_cost_usd : null
       totals = {
@@ -292,6 +305,7 @@ module.exports = {
   friendlyError,
   isYesReply,
   modelAlias,
+  maxTurnsPerQuestion,
   sdkPermissionMode,
   userContentBlocks,
   planUsageFrom,

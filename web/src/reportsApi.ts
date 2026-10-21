@@ -19,6 +19,8 @@ export type ReportOptions = {
 export type ReportTotals = {
   questions: number
   conversations: number
+  tickets: number
+  conversations_without_ticket: number
   analysts: number
   messages: number
   cost_usd: number

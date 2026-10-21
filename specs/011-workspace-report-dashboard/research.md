@@ -27,7 +27,7 @@ arquitetura e documentação (Lei do Bem, Confluence/Linx Share).
 
 O slide do time Protheus define o formato: "Total de consultas" = perguntas,
 analistas, custo total e custo médio por consulta em R$, colunas por semana
-(blocos de 7 dias desde o início do período) e distribuição por tema em %.
+(segunda a domingo; até 2026-10-15 eram blocos de 7 dias desde o início do período) e distribuição por tema em %.
 
 Conferência em prod (só leitura) no mesmo período do slide (01/09 a 08/10/2026):
 o proteus tem 36 perguntas de 3 usuários e US$ 18,87 em `messages.cost_usd`; o

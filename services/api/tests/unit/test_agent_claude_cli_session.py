@@ -158,3 +158,19 @@ def test_rotulo_mostra_o_modelo_que_o_claude_cli_usa() -> None:
     assert label("anthropic/claude-opus-4.7") == "Opus"
     assert label("claude-haiku-4-5") == "Haiku"
     assert label("anthropic/claude-sonnet-5") == "Sonnet"
+
+
+async def test_contexto_das_ferramentas_vai_no_turno_so_quando_existe() -> None:
+    bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, content=_ndjson({"type": "done"}))
+
+    context = {"repos": [{"slug": "seller"}], "session_root": "/repos/sessions/abc"}
+    for session in (_session(handler, tool_context=context), _session(handler)):
+        await session.start("oi")
+        await _drain(session)
+
+    assert bodies[0]["tool_context"] == context
+    assert "tool_context" not in bodies[1]

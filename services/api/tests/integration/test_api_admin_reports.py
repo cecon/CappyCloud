@@ -98,6 +98,8 @@ async def test_report_metrics_for_one_workspace(
     assert body["totals"] == {
         "questions": 4,
         "conversations": 3,
+        "tickets": 1,
+        "conversations_without_ticket": 0,
         "analysts": 2,
         "messages": 8,
         "cost_usd": 3.75,
@@ -111,8 +113,9 @@ async def test_report_metrics_for_one_workspace(
         ("bruno", 1, 2.0),
     ]
     assert [(w["label"], w["questions"], w["cost_usd"]) for w in body["weeks"]] == [
-        ("01-07/09", 3, 3.25),
-        ("08-14/09", 1, 0.5),
+        ("01-06/09", 3, 3.25),
+        ("07-13/09", 1, 0.5),
+        ("14/09", 0, 0.0),
     ]
     assert [(t["key"], t["questions"], t["share"]) for t in body["themes"]] == [
         ("nfse-retencoes", 2, 0.5),
