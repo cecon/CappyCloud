@@ -1,6 +1,6 @@
 """Persistência de tokens/custo de uma AgentTask.
 
-Extraído de ``_task_runner._persist_usage`` para manter o runner abaixo de
+Extraído do ``_task_runner`` para manter o runner abaixo de
 300 linhas. Lookup do pricing em ``ai_models`` + UPDATE em ``agent_tasks``.
 """
 
@@ -105,60 +105,48 @@ async def _refresh_openrouter_prices_for_configured_models(
     return updated
 
 
+def optional_tokens(value: Any) -> int | None:
+    """Tokens de cache do ``done``; ``None`` quando o runtime não informou."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        return None
+    return int(value)
+
+
+def reported_cost(value: Any) -> float | None:
+    """Custo que o runtime já calculou (Claude CLI); ``None`` quando não veio."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        return None
+    return round(float(value), 6)
+
+
 async def persist_usage(
     pool: asyncpg.Pool | None,
     task_id: str,
     model_used: str,
     prompt_tokens: int,
     completion_tokens: int,
+    *,
+    cache_read_tokens: int | None = None,
+    cache_write_tokens: int | None = None,
+    cost_usd: float | None = None,
 ) -> None:
-    """Calcula custo via lookup em ``ai_models`` e grava em ``agent_tasks``.
+    """Grava tokens/custo do turno em ``agent_tasks``.
 
-    Quando o ``model_used`` não estiver no catálogo, gravamos os tokens com
-    ``cost_usd=0`` e logamos um aviso para que o admin sincronize via
+    ``prompt_tokens`` inclui leitura e gravação de cache; as duas parcelas vão
+    em colunas próprias quando o runtime as informa (Claude CLI). Se o runtime
+    mandou ``cost_usd`` (Claude CLI, que precifica cada tipo de token), ele é
+    gravado como veio. Senão, o custo sai do lookup em ``ai_models``; quando o
+    ``model_used`` não estiver no catálogo, gravamos ``cost_usd=0`` e logamos
+    um aviso para que o admin sincronize via
     ``POST /api/ai-models/sync-from-openrouter``.
     """
     if pool is None:
         return
     try:
         async with pool.acquire() as conn:
-            try:
-                updated = await _refresh_openrouter_prices_for_configured_models(conn)
-                if updated:
-                    log.info(
-                        "[TaskRunner %s] preços OpenRouter atualizados para %d modelos",
-                        task_id[:8],
-                        updated,
-                    )
-            except Exception as exc:  # noqa: BLE001
-                log.warning(
-                    "[TaskRunner %s] falha ao atualizar preços OpenRouter: %s",
-                    task_id[:8],
-                    exc,
-                )
-
-            row = await conn.fetchrow(
-                """
-                SELECT input_cost_per_1m_usd, output_cost_per_1m_usd
-                FROM ai_models
-                WHERE model_id = $1 AND active = TRUE
-                LIMIT 1
-                """,
-                model_used,
-            )
-            input_cost = float(row["input_cost_per_1m_usd"] or 0) if row else 0.0
-            output_cost = float(row["output_cost_per_1m_usd"] or 0) if row else 0.0
-            cost_usd = round(
-                (prompt_tokens * input_cost + completion_tokens * output_cost)
-                / 1_000_000.0,
-                6,
-            )
-            if not row:
-                log.warning(
-                    "[TaskRunner %s] modelo '%s' não consta de ai_models — "
-                    "custo=0. Faça sync OpenRouter.",
-                    task_id[:8],
-                    model_used,
+            if cost_usd is None:
+                cost_usd = await _cost_from_catalog(
+                    conn, task_id, model_used, prompt_tokens, completion_tokens
                 )
             await conn.execute(
                 """
@@ -167,14 +155,65 @@ async def persist_usage(
                     prompt_tokens=$2,
                     completion_tokens=$3,
                     cost_usd=$4,
+                    cache_read_tokens=$5,
+                    cache_write_tokens=$6,
                     last_event_at=NOW()
-                WHERE id=$5::uuid
+                WHERE id=$7::uuid
                 """,
                 model_used,
                 prompt_tokens,
                 completion_tokens,
                 cost_usd,
+                cache_read_tokens,
+                cache_write_tokens,
                 task_id,
             )
     except Exception as exc:
         log.error("[TaskRunner %s] persist_usage failed: %s", task_id[:8], exc)
+
+
+async def _cost_from_catalog(
+    conn: asyncpg.Connection,
+    task_id: str,
+    model_used: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+) -> float:
+    try:
+        updated = await _refresh_openrouter_prices_for_configured_models(conn)
+        if updated:
+            log.info(
+                "[TaskRunner %s] preços OpenRouter atualizados para %d modelos",
+                task_id[:8],
+                updated,
+            )
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "[TaskRunner %s] falha ao atualizar preços OpenRouter: %s",
+            task_id[:8],
+            exc,
+        )
+
+    row = await conn.fetchrow(
+        """
+        SELECT input_cost_per_1m_usd, output_cost_per_1m_usd
+        FROM ai_models
+        WHERE model_id = $1 AND active = TRUE
+        LIMIT 1
+        """,
+        model_used,
+    )
+    if not row:
+        log.warning(
+            "[TaskRunner %s] modelo '%s' não consta de ai_models — "
+            "custo=0. Faça sync OpenRouter.",
+            task_id[:8],
+            model_used,
+        )
+        return 0.0
+    input_cost = float(row["input_cost_per_1m_usd"] or 0)
+    output_cost = float(row["output_cost_per_1m_usd"] or 0)
+    return round(
+        (prompt_tokens * input_cost + completion_tokens * output_cost) / 1_000_000.0,
+        6,
+    )

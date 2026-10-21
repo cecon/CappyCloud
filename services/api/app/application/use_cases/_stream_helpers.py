@@ -13,6 +13,13 @@ from app.application.use_cases.chat_command_sanitization import sanitize_command
 from app.domain.value_objects import validate_execution_profile, validate_permission_mode
 
 
+def optional_tokens(value: object) -> int | None:
+    """Tokens de cache do evento ``done``; ``None`` quando o runtime não informou."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        return None
+    return int(value)
+
+
 async def compute_cost(messages: MessageRepository, usage: dict) -> float:
     """Calcula custo USD via lookup no catálogo ``ai_models``.
 
