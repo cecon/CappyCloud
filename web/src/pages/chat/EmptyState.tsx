@@ -12,6 +12,7 @@ import { TicketNumberField } from '../../components/chat/TicketNumberField'
 import styles from '../../components/chat.module.css'
 import { ExecutionProfileControl, PermissionModeControl } from './AgentControls'
 import { isSendableTrayItem } from './attachments'
+import { ATTACHMENT_ACCEPT } from './constants'
 import { buildProjectQuickActions } from './quickActions'
 import { QuickActionCard } from './QuickActionCard'
 import { WorkspacePicker } from './WorkspacePicker'
@@ -177,7 +178,7 @@ export function EmptyState({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,.txt,.md,.markdown,.log,.json,.yaml,.yml,.csv,.xml,.pdf,.docx"
+              accept={ATTACHMENT_ACCEPT}
               multiple
               style={{ display: 'none' }}
               onChange={(e) => {

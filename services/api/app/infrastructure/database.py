@@ -10,7 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.infrastructure.config import get_settings
 
 settings = get_settings()
-engine = create_async_engine(settings.database_url, echo=settings.debug)
+# pre_ping testa a conexão antes de usar: a rede do Swarm derruba conexões
+# ociosas sem avisar, e sem isso a primeira consulta depois de um tempo parado falha.
+engine = create_async_engine(
+    settings.database_url,
+    echo=settings.debug,
+    pool_pre_ping=True,
+    pool_recycle=1800,
+)
 async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 # Alembic .ini is at services/api/alembic.ini (two levels up from this file)

@@ -5,6 +5,7 @@ import styles from '../../components/chat.module.css'
 import type { ActiveChatProps } from './ActiveChat.types'
 import { ExecutionProfileControl, PermissionModeControl } from './AgentControls'
 import { isSendableTrayItem } from './attachments'
+import { ATTACHMENT_ACCEPT } from './constants'
 import type { SlashCommandsState } from './useSlashCommands'
 import { UsagePills } from './UsagePills'
 
@@ -60,7 +61,7 @@ export function ChatInputBar({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,.txt,.md,.markdown,.log,.json,.yaml,.yml,.csv,.xml,.pdf,.docx"
+            accept={ATTACHMENT_ACCEPT}
             multiple
             style={{ display: 'none' }}
             onChange={(e) => {

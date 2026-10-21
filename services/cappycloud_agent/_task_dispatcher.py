@@ -8,6 +8,7 @@ import uuid
 
 import asyncpg
 
+from ._db_pool import create_pool, retry_read
 from ._environment_manager import EnvironmentManager
 from ._orphan_recovery import reconnect_orphaned_tasks
 from ._session_store import SessionStore
@@ -42,7 +43,7 @@ class TaskDispatcher:
 
     async def start(self) -> None:
         """Conecta ao DB e reconecta tasks órfãs de um restart anterior."""
-        self._pool = await asyncpg.create_pool(self._db_url, min_size=1, max_size=5)
+        self._pool = await create_pool(self._db_url, min_size=1, max_size=5)
         await self._reconnect_orphaned_tasks()
 
     async def stop(self) -> None:
@@ -122,17 +123,20 @@ class TaskDispatcher:
 
     async def get_active_task_id(self, conversation_id: str) -> str | None:
         """Retorna o task_id da task running/paused para uma conversa."""
-        if not self._pool:
+        pool = self._pool
+        if not pool:
             return None
-        row = await self._pool.fetchrow(
-            """
-            SELECT id FROM agent_tasks
-            WHERE conversation_id = $1::uuid
-              AND status IN ('pending','running','paused')
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            conversation_id,
+        row = await retry_read(
+            lambda: pool.fetchrow(
+                """
+                SELECT id FROM agent_tasks
+                WHERE conversation_id = $1::uuid
+                  AND status IN ('pending','running','paused')
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                conversation_id,
+            )
         )
         return str(row["id"]) if row else None
 

@@ -87,7 +87,7 @@ export function ModelPicker({
     const rect = trigger.getBoundingClientRect()
     // Compacto: mesma largura que .popoverCompact força no CSS (senão a lista vaza da tela).
     const popoverWidth = compact
-      ? Math.min(240, window.innerWidth - 16)
+      ? Math.min(280, window.innerWidth - 16)
       : Math.min(440, Math.max(rect.width, 320), window.innerWidth - 16)
     const left = Math.min(
       Math.max(8, rect.left),

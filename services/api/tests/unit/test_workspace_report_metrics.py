@@ -134,28 +134,36 @@ async def test_analysts_table_uses_email_and_part_before_at(
     assert analysts[0].avg_cost_per_question == 0.75
 
 
-async def test_weeks_are_seven_day_blocks_from_period_start(
+async def test_weeks_are_calendar_weeks_clipped_to_the_period(
     repo: InMemoryWorkspaceReportRepository,
 ) -> None:
+    # 01/09/2026 é terça: a 1ª semana vai até o domingo 06/09 e a última é cortada no fim.
     weeks = (await _build(repo, end=date(2026, 9, 16))).report.weeks
     assert [(w.label, w.start, w.end, w.questions, w.cost_usd) for w in weeks] == [
-        ("01-07/09", date(2026, 9, 1), date(2026, 9, 7), 2, 3.0),
-        ("08-14/09", date(2026, 9, 8), date(2026, 9, 14), 1, 0.5),
-        ("15-16/09", date(2026, 9, 15), date(2026, 9, 16), 0, 0.0),
+        ("01-06/09", date(2026, 9, 1), date(2026, 9, 6), 1, 1.0),
+        ("07-13/09", date(2026, 9, 7), date(2026, 9, 13), 2, 2.5),
+        ("14-16/09", date(2026, 9, 14), date(2026, 9, 16), 0, 0.0),
     ]
 
 
 def test_week_labels_and_blocks() -> None:
-    assert week_label(date(2026, 9, 29), date(2026, 10, 5)) == "29/09-05/10"
-    assert week_label(date(2026, 10, 6), date(2026, 10, 8)) == "06-08/10"
-    blocks = period_weeks(date(2026, 9, 1), date(2026, 10, 8))
-    assert len(blocks) == 6
-    assert blocks[-1] == (date(2026, 10, 6), date(2026, 10, 8))
-    assert period_weeks(date(2026, 9, 1), date(2026, 9, 7)) == [
-        (date(2026, 9, 1), date(2026, 9, 7))
+    assert week_label(date(2026, 9, 28), date(2026, 10, 4)) == "28/09-04/10"
+    assert week_label(date(2026, 10, 12), date(2026, 10, 15)) == "12-15/10"
+    assert week_label(date(2026, 10, 14), date(2026, 10, 14)) == "14/10"
+    blocks = period_weeks(date(2026, 9, 16), date(2026, 10, 15))
+    assert blocks == [
+        (date(2026, 9, 16), date(2026, 9, 20)),
+        (date(2026, 9, 21), date(2026, 9, 27)),
+        (date(2026, 9, 28), date(2026, 10, 4)),
+        (date(2026, 10, 5), date(2026, 10, 11)),
+        (date(2026, 10, 12), date(2026, 10, 15)),
     ]
-    assert period_weeks(date(2026, 9, 1), date(2026, 9, 1)) == [
-        (date(2026, 9, 1), date(2026, 9, 1))
+    assert period_weeks(date(2026, 9, 7), date(2026, 9, 13)) == [
+        (date(2026, 9, 7), date(2026, 9, 13))
+    ]
+    assert period_weeks(date(2026, 9, 6), date(2026, 9, 7)) == [
+        (date(2026, 9, 6), date(2026, 9, 6)),
+        (date(2026, 9, 7), date(2026, 9, 7)),
     ]
 
 
@@ -309,3 +317,23 @@ async def test_theme_update_requires_super_admin_and_valid_rules(
         False,
         "erros-rejeicoes",
     )
+
+
+def test_tickets_count_distinct_ticket_numbers() -> None:
+    convs = [
+        ReportConversation(uuid.uuid4(), PROTEUS.id, "ana@linx.com", "a", "4242"),
+        ReportConversation(uuid.uuid4(), PROTEUS.id, "bruno@linx.com", "b", "4242"),
+        ReportConversation(uuid.uuid4(), PROTEUS.id, "ana@linx.com", "c", "777"),
+        ReportConversation(uuid.uuid4(), PROTEUS.id, "ana@linx.com", "d"),
+        # Sem mensagem no período: não entra.
+        ReportConversation(uuid.uuid4(), PROTEUS.id, "ana@linx.com", "e", "999"),
+    ]
+    messages = [_ask(conv, _local(2026, 9, 2, 10)) for conv in convs[:4]]
+    report = aggregate_report(
+        workspaces=[PROTEUS],
+        conversations=convs,
+        messages=messages,
+        start=date(2026, 9, 1),
+        end=date(2026, 9, 8),
+    )
+    assert (report.totals.tickets, report.totals.conversations_without_ticket) == (2, 1)

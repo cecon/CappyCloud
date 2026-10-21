@@ -20,6 +20,7 @@ from typing import Optional
 import asyncpg
 import redis.asyncio as aioredis
 
+from ._db_pool import create_pool
 from ._workspace_paths import workspace_root_of
 
 log = logging.getLogger(__name__)
@@ -134,7 +135,7 @@ class SessionStore:
 
     async def connect(self) -> None:
         self._redis = aioredis.from_url(self._redis_url, decode_responses=True)
-        self._pool = await asyncpg.create_pool(self._db_url, min_size=1, max_size=5)
+        self._pool = await create_pool(self._db_url, min_size=1, max_size=5)
         async with self._pool.acquire() as conn:
             await conn.execute(_SCHEMA)
             await conn.execute(_MIGRATE)

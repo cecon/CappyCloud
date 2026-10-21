@@ -10,7 +10,8 @@
 #      GitHub (GITHUB_TOKEN) — cada um só se a variável estiver definida.
 #   2. Clona repos listados em WORKSPACE_REPOS se ainda não existirem
 #      no volume; se já existirem, faz git fetch para atualizar.
-#   3. Aplica patch no context-window do openclaude para modelos OpenRouter.
+#   3. Aplica patches no openclaude (Azure AI Foundry v1; modelo, provider e
+#      usage por request no gRPC).
 #   4. Sobe session_server.js (HTTP :8080) em background.
 #   5. Executa o servidor gRPC do openclaude (processo principal).
 # ──────────────────────────────────────────────────────────────
@@ -20,6 +21,8 @@ OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}"
 # OpenClaude initializes its provider registry before CappyCloud injects
 # the per-request provider credentials. Keep startup independent from
 # OPENGATEWAY_API_KEY; real requests replace this with ChatRequest.provider_api_key.
+# CLAUDE_CODE_USE_OPENAI=1 + OPENAI_BASE_URL also count as a concrete provider
+# selection upstream, so OpenClaude never falls back to the Opengateway profile.
 OPENAI_API_KEY="${OPENAI_API_KEY:-cappycloud-runtime-bootstrap-key}"
 OPENAI_MODEL="${OPENAI_MODEL:-anthropic/claude-3.5-sonnet}"
 CLAUDE_CODE_USE_OPENAI="${CLAUDE_CODE_USE_OPENAI:-1}"
@@ -47,51 +50,6 @@ fs.writeFileSync(file, JSON.stringify(current, null, 2), 'utf8')
 JSEOF
 
 echo "Provider: OpenRouter  model=${OPENAI_MODEL}"
-
-# Patch openclaude startup provider fallback for headless CappyCloud.
-# OpenClaude can default a first-run profile to Gitlawb Opengateway, which
-# requires OPENGATEWAY_API_KEY before CappyCloud can inject per-request provider
-# credentials. The sandbox is an OpenAI-compatible runtime; use the generic
-# custom provider and keep the real provider credentials request-scoped.
-_PROVIDER_PROFILE_TS=/openclaude/src/utils/providerProfile.ts
-if [ -f "$_PROVIDER_PROFILE_TS" ]; then
-    node - "$_PROVIDER_PROFILE_TS" << 'PATCH_EOF'
-const fs = require('fs');
-const file = process.argv[2];
-let c = fs.readFileSync(file, 'utf8');
-if (c.includes("CappyCloud default startup provider")) {
-  console.log('[env_init] startup provider patch: already present.');
-  process.exit(0);
-}
-const pattern = /  if \(!persisted\) \{\r?\n    \/\/ No saved profile[^\r\n]*\r?\n    const env = buildCompatibilityProcessEnv\(\{\r?\n      processEnv,\r?\n      compatibilityMode: 'openai',\r?\n      profileEnv: \{[\s\S]*?    env\[DEFAULT_STARTUP_PROVIDER_ENV_VAR\] = 'gitlawb-opengateway'\r?\n    return env\r?\n  \}/;
-const replacement = `  if (!persisted) {
-    // CappyCloud default startup provider: generic OpenAI-compatible runtime.
-    const env = buildCompatibilityProcessEnv({
-      processEnv,
-      compatibilityMode: 'openai',
-      profileEnv: {
-        OPENAI_BASE_URL:
-          processEnv.OPENAI_BASE_URL ??
-          processEnv.OPENAI_API_BASE ??
-          getRouteDefaultBaseUrl('custom') ??
-          'https://openrouter.ai/api/v1',
-        OPENAI_MODEL:
-          processEnv.OPENAI_MODEL ??
-          getRouteDefaultModel('custom') ??
-          'anthropic/claude-3.5-sonnet',
-      },
-    })
-    env[DEFAULT_STARTUP_PROVIDER_ENV_VAR] = 'custom'
-    return env
-  }`;
-if (!pattern.test(c)) {
-  console.log('[env_init] startup provider patch: needle not found, skipping.');
-  process.exit(0);
-}
-fs.writeFileSync(file, c.replace(pattern, replacement));
-console.log('[env_init] startup provider patch applied.');
-PATCH_EOF
-fi
 
 # ── Git global identity ───────────────────────────────────────
 git config --global user.email "${GIT_USER_EMAIL:-agent@cappycloud.local}"
@@ -187,101 +145,17 @@ clone_or_update_repo() {
 # Repos são clonados via watchdog (DB → /repos/clone). Sandbox inicia sem pre-clone.
 echo "Sandbox ready — repos will be cloned via watchdog (sandbox_sync_queue)."
 
-# ── Patch openclaude: context-window para modelos OpenRouter ─
-_TS=/openclaude/src/utils/model/openaiContextWindows.ts
-if [ -f "$_TS" ]; then
-    node - "$_TS" << 'PATCH_EOF'
-const fs = require('fs');
-const file = process.argv[2];
-let c = fs.readFileSync(file, 'utf8');
-const needle = "  // Groq (fast inference)\n  'llama-3.3-70b-versatile'";
-const insert = [
-  "  // OpenRouter-namespaced models",
-  "  'openai/gpt-4o':                128_000,",
-  "  'openai/gpt-4o-mini':           128_000,",
-  "  'openai/gpt-4.1':             1_047_576,",
-  "  'openai/gpt-4.1-mini':        1_047_576,",
-  "  'openai/gpt-oss-120b':          128_000,",
-  "  'openai/gpt-oss-120b:free':     128_000,",
-  "  'openai/o1':                    200_000,",
-  "  'openai/o3-mini':               200_000,",
-  "  'anthropic/claude-3-haiku':     200_000,",
-  "  'anthropic/claude-3-sonnet':    200_000,",
-  "  'anthropic/claude-3.5-sonnet':  200_000,",
-  "  'anthropic/claude-3-opus':      200_000,",
-  "  'deepseek/deepseek-v3':         65_536,",
-  "  'deepseek/deepseek-v3-0324':    65_536,",
-  "  'deepseek/deepseek-v3.2':       65_536,",
-  "  'deepseek/deepseek-chat':       65_536,",
-  "  'deepseek/deepseek-r1':         65_536,",
-  "",
-].join('\n');
-if (c.includes('openai/gpt-4o-mini')) {
-  console.log('[env_init] context window patch: already present.');
-  process.exit(0);
-}
-if (!c.includes(needle)) {
-  console.log('[env_init] context window patch: needle not found, skipping.');
-  process.exit(0);
-}
-fs.writeFileSync(file, c.replace(needle, insert + needle));
-console.log('[env_init] openclaude context window patch applied.');
-PATCH_EOF
-fi
-
-# ── Patch openclaude OpenAI shim: usage real em stream ────────
-# Alguns gateways OpenAI-compatible (incluindo OpenRouter em rotas com tools)
-# enviam o bloco `usage` em chunk separado do `finish_reason`. O QueryEngine só
-# acumula usage recebido antes de `message_stop`; portanto guardamos o último
-# usage real recebido no stream e emitimos um `message_delta` final antes do stop
-# quando o fluxo normal não o emitiu.
-_OPENAI_SHIM_TS=/openclaude/src/services/api/openaiShim.ts
-if [ -f "$_OPENAI_SHIM_TS" ]; then
-    node - "$_OPENAI_SHIM_TS" << 'PATCH_EOF'
-const fs = require('fs');
-const file = process.argv[2];
-let c = fs.readFileSync(file, 'utf8');
-if (c.includes('CappyCloud final stream usage')) {
-  console.log('[env_init] OpenAI shim usage patch: already present.');
-  process.exit(0);
-}
-const stateNeedle = "  let hasEmittedFinalUsage = false\n  let hasProcessedFinishReason = false";
-const stateReplacement = "  let hasEmittedFinalUsage = false\n  let pendingFinalUsage: Partial<AnthropicUsage> | undefined\n  let hasProcessedFinishReason = false";
-if (c.includes(stateNeedle)) {
-  c = c.replace(stateNeedle, stateReplacement);
-} else {
-  console.log('[env_init] OpenAI shim usage patch: state needle not found, skipping.');
-  process.exit(0);
-}
-const chunkNeedle = "      const chunkUsage = convertChunkUsage(chunk.usage)\n\n      for (const choice of chunk.choices ?? []) {";
-const chunkReplacement = "      const chunkUsage = convertChunkUsage(chunk.usage)\n      if (chunkUsage) {\n        // CappyCloud final stream usage: preserve real provider usage even when it arrives in a standalone chunk.\n        pendingFinalUsage = chunkUsage\n      }\n\n      for (const choice of chunk.choices ?? []) {";
-if (c.includes(chunkNeedle)) {
-  c = c.replace(chunkNeedle, chunkReplacement);
-} else {
-  console.log('[env_init] OpenAI shim usage patch: chunk needle not found, skipping.');
-  process.exit(0);
-}
-const stopNeedle = "  yield { type: 'message_stop' }";
-const stopReplacement = "  if (!hasEmittedFinalUsage && pendingFinalUsage) {\n    yield {\n      type: 'message_delta',\n      delta: { stop_reason: lastStopReason ?? 'end_turn', stop_sequence: null },\n      usage: pendingFinalUsage,\n    }\n    hasEmittedFinalUsage = true\n  }\n\n  yield { type: 'message_stop' }";
-if (c.includes(stopNeedle)) {
-  c = c.replace(stopNeedle, stopReplacement);
-} else {
-  console.log('[env_init] OpenAI shim usage patch: stop needle not found, skipping.');
-  process.exit(0);
-}
-fs.writeFileSync(file, c);
-console.log('[env_init] OpenAI shim usage patch applied.');
-PATCH_EOF
-fi
-
 # ── Patch openclaude OpenAI shim: Azure AI Foundry OpenAI v1 ─
 # O endpoint novo do Azure AI Foundry (`...services.ai.azure.com/openai/v1`)
 # segue o cliente OpenAI oficial: base_url=/openai/v1 e model=deployment.
-# O openclaude upstream também suporta Azure antigo, mas transforma qualquer
-# host Azure em `/openai/deployments/{model}/chat/completions?api-version=...`.
-# Para o v1, preservamos `/openai/v1/chat/completions` e auth Bearer.
-if [ -f "$_OPENAI_SHIM_TS" ]; then
-    node - "$_OPENAI_SHIM_TS" << 'PATCH_EOF'
+# O openclaude upstream (até 0.32.0) transforma qualquer host Azure em
+# `/openai/deployments/{model}/chat/completions?api-version=...` com header
+# `api-key`, o que não serve para os deployments não-OpenAI do Foundry
+# (DeepSeek, Kimi...). Para o v1, preservamos `/openai/v1/chat/completions`
+# e auth Bearer.
+_OPENAI_REQUEST_EXECUTOR_TS=/openclaude/src/services/api/openaiShim/requestExecutor.ts
+if [ -f "$_OPENAI_REQUEST_EXECUTOR_TS" ]; then
+    node - "$_OPENAI_REQUEST_EXECUTOR_TS" << 'PATCH_EOF'
 const fs = require('fs');
 const file = process.argv[2];
 let c = fs.readFileSync(file, 'utf8');
@@ -289,29 +163,32 @@ if (c.includes('CappyCloud Azure AI Foundry v1')) {
   console.log('[env_init] Azure v1 shim patch: already present.');
   process.exit(0);
 }
-const azureFlagNeedle = "    let isBankr = false\n    try {";
-const azureFlagReplacement = "    let isAzureOpenAIV1 = false\n    try {\n      const { pathname } = new URL(request.baseUrl)\n      isAzureOpenAIV1 = isAzure && /\\/openai\\/v1\\/?$/i.test(pathname)\n    } catch { /* malformed URL — not Azure OpenAI v1 */ }\n\n    let isBankr = false\n    try {";
-if (c.includes(azureFlagNeedle)) {
-  c = c.replace(azureFlagNeedle, azureFlagReplacement);
-} else {
-  console.log('[env_init] Azure v1 shim patch: flag needle not found, skipping.');
-  process.exit(0);
+const steps = [
+  {
+    name: 'flag',
+    needle: "  const isAzure = isAzureStyleBaseUrl(request.baseUrl, requestProcessEnv)\n",
+    replacement: "  const isAzure = isAzureStyleBaseUrl(request.baseUrl, requestProcessEnv)\n  let isAzureOpenAIV1 = false\n  try {\n    isAzureOpenAIV1 =\n      isAzure && /\\/openai\\/v1\\/?$/i.test(new URL(request.baseUrl).pathname)\n  } catch {\n    /* malformed URL — not Azure OpenAI v1 */\n  }\n",
+  },
+  {
+    name: 'auth',
+    needle: "      } else if (isAzure) {\n        // Azure uses api-key header instead of Bearer token\n        headers['api-key'] = authValue",
+    replacement: "      } else if (isAzure && !isAzureOpenAIV1) {\n        // Azure uses api-key header instead of Bearer token for legacy deployment endpoints.\n        headers['api-key'] = authValue",
+  },
+  {
+    name: 'URL',
+    needle: "      // If base URL already contains /deployments/, use it as-is with api-version.\n",
+    replacement: "      if (/\\/openai\\/v1$/i.test(normalizedBaseUrl)) {\n        // CappyCloud Azure AI Foundry v1: OpenAI-compatible path, model is the deployment name.\n        return `${normalizedBaseUrl}/chat/completions`\n      }\n\n      // If base URL already contains /deployments/, use it as-is with api-version.\n",
+  },
+];
+// Aplica tudo ou nada: um patch parcial misturaria auth Bearer com URL legada.
+for (const step of steps) {
+  if (!c.includes(step.needle)) {
+    console.log(`[env_init] Azure v1 shim patch: ${step.name} needle not found, skipping.`);
+    process.exit(0);
+  }
 }
-const azureAuthNeedle = "      } else if (isAzure) {\n        // Azure uses api-key header instead of Bearer token\n        headers['api-key'] = authValue";
-const azureAuthReplacement = "      } else if (isAzure && !isAzureOpenAIV1) {\n        // Azure uses api-key header instead of Bearer token for legacy deployment endpoints.\n        headers['api-key'] = authValue";
-if (c.includes(azureAuthNeedle)) {
-  c = c.replace(azureAuthNeedle, azureAuthReplacement);
-} else {
-  console.log('[env_init] Azure v1 shim patch: auth needle not found, skipping.');
-  process.exit(0);
-}
-const azureUrlNeedle = "      if (isAzure) {\n        const apiVersion = process.env.AZURE_OPENAI_API_VERSION ?? '2024-12-01-preview'";
-const azureUrlReplacement = "      if (isAzure) {\n        const normalizedBaseForV1 = baseUrl.replace(/\\/+$/, '')\n        if (/\\/openai\\/v1$/i.test(normalizedBaseForV1)) {\n          // CappyCloud Azure AI Foundry v1: OpenAI-compatible path, model is the deployment name.\n          return `${normalizedBaseForV1}/chat/completions`\n        }\n        const apiVersion = process.env.AZURE_OPENAI_API_VERSION ?? '2024-12-01-preview'";
-if (c.includes(azureUrlNeedle)) {
-  c = c.replace(azureUrlNeedle, azureUrlReplacement);
-} else {
-  console.log('[env_init] Azure v1 shim patch: URL needle not found, skipping.');
-  process.exit(0);
+for (const step of steps) {
+  c = c.replace(step.needle, step.replacement);
 }
 fs.writeFileSync(file, c);
 console.log('[env_init] Azure v1 shim patch applied.');

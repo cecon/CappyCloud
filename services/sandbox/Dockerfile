@@ -51,6 +51,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
         pyyaml==6.0.2 \
         jinja2==3.1.4 \
         requests==2.32.3 \
+        httpx==0.28.1 \
         ruff==0.15.13 \
         libcst==1.8.6 \
         basedpyright==1.39.4
@@ -103,7 +104,7 @@ RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 
 # Clone and build openclaude from source
-ARG OPENCLAUDE_REF=6e30b40de00868a968bdcaa0c3d0dd915d69d357
+ARG OPENCLAUDE_REF=88baafe316d610f8f7eadcc186ecd044e718a1b9
 COPY services/sandbox/patches/grep-tool-n-alias.patch /tmp/grep-tool-n-alias.patch
 COPY services/sandbox/patches/multimodal-proto.patch /tmp/multimodal-proto.patch
 COPY services/sandbox/patches/multimodal-grpc-handler.patch /tmp/multimodal-grpc-handler.patch
@@ -114,7 +115,7 @@ COPY services/sandbox/cappycloud_grpc_diagnostics_v024.ts /tmp/cappycloud_grpc_d
 RUN sed -i 's/\r$//' /tmp/*.patch
 WORKDIR /openclaude
 RUN git init . \
-    && git remote add origin https://github.com/Gitlawb/openclaude.git \
+    && git remote add origin https://github.com/Twigpine/openclaude.git \
     && git fetch --depth=1 origin "${OPENCLAUDE_REF}" \
     && git checkout FETCH_HEAD \
     && git apply /tmp/grep-tool-n-alias.patch \
@@ -126,7 +127,7 @@ RUN git init . \
     && perl -0pi -e "s/const generator = engine\\.submitMessage\\(req\\.message\\)/let promptInput: any = req.message\\n          if (Array.isArray(req.attachments) \\&\\& req.attachments.length > 0) {\\n            const imageBlocks = req.attachments.map((att: any) => ({\\n              type: 'image',\\n              source: {\\n                type: 'base64',\\n                media_type: att.mime_type,\\n                data: Buffer.from(att.data).toString('base64'),\\n              },\\n            }))\\n            promptInput = [...imageBlocks, { type: 'text', text: req.message }]\\n          }\\n          const generator = engine.submitMessage(promptInput)/" src/grpc/server.ts \
     && perl -0pi -e "s/output: outputStr,/output: Buffer.from(outputStr, 'utf8'),/g; s/\\n            \\/\\/ Save messages for multi-turn context in subsequent requests\\n            previousMessages = \\[\\.\\.\\.engine\\.getMessages\\(\\)\\]\\n\\n            \\/\\/ Persist to session store for cross-stream resumption\\n            if \\(sessionId\\) \\{\\n              if \\(!this\\.sessions\\.has\\(sessionId\\) \\&\\& this\\.sessions\\.size >= MAX_SESSIONS\\) \\{\\n                \\/\\/ Evict oldest session \\(Map preserves insertion order\\)\\n                this\\.sessions\\.delete\\(this\\.sessions\\.keys\\(\\)\\.next\\(\\)\\.value\\)\\n              \\}\\n              this\\.sessions\\.set\\(sessionId, previousMessages\\)\\n            \\}/\\n            \\/\\/ Do not persist OpenClaude messages across streams. CappyCloud sends authorized history./" src/grpc/server.ts \
     && perl -0pi -e "s/function cappycloudPermissionDecision/function cappycloudGrpcString(value: unknown): string {\\n  return Buffer.from(String(value ?? ''), 'utf8').toString('utf8')\\n}\\n\\nfunction cappycloudPermissionDecision/" src/grpc/server.ts \
-    && perl -0pi -e "s/tool_name: tool\\.name,/tool_name: cappycloudGrpcString(tool.name),/g; s/arguments_json: JSON\\.stringify\\(input\\),/arguments_json: cappycloudGrpcString(JSON.stringify(input)),/g; s/tool_use_id: toolUseID/tool_use_id: cappycloudGrpcString(toolUseID)/g; s/prompt_id: promptId,/prompt_id: cappycloudGrpcString(promptId),/g; s/question,/question: cappycloudGrpcString(question),/g; s/text: msg\\.event\\.delta\\.text/text: cappycloudGrpcString(msg.event.delta.text)/g; s/tool_name: toolNameById\\.get\\(block\\.tool_use_id\\) \\?\\? block\\.tool_use_id,/tool_name: cappycloudGrpcString(toolNameById.get(block.tool_use_id) ?? block.tool_use_id),/g; s/tool_use_id: block\\.tool_use_id,/tool_use_id: cappycloudGrpcString(block.tool_use_id),/g; s/full_text: fullText,/full_text: cappycloudGrpcString(fullText),/g; s/message: err\\.message \\|\\| \"Internal server error\",/message: cappycloudGrpcString(err.message || \"Internal server error\"),/g" src/grpc/server.ts \
+    && perl -0pi -e "s/tool_name: tool\\.name,/tool_name: cappycloudGrpcString(tool.name),/g; s/arguments_json: JSON\\.stringify\\(input\\),/arguments_json: cappycloudGrpcString(JSON.stringify(input)),/g; s/tool_use_id: toolUseID/tool_use_id: cappycloudGrpcString(toolUseID)/g; s/prompt_id: promptId,/prompt_id: cappycloudGrpcString(promptId),/g; s/question,/question: cappycloudGrpcString(question),/g; s/text: msg\\.event\\.delta\\.text/text: cappycloudGrpcString(msg.event.delta.text)/g; s/tool_name: toolNameById\\.get\\(block\\.tool_use_id\\) \\?\\? block\\.tool_use_id,/tool_name: cappycloudGrpcString(toolNameById.get(block.tool_use_id) ?? block.tool_use_id),/g; s/tool_use_id: block\\.tool_use_id,/tool_use_id: cappycloudGrpcString(block.tool_use_id),/g; s/full_text: fullText,/full_text: cappycloudGrpcString(fullText),/g; s/message: err instanceof Error \\? err\\.message : \"Internal server error\",/message: cappycloudGrpcString(err instanceof Error ? err.message : \"Internal server error\"),/g" src/grpc/server.ts \
     && perl -0pi -e "s/type: 'CONFIRM_COMMAND'/type: 1/g; s/if \(reply\.toLowerCase\(\) === 'yes' \|\| reply\.toLowerCase\(\) === 'y'\) \{/if (['yes', 'y', 'sim', 's'].includes(reply.toLowerCase().trim())) {/g" src/grpc/server.ts \
     && sed -i 's/^detectStubLeaks()$/setImmediate(() => detectStubLeaks())/' src/entrypoints/sdk/index.ts \
     && node /tmp/patch_openclaude_grpc_v024.js \
@@ -174,6 +175,7 @@ COPY services/sandbox/confluence_handler.js /confluence_handler.js
 COPY services/sandbox/repo_handlers.js /repo_handlers.js
 COPY services/sandbox/runtime_handler.js /runtime_handler.js
 COPY services/sandbox/claude_runtime_handler.js /claude_runtime_handler.js
+COPY services/sandbox/claude_runtime_setup.js /claude_runtime_setup.js
 COPY services/sandbox/claude_runtime_mapper.js /claude_runtime_mapper.js
 COPY services/sandbox/readonly_commands.js /readonly_commands.js
 COPY services/sandbox/claude_runtime_subagents.js /claude_runtime_subagents.js
@@ -190,6 +192,11 @@ COPY services/sandbox/worktree_handlers.js /worktree_handlers.js
 COPY services/sandbox/confluence_mcp_lib.py /usr/local/bin/confluence_mcp_lib.py
 COPY services/sandbox/confluence_mcp_server.py /usr/local/bin/confluence-mcp-server
 COPY services/sandbox/webread.py /usr/local/bin/webread
+# MCP `cappy` (evidências, memória e grafo sob demanda): reaproveita os módulos
+# de busca do agente. __init__ vazio: o do pacote importa o pipeline inteiro.
+COPY services/sandbox/evidence_mcp_server.py /opt/cappy_tools/evidence_mcp_server.py
+COPY services/cappycloud_agent/_evidence_*.py services/cappycloud_agent/_knowledge_search.py services/cappycloud_agent/_workspace_paths.py /opt/cappy_tools/cappycloud_agent/
+RUN touch /opt/cappy_tools/cappycloud_agent/__init__.py
 RUN sed -i 's/\r//' /env_init.sh /session_start.sh \
     && chmod +x /env_init.sh /session_start.sh /usr/local/bin/confluence-mcp-server /usr/local/bin/webread
 

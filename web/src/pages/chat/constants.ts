@@ -27,10 +27,25 @@ export const ALLOWED_ATTACHMENT_EXT = new Set([
   '.yaml',
   '.yml',
   '.csv',
+  '.tsv',
   '.xml',
+  '.ini',
+  '.cfg',
+  '.conf',
+  '.properties',
+  '.toml',
+  '.sql',
   '.pdf',
   '.docx',
 ])
+export const ATTACHMENT_ACCEPT = [
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/gif',
+  ...ALLOWED_ATTACHMENT_EXT,
+].join(',')
 export const MAX_IMAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024
 export const MAX_ARTIFACT_ATTACHMENT_BYTES = 50 * 1024 * 1024
 export const IMAGE_ONLY_PROMPT =

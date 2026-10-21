@@ -4,7 +4,7 @@
  * e PDF), inclusive com o app em tema escuro.
  */
 import type { ComponentType, ReactNode } from 'react'
-import { CircleDollarSign, Database, MessageSquare, Users } from 'lucide-react'
+import { CircleDollarSign, Database, MessageSquare, Ticket, Users } from 'lucide-react'
 import {
   type ReportWeek,
   type WorkspaceReport,
@@ -19,6 +19,7 @@ const NAVY = '#0f2a44'
 const TILES = {
   navy: { bg: NAVY, fg: '#ffffff', muted: 'rgba(255,255,255,0.75)' },
   cyan: { bg: '#18c5e6', fg: NAVY, muted: 'rgba(15,42,68,0.8)' },
+  green: { bg: '#10b981', fg: NAVY, muted: 'rgba(15,42,68,0.8)' },
   purple: { bg: '#9b5cf6', fg: '#ffffff', muted: 'rgba(255,255,255,0.8)' },
   orange: { bg: '#f97316', fg: '#ffffff', muted: 'rgba(255,255,255,0.85)' },
 } as const
@@ -141,6 +142,12 @@ function ThemeBars({ report }: { report: WorkspaceReport }) {
   )
 }
 
+function ticketsHint({ conversations_without_ticket: missing }: WorkspaceReport['totals']): string {
+  const base = 'Chamados distintos atendidos com a Cappy no período.'
+  if (missing === 0) return base
+  return `${base} ${formatCount(missing)} ${missing === 1 ? 'conversa' : 'conversas'} sem número de chamado.`
+}
+
 function analystsHint(report: WorkspaceReport): string {
   const names = report.analysts.map((a) => a.label)
   if (names.length === 0) return 'Nenhum analista no período.'
@@ -171,9 +178,12 @@ export function ExecutiveSummary({ report }: { report: WorkspaceReport }) {
         </div>
       </header>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-3">
         <Tile tone="navy" icon={MessageSquare} label="Total de consultas" value={formatCount(totals.questions)}
           hint={`Perguntas realizadas à Cappy no período, em ${formatCount(totals.conversations)} conversas.`} />
+        {totals.tickets > 0 && (
+          <Tile tone="green" icon={Ticket} label="Tickets" value={formatCount(totals.tickets)} hint={ticketsHint(totals)} />
+        )}
         <Tile tone="cyan" icon={Users} label="Analistas" value={formatCount(totals.analysts)} hint={analystsHint(report)} />
         <Tile tone="purple" icon={Database} label="Custo total" value={formatMoney(totals.cost_usd, brl)}
           hint={`Custo das consultas no período pela tabela da API da Claude${brl ? ` (${formatUsd(totals.cost_usd)})` : ''}.`} />
@@ -195,7 +205,7 @@ export function ExecutiveSummary({ report }: { report: WorkspaceReport }) {
         {brl
           ? `Convertido em R$ pela ${brl.source} de ${formatDate(brl.quoted_on)}: R$ ${brl.rate.toLocaleString('pt-BR', { minimumFractionDigits: 4 })} por US$ 1.`
           : 'Sem cotação do Banco Central no momento: valores em US$.'}{' '}
-        Datas no fuso {filters.timezone}; semanas de 7 dias a partir do início do período.
+        Datas no fuso {filters.timezone}; semanas de segunda a domingo.
       </p>
     </section>
   )

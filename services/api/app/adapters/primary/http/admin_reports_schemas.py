@@ -46,6 +46,8 @@ class BrlRateOut(_Out):
 class ReportTotalsOut(_Out):
     questions: int
     conversations: int
+    tickets: int
+    conversations_without_ticket: int
     analysts: int
     messages: int
     cost_usd: float

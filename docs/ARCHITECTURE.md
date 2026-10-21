@@ -83,10 +83,9 @@ O agente openclaude roda **dentro** de um sandbox Docker e se comunica via gRPC.
 O sandbox também expõe um `session_server` HTTP interno usado para criar
 sessões e worktrees.
 
-Para a feature `008-openclaude-current-upgrade`, o sandbox mira OpenClaude
-`0.28.0` no commit `6e30b40de00868a968bdcaa0c3d0dd915d69d357`. A validação
-é local; rollout de produção fica fora do escopo da implementação e deve
-seguir o runbook em `docs/how-to/openclaude-v027-rollout.md`.
+O sandbox usa OpenClaude `0.32.0` (`Twigpine/openclaude`, commit
+`88baafe316d610f8f7eadcc186ecd044e718a1b9`). O impacto da versão e como
+atualizar estão em `docs/how-to/agent-runtime-context.md`.
 
 ```
 Usuário envia mensagem

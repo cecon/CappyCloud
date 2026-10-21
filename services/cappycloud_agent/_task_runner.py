@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 import asyncpg
 
 from ._agent_session import AgentSession
+from ._db_pool import create_pool
 from ._grpc_helpers import PendingAction
 from ._memory_capture import MemoryCapture, schedule_turn_memory
 from ._task_final_message import persist_final_message_if_missing
@@ -65,7 +66,7 @@ class TaskRunner:
 
     async def start(self) -> None:
         """Inicia a task de execução em background."""
-        self._pool = await asyncpg.create_pool(self._db_url, min_size=1, max_size=3)
+        self._pool = await create_pool(self._db_url, min_size=1, max_size=3)
         self._task = asyncio.create_task(
             self._run(), name=f"runner-{self._task_id[:8]}"
         )

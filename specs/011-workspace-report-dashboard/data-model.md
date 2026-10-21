@@ -34,13 +34,15 @@ Migration: adiciona as colunas e faz
 ## Relatório (saída)
 
 - `brl`: `rate`, `quoted_on`, `source` (PTAX venda) ou `null`.
-- `totals`: `questions` (consultas), `conversations`, `analysts`, `messages`,
+- `totals`: `questions` (consultas), `conversations`, `tickets` (chamados
+  distintos), `conversations_without_ticket`, `analysts`, `messages`,
   `cost_usd`, `avg_cost_per_question`, `avg_cost_per_conversation`,
   `avg_cost_per_analyst`.
 - `analysts[]`: `email`, `label` (parte antes do @), `questions`,
   `conversations`, `cost_usd`, `avg_cost_per_question`.
 - `weeks[]`: `start`, `end`, `label` (`01-07/09`), `questions`,
-  `conversations`, `cost_usd` — blocos de 7 dias a partir de `start`.
+  `conversations`, `cost_usd` — semanas de segunda a domingo recortadas ao
+  período (`14/10` quando é um dia só).
 - `themes[]`: `key`, `label`, `questions`, `conversations`, `cost_usd`,
   `share` (fração das perguntas; "Outros" por último).
 - `workspaces[]`: `id`, `slug`, `name`, `questions`, `conversations`, `cost_usd`.

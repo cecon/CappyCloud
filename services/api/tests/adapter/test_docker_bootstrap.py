@@ -18,15 +18,15 @@ from app.adapters.secondary.sandbox_runtime.docker_bootstrap import (
 from app.domain.entities import Sandbox, SandboxAgent, SandboxRuntime, SandboxSkill
 from app.ports.sandbox_bootstrap import BootstrapFailureError
 
-OPENCLAUDE_V028_SHA = "6e30b40de00868a968bdcaa0c3d0dd915d69d357"
+OPENCLAUDE_V032_SHA = "88baafe316d610f8f7eadcc186ecd044e718a1b9"
 
 
-def test_sandbox_dockerfile_pins_openclaude_v028_sha() -> None:
+def test_sandbox_dockerfile_pins_openclaude_v032_sha() -> None:
     dockerfile = Path(__file__).resolve().parents[4] / "services" / "sandbox" / "Dockerfile"
 
     content = dockerfile.read_text(encoding="utf-8")
 
-    assert f"ARG OPENCLAUDE_REF={OPENCLAUDE_V028_SHA}" in content
+    assert f"ARG OPENCLAUDE_REF={OPENCLAUDE_V032_SHA}" in content
 
 
 def _sandbox(name: str = "alpha") -> Sandbox:
