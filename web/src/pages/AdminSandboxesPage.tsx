@@ -1,108 +1,23 @@
 ﻿import { useCallback, useEffect, useState } from 'react'
-import {
-  ActionIcon,
-  Alert,
-  Badge,
-  Button,
-  Container,
-  Group,
-  Loader,
-  Menu,
-  Modal,
-  Paper,
-  Select,
-  Stack,
-  Table,
-  Text,
-  TextInput,
-  Title,
-} from '@/components/ui/legacy'
-import {
-  IconCopy,
-  IconCpu,
-  IconDotsVertical,
-  IconPlayerPlay,
-  IconPlayerStop,
-  IconRefresh,
-  IconSettings,
-  IconTerminal2,
-  IconTrash,
-} from '@tabler/icons-react'
+import { Alert, Button, Container, Group, Loader, Paper, Stack, Text, Title } from '@/components/ui/legacy'
 import {
   bootAdminSandbox,
   cloneAdminSandbox,
-  type ContainerStatus,
   createAdminSandbox,
   deleteAdminSandbox,
   errorToUserMessage,
   fetchAdminSandboxes,
   getToken,
-  type AgentRuntime,
   type Sandbox,
-  type SandboxRuntime,
   stopAdminSandbox,
 } from '../api'
 import { SandboxGlobalsDrawer } from '../components/SandboxGlobalsDrawer'
 import { SandboxTerminalModal } from '../components/SandboxTerminalModal'
-import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
 import { useCurrentUser } from '../hooks/useCurrentUser'
-import styles from './AdminSandboxesPage.module.css'
-
-type CreateState = {
-  name: string
-  runtime: SandboxRuntime
-  agentRuntime: AgentRuntime
-  image: string
-  envEntries: { key: string; value: string }[]
-}
-
-const EMPTY_CREATE: CreateState = {
-  name: '',
-  runtime: 'compose',
-  agentRuntime: 'openclaude',
-  image: '',
-  envEntries: [{ key: '', value: '' }],
-}
-
-const STATUS_COLORS: Record<ContainerStatus, string> = {
-  not_created: 'gray',
-  starting: 'yellow',
-  running: 'blue',
-  configuring: 'cyan',
-  configured: 'green',
-  stopped: 'gray',
-  error: 'red',
-}
-
-const STATUS_LABELS: Record<ContainerStatus, string> = {
-  not_created: 'NÃO CRIADO',
-  starting: 'INICIANDO',
-  running: 'RODANDO',
-  configuring: 'CONFIGURANDO',
-  configured: 'CONFIGURADO',
-  stopped: 'PARADO',
-  error: 'ERRO',
-}
-
-const STATUS_POLL_MS = 5000
-
-function isLiveStatus(status: ContainerStatus): boolean {
-  return (
-    status === 'starting' ||
-    status === 'running' ||
-    status === 'configuring' ||
-    status === 'configured'
-  )
-}
-
-function envEntriesToRecord(entries: { key: string; value: string }[]): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const { key, value } of entries) {
-    const k = key.trim()
-    if (k) out[k] = value
-  }
-  return out
-}
+import { CloneSandboxModal } from './admin-sandboxes/CloneSandboxModal'
+import { type CreateState, EMPTY_CREATE, envEntriesToRecord, STATUS_POLL_MS } from './admin-sandboxes/constants'
+import { CreateSandboxModal } from './admin-sandboxes/CreateSandboxModal'
+import { SandboxesTable } from './admin-sandboxes/SandboxesTable'
 
 export function AdminSandboxesPage() {
   const [items, setItems] = useState<Sandbox[] | null>(null)
@@ -266,19 +181,6 @@ export function AdminSandboxesPage() {
     setGlobalsFor((current) => (current?.id === updated.id ? updated : current))
   }
 
-  function addEnvRow() {
-    setForm({ ...form, envEntries: [...form.envEntries, { key: '', value: '' }] })
-  }
-
-  function updateEnvRow(idx: number, key: 'key' | 'value', value: string) {
-    const next = form.envEntries.map((row, i) => (i === idx ? { ...row, [key]: value } : row))
-    setForm({ ...form, envEntries: next })
-  }
-
-  function removeEnvRow(idx: number) {
-    setForm({ ...form, envEntries: form.envEntries.filter((_, i) => i !== idx) })
-  }
-
   return (
     <Container size="xl" py="xl">
       <Stack gap="lg">
@@ -321,257 +223,34 @@ export function AdminSandboxesPage() {
               Nenhuma sandbox cadastrada. Use “Nova sandbox” para criar a primeira.
             </Text>
           ) : (
-            <Table verticalSpacing="sm" highlightOnHover>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Nome</Table.Th>
-                  <Table.Th style={{ width: 140 }}>Agente</Table.Th>
-                  <Table.Th>Imagem</Table.Th>
-                  <Table.Th style={{ width: 180 }}>Container</Table.Th>
-                  <Table.Th style={{ width: 120 }}>Sessões</Table.Th>
-                  <ActionsHeader width={132} />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {items.map((sb) => {
-                  const isPending = pendingAction === sb.id
-                  const containerExists = sb.container_status !== 'not_created'
-                  const live = isLiveStatus(sb.container_status)
-                  return (
-                    <Table.Tr key={sb.id} className={live ? styles.liveRow : undefined}>
-                      <Table.Td>
-                        <Text fw={600}>{sb.name}</Text>
-                        <Text size="xs" c="dimmed">
-                          {sb.host}:{sb.grpc_port}/{sb.session_port}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>
-                        {/* Runtime do agente (clicável: abre a troca); o modo do container fica abaixo. */}
-                        <button
-                          type="button"
-                          onClick={() => openGlobals(sb, 'runtime')}
-                          title="Trocar o runtime do agente (openclaude ou Claude CLI)"
-                          style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer' }}
-                        >
-                          <Badge variant="light" color={sb.agent_runtime === 'claude_cli' ? 'orange' : 'blue'}>
-                            {sb.agent_runtime === 'claude_cli' ? 'Claude CLI' : 'openclaude'}
-                          </Badge>
-                        </button>
-                        <Text size="xs" c="dimmed">
-                          {sb.runtime}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm" style={{ wordBreak: 'break-all' }}>
-                          {sb.image || <em style={{ opacity: 0.5 }}>(vazia)</em>}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Badge
-                          color={STATUS_COLORS[sb.container_status]}
-                          variant={sb.container_status === 'configured' ? 'filled' : 'light'}
-                        >
-                          {STATUS_LABELS[sb.container_status]}
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm" fw={600}>
-                          {sb.active_sessions ?? 0}
-                        </Text>
-                      </Table.Td>
-                      <ActionsCell>
-                        <RowActionIcon
-                          label={
-                            live ? 'Sincronizar e reiniciar OpenClaude' : 'Iniciar container'
-                          }
-                          color={live ? 'yellow' : 'blue'}
-                          onClick={() => void handleBoot(sb)}
-                          loading={isPending}
-                          disabled={isPending}
-                        >
-                          {live ? <IconRefresh size={16} /> : <IconPlayerPlay size={16} />}
-                        </RowActionIcon>
-                        <RowActionIcon
-                          label="Parar container"
-                          color="gray"
-                          variant="default"
-                          onClick={() => void handleStop(sb)}
-                          loading={isPending}
-                          disabled={isPending || !live}
-                        >
-                          <IconPlayerStop size={16} />
-                        </RowActionIcon>
-                        {canUseTerminal && (
-                          <RowActionIcon
-                            label={live ? 'Terminal (ex.: claude login)' : 'Terminal: inicie o container primeiro'}
-                            color="grape"
-                            variant="default"
-                            onClick={() => setTerminalFor(sb)}
-                            disabled={isPending || !live}
-                          >
-                            <IconTerminal2 size={16} />
-                          </RowActionIcon>
-                        )}
-                        <Menu shadow="md" position="bottom-end">
-                          <Menu.Target>
-                            <ActionIcon
-                              aria-label="Mais ações"
-                              title="Mais ações"
-                              variant="default"
-                              size="lg"
-                              disabled={isPending}
-                            >
-                              <IconDotsVertical size={16} />
-                            </ActionIcon>
-                          </Menu.Target>
-                          <Menu.Dropdown>
-                            <Menu.Item
-                              leftSection={<IconCpu size={14} />}
-                              onClick={() => openGlobals(sb, 'runtime')}
-                            >
-                              Runtime do agente (openclaude / Claude CLI)...
-                            </Menu.Item>
-                            <Menu.Item
-                              leftSection={<IconSettings size={14} />}
-                              onClick={() => openGlobals(sb, 'claude')}
-                            >
-                              CLAUDE.md, MCPs, Skills e Agents...
-                            </Menu.Item>
-                            <Menu.Item
-                              leftSection={<IconCopy size={14} />}
-                              onClick={() => {
-                                setCloneFor(sb)
-                                setCloneName(`${sb.name}-copy`)
-                              }}
-                            >
-                              Clonar
-                            </Menu.Item>
-                            <Menu.Item
-                              color="red"
-                              leftSection={<IconTrash size={14} />}
-                              disabled={
-                                containerExists &&
-                                sb.container_status !== 'stopped' &&
-                                sb.container_status !== 'error'
-                              }
-                              onClick={() => void handleDelete(sb)}
-                            >
-                              Apagar
-                            </Menu.Item>
-                          </Menu.Dropdown>
-                        </Menu>
-                      </ActionsCell>
-                    </Table.Tr>
-                  )
-                })}
-              </Table.Tbody>
-            </Table>
+            <SandboxesTable
+              items={items}
+              pendingAction={pendingAction}
+              canUseTerminal={canUseTerminal}
+              onBoot={(sb) => void handleBoot(sb)}
+              onStop={(sb) => void handleStop(sb)}
+              onDelete={(sb) => void handleDelete(sb)}
+              onOpenGlobals={openGlobals}
+              onClone={(sb) => {
+                setCloneFor(sb)
+                setCloneName(`${sb.name}-copy`)
+              }}
+              onTerminal={setTerminalFor}
+            />
           )}
         </Paper>
       </Stack>
 
       {/* Criar */}
-      <Modal
+      <CreateSandboxModal
         opened={createOpen}
+        form={form}
+        setForm={setForm}
+        formError={formError}
+        creating={creating}
         onClose={() => setCreateOpen(false)}
-        title="Nova sandbox"
-        centered
-        size="lg"
-      >
-        <Stack gap="md">
-          {formError && (
-            <Alert color="red" title="Não foi possível criar">
-              {formError}
-            </Alert>
-          )}
-          <TextInput
-            label="Nome"
-            description="Identificador único — vira parte do nome do container Docker."
-            placeholder="alpha"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.currentTarget.value })}
-            required
-          />
-          <Select
-            label="Runtime"
-            description="Compose = dev local. Swarm = produção (ainda em implementação)."
-            data={[
-              { value: 'compose', label: 'Compose (Docker Desktop, dev)' },
-              { value: 'swarm', label: 'Swarm (produção — ainda não implementado)' },
-            ]}
-            value={form.runtime}
-            onChange={(value) => {
-              if (value === 'compose' || value === 'swarm') {
-                setForm({ ...form, runtime: value })
-              }
-            }}
-            allowDeselect={false}
-          />
-          <Select
-            label="Runtime do agente"
-            description="Claude CLI exige `claude login` no terminal da sandbox (aba Runtime)."
-            data={[
-              { value: 'openclaude', label: 'openclaude (catálogo de modelos)' },
-              { value: 'claude_cli', label: 'Claude CLI oficial' },
-            ]}
-            value={form.agentRuntime}
-            onChange={(value) => {
-              if (value === 'openclaude' || value === 'claude_cli') {
-                setForm({ ...form, agentRuntime: value })
-              }
-            }}
-            allowDeselect={false}
-          />
-          <TextInput
-            label="Imagem Docker"
-            description="Imagem que o adapter usa ao criar o container."
-            placeholder="cappycloud/sandbox:latest"
-            value={form.image}
-            onChange={(e) => setForm({ ...form, image: e.currentTarget.value })}
-            required
-          />
-          <Stack gap={6}>
-            <Text size="sm" fw={500}>
-              Variáveis de ambiente
-            </Text>
-            {form.envEntries.map((row, idx) => (
-              <Group key={idx} gap="xs">
-                <TextInput
-                  placeholder="KEY"
-                  value={row.key}
-                  onChange={(e) => updateEnvRow(idx, 'key', e.currentTarget.value)}
-                  style={{ flex: 1 }}
-                />
-                <TextInput
-                  placeholder="valor"
-                  value={row.value}
-                  onChange={(e) => updateEnvRow(idx, 'value', e.currentTarget.value)}
-                  style={{ flex: 2 }}
-                />
-                <ActionIcon
-                  variant="subtle"
-                  color="red"
-                  onClick={() => removeEnvRow(idx)}
-                  disabled={form.envEntries.length === 1}
-                >
-                  ×
-                </ActionIcon>
-              </Group>
-            ))}
-            <Button size="xs" variant="default" onClick={addEnvRow}>
-              + adicionar variável
-            </Button>
-          </Stack>
-          <Group justify="flex-end" mt="sm">
-            <Button variant="default" onClick={() => setCreateOpen(false)} disabled={creating}>
-              Cancelar
-            </Button>
-            <Button onClick={() => void handleCreate()} loading={creating}>
-              Criar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+        onCreate={() => void handleCreate()}
+      />
 
       {/* MCPs do sandbox */}
       <SandboxGlobalsDrawer
@@ -584,32 +263,14 @@ export function AdminSandboxesPage() {
       {terminalFor && <SandboxTerminalModal sandbox={terminalFor} onClose={() => setTerminalFor(null)} />}
 
       {/* Clonar */}
-      <Modal
-        opened={cloneFor !== null}
+      <CloneSandboxModal
+        cloneFor={cloneFor}
+        cloneName={cloneName}
+        cloning={cloning}
+        onNameChange={setCloneName}
         onClose={() => setCloneFor(null)}
-        title={cloneFor ? `Clonar sandbox "${cloneFor.name}"` : 'Clonar sandbox'}
-        centered
-      >
-        <Stack gap="md">
-          <Text size="sm" c="dimmed">
-            Copia imagem, runtime e variáveis. O container do clone começa em <strong>não criado</strong>.
-          </Text>
-          <TextInput
-            label="Nome do clone"
-            value={cloneName}
-            onChange={(e) => setCloneName(e.currentTarget.value)}
-            required
-          />
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setCloneFor(null)} disabled={cloning}>
-              Cancelar
-            </Button>
-            <Button onClick={() => void handleClone()} loading={cloning}>
-              Clonar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+        onClone={() => void handleClone()}
+      />
     </Container>
   )
 }

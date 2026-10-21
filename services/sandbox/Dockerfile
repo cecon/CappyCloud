@@ -165,6 +165,9 @@ COPY services/sandbox/session_start.sh /session_start.sh
 COPY services/sandbox/session_server.js /session_server.js
 COPY services/sandbox/git_handlers.js /git_handlers.js
 COPY services/sandbox/git_urls.js /git_urls.js
+COPY services/sandbox/git_auth_handler.js /git_auth_handler.js
+COPY services/sandbox/internal_search_handler.js /internal_search_handler.js
+COPY services/sandbox/user_workspace_handler.js /user_workspace_handler.js
 COPY services/sandbox/globals_handler.js /globals_handler.js
 COPY services/sandbox/mcp_handler.js /mcp_handler.js
 COPY services/sandbox/confluence_auth.js /confluence_auth.js

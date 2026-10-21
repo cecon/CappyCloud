@@ -14,6 +14,9 @@
 //   POST   /sessions               → cria session_root + worktrees
 //   DELETE /sessions/:id           → session_cleanup.js (409 se houver trabalho não enviado)
 //   POST   /git/*                  → git_handlers.js (ls-remote, branch-r, ls-files, file)
+//   POST   /git-auth               → git_auth_handler.js (credenciais git)
+//   *      /user-workspaces/*      → user_workspace_handler.js (baselines em /repos/users)
+//   GET    /skills/search, /document-graph/search → internal_search_handler.js
 //   POST   /worktree/*             → worktree_handlers.js (ls-files, diff, PR, …)
 //   POST   /mcp/configure          → mcp_handler.js (mcpServers em ~/.openclaude.json)
 //   POST   /globals/configure      → CLAUDE.md (memória do usuário), skills e agents
@@ -29,10 +32,8 @@
 const http = require('http')
 const fs = require('fs')
 const path = require('path')
-const { execFile, execFileSync } = require('child_process')
-const { promisify } = require('util')
-
 const gitHandlers = require('./git_handlers')
+const gitAuthHandler = require('./git_auth_handler')
 const { normalizeAzureUrl } = require('./git_urls')
 const claudeRuntimeHandler = require('./claude_runtime_handler')
 const globalsHandler = require('./globals_handler')
@@ -40,6 +41,7 @@ const mcpHandler = require('./mcp_handler')
 const confluenceHandler = require('./confluence_handler')
 const repoHandlers = require('./repo_handlers')
 const runtimeHandler = require('./runtime_handler')
+const internalSearchHandler = require('./internal_search_handler')
 const { assertSafeSessionRoot, cleanupSession } = require('./session_cleanup')
 const { assertInsideSession, sessionRootInfo } = require('./session_paths')
 const worktreeHandlers = require('./worktree_handlers')
@@ -48,8 +50,9 @@ const knowledgeHandler = require('./knowledge_handler')
 const memoryHandler = require('./memory_handler')
 const memoryExtract = require('./memory_extract')
 const terminalHandler = require('./terminal_handler')
+const userWorkspaceHandler = require('./user_workspace_handler')
+const { createWorktree, sourceWorkspaceCommit } = userWorkspaceHandler
 
-const execFileAsync = promisify(execFile)
 const PORT = parseInt(process.env.SESSION_SERVER_PORT || '8080', 10)
 const activeSessions = new Set()
 
@@ -101,35 +104,9 @@ function readBody(req) {
   })
 }
 
-// ── Cria um worktree via session_start.sh ──────────────────────
-async function createWorktree({ slug, alias, base_branch, branch_name, worktree_path, clone_url = '' }) {
-  const args = [slug, alias, worktree_path, base_branch || '', branch_name || '', clone_url]
-  const { stdout, stderr } = await execFileAsync('/session_start.sh', args, {
-    env: { ...process.env },
-    timeout: 300_000,
-  })
-  const gitDir = path.join(worktree_path, '.git')
-  if (!fs.existsSync(gitDir)) {
-    throw new Error(`worktree não foi criado em ${worktree_path}`)
-  }
-  return (stdout + stderr).trim()
-}
-
 function assertSafeSessionPath(candidate) {
   // Worktree dentro de uma sessão legada ou de workspace (session_paths.js).
   return assertInsideSession(candidate)
-}
-
-function assertSafeUserWorkspacePath(candidate) {
-  const resolved = path.resolve(candidate || '')
-  if (!resolved.startsWith('/repos/users/')) {
-    throw new Error('workspace_path must be under /repos/users/')
-  }
-  return resolved
-}
-
-function worktreeExists(worktreePath) {
-  return fs.existsSync(path.join(worktreePath, '.git'))
 }
 
 function countSessionRoots() {
@@ -138,68 +115,6 @@ function countSessionRoots() {
 
 function clearActiveSessions() {
   activeSessions.clear()
-}
-
-async function isGitClean(worktreePath) {
-  const { stdout } = await execFileAsync('git', ['-C', worktreePath, 'status', '--porcelain'], {
-    timeout: 30_000,
-  })
-  return stdout.trim() === ''
-}
-
-async function cleanUserWorkspace(worktreePath) {
-  await execFileAsync('git', ['-C', worktreePath, 'reset', '--hard'], { timeout: 30_000 })
-  await execFileAsync('git', ['-C', worktreePath, 'clean', '-fd'], { timeout: 30_000 })
-}
-
-async function sourceWorkspaceCommit(sourcePath) {
-  const resolved = assertSafeUserWorkspacePath(sourcePath)
-  if (!worktreeExists(resolved)) {
-    throw new Error(`source_workspace_path missing: ${resolved}`)
-  }
-  if (!(await isGitClean(resolved))) {
-    await cleanUserWorkspace(resolved)
-  }
-  const { stdout } = await execFileAsync('git', ['-C', resolved, 'rev-parse', 'HEAD'], {
-    timeout: 30_000,
-  })
-  return stdout.trim()
-}
-
-async function ensureUserWorkspace({ slug, base_branch, workspace_path, clone_url = '' }) {
-  if (!slug) throw new Error('slug is required')
-  const workspacePath = assertSafeUserWorkspacePath(workspace_path)
-  const branch = base_branch || 'main'
-  const suffix = workspacePath.split('/').slice(-4).join('-')
-  const branchName = `cappy/user-baselines/${slug}/${suffix}`
-  let action = 'created'
-  if (worktreeExists(workspacePath)) {
-    action = 'reused'
-    if (!(await isGitClean(workspacePath))) {
-      await cleanUserWorkspace(workspacePath)
-      action = 'repaired'
-    }
-  } else {
-    if (fs.existsSync(workspacePath)) {
-      await execFileAsync('rm', ['-rf', workspacePath], { timeout: 30_000 })
-      action = 'repaired'
-    }
-    await createWorktree({
-      slug,
-      alias: slug,
-      base_branch: branch,
-      branch_name: branchName,
-      worktree_path: workspacePath,
-      clone_url,
-    })
-  }
-  return {
-    workspace_path: workspacePath,
-    status: 'ready',
-    action,
-    dirty: false,
-    message: action,
-  }
 }
 
 // ── HTTP server ───────────────────────────────────────────────
@@ -333,47 +248,7 @@ const server = http.createServer(async (req, res) => {
       })
     }
 
-    if (req.method === 'POST' && pathname === '/user-workspaces/ensure') {
-      const body = await readBody(req)
-      try {
-        const result = await ensureUserWorkspace(body)
-        console.log(`[session_server] user workspace ${result.action}: ${result.workspace_path}`)
-        return json(res, 200, result)
-      } catch (err) {
-        console.error(`[session_server] user workspace ensure failed: ${err.message}`)
-        return json(res, 500, { error: err.message })
-      }
-    }
-
-    if (req.method === 'GET' && pathname === '/user-workspaces/status') {
-      const workspace_path = url.searchParams.get('workspace_path') || ''
-      try {
-        const workspacePath = assertSafeUserWorkspacePath(workspace_path)
-        const exists = worktreeExists(workspacePath)
-        const dirty = exists ? !(await isGitClean(workspacePath)) : false
-        return json(res, 200, {
-          workspace_path: workspacePath,
-          exists,
-          dirty,
-          status: exists ? (dirty ? 'dirty' : 'ready') : 'missing',
-        })
-      } catch (err) {
-        return json(res, 400, { error: err.message })
-      }
-    }
-
-    if (req.method === 'DELETE' && pathname === '/user-workspaces') {
-      const workspace_path = url.searchParams.get('workspace_path') || ''
-      try {
-        const workspacePath = assertSafeUserWorkspacePath(workspace_path)
-        if (fs.existsSync(workspacePath)) {
-          await execFileAsync('rm', ['-rf', workspacePath], { timeout: 30_000 })
-        }
-        return json(res, 200, { deleted: true })
-      } catch (err) {
-        return json(res, 400, { error: err.message })
-      }
-    }
+    if (await userWorkspaceHandler.tryHandle(req, res, { json, readBody, url })) return
 
     // DELETE /sessions/:id — remove sessão
     const deleteMatch = pathname.match(/^\/sessions\/([^/]+)$/)
@@ -408,91 +283,14 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
-
-    if (req.method === 'GET' && pathname === '/skills/search') {
-      const q = url.searchParams.get('q') || ''
-      const limit = url.searchParams.get('limit') || '5'
-      if (!q) return json(res, 400, { error: 'q is required' })
-
-      const apiHost = process.env.API_HOST || 'cappycloud-api'
-      const apiPort = process.env.API_PORT_INTERNAL || '8080'
-      const internalToken = process.env.INTERNAL_API_TOKEN || ''
-      const params = new URLSearchParams({ q, limit })
-      for (const repoId of url.searchParams.getAll('repo_id')) {
-        if (repoId) params.append('repo_id', repoId)
-      }
-      const apiUrl = `http://${apiHost}:${apiPort}/api/skills/_search/internal?${params}`
-      try {
-        const resp = await fetch(apiUrl, {
-          headers: internalToken ? { 'X-Internal-Token': internalToken } : {},
-        })
-        const text = await resp.text()
-        if (resp.status >= 400) {
-          return json(res, resp.status, { error: 'API error', detail: text.slice(0, 300) })
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        return res.end(text)
-      } catch (err) {
-        return json(res, 502, { error: 'API unreachable', detail: err.message })
-      }
-    }
-
-    if (req.method === 'GET' && pathname === '/document-graph/search') {
-      const q = url.searchParams.get('q') || ''
-      const limit = url.searchParams.get('limit') || '5'
-      if (!q) return json(res, 400, { error: 'q is required' })
-
-      const apiHost = process.env.API_HOST || 'cappycloud-api'
-      const apiPort = process.env.API_PORT_INTERNAL || '8080'
-      const internalToken = process.env.INTERNAL_API_TOKEN || ''
-      const params = new URLSearchParams({ q, limit })
-      for (const repoId of url.searchParams.getAll('repo_id')) {
-        if (repoId) params.append('repo_id', repoId)
-      }
-      const apiUrl = `http://${apiHost}:${apiPort}/api/document-graph/_search/internal?${params}`
-      try {
-        const resp = await fetch(apiUrl, {
-          headers: internalToken ? { 'X-Internal-Token': internalToken } : {},
-        })
-        const text = await resp.text()
-        if (resp.status >= 400) {
-          return json(res, resp.status, { error: 'API error', detail: text.slice(0, 300) })
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        return res.end(text)
-      } catch (err) {
-        return json(res, 502, { error: 'API unreachable', detail: err.message })
-      }
-    }
+    if (await internalSearchHandler.tryHandle(req, res, { json, url })) return
 
     if (await confluenceHandler.tryHandle(req, res, { json })) return
 
     if (await worktreeHandlers.tryHandle(req, res, { json, readBody })) return
 
     // POST /git-auth — reconfigura credenciais git (token atualizado no DB)
-    if (req.method === 'POST' && pathname === '/git-auth') {
-      const { provider_type, token, base_url } = await readBody(req)
-      try {
-        if (provider_type === 'github' && token) {
-          await execFileAsync('gh', ['auth', 'login', '--with-token'], {
-            input: token,
-            timeout: 30_000,
-          }).catch(() => {
-            // gh auth login via stdin pode não estar disponível — usar git credential
-            execFileSync('git', ['config', '--global', `url.https://x-token:${token}@github.com/.insteadOf`, 'https://github.com/'])
-          })
-        } else if (provider_type === 'azure_devops' && token) {
-          process.env.AZURE_DEVOPS_EXT_PAT = token
-          if (base_url) {
-            execFileSync('git', ['config', '--global', `url.https://:${token}@${new URL(base_url).host}/.insteadOf`, base_url])
-          }
-        }
-        console.log(`[session_server] git-auth updated for ${provider_type}`)
-        return json(res, 200, { updated: true })
-      } catch (err) {
-        return json(res, 500, { error: err.message })
-      }
-    }
+    if (await gitAuthHandler.tryHandle(req, res, { json, readBody })) return
 
     // POST /mcp/configure — delega para mcp_handler.js
     if (await mcpHandler.tryHandle(req, res, { json, readBody })) return
