@@ -28,7 +28,14 @@ TEXT_EXTENSIONS = {
     ".yaml",
     ".yml",
     ".csv",
+    ".tsv",
     ".xml",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".properties",
+    ".toml",
+    ".sql",
 }
 
 TEXT_MIME_PREFIXES = ("text/",)
@@ -78,7 +85,8 @@ def detect_artifact_kind(filename: str, mime_type: str) -> str:
     if suffix in TEXT_EXTENSIONS or mime.startswith(TEXT_MIME_PREFIXES) or mime in TEXT_MIME_TYPES:
         return "text"
     raise ArtifactProcessingError(
-        "Tipo de arquivo não suportado. Use imagem, .txt, .md, .log, .pdf ou .docx."
+        "Tipo de arquivo não suportado. Use imagem, texto (.txt, .md, .log, .xml, "
+        ".json, .ini, .cfg...), .pdf ou .docx."
     )
 
 

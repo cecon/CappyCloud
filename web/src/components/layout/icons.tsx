@@ -9,6 +9,7 @@ import {
   Code2,
   Database,
   FolderGit2,
+  FolderTree,
   History,
   Home,
   KeyRound,
@@ -53,6 +54,7 @@ export type CappyIconName =
   | 'sparkles'
   | 'sun'
   | 'users'
+  | 'workspaces'
 
 export const iconMap: Record<CappyIconName, LucideIcon> = {
   activity: Activity,
@@ -80,6 +82,7 @@ export const iconMap: Record<CappyIconName, LucideIcon> = {
   sparkles: Sparkles,
   sun: Sun,
   users: Users,
+  workspaces: FolderTree,
 }
 
 export function CappyIcon({ name, className }: { name: CappyIconName; className?: string }) {

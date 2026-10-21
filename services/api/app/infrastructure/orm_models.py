@@ -51,6 +51,10 @@ class Sandbox(Base):
     image: Mapped[str] = mapped_column(String(512), nullable=False, server_default="", default="")
     env_vars: Mapped[dict] = mapped_column(JSONBType, nullable=False, server_default="{}")
     claude_md: Mapped[str] = mapped_column(Text, nullable=False, server_default="", default="")
+    # Runtime do agente: openclaude (gRPC) ou claude_cli (Claude Code oficial).
+    agent_runtime: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default="openclaude", default="openclaude"
+    )
     container_status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
@@ -106,6 +110,9 @@ class User(Base):
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false", default=False
     )
+    password_reset_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversations: Mapped[list[Conversation]] = relationship(
@@ -138,10 +145,21 @@ class Conversation(Base):
         index=True,
     )
     title: Mapped[str] = mapped_column(String(512), default="Nova conversa")
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    ticket_number: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     # Multi-repo: lista de {slug, alias, base_branch, branch_name, worktree_path}
     repos: Mapped[list] = mapped_column(JSONBType, nullable=False, server_default="[]")
-    # Diretório raiz da sessão no volume: /repos/sessions/<short_id>/
+    # Diretório raiz da sessão: /repos/sessions/<id>/ ou, em workspace,
+    # /repos/workspaces/<slug>/sessions/<id>/
     session_root: Mapped[str | None] = mapped_column(Text, nullable=True)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUIDType,
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     permission_mode: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
@@ -208,6 +226,8 @@ class Message(Base):
     completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cost_usd: Mapped[float] = mapped_column(Numeric(12, 6), nullable=False, default=0)
     payload_diagnostics: Mapped[dict | None] = mapped_column(JSONBType, nullable=True)
+    # Claude CLI: % usado das janelas de 5h/7d da assinatura quando a resposta terminou.
+    plan_usage: Mapped[dict | None] = mapped_column(JSONBType, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship("Conversation", back_populates="messages")
@@ -254,36 +274,6 @@ class MessageAttachment(Base):
     )
 
 
-class ConversationArtifactChunk(Base):
-    """Chunk pesquisável de um arquivo anexado a uma conversa."""
-
-    __tablename__ = "conversation_artifact_chunks"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
-    attachment_id: Mapped[uuid.UUID] = mapped_column(
-        UUIDType,
-        ForeignKey("message_attachments.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    conversation_id: Mapped[uuid.UUID] = mapped_column(
-        UUIDType,
-        ForeignKey("conversations.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    line_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    line_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    page_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    page_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    meta: Mapped[dict] = mapped_column(JSONBType, nullable=False, server_default="{}")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-
-
 # Import sub-modules last — registers tables with Base.metadata for Alembic.
 from app.infrastructure.orm_models_access import (  # noqa: F401, E402
     UserAiModelAccess,
@@ -292,6 +282,9 @@ from app.infrastructure.orm_models_access import (  # noqa: F401, E402
 )
 from app.infrastructure.orm_models_agent import (  # noqa: F401, E402
     Skill,
+)
+from app.infrastructure.orm_models_artifacts import (  # noqa: F401, E402
+    ConversationArtifactChunk,
 )
 from app.infrastructure.orm_models_document_graph import (  # noqa: F401, E402
     DocumentGraphEdge,
@@ -327,4 +320,9 @@ from app.infrastructure.orm_models_user_preferences import (  # noqa: F401, E402
 )
 from app.infrastructure.orm_models_user_workspaces import (  # noqa: F401, E402
     UserRepositoryWorkspace as UserRepositoryWorkspaceORM,
+)
+from app.infrastructure.orm_models_workspaces import (  # noqa: F401, E402
+    UserWorkspaceAccess,
+    Workspace,
+    WorkspaceRepository,
 )

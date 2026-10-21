@@ -6,6 +6,7 @@ No FastAPI, no SQLAlchemy. All dependencies injected via ports (ABCs).
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from app.domain.entities import User, UserRole
@@ -85,6 +86,12 @@ class LoginUser:
 
         if not user or not self._passwords.verify(password, user.hashed_password):
             raise PermissionError("Credenciais inválidas.")
+        expires = user.password_reset_expires_at
+        if user.must_change_password and expires is not None and datetime.now(UTC) > expires:
+            raise PermissionError(
+                "A senha temporária expirou (vale 24 horas). "
+                "Peça a um administrador para redefinir a senha de novo."
+            )
 
         return self._tokens.create(str(user.id))
 

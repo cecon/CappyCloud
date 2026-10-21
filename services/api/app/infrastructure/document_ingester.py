@@ -37,8 +37,9 @@ from app.infrastructure.skill_importer import ImporterError, import_url
 
 log = logging.getLogger(__name__)
 
-CHUNK_CHARS = 2000
-CHUNK_OVERLAP = 200
+# Abaixo do teto de 8.000 caracteres do embedding; uma tabela do schema tende a caber inteira.
+CHUNK_CHARS = 6000
+CHUNK_OVERLAP = 400
 
 
 class IngesterError(RuntimeError):

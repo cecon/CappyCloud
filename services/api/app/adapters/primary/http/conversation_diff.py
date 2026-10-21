@@ -10,10 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.primary.http.conversation_worktree_paths import (
-    WORKTREE_FROM_CONVERSATION,
-    resolve_git_paths_from_worktree_row,
-)
+from app.adapters.primary.http.conversation_repos import load_conversation_repos
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
 from app.domain.entities import User
 from app.infrastructure.sandbox_worktree_client import (
@@ -85,23 +82,41 @@ async def get_conversation_diff(
     current: Annotated[User, Depends(get_authenticated_user)],
     db: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> dict:
-    """Diff do worktree actual em relação ao branch base."""
-    row = await db.execute(
-        text(WORKTREE_FROM_CONVERSATION),
-        {"cid": str(conversation_id), "uid": str(current.id)},
-    )
-    conv = row.fetchone()
-    if not conv:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada")
+    """Diff de cada worktree editável contra o seu branch base, num só resultado.
 
-    worktree, _, base_branch = resolve_git_paths_from_worktree_row(conv, conversation_id)
+    Com vários repositórios os caminhos vêm prefixados pelo alias; ``repos``
+    traz o resumo (e o erro, se houver) de cada um.
+    """
+    conv = await load_conversation_repos(db, conversation_id, current.id)
+    editable = conv.editable
+    files: list[dict] = []
+    added = removed = 0
+    summary: list[dict] = []
+    for repo in editable:
+        try:
+            diff_text = await worktree_diff_against_base(repo.worktree_path, repo.base_branch)
+        except SandboxWorktreeError as exc:
+            if len(editable) == 1:
+                raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+            summary.append(
+                {"alias": repo.alias, "base_branch": repo.base_branch, "error": str(exc)}
+            )
+            continue
+        parsed = _parse_diff(diff_text, repo.base_branch)
+        for item in parsed["files"]:
+            item["path"] = conv.to_ui_path(repo, item["path"])
+            files.append(item)
+        added += parsed["stats"]["added"]
+        removed += parsed["stats"]["removed"]
+        summary.append({"alias": repo.alias, "base_branch": repo.base_branch, **parsed["stats"]})
 
-    try:
-        diff_text = await worktree_diff_against_base(worktree, base_branch)
-    except SandboxWorktreeError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-
-    return _parse_diff(diff_text, base_branch)
+    bases = {repo.base_branch for repo in editable}
+    return {
+        "base_branch": bases.pop() if len(bases) == 1 else "",
+        "stats": {"added": added, "removed": removed},
+        "files": files,
+        "repos": summary,
+    }
 
 
 def _parse_diff(diff_text: str, base_branch: str) -> dict:

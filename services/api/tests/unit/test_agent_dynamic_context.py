@@ -53,7 +53,6 @@ _evidence_prefetch = _load_module(
     ROOT / "services/cappycloud_agent/_evidence_prefetch.py",
 )
 
-render_response_rules = _prompt_sections.render_response_rules
 render_session_tools = _prompt_sections.render_session_tools
 _terms_for = _evidence_prefetch._terms_for
 _confluence_sources = _evidence_prefetch._confluence_sources
@@ -72,7 +71,7 @@ def test_agent_prompt_sections_do_not_embed_product_specific_rules() -> None:
     text = "\n".join(
         [
             render_session_tools("http://sandbox:8080"),
-            render_response_rules(),
+            (ROOT / "sandbox" / "CLAUDE.md").read_text(encoding="utf-8"),
         ]
     ).lower()
 

@@ -3,17 +3,20 @@ import remarkGfm from 'remark-gfm'
 import { Copy, UserRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import chatStyles from '../chat.module.css'
 
 export type ChatMessageProps = {
   role: 'user' | 'assistant' | 'system' | string
   content: string
   streaming?: boolean
   meta?: React.ReactNode
+  /** Nome no topo do balão (padrão: "Voce" / "Agente"). */
+  authorLabel?: string
   onCopy?: () => void
   className?: string
 }
 
-export function ChatMessage({ role, content, streaming, meta, onCopy, className }: ChatMessageProps) {
+export function ChatMessage({ role, content, streaming, meta, authorLabel, onCopy, className }: ChatMessageProps) {
   const user = role === 'user'
   return (
     <article className={cn('group flex gap-3', user && 'justify-end', className)}>
@@ -32,7 +35,7 @@ export function ChatMessage({ role, content, streaming, meta, onCopy, className 
       >
         <div className="mb-1 flex items-center justify-between gap-3">
           <span className="text-[11px] font-semibold uppercase text-current opacity-70">
-            {user ? 'Voce' : 'Agente'}
+            {authorLabel ?? (user ? 'Voce' : 'Agente')}
           </span>
           {onCopy && !user && (
             <Button type="button" variant="ghost" size="icon" className="size-7 opacity-0 group-hover:opacity-100" onClick={onCopy}>
@@ -44,7 +47,7 @@ export function ChatMessage({ role, content, streaming, meta, onCopy, className 
         {user ? (
           <p className="whitespace-pre-wrap leading-6">{content}</p>
         ) : (
-          <div className="prose prose-sm max-w-none prose-pre:overflow-x-auto dark:prose-invert">
+          <div className={cn(chatStyles.markdownBody, 'overflow-x-auto')}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
             {streaming && <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-primary align-middle" />}
           </div>

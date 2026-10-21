@@ -3,19 +3,23 @@ import type { Sandbox } from '../api'
 import { SandboxAgentsPanel } from './sandbox-globals/SandboxAgentsPanel'
 import { SandboxClaudeMdPanel } from './sandbox-globals/SandboxClaudeMdPanel'
 import { SandboxMcpsPanel } from './sandbox-globals/SandboxMcpsPanel'
+import { SandboxRuntimePanel } from './sandbox-globals/SandboxRuntimePanel'
 import { SandboxSkillsPanel } from './sandbox-globals/SandboxSkillsPanel'
 
 type Props = {
   sandbox: Sandbox | null
   onClose: () => void
   onUpdated: (sandbox: Sandbox) => void
+  /** Aba aberta ao abrir a gaveta (ex.: 'runtime' pelo atalho da listagem). */
+  initialTab?: 'claude' | 'runtime' | 'mcps' | 'skills' | 'agents'
 }
 
 /**
- * Drawer único com 3 tabs (MCPs / Skills / Agents) — todos materializados em
- * ``~/.claude/`` dentro do container da sandbox ao boot (ADR-004 §5-6).
+ * Drawer único com as tabs da sandbox: CLAUDE.md, runtime do agente
+ * (openclaude ou Claude CLI) e os periféricos (MCPs / Skills / Agents)
+ * materializados em ``~/.claude/`` dentro do container ao boot (ADR-004 §5-6).
  */
-export function SandboxGlobalsDrawer({ sandbox, onClose, onUpdated }: Props) {
+export function SandboxGlobalsDrawer({ sandbox, onClose, onUpdated, initialTab = 'claude' }: Props) {
   return (
     <Drawer
       opened={sandbox !== null}
@@ -34,15 +38,19 @@ export function SandboxGlobalsDrawer({ sandbox, onClose, onUpdated }: Props) {
       }
     >
       {sandbox && (
-        <Tabs defaultValue="claude" keepMounted={false}>
+        <Tabs key={`${sandbox.id}-${initialTab}`} defaultValue={initialTab} keepMounted={false}>
           <Tabs.List>
             <Tabs.Tab value="claude">CLAUDE.md</Tabs.Tab>
+            <Tabs.Tab value="runtime">Runtime</Tabs.Tab>
             <Tabs.Tab value="mcps">MCPs</Tabs.Tab>
             <Tabs.Tab value="skills">Skills</Tabs.Tab>
             <Tabs.Tab value="agents">Subagents</Tabs.Tab>
           </Tabs.List>
           <Tabs.Panel value="claude" pt="md">
             <SandboxClaudeMdPanel sandbox={sandbox} onUpdated={onUpdated} />
+          </Tabs.Panel>
+          <Tabs.Panel value="runtime" pt="md">
+            <SandboxRuntimePanel sandbox={sandbox} onUpdated={onUpdated} />
           </Tabs.Panel>
           <Tabs.Panel value="mcps" pt="md">
             <SandboxMcpsPanel sandbox={sandbox} />

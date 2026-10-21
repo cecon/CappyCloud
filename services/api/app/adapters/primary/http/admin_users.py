@@ -1,25 +1,31 @@
 """HTTP adapter para gestão administrativa de utilizadores (ADR-005).
 
-Todas as rotas exigem papel ADMIN. Glue fino: parse → use case → serialize.
+Todas as rotas exigem papel ADMIN; redefinir senha exige super admin.
+Glue fino: parse → use case → serialize.
 """
 
 from __future__ import annotations
 
+import os
 import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.adapters.primary.http.deps import get_user_repo, require_role
+from app.adapters.primary.http.deps import get_user_repo, require_role, require_super_admin
+from app.adapters.primary.http.deps_auth import get_password_service
 from app.application.use_cases.admin_users import (
     CannotChangeSuperAdminRoleError,
     CannotDemoteSelfError,
+    CannotResetOwnPasswordError,
     ListUsers,
+    ResetUserPassword,
     UpdateUserRole,
     UserNotFoundError,
 )
 from app.domain.entities import User, UserRole
 from app.ports.repositories import UserRepository
+from app.ports.services import PasswordService
 from app.schemas import UserOut, UserRoleUpdate
 
 router = APIRouter(prefix="/admin/users", tags=["admin"])
@@ -82,4 +88,28 @@ async def update_user_role(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except CannotChangeSuperAdminRoleError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    return _to_user_out(updated)
+
+
+def _get_reset_password_uc(
+    users: Annotated[UserRepository, Depends(get_user_repo)],
+    passwords: Annotated[PasswordService, Depends(get_password_service)],
+) -> ResetUserPassword:
+    # Senha temporária da redefinição; o usuário é obrigado a trocar no próximo login.
+    return ResetUserPassword(users, passwords, os.getenv("ADMIN_RESET_PASSWORD", "12345678"))
+
+
+@router.post("/{user_id}/reset-password", response_model=UserOut)
+async def reset_user_password(
+    user_id: uuid.UUID,
+    uc: Annotated[ResetUserPassword, Depends(_get_reset_password_uc)],
+    acting: Annotated[User, Depends(require_super_admin)],
+) -> UserOut:
+    """Volta a senha para a temporária e marca a troca no próximo acesso (super admin)."""
+    try:
+        updated = await uc.execute(user_id, acting_user_id=acting.id)
+    except UserNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except CannotResetOwnPasswordError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return _to_user_out(updated)

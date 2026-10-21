@@ -10,8 +10,14 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.primary.http.conversation_create_helpers import (
+    conversation_out,
+    create_workspace_conversation,
+    resolve_ai_model_id,
+)
 from app.adapters.primary.http.conversation_sandbox_guard import (
     ensure_sandbox_ready_for_chat,
+    uses_claude_cli_model,
 )
 from app.adapters.primary.http.deps import (
     get_authenticated_user,
@@ -22,9 +28,7 @@ from app.adapters.primary.http.deps import (
     get_list_msgs_uc,
     get_stream_msg_uc,
 )
-from app.adapters.secondary.persistence.sqlalchemy_ai_model_access_policy import (
-    SQLAlchemyAiModelAccessPolicy,
-)
+from app.adapters.primary.http.workspace_plan_mode import allowed_permission_mode
 from app.adapters.secondary.persistence.sqlalchemy_user_access_repo import (
     SQLAlchemyUserRepositoryAccessRepository,
     SQLAlchemyUserSandboxAccessRepository,
@@ -37,7 +41,6 @@ from app.application.use_cases.conversations import (
 )
 from app.domain.entities import User, UserRole
 from app.infrastructure.orm_models import Repository
-from app.infrastructure.orm_models_platform import AiModel
 from app.ports.repositories import ConversationRepository
 from app.schemas import (
     ConversationCreate,
@@ -56,9 +59,10 @@ async def list_conversations(
     current: Annotated[User, Depends(get_authenticated_user)],
     uc: Annotated[ListConversations, Depends(get_list_convs_uc)],
     scope: str = Query(default="own", pattern="^(own|all)$"),
+    archived: bool = Query(default=False, description="true = só as arquivadas"),
 ) -> list[ConversationOut]:
     include_all = current.role is UserRole.ADMIN and scope == "all"
-    convs = await uc.execute(current.id, include_all=include_all)
+    convs = await uc.execute(current.id, include_all=include_all, archived=archived)
     return [
         ConversationOut(
             id=c.id,
@@ -71,7 +75,10 @@ async def list_conversations(
             ai_model_id=c.ai_model_id,
             repos=c.repos,
             session_root=c.session_root,
+            workspace_id=c.workspace_id,
             permission_mode=c.permission_mode,
+            archived_at=c.archived_at,
+            ticket_number=c.ticket_number,
         )
         for c in convs
     ]
@@ -85,6 +92,8 @@ async def create_conversation(
     body: ConversationCreate | None = None,
 ) -> ConversationOut:
     b = body or ConversationCreate()
+    if b.workspace_id:
+        return conversation_out(await create_workspace_conversation(session, current, uc, b))
 
     repo_rows: list[Repository] = []
     if b.repos:
@@ -152,28 +161,7 @@ async def create_conversation(
     if resolved_sandbox_id is not None:
         await ensure_sandbox_ready_for_chat(session, resolved_sandbox_id)
 
-    ai_model_id: uuid.UUID | None = None
-    if b.model_id:
-        try:
-            resolved_model_id = await SQLAlchemyAiModelAccessPolicy(session).resolve_model_for_user(
-                current.id,
-                current.role,
-                b.model_id,
-            )
-        except PermissionError as exc:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-        ai_model_id = (
-            await session.execute(
-                select(AiModel.id)
-                .where(AiModel.model_id == resolved_model_id, AiModel.active.is_(True))
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-        if ai_model_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Modelo LLM indisponível ou desativado globalmente.",
-            )
+    ai_model_id = await resolve_ai_model_id(session, current, b.model_id)
 
     repos_dicts = [r.model_dump() for r in b.repos] if b.repos else []
     conv = await uc.execute(
@@ -183,17 +171,7 @@ async def create_conversation(
         ai_model_id=ai_model_id,
         repos=repos_dicts,
     )
-    return ConversationOut(
-        id=conv.id,
-        title=conv.title,
-        created_at=conv.created_at,
-        updated_at=conv.updated_at,
-        sandbox_id=conv.sandbox_id,
-        ai_model_id=conv.ai_model_id,
-        repos=conv.repos,
-        session_root=conv.session_root,
-        permission_mode=conv.permission_mode,
-    )
+    return conversation_out(conv)
 
 
 @router.get("/{conversation_id}/usage", response_model=ConversationUsage)
@@ -233,6 +211,7 @@ async def list_messages(
             prompt_tokens=m.prompt_tokens,
             completion_tokens=m.completion_tokens,
             cost_usd=float(m.cost_usd),
+            plan_usage=m.plan_usage,
             payload_diagnostics=(
                 PayloadSizeBreakdownOut.model_validate(m.payload_diagnostics)
                 if m.payload_diagnostics
@@ -267,6 +246,12 @@ async def stream_message(
         sandbox_id = conv.sandbox_id if conv else None
         if sandbox_id is not None:
             await ensure_sandbox_ready_for_chat(session, sandbox_id)
+        runtime_model = await uses_claude_cli_model(session, sandbox_id, body.model_id)
+        permission_mode = await allowed_permission_mode(
+            session,
+            conv.workspace_id if conv else None,
+            body.permission_mode or (conv.permission_mode if conv else None),
+        )
 
         stream = await uc.execute(
             conversation_id,
@@ -275,8 +260,9 @@ async def stream_message(
             user_role=current.role,
             cursor=cursor,
             override_model=body.model_id,
+            model_from_runtime=runtime_model,
             attachment_ids=body.attachment_ids,
-            permission_mode=body.permission_mode,
+            permission_mode=permission_mode,
             execution_profile=body.execution_profile,
             action_reply=body.action_reply,
         )

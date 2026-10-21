@@ -24,7 +24,9 @@ export function DiffViewer({ diff }: DiffViewerProps) {
   if (diff.files.length === 0) {
     return (
       <div className={styles.empty}>
-        <Text size="sm" c="dimmed">Sem alterações em relação a {diff.base_branch}</Text>
+        <Text size="sm" c="dimmed">
+          Sem alterações em relação a {diff.base_branch || 'branch base de cada repositório'}
+        </Text>
       </div>
     )
   }
@@ -33,7 +35,7 @@ export function DiffViewer({ diff }: DiffViewerProps) {
     <div className={styles.root}>
       {/* Summary bar */}
       <div className={styles.summary}>
-        <span className={styles.summaryLabel}>Base: <code>{diff.base_branch}</code></span>
+        {diff.base_branch && <span className={styles.summaryLabel}>Base: <code>{diff.base_branch}</code></span>}
         <span className={styles.added}>+{diff.stats.added}</span>
         <span className={styles.removed}>−{diff.stats.removed}</span>
         <span className={styles.fileCount}>{diff.files.length} {diff.files.length === 1 ? 'ficheiro' : 'ficheiros'}</span>

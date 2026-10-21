@@ -23,8 +23,17 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ defa
 const AdminUsersPage = lazy(() =>
   import('./pages/AdminUsersPage').then((m) => ({ default: m.AdminUsersPage })),
 )
+const AdminConversationsPage = lazy(() =>
+  import('./pages/AdminConversationsPage').then((m) => ({ default: m.AdminConversationsPage })),
+)
 const AdminDashboardPage = lazy(() =>
   import('./pages/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage })),
+)
+const AdminReportsPage = lazy(() =>
+  import('./pages/AdminReportsPage').then((m) => ({ default: m.AdminReportsPage })),
+)
+const AdminReportPrintPage = lazy(() =>
+  import('./pages/AdminReportPrintPage').then((m) => ({ default: m.AdminReportPrintPage })),
 )
 const AdminSandboxesPage = lazy(() =>
   import('./pages/AdminSandboxesPage').then((m) => ({ default: m.AdminSandboxesPage })),
@@ -34,6 +43,9 @@ const AdminProvidersPage = lazy(() =>
 )
 const AdminModelsPage = lazy(() =>
   import('./pages/AdminModelsPage').then((m) => ({ default: m.AdminModelsPage })),
+)
+const AdminWorkspacesPage = lazy(() =>
+  import('./pages/AdminWorkspacesPage').then((m) => ({ default: m.AdminWorkspacesPage })),
 )
 const AdminRepositoriesPage = lazy(() =>
   import('./pages/AdminRepositoriesPage').then((m) => ({ default: m.AdminRepositoriesPage })),
@@ -176,6 +188,32 @@ export default function App() {
           }
         />
         <Route
+          path="/admin/conversations"
+          element={
+            <AdminPage>
+              <AdminConversationsPage />
+            </AdminPage>
+          }
+        />
+        <Route
+          path="/admin/reports"
+          element={
+            <AdminPage>
+              <AdminReportsPage />
+            </AdminPage>
+          }
+        />
+        <Route
+          path="/admin/reports/print"
+          element={
+            <AuthenticatedBarePage>
+              <RequireAdmin>
+                <AdminReportPrintPage />
+              </RequireAdmin>
+            </AuthenticatedBarePage>
+          }
+        />
+        <Route
           path="/admin/users"
           element={
             <AdminPage>
@@ -192,11 +230,19 @@ export default function App() {
           }
         />
         <Route
+          path="/admin/workspaces"
+          element={
+            <SuperAdminPage>
+              <AdminWorkspacesPage />
+            </SuperAdminPage>
+          }
+        />
+        <Route
           path="/admin/repositories"
           element={
-            <AdminPage>
+            <SuperAdminPage>
               <AdminRepositoriesPage />
-            </AdminPage>
+            </SuperAdminPage>
           }
         />
         <Route

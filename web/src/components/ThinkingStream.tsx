@@ -12,7 +12,9 @@
  */
 
 import { useState } from 'react'
+import type { TurnPhaseStage } from '../api'
 import styles from './chat.module.css'
+import { knowledgeKind, knowledgeLabel, knowledgeSummary } from './chat/knowledgeTools'
 
 export type ThoughtStep =
   | {
@@ -29,6 +31,17 @@ export type ThoughtStep =
       isError?: boolean
       done: boolean
     }
+  | {
+      /** Fase real do turno (workspace, contexto, modelo) ou erro terminal. */
+      kind: 'phase'
+      id: string
+      stage: TurnPhaseStage | 'error'
+      label: string
+      done: boolean
+      startedAt: number
+      durationMs?: number
+      isError?: boolean
+    }
 
 interface Props {
   steps: ThoughtStep[]
@@ -41,7 +54,18 @@ interface Props {
   interrupted?: boolean
 }
 
+const SUBAGENT_TOOLS = new Set(['agent', 'task'])
+
+/** Nome do passo para o usuário: Agent/Task é um subagente; grafo e memória pelo nome. */
+function displayToolName(name: string, raw = ''): string {
+  const kind = knowledgeKind(name, raw)
+  if (kind) return knowledgeLabel(kind).name
+  return SUBAGENT_TOOLS.has(name.toLowerCase()) ? 'Subagente' : name
+}
+
 function summarizeToolInput(name: string, raw: string): string {
+  const kind = knowledgeKind(name, raw)
+  if (kind) return knowledgeSummary(kind, raw)
   let parsed: Record<string, unknown> | null = null
   try {
     parsed = JSON.parse(raw)
@@ -51,6 +75,9 @@ function summarizeToolInput(name: string, raw: string): string {
   if (!parsed) return raw.slice(0, 80)
 
   const lname = name.toLowerCase()
+  if (SUBAGENT_TOOLS.has(lname)) {
+    return String(parsed.description ?? parsed.subagent_type ?? '')
+  }
   if (lname === 'grep') {
     const pattern = String(parsed.pattern ?? '')
     const path = String(parsed.path ?? parsed.glob ?? '')
@@ -78,14 +105,17 @@ function summarizeToolInput(name: string, raw: string): string {
 }
 
 function describeActiveStep(step: ThoughtStep): string {
+  if (step.kind === 'phase') return `${step.label}…`
   if (step.kind === 'text') {
     const trimmed = step.content.trim().replace(/\s+/g, ' ')
     return trimmed.length > 80 ? `${trimmed.slice(0, 80)}…` : trimmed || 'Pensando…'
   }
   const lname = step.name.toLowerCase()
   const summary = summarizeToolInput(step.name, step.input)
-  const verb =
-    lname === 'grep'
+  const kind = knowledgeKind(step.name, step.input)
+  const verb = kind
+    ? knowledgeLabel(kind).verb
+    : lname === 'grep'
       ? 'Pesquisando'
       : lname === 'read'
         ? 'Lendo'
@@ -97,7 +127,9 @@ function describeActiveStep(step: ThoughtStep): string {
               ? 'Editando'
               : lname === 'webfetch' || lname === 'web_fetch'
                 ? 'Buscando'
-                : step.name
+                : SUBAGENT_TOOLS.has(lname)
+                  ? 'Subagente:'
+                  : step.name
   return summary ? `${verb} ${summary}` : verb
 }
 
@@ -113,7 +145,8 @@ function countByTool(steps: ThoughtStep[]): Array<[string, number]> {
   const counts: Record<string, number> = {}
   for (const s of steps) {
     if (s.kind !== 'tool') continue
-    counts[s.name] = (counts[s.name] ?? 0) + 1
+    const name = displayToolName(s.name, s.input)
+    counts[name] = (counts[name] ?? 0) + 1
   }
   return Object.entries(counts).sort((a, b) => b[1] - a[1])
 }
@@ -140,6 +173,8 @@ function activeHeaderLabel(steps: ThoughtStep[], idleMs: number): string {
   )
   if (runningTools.length > 1) return `${runningTools.length} ferramentas trabalhando em paralelo`
   if (runningTools.length === 1) return describeActiveStep(runningTools[0])
+  const openPhase = steps.find((s) => s.kind === 'phase' && !s.done)
+  if (openPhase) return describeActiveStep(openPhase)
   if (idleMs < 8_000) return 'Pensando…'
   if (idleMs < 35_000) return 'Cruzando resultados das ferramentas…'
   if (idleMs < 90_000) return 'Aguardando o coordenador continuar…'
@@ -172,8 +207,9 @@ export function ThinkingStream({
     : `Pensei por ${formatElapsed(elapsedMs)}`
 
   const toolCounts = countByTool(steps)
-  const hasError = steps.some((s) => s.kind === 'tool' && s.isError)
+  const hasError = steps.some((s) => (s.kind === 'tool' || s.kind === 'phase') && s.isError)
   const coordinatorLabel = activeCoordinatorLabel(steps, idleMs)
+  const actionCount = steps.filter((s) => s.kind !== 'phase').length
 
   return (
     <div
@@ -209,7 +245,7 @@ export function ThinkingStream({
               {toolCounts.map(([name, n], i) => (
                 <span key={name}>
                   {i > 0 && ' · '}
-                  {name} ×{n}
+                  {displayToolName(name)} ×{n}
                 </span>
               ))}
               {elapsedMs > 0 && (
@@ -222,9 +258,11 @@ export function ThinkingStream({
           )}
         </span>
 
-        <span className={styles.thinkingStreamCount}>
-          {steps.length} {steps.length === 1 ? 'passo' : 'passos'}
-        </span>
+        {actionCount > 0 && (
+          <span className={styles.thinkingStreamCount}>
+            {actionCount} {actionCount === 1 ? 'passo' : 'passos'}
+          </span>
+        )}
         <span className={styles.thinkingStreamChevron} aria-hidden="true">
           {expanded ? '▾' : '▸'}
         </span>
@@ -238,7 +276,9 @@ export function ThinkingStream({
               className={styles.thinkingStreamStep}
               style={{ ['--cc-step-delay' as string]: `${Math.min(idx, 8) * 40}ms` }}
             >
-              {step.kind === 'text' ? (
+              {step.kind === 'phase' ? (
+                <ThinkingPhaseStep step={step} />
+              ) : step.kind === 'text' ? (
                 <ThinkingTextStep content={step.content} />
               ) : (
                 <ThinkingToolStep
@@ -265,6 +305,26 @@ export function ThinkingStream({
             </div>
           )}
         </div>
+      )}
+    </div>
+  )
+}
+
+/** Linha discreta de fase: workspace/contexto/modelo com a duração real. */
+function ThinkingPhaseStep({ step }: { step: Extract<ThoughtStep, { kind: 'phase' }> }) {
+  const mark = step.isError ? '✗' : step.done ? '✓' : '⟳'
+  return (
+    <div
+      className={`${styles.thinkingStreamPhaseStep} ${
+        step.done ? '' : styles.thinkingStreamPhaseStepRunning
+      } ${step.isError ? styles.thinkingStreamPhaseStepError : ''}`}
+    >
+      <span className={styles.thinkingStreamPhaseMark} aria-hidden="true">
+        {mark}
+      </span>
+      <span className={styles.thinkingStreamPhaseLabel}>{step.label}</span>
+      {step.done && step.durationMs !== undefined && (
+        <span className={styles.thinkingStreamPhaseDuration}>{formatElapsed(step.durationMs)}</span>
       )}
     </div>
   )
@@ -321,7 +381,7 @@ function ThinkingToolStep({
         <span className={styles.thinkingStreamToolMark} aria-hidden="true">
           {step.isError ? '✗' : step.done ? '▸' : '⟳'}
         </span>
-        <span className={styles.thinkingStreamToolName}>{step.name}</span>
+        <span className={styles.thinkingStreamToolName}>{displayToolName(step.name, step.input)}</span>
         <span className={styles.thinkingStreamToolSummary}>{summary}</span>
         <span className={styles.thinkingStreamToolChevron} aria-hidden="true">
           {expanded ? '−' : '+'}

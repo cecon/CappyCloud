@@ -26,6 +26,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { createPortal } from 'react-dom'
 import type { AiModel } from '../api'
 import styles from './model-picker.module.css'
 
@@ -81,6 +82,8 @@ function fmtCtx(n: number): string {
 
 function modelStateLabel(model: AiModel): string | null {
   if (!model.active) return 'retirado'
+  // Claude CLI: cobra da assinatura do `claude login`, não por token.
+  if (model.provider_id === 'claude-cli') return 'assinatura'
   if (model.tier === 'paid') return 'pago'
   if (model.tier === 'unknown' || model.input_cost_per_1m_usd == null || model.output_cost_per_1m_usd == null) {
     return 'preço desconhecido'
@@ -127,9 +130,10 @@ export function ModelPicker({
     const trigger = triggerRef.current
     if (!trigger) return
     const rect = trigger.getBoundingClientRect()
+    // Compacto: mesma largura que .popoverCompact força no CSS (senão a lista vaza da tela).
     const popoverWidth = compact
-      ? Math.min(240, Math.max(rect.width, 220))
-      : Math.min(440, Math.max(rect.width, 320))
+      ? Math.min(280, window.innerWidth - 16)
+      : Math.min(440, Math.max(rect.width, 320), window.innerWidth - 16)
     const left = Math.min(
       Math.max(8, rect.left),
       window.innerWidth - popoverWidth - 8,
@@ -267,7 +271,9 @@ export function ModelPicker({
         </span>
       </button>
 
-      {open && (
+      {/* No body: dentro de cabeçalhos com transform/backdrop-filter o position:fixed
+          fica relativo a eles e a lista saía da tela (celular). */}
+      {open && createPortal(
         <div
           ref={popoverRef}
           className={`${styles.popover} ${compact ? styles.popoverCompact : ''}`}
@@ -431,7 +437,8 @@ export function ModelPicker({
             <span>↑↓ navegar · Enter selecionar · Esc fechar</span>
             <span className={styles.footerHint}>preços por 1M tokens</span>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

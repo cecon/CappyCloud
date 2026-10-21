@@ -22,11 +22,13 @@ from ._agent_context import (
     load_agent_context,
     load_repo_agent_profiles,
 )
+from ._agent_runtime_lookup import resolve_agent_runtime
+from ._agent_session import AGENT_RUNTIME_CLAUDE_CLI
+from ._claude_cli_resume import claude_cli_agent_names
 from ._environment_manager import EnvironmentManager
 from ._pipeline_event_stream import stream_task_events
 from ._pipeline_helpers import (
     db_url,
-    inject_repo_context,
     push_mcp_config,
     resolve_text_model_id,
     sse,
@@ -51,6 +53,8 @@ class Pipeline:
         SANDBOX_GRPC_PORT: int = Field(default=50051)
         SANDBOX_SESSION_PORT: int = Field(default=8080)
         SANDBOX_IDLE_TIMEOUT: int = Field(default=1800)
+        # Worktrees de sessão sem atividade há mais que isto são apagados pelo GC.
+        SESSION_CLEANUP_AFTER_S: int = Field(default=86400)
         REDIS_URL: str = Field(default="redis://redis:6379")
         DATABASE_URL: str = Field(default="")
 
@@ -65,6 +69,7 @@ class Pipeline:
             SANDBOX_GRPC_PORT=int(os.getenv("SANDBOX_GRPC_PORT", "50051")),
             SANDBOX_SESSION_PORT=int(os.getenv("SANDBOX_SESSION_PORT", "8080")),
             SANDBOX_IDLE_TIMEOUT=int(os.getenv("SANDBOX_IDLE_TIMEOUT", "1800")),
+            SESSION_CLEANUP_AFTER_S=int(os.getenv("SESSION_CLEANUP_AFTER_S", "86400")),
             REDIS_URL=os.getenv("REDIS_URL", "redis://redis:6379"),
             DATABASE_URL=db_url(),
         )
@@ -81,6 +86,7 @@ class Pipeline:
             redis_url=self.valves.REDIS_URL,
             database_url=self.valves.DATABASE_URL,
             idle_ttl=self.valves.SANDBOX_IDLE_TIMEOUT,
+            cleanup_after=self.valves.SESSION_CLEANUP_AFTER_S,
         )
         await self._store.connect()
         self._env_manager = EnvironmentManager(
@@ -114,6 +120,17 @@ class Pipeline:
         return asyncio.run_coroutine_threadsafe(coro, self._loop).result(
             timeout=timeout
         )
+
+    def _native_subagents(self, sandbox_id: str, session_url: str) -> set[str]:
+        """Subagentes que o Claude CLI carrega de ~/.claude/agents neste sandbox."""
+        try:
+            runtime = self._run(resolve_agent_runtime(db_url(), sandbox_id), timeout=5)
+            if runtime != AGENT_RUNTIME_CLAUDE_CLI:
+                return set()
+            return self._run(claude_cli_agent_names(session_url), timeout=10)
+        except Exception as exc:
+            log.warning("Falha ao listar os subagentes da sandbox %s: %s", sandbox_id, exc)
+            return set()
 
     def cancel_conversation(self, conversation_id: str) -> bool:
         if self._dispatcher is None:
@@ -236,11 +253,12 @@ class Pipeline:
             sandbox_session_url,
             repos=repos,
             session_root=session_root,
-            worktree_top_level=None,
             agent_profiles=agent_profiles,
             execution_profile=execution_profile,
+            native_subagents=(
+                self._native_subagents(sandbox_id, sandbox_session_url) if agent_profiles else set()
+            ),
         )
-        prompt = inject_repo_context(prompt, repos, session_root)
 
         # Injeta contexto SigNoz (service.name por repo) se houver configuração.
         repo_ids_for_signoz = [r["repo_id"] for r in repos if r.get("repo_id")]
@@ -295,6 +313,8 @@ class Pipeline:
             "permission_mode": permission_mode,
             "sandbox_session_url": sandbox_session_url,
             "attachments": attachments_payload,
+            # Claude CLI com sessão retomada recebe só a pergunta, sem o contexto acima.
+            "user_message": user_message,
         }
 
         # Envia config MCP ao sandbox antes de cada dispatch (idempotente).

@@ -11,20 +11,25 @@ import {
   bulkGrantAiModelsByTier,
   errorToUserMessage,
   fetchAdminModels,
+  fetchAdminWorkspaces,
   fetchRepositories,
   fetchSandboxes,
   fetchUserAiModelAccess,
   fetchUserRepositoryAccess,
   fetchUserSandboxAccess,
+  fetchUserWorkspaceAccess,
   getToken,
   grantUserAiModelAccess,
   grantUserRepositoryAccess,
   grantUserSandboxAccess,
+  grantUserWorkspaceAccess,
   type ModelTier,
+  type AdminWorkspace,
   type Repository,
   revokeUserAiModelAccess,
   revokeUserRepositoryAccess,
   revokeUserSandboxAccess,
+  revokeUserWorkspaceAccess,
   type Sandbox,
 } from '../api'
 
@@ -43,6 +48,7 @@ export function UserAccessDrawer({ user, onClose }: Props) {
   const [sandboxes, setSandboxes] = useState<Pair<Sandbox>>(EMPTY())
   const [repos, setRepos] = useState<Pair<Repository>>(EMPTY())
   const [models, setModels] = useState<Pair<AiModel>>(EMPTY())
+  const [workspaces, setWorkspaces] = useState<Pair<AdminWorkspace>>(EMPTY())
   const [bulkBusy, setBulkBusy] = useState<ModelTier | null>(null)
   const [error, setError] = useState<string | null>(null)
   const visibleAllowedModels = countVisibleAllowed(models)
@@ -57,7 +63,15 @@ export function UserAccessDrawer({ user, onClose }: Props) {
     setSandboxes(EMPTY())
     setRepos(EMPTY())
     setModels(EMPTY())
+    setWorkspaces(EMPTY())
     setError(null)
+
+    // Workspaces só existem para super admin; 403 aqui não pode derrubar as outras abas.
+    void Promise.all([fetchAdminWorkspaces(token), fetchUserWorkspaceAccess(token, user.id)])
+      .then(([all, allowed]) =>
+        setWorkspaces({ available: all, allowed: new Set(allowed), busy: new Set() }),
+      )
+      .catch(() => setWorkspaces({ available: [], allowed: new Set(), busy: new Set() }))
 
     void (async () => {
       try {
@@ -147,11 +161,24 @@ export function UserAccessDrawer({ user, onClose }: Props) {
             <div className="flex-1 space-y-4 px-6 py-5">
               {error && <AccessAlert message={error} onClose={() => setError(null)} />}
               <Tabs defaultValue="sandboxes" className="space-y-4">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-4">
+                  <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
                   <TabsTrigger value="sandboxes">Sandboxes</TabsTrigger>
                   <TabsTrigger value="repos">Repositórios</TabsTrigger>
                   <TabsTrigger value="models">Modelos LLM</TabsTrigger>
                 </TabsList>
+
+                <TabsContent value="workspaces" className="mt-0">
+                  <AccessList
+                    available={workspaces.available}
+                    allowed={workspaces.allowed}
+                    busy={workspaces.busy}
+                    renderLabel={(w) => <ResourceLabel title={w.name} badge={w.slug} />}
+                    onToggle={(id) =>
+                      toggleAccess(workspaces, setWorkspaces, id, grantUserWorkspaceAccess, revokeUserWorkspaceAccess)
+                    }
+                  />
+                </TabsContent>
 
                 <TabsContent value="sandboxes" className="mt-0">
                   <AccessList

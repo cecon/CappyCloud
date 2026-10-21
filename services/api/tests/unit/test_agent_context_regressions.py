@@ -73,23 +73,33 @@ def test_session_tools_deep_require_confluence_for_operational_support() -> None
     assert "No perfil profundo" in section
     assert "consulta é obrigatória para perguntas de suporte operacional" in section
     assert "execute primeiro o `curl` de `/confluence/search`" in section
-    assert "/task" in section
     assert "A busca principal deve manter `&space=`" in section
     assert "resultados forem vazios, lentos ou pouco aderentes" in section
     assert "&space=Postos" in section
     assert "&labels=autosystem" in section
 
 
-def test_response_rules_treat_grep_as_candidate_not_evidence() -> None:
-    section = _agent_prompt_sections.render_response_rules()
+def test_sandbox_claude_md_treats_grep_as_candidate_not_evidence() -> None:
+    """As regras de resposta ficam no CLAUDE.md base da imagem, não no prompt."""
+    from .agent_runtime_test_loader import ROOT
 
-    assert "`Grep`, listagem de arquivos" in section
-    assert "não são evidência suficiente" in section
-    assert "Não invente nomes de colunas" in section
-    assert "Não recomende criar script novo" in section
-    assert "pelo código que consegui" in section
-    assert "ao menos uma evidência citável" in section
-    assert "Não adicione prefixos como `src/`" in section
+    rules = (ROOT / "sandbox" / "CLAUDE.md").read_text(encoding="utf-8")
+
+    assert "`Grep`, listagem de arquivos" in rules
+    assert "não são evidência suficiente" in rules
+    assert "Não invente nomes de colunas" in rules
+    assert "Não recomende criar script" in rules
+    assert "pelo código que consegui" in rules
+    assert "ao menos uma evidência citável" in rules
+    assert "Não adicione prefixos como `src/`" in rules
+
+
+def test_agent_prompt_leaves_static_rules_to_claude_md() -> None:
+    prompt = _agent_context.build_prompt_with_agent(
+        "oi", skills=[], sandbox_session_url="http://sandbox:8080", repos=[]
+    )
+    assert "## Regras de resposta" not in prompt
+    assert "/task" not in prompt
 
 
 def test_agent_prompt_does_not_instruct_read_tool_for_file_evidence() -> None:
@@ -135,7 +145,7 @@ def test_agent_prompt_passes_execution_profile_to_session_tools() -> None:
     )
 
     assert "Perfil selecionado: Profundo" in prompt
-    assert "Sub-agente de investigação" in prompt
+    assert "/task" not in prompt
     assert "No perfil profundo" in prompt
 
 
@@ -295,3 +305,60 @@ def test_evidence_render_requires_confluence_sources_in_final_answer() -> None:
     assert "Fontes consultadas" in section
     assert "Não omita a fonte documental" in section
     assert "PDV Fácil + AS3" in section
+
+
+_ARCHITECT = {
+    "slug": "autosystem-architect",
+    "name": "autosystem-architect",
+    "description": "Arquitetura AutoSystem",
+    "system_prompt": "Mapa de investigação AutoSystem",
+    "default_model": "sonnet",
+}
+
+
+def test_claude_cli_cites_architect_subagent_instead_of_pasting_it() -> None:
+    """No Claude CLI o perfil já é subagente em ~/.claude/agents: colar duplicaria."""
+    native = _agent_prompt_sections.render_repo_agents(
+        [_ARCHITECT], native_subagents={"autosystem-architect"}
+    )
+    pasted = _agent_prompt_sections.render_repo_agents([_ARCHITECT])
+
+    assert "autosystem-architect" in native
+    assert "ferramenta Agent" in native
+    assert "Mapa de investigação AutoSystem" not in native
+    assert "Mapa de investigação AutoSystem" in pasted
+    assert "Modelo preferencial: `sonnet`" in pasted
+
+
+def test_repo_skills_are_an_index_not_full_content() -> None:
+    section = _agent_prompt_sections.render_repo_skills(
+        [{"title": "Fiscal", "summary": "Regras fiscais", "content": "conteúdo longo"}]
+    )
+
+    assert "- **Fiscal** — Regras fiscais" in section
+    assert "`/skills/search`" in section
+    assert "conteúdo longo" not in section
+    assert "skills globais" not in section
+
+
+def test_architect_without_agent_file_is_still_pasted() -> None:
+    """Sem ~/.claude/agents gravado (sandbox sem boot), citar mandaria para o nada."""
+    other = {**_ARCHITECT, "slug": "pdv-architect", "name": "pdv-architect"}
+    other["system_prompt"] = "Mapa do PDV"
+    section = _agent_prompt_sections.render_repo_agents(
+        [_ARCHITECT, other], native_subagents={"autosystem-architect"}
+    )
+
+    assert "Mapa de investigação AutoSystem" not in section
+    assert "Mapa do PDV" in section
+
+
+def test_sandbox_claude_md_blocks_details_not_in_the_opened_source() -> None:
+    """Caso real: resposta citou FISA170/CJ2_INDOP que não estavam no artigo lido."""
+    from .agent_runtime_test_loader import ROOT
+
+    rules = (ROOT / "sandbox" / "CLAUDE.md").read_text(encoding="utf-8")
+
+    assert "só entram na\n  resposta se estiverem na fonte que você abriu" in rules
+    assert "Não confirmado na documentação:" in rules
+    assert "`webread <url>`" in rules

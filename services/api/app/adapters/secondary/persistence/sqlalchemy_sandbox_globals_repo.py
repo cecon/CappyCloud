@@ -53,7 +53,11 @@ class SQLAlchemySandboxSkillRepository(SandboxSkillRepository):
             .where(SandboxSkillORM.sandbox_id == sandbox_id)
             .order_by(SandboxSkillORM.created_at)
         )
-        return global_rows + [legacy_skill_to_entity(r) for r in legacy_rows.scalars()]
+        # Tabela legada (pré-catálogo global): só entra o que não existe no global,
+        # para o mesmo nome não ser escrito duas vezes em ~/.claude/skills.
+        names = {row.name for row in global_rows}
+        legacy = [legacy_skill_to_entity(r) for r in legacy_rows.scalars() if r.name not in names]
+        return global_rows + legacy
 
     async def list_global(self) -> list[GlobalSkillEntity]:
         rows = (
@@ -199,20 +203,6 @@ class SQLAlchemySandboxSkillRepository(SandboxSkillRepository):
             [skill.sandbox_id],
         )
         return global_entity_to_sandbox_entity(created, skill.sandbox_id)
-
-    async def _create_legacy(self, skill: SandboxSkillEntity) -> SandboxSkillEntity:
-        orm = SandboxSkillORM(
-            id=skill.id,
-            sandbox_id=skill.sandbox_id,
-            name=skill.name,
-            description=skill.description,
-            content=skill.content,
-            enabled=skill.enabled,
-        )
-        self._session.add(orm)
-        await self._session.commit()
-        await self._session.refresh(orm)
-        return legacy_skill_to_entity(orm)
 
     async def update(self, skill: SandboxSkillEntity) -> SandboxSkillEntity:
         orm = await self._session.get(GlobalSkillORM, skill.id)

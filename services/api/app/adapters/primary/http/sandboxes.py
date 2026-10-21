@@ -11,6 +11,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
+from app.adapters.primary.http.deps_auth import require_role
 from app.adapters.secondary.persistence.sqlalchemy_user_access_repo import (
     SQLAlchemyUserSandboxAccessRepository,
 )
@@ -88,7 +89,7 @@ async def register_sandbox(
 async def update_sandbox_status(
     sandbox_id: str,
     status: str,
-    _current: Annotated[User, Depends(get_authenticated_user)],
+    _current: Annotated[User, Depends(require_role(UserRole.ADMIN))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> SandboxOut:
     """Atualiza status de um sandbox (active | draining | offline)."""

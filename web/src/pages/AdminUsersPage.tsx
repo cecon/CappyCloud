@@ -22,6 +22,7 @@ import {
 import {
   IconDotsVertical,
   IconKey,
+  IconLockOpen,
   IconShieldDown,
   IconShieldUp,
   IconUserCog,
@@ -33,6 +34,7 @@ import {
   fetchCurrentUser,
   getToken,
   registerRequest,
+  resetAdminUserPassword,
   updateAdminUserRole,
   type UserRole,
 } from '../api'
@@ -57,6 +59,8 @@ const EMPTY_FORM: CreateFormState = {
 export function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUser[] | null>(null)
   const [meId, setMeId] = useState<string | null>(null)
+  const [meIsSuperAdmin, setMeIsSuperAdmin] = useState(false)
+  const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const [createOpen, setCreateOpen] = useState(false)
@@ -74,6 +78,7 @@ export function AdminUsersPage() {
     try {
       const [me, list] = await Promise.all([fetchCurrentUser(token), fetchAdminUsers(token)])
       setMeId(me.id)
+      setMeIsSuperAdmin(Boolean(me.is_super_admin))
       setUsers(list)
       setLoadError(null)
     } catch (err) {
@@ -108,6 +113,31 @@ export function AdminUsersPage() {
       setFormError(errorToUserMessage(err))
     } finally {
       setCreating(false)
+    }
+  }
+
+  async function resetPassword(target: AdminUser) {
+    const ok = window.confirm(
+      `Redefinir a senha de ${target.email}?
+
+A senha volta para a temporária padrão, vale por 24 horas e a pessoa terá que trocá-la no próximo acesso.`,
+    )
+    if (!ok) return
+    const token = getToken()
+    if (!token) return
+    setPendingRoleChange(target.id)
+    setActionError(null)
+    setActionNotice(null)
+    try {
+      const updated = await resetAdminUserPassword(token, target.id)
+      setUsers((prev) => (prev ? prev.map((u) => (u.id === updated.id ? updated : u)) : prev))
+      setActionNotice(
+        `Senha de ${target.email} redefinida. Vale por 24 horas; no próximo acesso a pessoa define uma senha nova.`,
+      )
+    } catch (err) {
+      setActionError(errorToUserMessage(err))
+    } finally {
+      setPendingRoleChange(null)
     }
   }
 
@@ -150,6 +180,11 @@ export function AdminUsersPage() {
           </Button>
         </Group>
 
+        {actionNotice && (
+          <Alert color="green" title="Pronto" withCloseButton onClose={() => setActionNotice(null)}>
+            {actionNotice}
+          </Alert>
+        )}
         {actionError && (
           <Alert color="red" title="Falha na ação" withCloseButton onClose={() => setActionError(null)}>
             {actionError}
@@ -228,8 +263,8 @@ export function AdminUsersPage() {
                         <Menu shadow="md" position="bottom-end">
                           <Menu.Target>
                             <ActionIcon
-                              aria-label="Alterar papel"
-                              title="Alterar papel"
+                              aria-label="Ações do usuário"
+                              title="Papel e senha"
                               size="lg"
                               variant="default"
                               loading={isPending}
@@ -262,6 +297,14 @@ export function AdminUsersPage() {
                                 </Text>
                               )}
                             </Menu.Item>
+                            {meIsSuperAdmin && !isSelf && (
+                              <Menu.Item
+                                leftSection={<IconLockOpen size={14} />}
+                                onClick={() => void resetPassword(u)}
+                              >
+                                Redefinir senha
+                              </Menu.Item>
+                            )}
                           </Menu.Dropdown>
                         </Menu>
                       </ActionsCell>

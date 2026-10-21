@@ -7,8 +7,7 @@ import json
 import queue
 from collections.abc import Generator
 
-import asyncpg
-
+from ._db_pool import create_pool
 from ._pipeline_helpers import sse
 
 
@@ -25,7 +24,7 @@ def stream_task_events(
     async def _produce() -> None:
         pool = None
         try:
-            pool = await asyncpg.create_pool(database_url, min_size=1, max_size=2)
+            pool = await create_pool(database_url, min_size=1, max_size=2)
             last_id = cursor
             while True:
                 if last_id is None:

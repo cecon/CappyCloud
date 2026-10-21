@@ -25,6 +25,20 @@ class PermissionMode(StrEnum):
 DEFAULT_PERMISSION_MODE = PermissionMode.BYPASS_PERMISSIONS.value
 
 
+class SandboxRuntime(StrEnum):
+    """Orquestrador do container da sandbox."""
+
+    COMPOSE = "compose"
+    SWARM = "swarm"
+
+
+class AgentRuntime(StrEnum):
+    """Runtime do agente dentro da sandbox (``Sandbox.runtime`` é o orquestrador)."""
+
+    OPENCLAUDE = "openclaude"
+    CLAUDE_CLI = "claude_cli"
+
+
 class ExecutionProfile(StrEnum):
     FAST = "fast"
     MEDIUM = "medium"
@@ -90,6 +104,19 @@ def validate_permission_mode(raw: object | None) -> str:
         raise ValueError(f"modo de permissão inválido. Use um de: {allowed}.") from exc
 
 
+TICKET_NUMBER_MAX_LEN = 64
+
+
+def normalize_ticket_number(raw: object | None) -> str | None:
+    """Número do chamado sem espaços nem ``#`` na frente; vazio vira ``None``."""
+    if raw is None:
+        return None
+    value = str(raw).strip().lstrip("#").strip()
+    if len(value) > TICKET_NUMBER_MAX_LEN:
+        raise ValueError(f"Número do chamado com mais de {TICKET_NUMBER_MAX_LEN} caracteres.")
+    return value or None
+
+
 def validate_execution_profile(raw: object | None) -> str:
     """Normaliza e valida o perfil de execucao da mensagem."""
     if raw is None:
@@ -112,3 +139,11 @@ def validate_user_workspace_status(raw: object | None) -> str:
     except ValueError as exc:
         allowed = ", ".join(status.value for status in UserWorkspaceStatus)
         raise ValueError(f"estado de workspace inválido. Use um de: {allowed}.") from exc
+
+
+# Modelos do Claude CLI (assinatura do `claude login` da sandbox, fora do catálogo).
+CLAUDE_CLI_MODEL_IDS = frozenset({"claude-cli/opus", "claude-cli/sonnet", "claude-cli/haiku"})
+
+
+def is_claude_cli_model(model_id: str | None) -> bool:
+    return (model_id or "") in CLAUDE_CLI_MODEL_IDS

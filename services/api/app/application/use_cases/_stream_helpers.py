@@ -16,8 +16,13 @@ from app.domain.value_objects import validate_execution_profile, validate_permis
 async def compute_cost(messages: MessageRepository, usage: dict) -> float:
     """Calcula custo USD via lookup no catálogo ``ai_models``.
 
+    Se o runtime já mandou o custo (Claude CLI: equivalente pela tabela da API
+    da Anthropic, calculado pelo Claude Code), usa esse valor.
     Devolve ``0.0`` quando não há tokens, modelo ou pricing cadastrado.
     """
+    reported = usage.get("cost_usd")
+    if isinstance(reported, (int, float)) and reported >= 0:
+        return round(float(reported), 6)
     model_used = usage.get("model_used") or ""
     prompt_tokens = int(usage.get("prompt_tokens") or 0)
     completion_tokens = int(usage.get("completion_tokens") or 0)

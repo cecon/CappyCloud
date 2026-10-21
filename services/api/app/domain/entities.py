@@ -7,7 +7,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from app.domain.value_objects import DEFAULT_PERMISSION_MODE
+from app.domain.entities_catalog import ConversationArtifactChunk, GlobalSkill  # noqa: F401
+from app.domain.value_objects import DEFAULT_PERMISSION_MODE, AgentRuntime, SandboxRuntime
 
 
 def _utcnow() -> datetime:
@@ -17,11 +18,6 @@ def _utcnow() -> datetime:
 class UserRole(StrEnum):
     ADMIN = "admin"
     USER = "user"
-
-
-class SandboxRuntime(StrEnum):
-    COMPOSE = "compose"
-    SWARM = "swarm"
 
 
 class ModelTier(StrEnum):
@@ -49,6 +45,8 @@ class User:
     is_super_admin: bool = False
     must_change_password: bool = False
     created_at: datetime = field(default_factory=_utcnow)
+    # Senha temporária da redefinição pelo admin: vale até aqui (depois, nova redefinição).
+    password_reset_expires_at: datetime | None = None
 
     @property
     def is_admin(self) -> bool:
@@ -92,6 +90,7 @@ class Sandbox:
     container_status: ContainerStatus = ContainerStatus.NOT_CREATED
     register_token: str | None = None
     claude_md: str = ""
+    agent_runtime: AgentRuntime = AgentRuntime.OPENCLAUDE
     created_at: datetime = field(default_factory=_utcnow)
 
 
@@ -217,6 +216,7 @@ class Conversation:
     ai_model_id: uuid.UUID | None = None
     repos: list[dict] = field(default_factory=list)
     session_root: str | None = None
+    workspace_id: uuid.UUID | None = None
     permission_mode: str = DEFAULT_PERMISSION_MODE
     worktree_exists: bool = False
     lines_added: int = 0
@@ -230,6 +230,10 @@ class Conversation:
     ci_status: str = "unknown"  # unknown | pending | running | passed | failed
     ci_url: str | None = None
     user_email: str | None = None
+    # Arquivada: some da lista do usuário, mas continua acessível e intacta.
+    archived_at: datetime | None = None
+    # Número do chamado (ex.: Zendesk) que originou a conversa.
+    ticket_number: str | None = None
 
 
 @dataclass
@@ -260,6 +264,8 @@ class Message:
     completion_tokens: int = 0
     cost_usd: float = 0.0
     payload_diagnostics: dict[str, object] | None = None
+    # Claude CLI: uso das janelas da assinatura (5h/7d) ao fim da resposta.
+    plan_usage: dict[str, object] | None = None
 
 
 @dataclass
@@ -279,33 +285,6 @@ class MessageAttachment:
     vision_model_used: str | None = None
     uploaded_by: uuid.UUID | None = None
     uploaded_at: datetime = field(default_factory=_utcnow)
-
-
-@dataclass
-class ConversationArtifactChunk:
-    id: uuid.UUID
-    attachment_id: uuid.UUID
-    conversation_id: uuid.UUID
-    chunk_index: int
-    content: str
-    line_start: int | None = None
-    line_end: int | None = None
-    page_start: int | None = None
-    page_end: int | None = None
-    meta: dict = field(default_factory=dict)
-    created_at: datetime = field(default_factory=_utcnow)
-
-
-@dataclass
-class GlobalSkill:
-    id: uuid.UUID
-    name: str
-    description: str = ""
-    content: str = ""
-    enabled: bool = True
-    sandbox_ids: list[uuid.UUID] = field(default_factory=list)
-    created_at: datetime = field(default_factory=_utcnow)
-    updated_at: datetime = field(default_factory=_utcnow)
 
 
 @dataclass

@@ -35,6 +35,15 @@ echo "[session_start] slug=${ENV_SLUG}  session=${SESSION_ID}  worktree=${WORKTR
 
 mkdir -p "$(dirname "$WORKTREE_PATH")"
 
+# ── Trava por repositório ─────────────────────────────────────
+# Várias sessões (inclusive de workspaces diferentes) usam o mesmo clone
+# principal: fetch, worktree add e prune não podem rodar em paralelo nele.
+if command -v flock >/dev/null 2>&1; then
+    mkdir -p /repos/.locks
+    exec 9>"/repos/.locks/${ENV_SLUG}.lock"
+    flock -w 600 9 || { echo "[session_start] ERRO: timeout aguardando trava de ${ENV_SLUG}."; exit 1; }
+fi
+
 # ── Helper: overlay .sendbox/ → .claude/ na worktree ─────────
 # .sendbox fica versionado no clone principal do repo e é copiado como
 # configuração local da sessão. Copiamos apenas arquivos regulares para evitar
@@ -92,9 +101,23 @@ _inject_sendbox_overlay() {
     fi
 }
 
+# A branch da sessão nunca rastreia a branch base: um `git push` do agente
+# (ou o comando que o próprio git sugere) iria para a base, ex.: produção.
+_drop_foreign_upstream() {
+    local worktree_path="$1"
+    local branch="$2"
+    local upstream
+    upstream=$(git -C "$worktree_path" rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || true)
+    if [ -n "$upstream" ] && [ "$upstream" != "origin/${branch}" ]; then
+        git -C "$worktree_path" branch --unset-upstream >/dev/null 2>&1 || true
+        echo "[session_start] Upstream ${upstream} removido de ${branch}."
+    fi
+}
+
 # ── Idempotente: worktree saudável já existe ──────────────────
 if [ -d "$WORKTREE_PATH/.git" ] || [ -f "$WORKTREE_PATH/.git" ]; then
     echo "[session_start] Worktree já existe — reutilizando."
+    _drop_foreign_upstream "$WORKTREE_PATH" "$BRANCH_NAME"
     _inject_sendbox_overlay "$MAIN_REPO" "$WORKTREE_PATH" || true
     exit 0
 fi
@@ -221,10 +244,19 @@ _create_worktree() {
         echo "[session_start] Branch base detectada automaticamente: ${resolved_base}"
     fi
 
+    # Sessão retomada depois da limpeza de inatividade: a branch local foi
+    # removida, mas o trabalho enviado (PR) está no remote. Continua de lá.
+    if ! git -C "$main_repo" rev-parse --verify "$branch_name" >/dev/null 2>&1 \
+        && _fetch_base_branch "$main_repo" "$branch_name" >/dev/null 2>&1 \
+        && git -C "$main_repo" rev-parse --verify "refs/remotes/origin/${branch_name}" >/dev/null 2>&1; then
+        echo "[session_start] Branch ${branch_name} existe no remote — retomando dela."
+        resolved_base="refs/remotes/origin/${branch_name}"
+    fi
+
     echo "[session_start] Criando worktree: branch=${branch_name} a partir de ${resolved_base}"
 
     # Tenta criar nova branch a partir da base
-    if git -C "$main_repo" worktree add -b "$branch_name" "$worktree_path" "$resolved_base" 2>&1; then
+    if git -C "$main_repo" worktree add --no-track -b "$branch_name" "$worktree_path" "$resolved_base" 2>&1; then
         echo "[session_start] Worktree criado com nova branch ${branch_name}"
         return 0
     fi
@@ -233,6 +265,7 @@ _create_worktree() {
     if git -C "$main_repo" rev-parse --verify "$branch_name" >/dev/null 2>&1; then
         echo "[session_start] Branch ${branch_name} já existe — checkout direto."
         if git -C "$main_repo" worktree add "$worktree_path" "$branch_name" 2>&1; then
+            _drop_foreign_upstream "$worktree_path" "$branch_name"
             return 0
         fi
     fi
@@ -292,16 +325,9 @@ else
     fi
 fi
 
-# ── CLAUDE.md ─────────────────────────────────────────────────
-# Prioridade: o ficheiro do próprio repo (seja CLAUDE.md ou AGENTS.md)
-# vence sempre. Só copiamos o template genérico do CappyCloud quando o repo
-# não tem nenhum desses ficheiros — assim não sobrescrevemos instruções do
-# utilizador nem confundimos o agente com o manual do CappyCloud.
-if [ -f "$WORKTREE_PATH/CLAUDE.md" ] || [ -f "$WORKTREE_PATH/AGENTS.md" ]; then
-    echo "[session_start] CLAUDE.md/AGENTS.md do repo preservado."
-elif [ -f /app/CLAUDE.md ]; then
-    cp /app/CLAUDE.md "$WORKTREE_PATH/CLAUDE.md"
-fi
+# CLAUDE.md: não é copiado para o worktree. As regras do CappyCloud são memória
+# do usuário (~/.claude e ~/.openclaude, via globals_handler); o do workspace
+# vem da raiz do workspace; o do próprio repo já está no worktree.
 
 # ── .sendbox/ overlay (commands/agents/skills do próprio repo) ──
 _inject_sendbox_overlay "$MAIN_REPO" "$WORKTREE_PATH" || true

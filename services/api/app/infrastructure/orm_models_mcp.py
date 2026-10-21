@@ -29,7 +29,7 @@ class McpServer(Base):
     """Servidor MCP configurado por sandbox (ADR-004 §6).
 
     Cada linha representa uma entrada em ``mcpServers`` no
-    ``~/.claude/settings.json`` do openclaude rodando no sandbox.
+    ``~/.openclaude.json`` do sandbox, lido pelos dois runtimes.
     Constraint composta ``(sandbox_id, name)`` garante unicidade dentro
     de uma sandbox.
     """

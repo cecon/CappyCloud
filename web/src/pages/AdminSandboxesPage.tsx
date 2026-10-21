@@ -19,11 +19,13 @@ import {
 } from '@/components/ui/legacy'
 import {
   IconCopy,
+  IconCpu,
   IconDotsVertical,
   IconPlayerPlay,
   IconPlayerStop,
   IconRefresh,
   IconSettings,
+  IconTerminal2,
   IconTrash,
 } from '@tabler/icons-react'
 import {
@@ -35,17 +37,21 @@ import {
   errorToUserMessage,
   fetchAdminSandboxes,
   getToken,
+  type AgentRuntime,
   type Sandbox,
   type SandboxRuntime,
   stopAdminSandbox,
 } from '../api'
 import { SandboxGlobalsDrawer } from '../components/SandboxGlobalsDrawer'
+import { SandboxTerminalModal } from '../components/SandboxTerminalModal'
 import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
+import { useCurrentUser } from '../hooks/useCurrentUser'
 import styles from './AdminSandboxesPage.module.css'
 
 type CreateState = {
   name: string
   runtime: SandboxRuntime
+  agentRuntime: AgentRuntime
   image: string
   envEntries: { key: string; value: string }[]
 }
@@ -53,6 +59,7 @@ type CreateState = {
 const EMPTY_CREATE: CreateState = {
   name: '',
   runtime: 'compose',
+  agentRuntime: 'openclaude',
   image: '',
   envEntries: [{ key: '', value: '' }],
 }
@@ -112,6 +119,15 @@ export function AdminSandboxesPage() {
   const [cloning, setCloning] = useState(false)
 
   const [globalsFor, setGlobalsFor] = useState<Sandbox | null>(null)
+  const [globalsTab, setGlobalsTab] = useState<'claude' | 'runtime'>('claude')
+  const openGlobals = (sb: Sandbox, tab: 'claude' | 'runtime') => {
+    setGlobalsTab(tab)
+    setGlobalsFor(sb)
+  }
+  const [terminalFor, setTerminalFor] = useState<Sandbox | null>(null)
+  const currentUser = useCurrentUser()
+  // Terminal abre um shell no container: só super admin.
+  const canUseTerminal = currentUser.status === 'ready' && currentUser.user.is_super_admin
 
   const [pendingAction, setPendingAction] = useState<string | null>(null)
 
@@ -157,6 +173,7 @@ export function AdminSandboxesPage() {
       await createAdminSandbox(token, {
         name: form.name.trim(),
         runtime: form.runtime,
+        agent_runtime: form.agentRuntime,
         image: form.image.trim(),
         env_vars: envEntriesToRecord(form.envEntries),
       })
@@ -308,7 +325,7 @@ export function AdminSandboxesPage() {
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Nome</Table.Th>
-                  <Table.Th style={{ width: 120 }}>Runtime</Table.Th>
+                  <Table.Th style={{ width: 140 }}>Agente</Table.Th>
                   <Table.Th>Imagem</Table.Th>
                   <Table.Th style={{ width: 180 }}>Container</Table.Th>
                   <Table.Th style={{ width: 120 }}>Sessões</Table.Th>
@@ -329,9 +346,20 @@ export function AdminSandboxesPage() {
                         </Text>
                       </Table.Td>
                       <Table.Td>
-                        <Badge variant="light" color={sb.runtime === 'compose' ? 'blue' : 'grape'}>
-                          {sb.runtime.toUpperCase()}
-                        </Badge>
+                        {/* Runtime do agente (clicável: abre a troca); o modo do container fica abaixo. */}
+                        <button
+                          type="button"
+                          onClick={() => openGlobals(sb, 'runtime')}
+                          title="Trocar o runtime do agente (openclaude ou Claude CLI)"
+                          style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer' }}
+                        >
+                          <Badge variant="light" color={sb.agent_runtime === 'claude_cli' ? 'orange' : 'blue'}>
+                            {sb.agent_runtime === 'claude_cli' ? 'Claude CLI' : 'openclaude'}
+                          </Badge>
+                        </button>
+                        <Text size="xs" c="dimmed">
+                          {sb.runtime}
+                        </Text>
                       </Table.Td>
                       <Table.Td>
                         <Text size="sm" style={{ wordBreak: 'break-all' }}>
@@ -373,6 +401,17 @@ export function AdminSandboxesPage() {
                         >
                           <IconPlayerStop size={16} />
                         </RowActionIcon>
+                        {canUseTerminal && (
+                          <RowActionIcon
+                            label={live ? 'Terminal (ex.: claude login)' : 'Terminal: inicie o container primeiro'}
+                            color="grape"
+                            variant="default"
+                            onClick={() => setTerminalFor(sb)}
+                            disabled={isPending || !live}
+                          >
+                            <IconTerminal2 size={16} />
+                          </RowActionIcon>
+                        )}
                         <Menu shadow="md" position="bottom-end">
                           <Menu.Target>
                             <ActionIcon
@@ -387,10 +426,16 @@ export function AdminSandboxesPage() {
                           </Menu.Target>
                           <Menu.Dropdown>
                             <Menu.Item
-                              leftSection={<IconSettings size={14} />}
-                              onClick={() => setGlobalsFor(sb)}
+                              leftSection={<IconCpu size={14} />}
+                              onClick={() => openGlobals(sb, 'runtime')}
                             >
-                              MCPs / Skills / Agents...
+                              Runtime do agente (openclaude / Claude CLI)...
+                            </Menu.Item>
+                            <Menu.Item
+                              leftSection={<IconSettings size={14} />}
+                              onClick={() => openGlobals(sb, 'claude')}
+                            >
+                              CLAUDE.md, MCPs, Skills e Agents...
                             </Menu.Item>
                             <Menu.Item
                               leftSection={<IconCopy size={14} />}
@@ -462,6 +507,21 @@ export function AdminSandboxesPage() {
             }}
             allowDeselect={false}
           />
+          <Select
+            label="Runtime do agente"
+            description="Claude CLI exige `claude login` no terminal da sandbox (aba Runtime)."
+            data={[
+              { value: 'openclaude', label: 'openclaude (catálogo de modelos)' },
+              { value: 'claude_cli', label: 'Claude CLI oficial' },
+            ]}
+            value={form.agentRuntime}
+            onChange={(value) => {
+              if (value === 'openclaude' || value === 'claude_cli') {
+                setForm({ ...form, agentRuntime: value })
+              }
+            }}
+            allowDeselect={false}
+          />
           <TextInput
             label="Imagem Docker"
             description="Imagem que o adapter usa ao criar o container."
@@ -516,9 +576,12 @@ export function AdminSandboxesPage() {
       {/* MCPs do sandbox */}
       <SandboxGlobalsDrawer
         sandbox={globalsFor}
+        initialTab={globalsTab}
         onClose={() => setGlobalsFor(null)}
         onUpdated={applyUpdatedSandbox}
       />
+
+      {terminalFor && <SandboxTerminalModal sandbox={terminalFor} onClose={() => setTerminalFor(null)} />}
 
       {/* Clonar */}
       <Modal

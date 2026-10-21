@@ -230,3 +230,17 @@ se necessário.
 - [services/api/app/infrastructure/orm_models_platform.py](services/api/app/infrastructure/orm_models_platform.py)
 - [services/cappycloud_agent/_environment_manager.py](services/cappycloud_agent/_environment_manager.py)
 - [docs/ARCHITECTURE.md](../ARCHITECTURE.md)
+
+---
+
+## Atualização (2026-09-24)
+
+- MCPs: a lista vai só para `~/.openclaude.json` (`POST /mcp/configure`). O
+  openclaude lê esse arquivo como config global (ignora `CLAUDE_CONFIG_DIR`) e o
+  runtime Claude CLI repassa a mesma lista ao Agent SDK. Nenhum `settings.json`
+  aceita `mcpServers`; o boot deixou de sobrescrever `~/.claude/settings.json`.
+  Salvar um MCP no admin enfileira `reconfigure_mcp`.
+- CLAUDE.md: a base vem da imagem (`sandbox/CLAUDE.md`) e o campo do sandbox é
+  somado a ela como instruções extras, gravadas em `~/.claude/CLAUDE.md` e
+  `~/.openclaude/CLAUDE.md`.
+- Skills globais: só o Claude CLI carrega `~/.claude/skills`; o openclaude não.

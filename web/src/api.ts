@@ -9,7 +9,7 @@ let loginRedirectInFlight = false
  * Extrai texto legível do corpo JSON de erro da FastAPI (422, etc.).
  * Evita `[object Object]` quando `msg` é objeto ou a lista contém strings misturadas.
  */
-function formatApiErrorPayload(data: unknown): string {
+export function formatApiErrorPayload(data: unknown): string {
   if (typeof data !== 'object' || data === null) {
     return typeof data === 'string' ? data.trim() : 'Pedido inválido'
   }
@@ -120,7 +120,7 @@ export class AuthError extends Error {
  * Wrapper sobre `fetch` que lança `AuthError` em 401
  * e erros genéricos nos outros casos de falha.
  */
-async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+export async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(url, init)
   if (res.status === 401) throw new AuthError()
   return res
@@ -238,6 +238,19 @@ export interface AdminUser {
 }
 
 /** Lista todos os utilizadores (admin only). */
+/** Volta a senha para a temporária padrão (vale 24 h) e obriga a troca. Só super admin. */
+export async function resetAdminUserPassword(token: string, userId: string): Promise<AdminUser> {
+  const res = await apiFetch(`/api/admin/users/${userId}/reset-password`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao redefinir a senha')
+  }
+  return (await res.json()) as AdminUser
+}
+
 export async function fetchAdminUsers(token: string): Promise<AdminUser[]> {
   const res = await apiFetch('/api/admin/users', {
     headers: { Authorization: `Bearer ${token}` },
@@ -306,18 +319,93 @@ export interface AdminDashboardConversation {
   pr_status: string
 }
 
+/** Custo real registrado nas mensagens dos últimos `days` dias. */
+export interface AdminDashboardCostPeriod {
+  days: number
+  cost_usd: number
+  prompt_tokens: number
+  completion_tokens: number
+  conversations: number
+}
+
 export interface AdminDashboard {
   generated_at: string
+  workspace_id: string | null
   totals: AdminDashboardTotals
+  cost_periods: AdminDashboardCostPeriod[]
   recent_conversations: AdminDashboardConversation[]
+}
+
+// ── Admin · Conversas (leitura de qualquer conversa) ─────────────────────────
+
+export interface AdminConversationItem {
+  id: string
+  title: string
+  user_email: string | null
+  workspace_slug: string | null
+  workspace_name: string | null
+  ticket_number: string | null
+  created_at: string
+  last_message_at: string | null
+  questions: number
+  message_count: number
+  cost_usd: number
+  pr_url: string | null
+  archived: boolean
+}
+
+export interface AdminConversationMessage {
+  id: string
+  role: string
+  content: string
+  created_at: string
+  model_used: string | null
+  prompt_tokens: number
+  completion_tokens: number
+  cost_usd: number
+}
+
+export interface AdminConversationDetail extends AdminConversationItem {
+  messages: AdminConversationMessage[]
+}
+
+export async function fetchAdminConversations(
+  token: string,
+  filters: { q?: string; workspaceId?: string; limit?: number; offset?: number } = {},
+): Promise<{ total: number; items: AdminConversationItem[] }> {
+  const params = new URLSearchParams()
+  if (filters.q) params.set('q', filters.q)
+  if (filters.workspaceId) params.set('workspace_id', filters.workspaceId)
+  params.set('limit', String(filters.limit ?? 50))
+  params.set('offset', String(filters.offset ?? 0))
+  const res = await apiFetch(`/api/admin/conversations?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao listar conversas')
+  }
+  return res.json()
+}
+
+export async function fetchAdminConversation(token: string, id: string): Promise<AdminConversationDetail> {
+  const res = await apiFetch(`/api/admin/conversations/${encodeURIComponent(id)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao abrir a conversa')
+  }
+  return res.json()
 }
 
 export async function fetchAdminDashboard(
   token: string,
-  limit = 12,
+  opts: { limit?: number; workspaceId?: string } = {},
 ): Promise<AdminDashboard> {
   const params = new URLSearchParams()
-  params.set('limit', String(limit))
+  params.set('limit', String(opts.limit ?? 12))
+  if (opts.workspaceId) params.set('workspace_id', opts.workspaceId)
   const res = await apiFetch(`/api/admin/dashboard?${params.toString()}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
@@ -397,7 +485,38 @@ export type Conversation = {
   sandbox_id: string | null
   repos: RepoSelection[]
   session_root: string | null
+  /** Conversa de workspace: abre todos os repositórios dele. */
+  workspace_id?: string | null
   permission_mode: PermissionMode
+  /** Arquivada: fora da lista padrão, mas continua aberta e intacta. */
+  archived_at?: string | null
+  /** Número do chamado (ex.: Zendesk) que originou a conversa. */
+  ticket_number?: string | null
+}
+
+/** Workspace que o utilizador pode usar ao abrir uma conversa. */
+export interface AccessibleWorkspace {
+  id: string
+  slug: string
+  name: string
+  sandbox_id: string
+  /** Sandbox onde as conversas do workspace rodam. */
+  sandbox_name?: string
+  /** Sincronizado no sandbox e com repositórios. */
+  ready: boolean
+  /** Desligado, o chat não oferece o modo de planejamento neste workspace. */
+  plan_mode_enabled?: boolean
+  /** Conversa nova só abre com o número do chamado. */
+  require_ticket?: boolean
+  repositories: Array<{ alias: string; slug: string; read_only?: boolean }>
+}
+
+export async function fetchAccessibleWorkspaces(token: string): Promise<AccessibleWorkspace[]> {
+  const res = await apiFetch('/api/workspaces/accessible', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return []
+  return res.json()
 }
 
 export type ChatMessage = {
@@ -411,6 +530,17 @@ export type ChatMessage = {
   completion_tokens?: number
   cost_usd?: number
   payload_diagnostics?: PayloadSizeBreakdown | null
+  /** Claude CLI: uso das janelas da assinatura quando a resposta terminou. */
+  plan_usage?: PlanUsage | null
+}
+
+/** Janela de uso da assinatura do Claude (`claude login`). */
+export type PlanUsageWindow = { used_pct: number | null; resets_at: string | null }
+
+export type PlanUsage = {
+  status?: string | null
+  five_hour?: PlanUsageWindow
+  seven_day?: PlanUsageWindow
 }
 
 export type PayloadSizeCategory = {
@@ -437,6 +567,7 @@ export interface DoneEvent {
   model_used: string | null
   prompt_tokens: number
   completion_tokens: number
+  plan_usage?: PlanUsage | null
   fallback?: {
     selected_model?: string
     final_model?: string
@@ -484,9 +615,15 @@ export interface ActionRequiredEvent {
   choices: string[] | null
 }
 
+/**
+ * Fases reais de um turno emitidas pelo backend: workspace (clone/worktree na
+ * primeira mensagem), context (montagem do prompt) e agent (espera do modelo).
+ */
+export type TurnPhaseStage = 'workspace' | 'context' | 'agent'
+
 export interface StatusEvent {
   message: string
-  stage?: 'session' | 'repository' | 'ready' | 'agent'
+  stage?: TurnPhaseStage
   mode?: 'initializing' | 'resuming'
   state?: 'active' | 'done'
   metadata?: {
@@ -494,7 +631,27 @@ export interface StatusEvent {
       runtime_confirmed: boolean
       source: 'openclaude_startup_alert'
     }
+    duration_ms?: number
   }
+}
+
+/** Evento compactado do histórico de um turno (ver GET /conversations/:id/activity). */
+export interface ConversationActivityEvent {
+  type: string
+  data: Record<string, unknown>
+  at: string | null
+}
+
+/** Um turno do agente com os eventos que de facto aconteceram. */
+export interface ConversationActivityTurn {
+  task_id: string
+  user_message_id: string | null
+  status: string
+  model_used: string | null
+  created_at: string
+  completed_at: string | null
+  last_event_at: string | null
+  events: ConversationActivityEvent[]
 }
 
 export interface ContextProgressEvent {
@@ -634,6 +791,27 @@ function safeDiagnosticSource(value: unknown): string {
 function safeDiagnosticText(value: unknown): string {
   const text = typeof value === 'string' ? value.trim() : ''
   return /^[A-Za-z0-9_.:+-]{1,64}$/.test(text) ? text : ''
+}
+
+function parseStatusMetadata(value: unknown): StatusEvent['metadata'] | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const durationMs = (value as Record<string, unknown>).duration_ms
+  const warning = safePermissionWarningMetadata(value)
+  if (typeof durationMs !== 'number') return warning
+  return { ...warning, duration_ms: durationMs }
+}
+
+/** Converte um evento `status` cru (SSE ou histórico) no formato tipado. */
+export function parseStatusEvent(evt: Record<string, unknown>): StatusEvent {
+  const stage = evt.stage
+  const mode = evt.mode
+  return {
+    message: (evt.message as string) ?? 'Preparando sessão...',
+    stage: stage === 'workspace' || stage === 'context' || stage === 'agent' ? stage : undefined,
+    mode: mode === 'initializing' || mode === 'resuming' ? mode : undefined,
+    state: evt.state === 'active' || evt.state === 'done' ? evt.state : undefined,
+    metadata: parseStatusMetadata(evt.metadata),
+  }
 }
 
 function safePermissionWarningMetadata(value: unknown): StatusEvent['metadata'] | undefined {
@@ -780,12 +958,31 @@ function runtimeStateLabel(state: RuntimeStateKind): string {
   }
 }
 
+/** Renomeia e/ou arquiva a conversa (`archived: false` desarquiva). Só o dono. */
+export async function updateConversation(
+  token: string,
+  conversationId: string,
+  patch: { title?: string; archived?: boolean; ticket_number?: string },
+): Promise<Conversation> {
+  const res = await apiFetch(`/api/conversations/${conversationId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Não foi possível atualizar a conversa')
+  }
+  return res.json()
+}
+
 export async function fetchConversations(
   token: string,
-  options: { scope?: 'own' | 'all' } = {},
+  options: { scope?: 'own' | 'all'; archived?: boolean } = {},
 ): Promise<Conversation[]> {
   const params = new URLSearchParams()
   if (options.scope) params.set('scope', options.scope)
+  if (options.archived) params.set('archived', 'true')
   const suffix = params.toString() ? `?${params.toString()}` : ''
   const res = await apiFetch(`/api/conversations${suffix}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -799,10 +996,14 @@ export async function createConversation(
   repos: RepoSelection[] = [],
   modelId?: string | null,
   sandboxId?: string | null,
+  workspaceId?: string | null,
+  ticketNumber?: string | null,
 ): Promise<Conversation> {
   const body: Record<string, unknown> = { repos }
+  if (ticketNumber) body.ticket_number = ticketNumber
   if (modelId) body.model_id = modelId
   if (sandboxId) body.sandbox_id = sandboxId
+  if (workspaceId) body.workspace_id = workspaceId
   const res = await apiFetch('/api/conversations', {
     method: 'POST',
     headers: {
@@ -811,7 +1012,10 @@ export async function createConversation(
     },
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error('Não foi possível criar conversa')
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Não foi possível criar conversa')
+  }
   return res.json()
 }
 
@@ -820,6 +1024,18 @@ export async function fetchMessages(token: string, conversationId: string): Prom
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) throw new Error('Não foi possível carregar mensagens')
+  return res.json()
+}
+
+/** Histórico de ações do agente por turno, para reconstruir a timeline. */
+export async function fetchConversationActivity(
+  token: string,
+  conversationId: string,
+): Promise<ConversationActivityTurn[]> {
+  const res = await apiFetch(`/api/conversations/${conversationId}/activity`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error('Não foi possível carregar o histórico de ações')
   return res.json()
 }
 
@@ -1052,21 +1268,9 @@ export async function streamAssistantReply(
               choices: (evt.choices as string[] | null) ?? null,
             })
             break
-          case 'status': {
-            const stage = evt.stage
-            const mode = evt.mode
-            eventHandlers.onStatus({
-              message: (evt.message as string) ?? 'Preparando sessão...',
-              stage:
-                stage === 'session' || stage === 'repository' || stage === 'ready' || stage === 'agent'
-                  ? stage
-                  : undefined,
-              mode: mode === 'initializing' || mode === 'resuming' ? mode : undefined,
-              state: evt.state === 'active' || evt.state === 'done' ? evt.state : undefined,
-              metadata: safePermissionWarningMetadata(evt.metadata),
-            })
+          case 'status':
+            eventHandlers.onStatus(parseStatusEvent(evt))
             break
-          }
           case 'payload_diagnostic': {
             const diagnostics = parsePayloadDiagnostics(evt.diagnostics)
             if (diagnostics) {
@@ -1357,6 +1561,7 @@ export interface DiffFile {
 }
 
 export interface ConversationDiff {
+  /** Vazio quando os repositórios têm bases diferentes. */
   base_branch: string
   stats: { added: number; removed: number }
   files: DiffFile[]
@@ -1546,10 +1751,22 @@ export async function fetchConversationFile(
 
 // ── Pull Request ──────────────────────────────────────────────────────────────
 
+export interface RepoPrResult {
+  alias: string
+  slug: string
+  provider?: 'github' | 'azure_devops'
+  pr_url?: string
+  pr_number?: number
+  head_branch?: string
+  error?: string
+}
+
 export interface CreatePrResult {
   pr_url: string
   pr_number: number
   head_branch: string
+  /** Um item por repositório alterado (workspace: vários PRs). */
+  prs?: RepoPrResult[]
 }
 
 export async function createConversationPr(
@@ -1657,6 +1874,8 @@ export interface Repository {
   provider_id: string | null
   sandbox_id: string | null
   sandbox_status: string
+  /** Motivo da última falha de clone/sync (saída do git, sem credenciais). */
+  error_message?: string | null
   active: boolean
   created_at: string
   signoz_service_name?: string | null
@@ -1678,6 +1897,233 @@ export interface RepositoryCreate {
   provider_type?: string | null
   /** SigNoz service.name para correlacionar logs/traces (deixe vazio se não usar). */
   signoz_service_name?: string | null
+}
+
+// ── Admin · Workspaces (super admin) ─────────────────────────────────────────
+
+export interface WorkspaceRepositoryLink {
+  repository_id: string
+  alias?: string | null
+  /** Vazio = default_branch do repositório. */
+  base_branch?: string
+  /** Somente leitura: o agente consulta, sem worktree nem PR. */
+  read_only?: boolean
+}
+
+export interface AdminWorkspace {
+  id: string
+  slug: string
+  name: string
+  sandbox_id: string
+  claude_md: string
+  active: boolean
+  plan_mode_enabled: boolean
+  require_ticket: boolean
+  sync_status: 'pending' | 'synced' | 'error' | string
+  sync_error: string | null
+  last_sync_at: string | null
+  created_at: string
+  repositories: Array<{
+    repository_id: string
+    slug: string
+    name: string
+    alias: string
+    base_branch: string
+    default_branch: string
+    sandbox_status: string
+    read_only: boolean
+  }>
+}
+
+export interface AdminWorkspaceCreate {
+  slug: string
+  name: string
+  sandbox_id: string
+  claude_md?: string
+  plan_mode_enabled?: boolean
+  require_ticket?: boolean
+  repositories?: WorkspaceRepositoryLink[]
+}
+
+export interface AdminWorkspaceUpdate {
+  name?: string
+  claude_md?: string
+  active?: boolean
+  plan_mode_enabled?: boolean
+  require_ticket?: boolean
+  repositories?: WorkspaceRepositoryLink[]
+}
+
+async function workspaceRequest<T>(
+  token: string,
+  path: string,
+  init: RequestInit = {},
+  fallback = 'Falha na operação de workspace',
+): Promise<T> {
+  const res = await apiFetch(`/api/admin/workspaces${path}`, {
+    ...init,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || fallback)
+  }
+  return (res.status === 204 ? undefined : await res.json()) as T
+}
+
+export function fetchAdminWorkspaces(token: string): Promise<AdminWorkspace[]> {
+  return workspaceRequest(token, '', {}, 'Falha ao listar workspaces')
+}
+
+export function createAdminWorkspace(token: string, data: AdminWorkspaceCreate): Promise<AdminWorkspace> {
+  return workspaceRequest(token, '', { method: 'POST', body: JSON.stringify(data) }, 'Falha ao criar workspace')
+}
+
+export function updateAdminWorkspace(
+  token: string,
+  workspaceId: string,
+  data: AdminWorkspaceUpdate,
+): Promise<AdminWorkspace> {
+  return workspaceRequest(
+    token,
+    `/${workspaceId}`,
+    { method: 'PATCH', body: JSON.stringify(data) },
+    'Falha ao atualizar workspace',
+  )
+}
+
+export function syncAdminWorkspace(token: string, workspaceId: string): Promise<AdminWorkspace> {
+  return workspaceRequest(token, `/${workspaceId}/sync`, { method: 'POST' }, 'Falha ao sincronizar workspace')
+}
+
+/** CSV das conversas do workspace com o número do chamado (admin). */
+export async function downloadWorkspaceTickets(token: string, workspaceId: string, slug: string): Promise<void> {
+  const res = await apiFetch(`/api/admin/workspaces/${workspaceId}/tickets.csv`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao exportar os chamados')
+  }
+  const url = URL.createObjectURL(await res.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `chamados-${slug}.csv`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+export function deleteAdminWorkspace(token: string, workspaceId: string): Promise<void> {
+  return workspaceRequest(token, `/${workspaceId}`, { method: 'DELETE' }, 'Falha ao remover workspace')
+}
+
+/** Grafo do graphify de um repositório do workspace (knowledge_handler.js). */
+export interface KnowledgeRepoStatus {
+  alias: string
+  slug: string
+  commit?: string
+  nodes?: number
+  edges?: number
+  communities?: number
+  duration_ms?: number
+  warning?: string
+  error?: string
+  /** Código igual ao da rodada anterior (contagem repetida). */
+  unchanged?: boolean
+}
+
+export interface KnowledgeStatus {
+  state: 'never_built' | 'running' | 'done' | 'partial' | 'error'
+  running?: boolean
+  started_at?: string
+  finished_at?: string
+  duration_ms?: number
+  nodes?: number
+  edges?: number
+  error?: string
+  repos?: KnowledgeRepoStatus[]
+}
+
+export interface KnowledgeFile {
+  path: string
+  size: number
+  modified_at: string
+}
+
+export interface WorkspaceKnowledge {
+  status: KnowledgeStatus
+  files: KnowledgeFile[]
+}
+
+export interface KnowledgeFileContent {
+  path: string
+  size: number
+  truncated: boolean
+  content: string
+}
+
+export function fetchWorkspaceKnowledge(token: string, workspaceId: string): Promise<WorkspaceKnowledge> {
+  return workspaceRequest(token, `/${workspaceId}/knowledge`, {}, 'Falha ao ler o conhecimento do workspace')
+}
+
+export function fetchWorkspaceKnowledgeFile(
+  token: string,
+  workspaceId: string,
+  path: string,
+): Promise<KnowledgeFileContent> {
+  const query = new URLSearchParams({ path }).toString()
+  return workspaceRequest(token, `/${workspaceId}/knowledge/file?${query}`, {}, 'Falha ao abrir o arquivo')
+}
+
+/** Memória do workspace no agentmemory (memory_handler.js). */
+export interface WorkspaceMemory {
+  id: string
+  type: string
+  content: string
+  concepts: string[]
+  files: string[]
+  created_at: string
+  updated_at?: string
+}
+
+export function fetchWorkspaceMemories(
+  token: string,
+  workspaceId: string,
+): Promise<{ total: number; memories: WorkspaceMemory[] }> {
+  return workspaceRequest(token, `/${workspaceId}/knowledge/memories`, {}, 'Falha ao ler as memórias do workspace')
+}
+
+/** Selos da lista de workspaces (admin_workspace_knowledge.py /summary). */
+export interface WorkspaceKnowledgeSummary {
+  graph: {
+    available?: false
+    state?: KnowledgeStatus['state']
+    running?: boolean
+    finished_at?: string
+    nodes?: number
+    error?: string
+    /** Commits novos (desde o último fetch) em relação ao grafo; null se não dá para saber. */
+    behind?: number | null
+    /** Repositórios do workspace que ainda não entraram no grafo. */
+    missing?: string[]
+  }
+  memory: { available: boolean; total: number; last_at: string | null; error: string | null }
+}
+
+export function fetchWorkspaceKnowledgeSummary(
+  token: string,
+  workspaceId: string,
+): Promise<WorkspaceKnowledgeSummary> {
+  return workspaceRequest(token, `/${workspaceId}/knowledge/summary`, {}, 'Falha ao ler o resumo do conhecimento')
+}
+
+export function buildWorkspaceKnowledge(token: string, workspaceId: string): Promise<{ queued: boolean }> {
+  return workspaceRequest(
+    token,
+    `/${workspaceId}/knowledge/build`,
+    { method: 'POST' },
+    'Falha ao pedir a atualização do grafo',
+  )
 }
 
 export async function fetchRepositories(token: string): Promise<Repository[]> {
@@ -1763,6 +2209,9 @@ export type ContainerStatus =
   | 'stopped'
   | 'error'
 
+/** Runtime do agente na sandbox (`runtime` é o orquestrador compose/swarm). */
+export type AgentRuntime = 'openclaude' | 'claude_cli'
+
 export interface Sandbox {
   id: string
   name: string
@@ -1773,6 +2222,7 @@ export interface Sandbox {
   runtime: SandboxRuntime
   image: string
   claude_md?: string
+  agent_runtime?: AgentRuntime
   env_vars: Record<string, string>
   container_status: ContainerStatus
   active_sessions: number
@@ -1794,6 +2244,7 @@ export interface SandboxAdminCreate {
   runtime: SandboxRuntime
   image: string
   claude_md?: string
+  agent_runtime?: AgentRuntime
   env_vars?: Record<string, string>
   host?: string | null
   grpc_port?: number
@@ -1803,6 +2254,7 @@ export interface SandboxAdminCreate {
 export interface SandboxAdminUpdate {
   image?: string
   claude_md?: string
+  agent_runtime?: AgentRuntime
   env_vars?: Record<string, string>
   host?: string
   grpc_port?: number
@@ -1839,6 +2291,118 @@ export async function createAdminSandbox(
     throw new Error(formatApiErrorPayload(err) || 'Falha ao criar sandbox')
   }
   return (await res.json()) as Sandbox
+}
+
+/** Estado do Claude CLI dentro da sandbox (instalado, versão, `claude login`). */
+export interface SandboxClaudeStatus {
+  reachable: boolean
+  error?: string
+  installed?: boolean
+  version?: string | null
+  logged_in?: boolean
+  config_dir?: string
+  active_turns?: number
+}
+
+export async function fetchSandboxClaudeStatus(
+  token: string,
+  sandboxId: string,
+): Promise<SandboxClaudeStatus> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/claude-status`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao consultar o Claude CLI')
+  }
+  return (await res.json()) as SandboxClaudeStatus
+}
+
+// ── Terminal web da sandbox (super admin) ───────────────────────────────────
+
+/** Evento do stream do terminal: saída em base64 ou fim do shell. */
+export type SandboxTerminalEvent =
+  | { type: 'output'; data: string }
+  | { type: 'exit'; code: number; error?: string }
+
+async function terminalRequest(
+  token: string,
+  path: string,
+  method: 'POST' | 'DELETE',
+  body?: unknown,
+  keepalive = false,
+): Promise<Record<string, unknown>> {
+  const res = await apiFetch(path, {
+    method,
+    keepalive,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha no terminal da sandbox')
+  }
+  return (await res.json()) as Record<string, unknown>
+}
+
+export async function openSandboxTerminal(
+  token: string,
+  sandboxId: string,
+  size: { cols: number; rows: number },
+): Promise<string> {
+  const data = await terminalRequest(token, `/api/admin/sandboxes/${sandboxId}/terminal`, 'POST', size)
+  return String(data.id)
+}
+
+export function sendSandboxTerminalInput(token: string, sandboxId: string, terminalId: string, data: string) {
+  return terminalRequest(token, `/api/admin/sandboxes/${sandboxId}/terminal/${terminalId}/input`, 'POST', { data })
+}
+
+export function resizeSandboxTerminal(
+  token: string,
+  sandboxId: string,
+  terminalId: string,
+  size: { cols: number; rows: number },
+) {
+  return terminalRequest(token, `/api/admin/sandboxes/${sandboxId}/terminal/${terminalId}/resize`, 'POST', size)
+}
+
+/** `keepalive`: o pedido sobrevive ao fechamento/recarga da página. */
+export function closeSandboxTerminal(token: string, sandboxId: string, terminalId: string, keepalive = false) {
+  return terminalRequest(token, `/api/admin/sandboxes/${sandboxId}/terminal/${terminalId}`, 'DELETE', undefined, keepalive)
+}
+
+/** Lê o stream NDJSON do terminal até o shell terminar ou o `signal` abortar. */
+export async function streamSandboxTerminal(
+  token: string,
+  sandboxId: string,
+  terminalId: string,
+  onEvent: (event: SandboxTerminalEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const res = await apiFetch(`/api/admin/sandboxes/${sandboxId}/terminal/${terminalId}/stream`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal,
+  })
+  if (!res.ok || !res.body) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao ler o terminal')
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) return
+    buffer += decoder.decode(value, { stream: true })
+    let newline = buffer.indexOf('\n')
+    while (newline >= 0) {
+      const line = buffer.slice(0, newline).trim()
+      buffer = buffer.slice(newline + 1)
+      if (line) onEvent(JSON.parse(line) as SandboxTerminalEvent)
+      newline = buffer.indexOf('\n')
+    }
+  }
 }
 
 export async function updateAdminSandbox(
@@ -2693,7 +3257,7 @@ export async function deleteSandboxAgent(
 
 // ── User Access (ADR-005 §2) ────────────────────────────────────────────────
 
-export type AccessResource = 'sandboxes' | 'repositories' | 'ai-models'
+export type AccessResource = 'sandboxes' | 'repositories' | 'ai-models' | 'workspaces'
 
 async function fetchUserAccess(
   token: string,
@@ -2759,6 +3323,14 @@ export const revokeUserRepositoryAccess = (token: string, userId: string, repoId
   revokeUserAccess(token, userId, 'repositories', repoId)
 export const revokeUserAiModelAccess = (token: string, userId: string, modelId: string) =>
   revokeUserAccess(token, userId, 'ai-models', modelId)
+
+/** Acesso a workspaces: rotas só para super admin (admin comum recebe 403). */
+export const fetchUserWorkspaceAccess = (token: string, userId: string) =>
+  fetchUserAccess(token, userId, 'workspaces')
+export const grantUserWorkspaceAccess = (token: string, userId: string, workspaceId: string) =>
+  grantUserAccess(token, userId, 'workspaces', workspaceId)
+export const revokeUserWorkspaceAccess = (token: string, userId: string, workspaceId: string) =>
+  revokeUserAccess(token, userId, 'workspaces', workspaceId)
 
 export interface BulkTierResult {
   granted: number

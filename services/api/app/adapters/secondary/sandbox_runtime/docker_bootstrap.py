@@ -1,8 +1,8 @@
 """Adapter Docker para escrever periféricos dentro do container da sandbox.
 
-Implementa :class:`SandboxBootstrapGateway` usando o Docker SDK. Materializa
-``~/.claude/settings.json`` via :meth:`Container.put_archive` (escrita atômica
-em arquivos do container, sem precisar de ``exec``).
+Implementa :class:`SandboxBootstrapGateway`. Skills e agents vão por
+:meth:`Container.put_archive` (com fallback HTTP); CLAUDE.md e MCPs vão pelo
+servidor de sessão, que mescla em vez de sobrescrever.
 
 Idempotente: re-escrever o mesmo conteúdo é no-op observável.
 """
@@ -64,57 +64,10 @@ class DockerSandboxBootstrap(SandboxBootstrapGateway):
         await asyncio.to_thread(self._write_settings_sync, sandbox, settings)
 
     def _write_settings_sync(self, sandbox: Sandbox, settings: dict) -> None:
-        try:
-            container = self._require_container(sandbox)
-        except BootstrapFailureError as exc:
-            try:
-                self._write_settings_http_sync(sandbox, settings)
-            except BootstrapFailureError as http_exc:
-                raise BootstrapFailureError(
-                    f"{exc}; fallback HTTP também falhou: {http_exc}"
-                ) from http_exc
-            return
-
-        # Monta um tar em memória com o arquivo settings.json. Docker
-        # put_archive desempacota em ``path`` dentro do container.
-        payload = json.dumps(settings, indent=2, sort_keys=True).encode("utf-8")
-        tar_bytes = io.BytesIO()
-        with tarfile.open(fileobj=tar_bytes, mode="w") as tar:
-            info = tarfile.TarInfo(name="settings.json")
-            info.size = len(payload)
-            info.mtime = int(datetime.now(UTC).timestamp())
-            info.mode = 0o644
-            tar.addfile(info, io.BytesIO(payload))
-        tar_bytes.seek(0)
-
-        # Garantia mínima: pasta tem que existir antes de put_archive.
-        # Usamos exec_run (idempotente — mkdir -p) para criar /root/.claude.
-        try:
-            exit_code, _ = container.exec_run(
-                cmd=["mkdir", "-p", CLAUDE_DIR_IN_CONTAINER],
-                user="root",
-            )
-            if exit_code != 0:
-                raise BootstrapFailureError(
-                    f"mkdir -p {CLAUDE_DIR_IN_CONTAINER} falhou (exit {exit_code})"
-                )
-            ok = container.put_archive(path=CLAUDE_DIR_IN_CONTAINER, data=tar_bytes.getvalue())
-        except APIError as exc:
-            raise BootstrapFailureError(
-                f"Falha ao escrever settings.json no container: {exc}"
-            ) from exc
-
-        if not ok:
-            raise BootstrapFailureError(
-                "Docker put_archive retornou False ao escrever settings.json."
-            )
-
-        log.info(
-            "Bootstrap escreveu settings.json em %s:%s (%d bytes)",
-            self._container_name(sandbox),
-            CLAUDE_DIR_IN_CONTAINER,
-            len(payload),
-        )
+        # Sempre pelo /mcp/configure: ele troca só a chave mcpServers e mantém o
+        # resto do settings.json. /root/.claude é volume persistente (login e
+        # configurações do Claude Code); sobrescrever o arquivo apagava tudo.
+        self._write_settings_http_sync(sandbox, settings)
 
     async def write_skills(self, sandbox: Sandbox, skills: list[SandboxSkill]) -> None:
         await asyncio.to_thread(self._write_skills_sync, sandbox, skills)
@@ -221,8 +174,7 @@ class DockerSandboxBootstrap(SandboxBootstrapGateway):
     def _write_settings_http_sync(sandbox: Sandbox, settings: dict) -> None:
         url = f"http://{sandbox.host}:{sandbox.session_port}/mcp/configure"
         DockerSandboxBootstrap._post_json_http_sync(url, settings)
-
-        log.info("Bootstrap escreveu settings.json via HTTP em %s", url)
+        log.info("Bootstrap configurou MCPs via HTTP em %s", url)
 
     def _write_skills_http_sync(
         self, sandbox: Sandbox, skills: list[SandboxSkill], docker_exc: BootstrapFailureError
@@ -297,15 +249,22 @@ class DockerSandboxBootstrap(SandboxBootstrapGateway):
 
     @staticmethod
     def _render_skill_md(skill: SandboxSkill) -> str:
-        """Skill = markdown puro; descrição como subtítulo opcional."""
-        parts = [f"# {skill.name}"]
-        if skill.description:
-            parts.append("")
-            parts.append(skill.description)
-        if skill.content:
-            parts.append("")
-            parts.append(skill.content.rstrip())
-        return "\n".join(parts) + "\n"
+        """SKILL.md com o cabeçalho YAML que o Claude Code exige para achar a skill.
+
+        Sem ``name``/``description`` no frontmatter o arquivo fica no disco mas
+        não aparece como skill. Conteúdo que já traz frontmatter vai como está.
+        """
+        content = (skill.content or "").strip()
+        if content.startswith("---\n"):
+            return content + "\n"
+        description = " ".join((skill.description or skill.name).split())
+        quoted = json.dumps(description, ensure_ascii=False)
+        header = f"---\nname: {skill.name}\ndescription: {quoted}\n---\n\n"
+        if content.startswith("#"):
+            body = content + "\n"
+        else:
+            body = f"# {skill.name}\n" + (f"\n{content}\n" if content else "")
+        return header + body
 
     @staticmethod
     def _render_agent_md(agent: SandboxAgent) -> str:

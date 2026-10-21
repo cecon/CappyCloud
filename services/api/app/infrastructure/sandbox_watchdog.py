@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -11,10 +12,29 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infrastructure.orm_models import Repository, Sandbox, SandboxSyncQueue
+from app.infrastructure.orm_models_workspaces import Workspace
+from app.infrastructure.workspace_knowledge import OPERATION as BUILD_KNOWLEDGE
+from app.infrastructure.workspace_knowledge import enqueue_knowledge_build
 
 log = logging.getLogger(__name__)
 
 _MAX_RETRIES = 3
+_TIMEOUTS = {"clone_repo": 330}
+_CREDENTIALS_IN_URL = re.compile(r"(https?://)[^@\s/]+@", re.IGNORECASE)
+
+
+def error_detail(exc: Exception) -> str:
+    """Motivo legível da falha: o erro que o sandbox devolveu (ex.: a saída do git),
+    não só "500 Internal Server Error". Credenciais em URLs são removidas."""
+    detail = str(exc)
+    if isinstance(exc, httpx.HTTPStatusError):
+        try:
+            body = exc.response.json()
+            detail = str(body.get("error") or body) if isinstance(body, dict) else str(body)
+        except ValueError:
+            detail = exc.response.text or detail
+        detail = f"HTTP {exc.response.status_code}: {detail}"
+    return _CREDENTIALS_IN_URL.sub(r"\1***@", detail.strip())
 
 
 class SandboxWatchdog:
@@ -58,16 +78,42 @@ class SandboxWatchdog:
                 item.status = "done"
                 item.last_error = None
                 await self._sync_repo_state(session, item)
+                await self._sync_workspace_state(session, item)
             except Exception as exc:
                 item.retries += 1
-                item.last_error = str(exc)
+                item.last_error = error_detail(exc)
                 item.status = "error" if item.retries >= _MAX_RETRIES else "pending"
                 log.warning(
                     "[watchdog] %s failed (retry %d): %s", item.operation, item.retries, exc
                 )
-                await self._sync_repo_state(session, item, error=str(exc)[:500])
+                await self._sync_repo_state(session, item, error=item.last_error[:500])
+                await self._sync_workspace_state(session, item, error=item.last_error[:500])
 
         await session.commit()
+
+    async def _sync_workspace_state(
+        self,
+        session: AsyncSession,
+        item: SandboxSyncQueue,
+        error: str | None = None,
+    ) -> None:
+        if item.operation != "sync_workspace":
+            return
+        slug = (item.payload or {}).get("slug", "")
+        ws = (
+            await session.execute(select(Workspace).where(Workspace.slug == slug))
+        ).scalar_one_or_none()
+        if not ws:
+            return
+        if error:
+            ws.sync_status = "error" if item.status == "error" else "pending"
+            ws.sync_error = error
+        else:
+            ws.sync_status = "synced"
+            ws.sync_error = None
+            ws.last_sync_at = datetime.now(UTC)
+            # Repositórios podem ter mudado: o grafo do workspace é refeito.
+            await enqueue_knowledge_build(session, ws)
 
     async def _sync_repo_state(
         self,
@@ -101,7 +147,9 @@ class SandboxWatchdog:
     async def _execute(self, sandbox: Sandbox, operation: str, payload: dict[str, Any]) -> None:
         base = f"http://{sandbox.host}:{sandbox.session_port}"
 
-        async with httpx.AsyncClient(timeout=60) as client:
+        # O sandbox dá até 300 s ao git clone: esperar menos marcava erro e repetia
+        # o clone de repositório grande enquanto o primeiro ainda rodava.
+        async with httpx.AsyncClient(timeout=_TIMEOUTS.get(operation, 60)) as client:
             if operation == "clone_repo":
                 response = await client.post(f"{base}/repos/clone", json=payload)
                 response.raise_for_status()
@@ -117,6 +165,21 @@ class SandboxWatchdog:
 
             elif operation == "reconfigure_model":
                 log.info("[watchdog] reconfigure_model is not handled by session_server yet")
+
+            elif operation == "sync_workspace":
+                response = await client.post(f"{base}/workspaces/sync", json=payload)
+                response.raise_for_status()
+
+            elif operation == "remove_workspace":
+                slug = payload.get("slug", "")
+                response = await client.delete(f"{base}/workspaces/{slug}")
+                response.raise_for_status()
+
+            elif operation == BUILD_KNOWLEDGE:
+                # O sandbox responde 202 e reconstrói em segundo plano.
+                slug = payload.get("slug", "")
+                response = await client.post(f"{base}/workspaces/{slug}/knowledge/build")
+                response.raise_for_status()
 
             elif operation == "reconfigure_mcp":
                 response = await client.post(f"{base}/mcp/configure", json=payload)

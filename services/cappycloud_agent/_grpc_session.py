@@ -156,6 +156,10 @@ class GrpcSession:
 
     # ── Output draining ───────────────────────────────────────────
 
+    async def next_event(self) -> tuple[str, object]:
+        """Próximo ``(event_type, data)`` do stream (contrato ``AgentSession``)."""
+        return await self._out_queue.get()
+
     async def drain_to(self, out_q: Queue, loop_timeout: float = 300.0) -> None:
         """
         Pull events from the internal async queue and push them into *out_q*

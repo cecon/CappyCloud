@@ -12,12 +12,17 @@
 //
 // Endpoints:
 //   POST   /sessions               → cria session_root + worktrees
-//   DELETE /sessions/:id           → remove session_root e faz worktree prune
+//   DELETE /sessions/:id           → session_cleanup.js (409 se houver trabalho não enviado)
 //   POST   /git/*                  → git_handlers.js (ls-remote, branch-r, ls-files, file)
 //   POST   /worktree/*             → worktree_handlers.js (ls-files, diff, PR, …)
-//   POST   /mcp/configure          → escreve mcpServers em ~/.claude/settings.json
-//   POST   /globals/configure      → escreve skills/agents em ~/.claude/
+//   POST   /mcp/configure          → mcp_handler.js (mcpServers em ~/.openclaude.json)
+//   POST   /globals/configure      → CLAUDE.md (memória do usuário), skills e agents
 //   POST   /runtime/restart-openclaude → reinicia o processo principal do container
+//   *      /claude/*               → claude_runtime_handler.js (runtime Claude CLI via Agent SDK)
+//   POST   /workspaces/sync        → workspace_handler.js (árvore /repos/workspaces/<slug>)
+//   *      /workspaces/:slug/knowledge → knowledge_handler.js (grafo graphify, arquivos)
+//   *      /memory/*, /workspaces/:slug/memory → memory_handler.js (agentmemory)
+//   *      /terminal/*             → terminal_handler.js (terminal web do admin, ex.: claude login)
 //   GET    /health                 → liveness probe
 // ──────────────────────────────────────────────────────────────
 
@@ -28,13 +33,21 @@ const { execFile, execFileSync } = require('child_process')
 const { promisify } = require('util')
 
 const gitHandlers = require('./git_handlers')
+const { normalizeAzureUrl } = require('./git_urls')
+const claudeRuntimeHandler = require('./claude_runtime_handler')
 const globalsHandler = require('./globals_handler')
 const mcpHandler = require('./mcp_handler')
 const confluenceHandler = require('./confluence_handler')
 const repoHandlers = require('./repo_handlers')
 const runtimeHandler = require('./runtime_handler')
-const taskHandler = require('./task_handler')
+const { assertSafeSessionRoot, cleanupSession } = require('./session_cleanup')
+const { assertInsideSession, sessionRootInfo } = require('./session_paths')
 const worktreeHandlers = require('./worktree_handlers')
+const workspaceHandler = require('./workspace_handler')
+const knowledgeHandler = require('./knowledge_handler')
+const memoryHandler = require('./memory_handler')
+const memoryExtract = require('./memory_extract')
+const terminalHandler = require('./terminal_handler')
 
 const execFileAsync = promisify(execFile)
 const PORT = parseInt(process.env.SESSION_SERVER_PORT || '8080', 10)
@@ -48,7 +61,8 @@ const activeSessions = new Set()
  * @param {string} providerType - github | azure_devops
  * @returns {string}
  */
-function injectToken(url, explicitToken = '', providerType = '') {
+function injectToken(rawUrl, explicitToken = '', providerType = '') {
+  const url = normalizeAzureUrl(rawUrl)
   const devopsToken = explicitToken && (providerType === 'azure_devops' || /dev\.azure\.com/.test(url))
     ? explicitToken
     : (process.env.DEVOPS_TOKEN || '')
@@ -102,11 +116,8 @@ async function createWorktree({ slug, alias, base_branch, branch_name, worktree_
 }
 
 function assertSafeSessionPath(candidate) {
-  const resolved = path.resolve(candidate || '')
-  if (!resolved.startsWith('/repos/sessions/')) {
-    throw new Error('session worktree_path must be under /repos/sessions/')
-  }
-  return resolved
+  // Worktree dentro de uma sessão legada ou de workspace (session_paths.js).
+  return assertInsideSession(candidate)
 }
 
 function assertSafeUserWorkspacePath(candidate) {
@@ -191,27 +202,6 @@ async function ensureUserWorkspace({ slug, base_branch, workspace_path, clone_ur
   }
 }
 
-// ── Remove session_root e prune worktrees ─────────────────────
-async function destroySession({ session_root, repos }) {
-  if (session_root) {
-    await execFileAsync('rm', ['-rf', session_root], { timeout: 30_000 }).catch(() => {})
-  }
-
-  // repos pode vir como array, string JSON ou null/undefined.
-  let arr = repos
-  if (typeof arr === 'string') {
-    try { arr = JSON.parse(arr) } catch { arr = [] }
-  }
-  if (!Array.isArray(arr)) arr = []
-  const slugs = new Set(arr.map(r => r && r.slug).filter(Boolean))
-  for (const slug of slugs) {
-    await execFileAsync(
-      'git', ['-C', `/repos/${slug}`, 'worktree', 'prune'],
-      { timeout: 30_000 }
-    ).catch(() => {})
-  }
-}
-
 // ── HTTP server ───────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`)
@@ -231,7 +221,12 @@ const server = http.createServer(async (req, res) => {
     const statusMatch = pathname.match(/^\/sessions\/([^/]+)\/status$/)
     if (req.method === 'GET' && statusMatch) {
       const session_id = statusMatch[1]
-      const session_root = url.searchParams.get('session_root') || ''
+      let session_root
+      try {
+        session_root = assertSafeSessionRoot(url.searchParams.get('session_root') || '')
+      } catch (err) {
+        return json(res, 400, { error: err.message })
+      }
       let repos = []
       try { repos = JSON.parse(url.searchParams.get('repos') || '[]') } catch {}
       if (!Array.isArray(repos)) repos = []
@@ -267,26 +262,32 @@ const server = http.createServer(async (req, res) => {
       if (!session_root) {
         return json(res, 400, { error: 'session_root is required' })
       }
+      let sessionInfo
+      try {
+        sessionInfo = sessionRootInfo(session_root)
+      } catch (err) {
+        return json(res, 400, { error: err.message })
+      }
+      const workspaceRoot = sessionInfo.workspaceRoot
 
       const outputs = []
       const repos_created = []
 
       fs.mkdirSync(session_root, { recursive: true })
 
-      // CLAUDE.md na raiz da sessão: só se não houver instruções no próprio repo
-      // (cada worktree pode ter o seu CLAUDE.md / AGENTS.md). Aqui é a raiz
-      // multi-repo, fica como descrição neutra do ambiente.
-      if (!fs.existsSync(path.join(session_root, 'CLAUDE.md')) && !fs.existsSync(path.join(session_root, 'AGENTS.md'))) {
-        const sandboxClaude = path.join(process.env.HOME || '/root', '.claude', 'CLAUDE.md')
-        const sourceClaude = fs.existsSync(sandboxClaude) ? sandboxClaude : '/app/CLAUDE.md'
-        if (fs.existsSync(sourceClaude)) {
-          fs.copyFileSync(sourceClaude, path.join(session_root, 'CLAUDE.md'))
-        }
+      if (workspaceRoot) {
+        // Sessão de workspace: o CLAUDE.md vem da raiz do workspace (o agente
+        // herda por estar abaixo dela); skills/agents do workspace via link.
+        // As regras do sandbox são memória do usuário (globals_handler).
+        const claudeLink = path.join(session_root, '.claude')
+        if (!fs.existsSync(claudeLink)) fs.symlinkSync('../../.claude', claudeLink)
       }
 
       for (const repo of repos) {
         const { slug, alias, base_branch: rb, branch_name, clone_url: rc } = repo
         if (!slug || !alias) continue
+        // Somente leitura: o agente lê o clone do workspace; sem worktree/branch.
+        if (repo.read_only && workspaceRoot) continue
         const wt_path = assertSafeSessionPath(path.join(session_root, alias))
         const resolved_branch = branch_name || `cappy/${slug}/${session_id}-${alias}`
         try {
@@ -378,11 +379,20 @@ const server = http.createServer(async (req, res) => {
     const deleteMatch = pathname.match(/^\/sessions\/([^/]+)$/)
     if (req.method === 'DELETE' && deleteMatch) {
       const session_id = deleteMatch[1]
-      const session_root = url.searchParams.get('session_root') || ''
-      let repos = []
-      try { repos = JSON.parse(url.searchParams.get('repos') || '[]') } catch {}
-
-      await destroySession({ session_root, repos })
+      let result
+      try {
+        result = await cleanupSession({
+          session_root: url.searchParams.get('session_root') || '',
+          repos: url.searchParams.get('repos') || '[]',
+          force: url.searchParams.get('force') === '1',
+        })
+      } catch (err) {
+        return json(res, 400, { error: err.message })
+      }
+      if (!result.deleted) {
+        console.log(`[session_server] session ${session_id} mantida: trabalho não enviado`)
+        return json(res, 409, { deleted: false, session_id, blocked: result.blocked })
+      }
       activeSessions.delete(session_id)
       console.log(`[session_server] removed session ${session_id}`)
       return json(res, 200, { deleted: true, session_id })
@@ -398,7 +408,6 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
-    if (await taskHandler.tryHandle(req, res, { json, readBody })) return
 
     if (req.method === 'GET' && pathname === '/skills/search') {
       const q = url.searchParams.get('q') || ''
@@ -493,6 +502,13 @@ const server = http.createServer(async (req, res) => {
 
     if (await runtimeHandler.tryHandle(req, res, { json, clearActiveSessions })) return
 
+    if (await claudeRuntimeHandler.tryHandle(req, res, { json, readBody })) return
+    if (await knowledgeHandler.tryHandle(req, res, { json })) return
+    if (await memoryExtract.tryHandle(req, res, { json, readBody })) return
+    if (await memoryHandler.tryHandle(req, res, { json, readBody })) return
+    if (await workspaceHandler.tryHandle(req, res, { json, readBody })) return
+    if (await terminalHandler.tryHandle(req, res, { json, readBody })) return
+
     return json(res, 404, { error: 'Not found' })
   } catch (err) {
     console.error('[session_server] Unhandled error:', err)
@@ -501,6 +517,13 @@ const server = http.createServer(async (req, res) => {
     }
   }
 })
+
+// A base do CLAUDE.md vem da imagem: reaplica a cada subida, com as extras salvas.
+try {
+  globalsHandler.writeClaudeMd(process.env.HOME || '/root')
+} catch (err) {
+  console.warn('[session_server] CLAUDE.md não reaplicado:', err.message)
+}
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`[session_server] listening on :${PORT}`)

@@ -325,9 +325,18 @@ export function AdminRepositoriesPage() {
                       </Stack>
                     </Table.Td>
                     <Table.Td>
-                      <Badge color={statusColor(r.sandbox_status)} variant="light">
+                      <Badge
+                        color={statusColor(r.sandbox_status)}
+                        variant="light"
+                        title={r.error_message ?? undefined}
+                      >
                         {r.sandbox_status}
                       </Badge>
+                      {r.sandbox_status === 'error' && r.error_message && (
+                        <Text size="xs" c="red" className="mt-1 max-w-72 break-words" title={r.error_message}>
+                          {r.error_message.slice(0, 160)}
+                        </Text>
+                      )}
                     </Table.Td>
                     <ActionsCell>
                       <RowActionIcon

@@ -77,10 +77,13 @@ async def insert_status_event(
     stage: str,
     mode: str,
     state: str | None = None,
+    metadata: dict | None = None,
 ) -> None:
     data = {"message": message, "stage": stage, "mode": mode}
     if state:
         data["state"] = state
+    if metadata:
+        data["metadata"] = metadata
     await insert_event(
         pool,
         task_id,

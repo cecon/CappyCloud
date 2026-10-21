@@ -9,6 +9,7 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities import (
+    AgentRuntime,
     ContainerStatus,
     SandboxRuntime,
 )
@@ -52,6 +53,7 @@ class SQLAlchemySandboxRepository(SandboxRepository):
             image=sandbox.image,
             env_vars=dict(sandbox.env_vars),
             claude_md=sandbox.claude_md,
+            agent_runtime=sandbox.agent_runtime.value,
             container_status=sandbox.container_status.value,
             register_token=sandbox.register_token,
         )
@@ -74,6 +76,7 @@ class SQLAlchemySandboxRepository(SandboxRepository):
         row.image = sandbox.image
         row.env_vars = dict(sandbox.env_vars)
         row.claude_md = sandbox.claude_md
+        row.agent_runtime = sandbox.agent_runtime.value
         row.container_status = sandbox.container_status.value
         row.register_token = sandbox.register_token
         await self._session.commit()
@@ -111,10 +114,18 @@ class SQLAlchemySandboxRepository(SandboxRepository):
             image=row.image or "",
             env_vars=dict(row.env_vars or {}),
             claude_md=row.claude_md or "",
+            agent_runtime=_agent_runtime_from_str(row.agent_runtime),
             container_status=_container_status_from_str(row.container_status),
             register_token=row.register_token,
             created_at=row.created_at,
         )
+
+
+def _agent_runtime_from_str(value: str | None) -> AgentRuntime:
+    try:
+        return AgentRuntime(value or AgentRuntime.OPENCLAUDE.value)
+    except ValueError:
+        return AgentRuntime.OPENCLAUDE
 
 
 def _runtime_from_str(value: str | None) -> SandboxRuntime:

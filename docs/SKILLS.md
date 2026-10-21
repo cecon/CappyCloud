@@ -1,136 +1,60 @@
-# Skills System — CappyCloud
+# Skills de desenvolvimento — CappyCloud
 
-## Overview
+Estas são as skills usadas por quem desenvolve o CappyCloud (Claude Code e
+Codex). As skills que o **agente do produto** recebe dentro do sandbox são outra
+coisa: vêm do banco (Admin → Skills globais e skills de repositório) e estão
+descritas no ADR-004.
 
-O CappyCloud usa um sistema modular de **skills** que são capacidades especializadas para diferentes tipos de trabalho. As skills são autodescobiertas e catalogadas em um registry centralizado.
+Cada skill existe em um lugar só. Não há registry: as ferramentas descobrem as
+skills pela pasta.
 
-## Estrutura
+## Onde ficam
 
-```
-.agents/skills/           # Skills para agentes (automação e tarefas complexas)
-  ├── api-ux/            # Melhorias UX em FastAPI
-  ├── code-review/       # Revisão de código técnica
-  ├── create-migration/  # Criação de migrations
-  ├── frontend-implementation/  # Componentes React
-  ├── service-implementation/   # Backend services
-  ├── ux-design/         # Decisões UX/UI
-  └── vulnerability-auditor/   # Auditoria de segurança
+| Pasta | Quem carrega sozinho | Conteúdo |
+|---|---|---|
+| `.agents/skills/` | Codex | Skills de domínio do CappyCloud |
+| `.claude/skills/` | Claude Code | Skills de design de terceiros |
 
-.claude/skills/           # Skills para Claude (design e interface)
-  ├── design-system/     # Design tokens e arquitetura visual
-  ├── ui-styling/        # Componentes e estilos
-  └── ui-ux-pro-max/     # Design intelligence avançado
-```
+No Claude Code, as skills de `.agents/skills/` são lidas sob demanda (o
+`CLAUDE.md` pede para ler o `SKILL.md` quando o assunto bater).
 
-## Registry Central
+### `.agents/skills/`
 
-Todas as skills são registradas em [skills-registry.json](../skills-registry.json):
+- `api-ux` — mensagens de erro, SSE e paginação na API FastAPI
+- `code-review` — revisão técnica e conformidade com a arquitetura hexagonal
+- `create-migration` — migrations Alembic
+- `frontend-implementation` — telas React 19
+- `service-implementation` — funcionalidades nos serviços backend
+- `ux-design` — decisões de UX/UI (dark mode)
+- `cappycloud-design-system` — tokens, paletas e padrões de componentes do CappyCloud
+- `vulnerability-auditor` — auditoria OWASP
+- `prod-container-verify` — conferir o que está rodando em produção
+- `speckit-*` — fluxo Spec Kit (specify, clarify, plan, tasks, analyze, implement, …)
 
-```json
-{
-  "version": "1.0",
-  "lastUpdated": "2026-05-13T...",
-  "totalSkills": 10,
-  "skills": {
-    "api-ux": {
-      "name": "api-ux",
-      "path": ".agents/skills/api-ux",
-      "file": ".agents/skills/api-ux/SKILL.md",
-      "category": "agents",
-      "description": "Use esta habilidade para melhorar a experiência..."
-    },
-    ...
-  }
-}
-```
+### `.claude/skills/`
 
-## Criar uma Nova Skill
+- `design-system` — arquitetura de tokens, tipografia e espaçamentos
+- `ui-styling` — shadcn/ui, Tailwind e componentes acessíveis
+- `ui-ux-pro-max` — catálogo de estilos, paletas e guidelines de UI/UX
 
-1. **Criar diretório:**
-   ```bash
-   mkdir -p .agents/skills/my-skill
-   # ou para Claude
-   mkdir -p .claude/skills/my-skill
-   ```
+## Criar uma skill
 
-2. **Criar SKILL.md com frontmatter:**
+1. Escolha a pasta pelo público: domínio do CappyCloud em `.agents/skills/`,
+   algo que só o Claude Code usa em `.claude/skills/`. Não copie a mesma skill
+   para as duas.
+2. Crie `<pasta>/<nome>/SKILL.md` com frontmatter:
+
    ```markdown
    ---
-   name: my-skill
-   description: Descrição clara da skill em uma linha
+   name: <nome>
+   description: Quando usar a skill, em uma linha.
    ---
 
-   # Descrição detalhada da skill
+   # Título
 
-   Explicar quando usar, exemplos de uso, etc.
+   Instruções, exemplos e limites.
    ```
 
-3. **Atualizar registry:**
-   ```bash
-   python3 scripts/update-skills-registry.py
-   ```
+3. Acrescente a skill na lista acima.
 
-4. **Verificar CLAUDE.md:** Adicionar a skill na seção apropriada do [CLAUDE.md](../CLAUDE.md)
-
-## Manter Registry Atualizado
-
-**Manualmente:**
-```bash
-python3 scripts/update-skills-registry.py
-```
-
-**Automaticamente (via git hook):**
-O arquivo `.git/hooks/pre-commit` pode ser configurado para atualizar o registry antes de cada commit.
-
-## Referenciar Skills no Código
-
-No `CLAUDE.md` ou em prompts:
-
-```markdown
-**Skills Disponíveis:**
-- [api-ux](.agents/skills/api-ux/SKILL.md)
-- [code-review](.agents/skills/code-review/SKILL.md)
-```
-
-Ou via registry JSON:
-```json
-{
-  "skillName": "api-ux",
-  "skillFile": ".agents/skills/api-ux/SKILL.md"
-}
-```
-
-## Boas Práticas
-
-✅ **Faça:**
-- Usar nomes descritivos e em lowercase com hífens (kebab-case)
-- Adicionar frontmatter YAML com `name` e `description`
-- Manter descrição concisa (máx 150 caracteres)
-- Organizar skills por categoria (agents vs claude)
-- Atualizar registry após adicionar/remover skills
-
-❌ **Não Faça:**
-- Criar skills sem frontmatter
-- Usar espaços ou caracteres especiais em nomes
-- Deixar registry desatualizado
-- Duplicar skills entre categorias
-
-## Status Atual
-
-📊 **10 Skills Registradas:**
-
-**Agents (7):**
-- api-ux
-- code-review
-- create-migration
-- frontend-implementation
-- service-implementation
-- ux-design
-- vulnerability-auditor
-
-**Claude (3):**
-- design-system
-- ui-styling
-- ui-ux-pro-max
-
-Último update: 2026-05-13
+Use nomes em kebab-case e únicos entre as duas pastas.

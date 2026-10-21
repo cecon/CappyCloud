@@ -184,7 +184,8 @@ class Document(Base):
 class SandboxSyncQueue(Base):
     """Fila de sincronização DB → sandbox VM (watchdog).
 
-    operation: clone_repo | remove_repo | update_git_auth | reconfigure_model
+    operation: clone_repo | remove_repo | update_git_auth | reconfigure_model |
+               reconfigure_mcp | sync_workspace | remove_workspace | build_knowledge
     status:    pending | processing | done | error
     """
 

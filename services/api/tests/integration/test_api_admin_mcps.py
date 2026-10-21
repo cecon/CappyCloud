@@ -4,9 +4,24 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+from app.adapters.primary.http.admin_sandbox_mcps import get_mcp_applier
+from app.main import app
 from httpx import AsyncClient
 
 from tests.conftest import FakeSandboxBootstrap
+
+
+@pytest.fixture(autouse=True)
+def mcp_applied(client: AsyncClient) -> list[tuple[str, dict]]:
+    """Configurações de MCP enfileiradas para o sandbox (sandbox_id, payload)."""
+    calls: list[tuple[str, dict]] = []
+
+    async def apply(sandbox_id: uuid.UUID, payload: dict) -> None:
+        calls.append((str(sandbox_id), payload))
+
+    app.dependency_overrides[get_mcp_applier] = lambda: apply
+    return calls
 
 
 class TestAdminSandboxMcpsEndpoints:
@@ -19,6 +34,7 @@ class TestAdminSandboxMcpsEndpoints:
         self,
         client: AsyncClient,
         admin_headers: dict[str, str],
+        mcp_applied: list[tuple[str, dict]],
     ) -> None:
         # 1. Cria sandbox base
         r = await client.post(
@@ -98,6 +114,22 @@ class TestAdminSandboxMcpsEndpoints:
         # 8. Lista volta a vazio
         r = await client.get(f"/api/admin/sandboxes/{sb_id}/mcps", headers=admin_headers)
         assert r.status_code == 200 and r.json() == []
+
+        # 9. Cada alteração foi enfileirada para o sandbox, com a lista vigente
+        assert [payload for _, payload in mcp_applied] == [
+            {
+                "mcpServers": {
+                    "github": {
+                        "command": "npx",
+                        "args": ["-y", "@mcp/github"],
+                        "env": {"GITHUB_TOKEN": "x"},
+                    }
+                }
+            },
+            {"mcpServers": {}},
+            {"mcpServers": {}},
+        ]
+        assert {sandbox for sandbox, _ in mcp_applied} == {sb_id}
 
     async def test_boot_triggers_bootstrap_with_mcp_settings(
         self,

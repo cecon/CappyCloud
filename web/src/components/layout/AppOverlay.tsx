@@ -27,7 +27,7 @@ export function AppOverlay({ title, subtitle, children, closeTo = '/chat', class
         </Button>
       </header>
       <ScrollArea className="min-h-0 flex-1">
-        <div className="p-5">{children}</div>
+        <div className="p-3 sm:p-5">{children}</div>
       </ScrollArea>
     </section>
   )

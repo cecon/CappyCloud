@@ -1,4 +1,4 @@
-﻿import { Fragment, type Dispatch, type SetStateAction, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+﻿import { Fragment, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Burger,
@@ -16,9 +16,10 @@ import {
   createConversationPr,
   deleteAttachment,
   fetchAiModels,
-  fetchBranches,
   fetchConversationDiff,
   fetchConversations,
+  updateConversation,
+  fetchConversationActivity,
   fetchConversationUsage,
   fetchMessages,
   executeSlashCommand,
@@ -26,6 +27,8 @@ import {
   fetchSandboxes,
   fetchUserPreferences,
   fetchWorkspaces,
+  fetchAccessibleWorkspaces,
+  type AccessibleWorkspace,
   DEFAULT_PERMISSION_MODE,
   DEFAULT_EXECUTION_PROFILE,
   getToken,
@@ -38,8 +41,6 @@ import {
   type ActionRequiredEvent,
   type AiModel,
   type ChatMessage,
-  type CommandResultEvent,
-  type CommandStartEvent,
   type Conversation,
   type ConversationUsage,
   type ContextProgressEvent,
@@ -47,12 +48,12 @@ import {
   type DoneEvent,
   type ExecutionProfile,
   type PayloadSizeBreakdown,
+  type PlanUsage,
   type PermissionMode,
   type ProjectSuggestionCard,
   type RuntimeStateEvent,
   type Sandbox,
   type SlashCommand,
-  type StatusEvent,
   type SubagentGroupEvent,
   type Workspace,
 } from '../api'
@@ -60,9 +61,30 @@ import { ActionRequiredCard } from '../components/ActionRequiredCard'
 import { AttachmentTray, type TrayItem } from '../components/AttachmentTray'
 import { AgentActivityCard, type AgentActivityStatus } from '../components/chat/AgentActivityCard'
 import { ModelPicker } from '../components/ModelPicker'
+import { mergeSubagentGroup, subagentGroupDetail, type TimedSubagentGroup } from '../components/chat/subagentGroups'
+import {
+  CLAUDE_CLI_DEFAULT_MODEL,
+  CLAUDE_CLI_MODELS,
+  claudeCliModelFor,
+  planUsageBadge,
+  usesClaudeCli,
+} from '../components/claudeCliModels'
 import { ThinkingIndicator } from '../components/ThinkingIndicator'
 import { ThinkingStream, type ThoughtStep } from '../components/ThinkingStream'
+import {
+  appendCommandStartToThoughts,
+  appendTextToThoughts,
+  appendToolStartToThoughts,
+  applyCommandResultToThoughts,
+  applyPhaseToThoughts,
+  applyToolResultToThoughts,
+  finishPendingThoughtTools,
+  buildHistoryTraces,
+} from '../components/chat/thoughtSteps'
 import { CommandConfirmation } from '../components/chat/CommandConfirmation'
+import { ArchivedConversations } from '../components/chat/ArchivedConversations'
+import { ConversationListItem } from '../components/chat/ConversationListItem'
+import { TicketNumberField } from '../components/chat/TicketNumberField'
 import { ChatVerticalNavigation } from '../components/chat/ChatVerticalNavigation'
 import { SlashCommandMenu } from '../components/chat/SlashCommandMenu'
 import { slashCommandQuery, shouldOpenSlashCommands } from '../components/chat/SlashCommandMenu.utils'
@@ -87,6 +109,7 @@ import {
   SelectValue,
 } from '../components/ui/select'
 import { useCurrentUser } from '../hooks/useCurrentUser'
+import { useIsMobile } from '../hooks/useIsMobile'
 import styles from '../components/chat.module.css'
 
 const ALLOWED_ATTACHMENT_MIME = new Set([
@@ -116,10 +139,25 @@ const ALLOWED_ATTACHMENT_EXT = new Set([
   '.yaml',
   '.yml',
   '.csv',
+  '.tsv',
   '.xml',
+  '.ini',
+  '.cfg',
+  '.conf',
+  '.properties',
+  '.toml',
+  '.sql',
   '.pdf',
   '.docx',
 ])
+const ATTACHMENT_ACCEPT = [
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/gif',
+  ...ALLOWED_ATTACHMENT_EXT,
+].join(',')
 const MAX_IMAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024
 const MAX_ARTIFACT_ATTACHMENT_BYTES = 50 * 1024 * 1024
 const IMAGE_ONLY_PROMPT =
@@ -132,6 +170,8 @@ const CONVERSATION_PAGE_SIZE = 6
 const HEAVY_TURN_TOOL_THRESHOLD = 40
 const HEAVY_TURN_PROMPT_TOKEN_THRESHOLD = 200_000
 const HEAVY_TURN_COST_THRESHOLD_USD = 1
+type PrLink = { label: string; url: string }
+
 type ChatMainMode = 'chat' | 'sandboxes'
 
 type StreamToolStats = {
@@ -474,15 +514,6 @@ function formatCostUsd(value: number | null | undefined): string {
   return `$${value.toFixed(2)}`
 }
 
-function formatShortDuration(ms: number): string {
-  if (ms < 1000) return 'menos de 1s'
-  const seconds = Math.floor(ms / 1000)
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  const rest = seconds - minutes * 60
-  return rest > 0 ? `${minutes}m ${rest}s` : `${minutes}m`
-}
-
 /**
  * Ordena modelos: free primeiro (melhor para experimentar), depois por preço de
  * input ascendente, com pricing desconhecido no fim. Estável por display_name.
@@ -567,16 +598,6 @@ function groupConversations(convs: Conversation[]): { label: string; items: Conv
     .map(([label, items]) => ({ label, items }))
 }
 
-type SessionMode = 'initializing' | 'resuming'
-type SessionStageKey = 'session' | 'repository' | 'ready' | 'agent'
-
-type SessionStageState = {
-  key: SessionStageKey
-  label: string
-  detail?: string
-  status: 'pending' | 'active' | 'done'
-}
-
 type SessionProgressAnchor = {
   id: string
   content: string
@@ -588,20 +609,6 @@ type ActivityTrace = {
   elapsedMs: number
   interrupted?: boolean
 }
-
-const SESSION_STAGES: Array<{ key: SessionStageKey; label: string }> = [
-  { key: 'session', label: 'Configurar contêiner na nuvem' },
-  { key: 'repository', label: 'Repositório clonado' },
-  { key: 'ready', label: 'Worktree da sessão criado' },
-  { key: 'agent', label: 'Agente iniciado' },
-]
-
-const RESUMED_SESSION_STAGES: Array<{ key: SessionStageKey; label: string }> = [
-  { key: 'session', label: 'Contêiner na nuvem reativado' },
-  { key: 'repository', label: 'Repositório sincronizado' },
-  { key: 'ready', label: 'Worktree da sessão reutilizado' },
-  { key: 'agent', label: 'Agente reiniciado' },
-]
 
 /** Customiza elementos Markdown que precisam de comportamento visual ou seguro. */
 const markdownComponents: Components = {
@@ -645,157 +652,6 @@ const markdownComponents: Components = {
   },
 }
 
-/** Devolve os rótulos corretos para sessão nova ou retomada. */
-function sessionStagesForMode(mode: SessionMode): Array<{ key: SessionStageKey; label: string }> {
-  return mode === 'resuming' ? RESUMED_SESSION_STAGES : SESSION_STAGES
-}
-
-/** Cria o estado inicial do checklist de inicialização da sessão. */
-function createSessionProgress(mode: SessionMode = 'initializing'): SessionStageState[] {
-  return sessionStagesForMode(mode).map((stage) => ({ ...stage, status: 'pending' }))
-}
-
-/** Marca etapas concluídas conforme eventos de progresso chegam do backend. */
-function reduceSessionProgress(
-  previous: SessionStageState[],
-  event: StatusEvent,
-): SessionStageState[] {
-  const mode = event.mode ?? 'initializing'
-  const stages = sessionStagesForMode(mode)
-  const currentIndex = stages.findIndex((stage) => stage.key === event.stage)
-  if (currentIndex < 0) return previous
-  const stageDone = event.state === 'done'
-
-  return previous.map((stage, index) => {
-    const nextStage = stages[index] ?? stage
-    if (index < currentIndex) {
-      return { ...stage, label: nextStage.label, status: 'done' }
-    }
-    if (index === currentIndex) {
-      return {
-        ...stage,
-        label: nextStage.label,
-        status: stageDone ? 'done' : 'active',
-        detail: event.message,
-      }
-    }
-    return { ...stage, label: nextStage.label }
-  })
-}
-
-/**
- * Timeline cronológica do "pensamento" do agente.
- * Concatena chunks de texto consecutivos no último step de tipo 'text' para
- * preservar a ordem natural texto→tool→texto→tool→… Quando chega um tool_start,
- * congela o texto atual e abre um novo step de tool. Tool_result actualiza o
- * step correspondente.
- */
-function appendTextToThoughts(
-  prev: ThoughtStep[],
-  delta: string,
-): ThoughtStep[] {
-  if (!delta) return prev
-  const last = prev[prev.length - 1]
-  if (last && last.kind === 'text') {
-    return [...prev.slice(0, -1), { ...last, content: last.content + delta }]
-  }
-  return [
-    ...prev,
-    { kind: 'text', id: `t-${prev.length}-${Date.now()}`, content: delta },
-  ]
-}
-
-function appendToolStartToThoughts(
-  prev: ThoughtStep[],
-  tool: { id: string; name: string; input: string },
-): ThoughtStep[] {
-  if (!tool.id || !tool.name) return prev
-  if (prev.some((s) => s.kind === 'tool' && s.id === tool.id)) return prev
-  return [
-    ...prev,
-    {
-      kind: 'tool',
-      id: tool.id,
-      name: tool.name,
-      input: tool.input,
-      done: false,
-    },
-  ]
-}
-
-function applyToolResultToThoughts(
-  prev: ThoughtStep[],
-  result: { id: string; output: string; is_error: boolean },
-): ThoughtStep[] {
-  if (!result.id) return prev
-  return prev.map((step) =>
-    step.kind === 'tool' && step.id === result.id
-      ? { ...step, output: result.output, isError: result.is_error, done: true }
-      : step,
-  )
-}
-
-function commandThoughtId(command: string): string {
-  return `command:${command || 'unknown'}`
-}
-
-function appendCommandStartToThoughts(prev: ThoughtStep[], event: CommandStartEvent): ThoughtStep[] {
-  const id = commandThoughtId(event.command)
-  if (prev.some((step) => step.kind === 'tool' && step.id === id)) return prev
-  return [
-    ...prev,
-    {
-      kind: 'tool',
-      id,
-      name: event.command || 'comando',
-      input: event.label,
-      done: false,
-    },
-  ]
-}
-
-function applyCommandResultToThoughts(prev: ThoughtStep[], event: CommandResultEvent): ThoughtStep[] {
-  const id = commandThoughtId(event.command)
-  const isError =
-    event.status === 'failed' ||
-    event.status === 'cancelled' ||
-    event.status === 'unavailable'
-  const output = event.details_markdown || event.summary
-  const updated = prev.map((step) =>
-    step.kind === 'tool' && step.id === id
-      ? { ...step, output, isError, done: true }
-      : step,
-  )
-  if (updated !== prev && updated.some((step) => step.kind === 'tool' && step.id === id)) {
-    return updated
-  }
-  return [
-    ...prev,
-    {
-      kind: 'tool',
-      id,
-      name: event.command || 'comando',
-      input: 'Comando do chat',
-      output,
-      isError,
-      done: true,
-    },
-  ]
-}
-
-function finishPendingThoughtTools(prev: ThoughtStep[], isError = false): ThoughtStep[] {
-  return prev.map((step) =>
-    step.kind === 'tool' && !step.done
-      ? {
-          ...step,
-          done: true,
-          isError: isError || step.isError,
-          output: step.output ?? '',
-        }
-      : step,
-  )
-}
-
 function updateActivityTrace(
   prev: Record<string, ActivityTrace>,
   anchor: SessionProgressAnchor | null,
@@ -824,9 +680,12 @@ export function ChatPage() {
   const currentUser = currentUserState.status === 'ready' ? currentUserState.user : null
   const isAdminUser = currentUser?.role === 'admin'
   const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure()
+  // Celular: a barra lateral vira gaveta (abre pelo botão ☰, fecha ao escolher).
+  const isMobile = useIsMobile()
 
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [archivedRefreshKey, setArchivedRefreshKey] = useState(0)
   const [mainMode, setMainMode] = useState<ChatMainMode>('chat')
   const [conversationSearch, setConversationSearch] = useState('')
   const [visibleConversationCount, setVisibleConversationCount] = useState(CONVERSATION_PAGE_SIZE)
@@ -838,7 +697,7 @@ export function ChatPage() {
   const [loading, setLoading] = useState(true)
   const [userDefaultPermissionMode, setUserDefaultPermissionMode] =
     useState<PermissionMode>(DEFAULT_PERMISSION_MODE)
-  const [permissionMode, setPermissionModeState] = useState<PermissionMode>(DEFAULT_PERMISSION_MODE)
+  const [chosenPermissionMode, setPermissionModeState] = useState<PermissionMode>(DEFAULT_PERMISSION_MODE)
   const [permissionWarningRuntimeConfirmed, setPermissionWarningRuntimeConfirmed] = useState(false)
   const [executionProfile, setExecutionProfileState] = useState<ExecutionProfile>(DEFAULT_EXECUTION_PROFILE)
 
@@ -846,6 +705,11 @@ export function ChatPage() {
   const [sandboxes, setSandboxes] = useState<Sandbox[]>([])
   const [selectedSandboxId, setSelectedSandboxId] = useState<string>('')
   const [selectedSlug, setSelectedSlug] = useState<string>('')
+  // Workspaces (pasta com vários repos) — `workspaces` acima é o catálogo de repositórios.
+  const [projectWorkspaces, setProjectWorkspaces] = useState<AccessibleWorkspace[]>([])
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('')
+  const [ticketNumber, setTicketNumber] = useState('')
+  const [newChatError, setNewChatError] = useState<string | null>(null)
   const [selectedBranch, setSelectedBranch] = useState<string>('')
   const [models, setModels] = useState<AiModel[]>([])
   const [selectedModelId, setSelectedModelId] = useState<string>('')
@@ -857,6 +721,37 @@ export function ChatPage() {
   const [liveUsage, setLiveUsage] = useState<DoneEvent | null>(null)
 
   const sortedModels = useMemo(() => sortModelsForSelect(models), [models])
+  // Sandbox da próxima mensagem: a da conversa aberta ou a do workspace da nova conversa.
+  const runtimeSandboxId = activeId
+    ? conversations.find((conversation) => conversation.id === activeId)?.sandbox_id
+    : projectWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId)?.sandbox_id
+  // Modo de planejamento: ligado por workspace; conversa antiga (sem workspace) segue como era.
+  const permissionWorkspaceId = activeId
+    ? conversations.find((conversation) => conversation.id === activeId)?.workspace_id
+    : selectedWorkspaceId
+  const planModeEnabled = permissionWorkspaceId
+    ? !!projectWorkspaces.find((workspace) => workspace.id === permissionWorkspaceId)?.plan_mode_enabled
+    : true
+  const permissionMode: PermissionMode =
+    chosenPermissionMode === 'plan' && !planModeEnabled ? DEFAULT_PERMISSION_MODE : chosenPermissionMode
+  const onClaudeCli = usesClaudeCli(sandboxes.find((sandbox) => sandbox.id === runtimeSandboxId)?.agent_runtime)
+  // Escolha do Claude CLI fica separada: não troca o modelo das sandboxes openclaude.
+  const [claudeCliModelId, setClaudeCliModelId] = useState(() => {
+    try {
+      return claudeCliModelFor(localStorage.getItem(CLAUDE_CLI_MODEL_KEY))
+    } catch {
+      return CLAUDE_CLI_DEFAULT_MODEL
+    }
+  })
+  const chooseClaudeCliModel = useCallback((modelId: string) => {
+    const next = claudeCliModelFor(modelId)
+    setClaudeCliModelId(next)
+    try {
+      localStorage.setItem(CLAUDE_CLI_MODEL_KEY, next)
+    } catch {
+      // Sem storage: vale só nesta aba.
+    }
+  }, [])
   const availableSandboxes = useMemo(() => sandboxes.filter(isSandboxAvailable), [sandboxes])
   const selectedSandbox = useMemo(
     () => sandboxes.find((sandbox) => sandbox.id === selectedSandboxId) ?? null,
@@ -872,10 +767,9 @@ export function ChatPage() {
   const [streamActivityAt, setStreamActivityAt] = useState<number | null>(null)
   const [streamElapsedMs, setStreamElapsedMs] = useState(0)
   const [pendingAction, setPendingAction] = useState<ActionRequiredEvent | null>(null)
-  const [sessionProgress, setSessionProgress] = useState<SessionStageState[]>([])
   const [sessionProgressAnchor, setSessionProgressAnchor] = useState<SessionProgressAnchor | null>(null)
   const [contextProgress, setContextProgress] = useState<ContextProgressEvent | null>(null)
-  const [subagentGroups, setSubagentGroups] = useState<SubagentGroupEvent[]>([])
+  const [subagentGroups, setSubagentGroups] = useState<TimedSubagentGroup[]>([])
   const [runtimeStates, setRuntimeStates] = useState<RuntimeStateEvent[]>([])
   const [streamToolStats, setStreamToolStats] = useState<StreamToolStats>(EMPTY_STREAM_TOOL_STATS)
   const [activityTraces, setActivityTraces] = useState<Record<string, ActivityTrace>>({})
@@ -927,7 +821,7 @@ export function ChatPage() {
       if (files.length === 0) return
       const normalized = files.map((file, index) => normalizedClipboardFile(file, index))
       const hasImage = normalized.some(isImageFile)
-      const modelForImages = modelIdForAttachments(models, selectedModelId, hasImage)
+      const modelForImages = onClaudeCli ? '' : modelIdForAttachments(models, selectedModelId, hasImage)
       if (modelForImages && modelForImages !== selectedModelId) {
         setSelectedModelId(modelForImages)
       }
@@ -1001,7 +895,7 @@ export function ChatPage() {
           })
       }
     },
-    [activeId, models, selectedModelId, token],
+    [activeId, models, onClaudeCli, selectedModelId, token],
   )
 
   const uploadPendingAttachments = useCallback(
@@ -1107,7 +1001,7 @@ export function ChatPage() {
 
   const [diffStats, setDiffStats] = useState<{ added: number; removed: number } | null>(null)
   const [prLoading, setPrLoading] = useState(false)
-  const [prUrl, setPrUrl] = useState<string | null>(null)
+  const [prLinks, setPrLinks] = useState<PrLink[]>([])
   const [prError, setPrError] = useState<string | null>(null)
   const [headBranch, setHeadBranch] = useState<string | null>(null)
 
@@ -1115,6 +1009,10 @@ export function ChatPage() {
   const stopRequestedRef = useRef(false)
   const optimisticConversationIdRef = useRef<string | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const ticketRef = useRef<HTMLInputElement>(null)
+  // Conversa nova em workspace que exige o número do chamado.
+  const requireTicket =
+    !activeId && !!projectWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId)?.require_ticket
   const chatPrefsRef = useRef<ChatPreferenceState>(readChatPrefs())
   /** Comprimento do `accumulated` text ja aplicado na timeline thoughtSteps. */
   const lastTextOffsetRef = useRef(0)
@@ -1157,6 +1055,18 @@ export function ChatPage() {
     setPermissionModeState(activeConversationPermissionMode)
     setPermissionWarningRuntimeConfirmed(false)
   }, [activeId, activeConversationPermissionMode])
+
+  useEffect(() => {
+    let cancelled = false
+    fetchAccessibleWorkspaces(token)
+      .then((list) => {
+        if (cancelled) return
+        setProjectWorkspaces(list)
+        setSelectedWorkspaceId((prev) => defaultWorkspaceId(list, prev))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [token])
 
   useEffect(() => {
     let cancelled = false
@@ -1286,6 +1196,21 @@ export function ChatPage() {
     })
   }, [selectedModelId, selectedSlug])
 
+  /** Reconstrói a timeline de ações de cada turno a partir do histórico do servidor. */
+  const loadActivityHistory = useCallback(
+    async (conversationId: string, msgs: ChatMessage[]) => {
+      try {
+        const turns = await fetchConversationActivity(token, conversationId)
+        const traces = buildHistoryTraces(turns, msgs)
+        setActivityTraces((prev) => ({ ...prev, ...traces }))
+      } catch (e) {
+        if (e instanceof AuthError) redirectToLogin()
+        // Sem histórico a conversa continua utilizável; só a timeline antiga não aparece.
+      }
+    },
+    [token],
+  )
+
   useEffect(() => {
     if (!activeId) {
       setMessages([])
@@ -1298,7 +1223,7 @@ export function ChatPage() {
     let cancelled = false
     const preserveOptimistic = optimisticConversationIdRef.current === activeId
     setDiffStats(null)
-    setPrUrl(null)
+    setPrLinks([])
     setHeadBranch(null)
     if (!preserveOptimistic) {
       setMessages([])
@@ -1319,6 +1244,9 @@ export function ChatPage() {
             preserveOptimistic && msgs.length === 0 && prev.length > 0 ? prev : msgs,
           )
           setConvUsage(usage)
+          // Na conversa recém-criada a timeline ao vivo é a fonte; o histórico
+          // é recarregado quando o turno termina.
+          if (!preserveOptimistic) void loadActivityHistory(activeId, msgs)
         }
       } catch (e) {
         if (e instanceof AuthError) {
@@ -1331,7 +1259,7 @@ export function ChatPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [activeId, token])
+  }, [activeId, token, loadActivityHistory])
 
   async function handleStop() {
     if (stopRequestedRef.current) return
@@ -1388,8 +1316,18 @@ export function ChatPage() {
     setPrError(null)
     try {
       const result = await createConversationPr(token, activeId)
-      setPrUrl(result.pr_url)
+      const perRepo = result.prs ?? []
+      const opened = perRepo.filter((pr) => pr.pr_url)
+      setPrLinks(
+        opened.length > 0
+          ? opened.map((pr) => ({ label: pr.alias || pr.slug, url: pr.pr_url as string }))
+          : [{ label: '', url: result.pr_url }],
+      )
       setHeadBranch(result.head_branch)
+      const failed = perRepo.filter((pr) => pr.error)
+      if (failed.length > 0) {
+        setPrError(failed.map((pr) => `${pr.alias || pr.slug}: ${pr.error}`).join(' · '))
+      }
     } catch (e) {
       setPrError(e instanceof Error ? e.message : 'Não foi possível criar o PR. Tente novamente.')
     } finally {
@@ -1399,6 +1337,7 @@ export function ChatPage() {
 
   const handleNewChat = useCallback(() => {
     setMainMode('chat')
+    closeMobile()
     setTrayItems([])
     setIsDragOver(false)
     setActiveId(null)
@@ -1410,7 +1349,7 @@ export function ChatPage() {
     setPermissionModeState(userDefaultPermissionMode)
     setPermissionWarningRuntimeConfirmed(false)
     setTimeout(() => inputRef.current?.focus(), 50)
-  }, [userDefaultPermissionMode])
+  }, [closeMobile, userDefaultPermissionMode])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -1424,6 +1363,30 @@ export function ChatPage() {
   }, [handleNewChat])
 
   /** Seleciona uma conversa histórica sem deixar o streaming atual contaminar a UI. */
+  async function handleRenameConversation(conversation: Conversation, title: string) {
+    const token = getToken()
+    if (!token) return
+    const updated = await updateConversation(token, conversation.id, { title })
+    setConversations((prev) => prev.map((item) => (item.id === updated.id ? { ...item, title: updated.title } : item)))
+  }
+
+  async function handleArchiveConversation(conversation: Conversation, archived: boolean) {
+    const token = getToken()
+    if (!token) return
+    const updated = await updateConversation(token, conversation.id, { archived })
+    setConversations((prev) =>
+      prev.some((item) => item.id === updated.id)
+        ? prev.map((item) => (item.id === updated.id ? { ...item, archived_at: updated.archived_at } : item))
+        : [updated, ...prev],
+    )
+    setArchivedRefreshKey((key) => key + 1)
+  }
+
+  function handleOpenArchived(conversation: Conversation) {
+    setConversations((prev) => (prev.some((item) => item.id === conversation.id) ? prev : [...prev, conversation]))
+    handleSelectConversation(conversation.id)
+  }
+
   function handleSelectConversation(conversationId: string) {
     setMainMode('chat')
     if (conversationId === activeId) return
@@ -1433,7 +1396,6 @@ export function ChatPage() {
     setThoughtSteps([])
     setStreamActivityAt(null)
     setPendingAction(null)
-    setSessionProgress([])
     setSessionProgressAnchor(null)
     setContextProgress(null)
     setSubagentGroups([])
@@ -1451,23 +1413,39 @@ export function ChatPage() {
     const sendableAttachments = trayItems.filter(isSendableTrayItem)
     const userText = text.trim() || (sendableAttachments.length ? IMAGE_ONLY_PROMPT : '')
     if (!userText) return
-    const modelForRequest = modelIdForAttachments(
-      models,
-      selectedModelId,
-      sendableAttachments.some(trayItemHasImage),
-    )
-    if (modelForRequest && modelForRequest !== selectedModelId) {
+    // Claude CLI lê imagens direto; o modelo vem da escolha do Claude CLI.
+    const modelForRequest = onClaudeCli
+      ? claudeCliModelId
+      : modelIdForAttachments(models, selectedModelId, sendableAttachments.some(trayItemHasImage))
+    if (!onClaudeCli && modelForRequest && modelForRequest !== selectedModelId) {
       setSelectedModelId(modelForRequest)
     }
-    const repos = selectedSlug
-      ? [{ slug: selectedSlug, base_branch: selectedBranch || null }]
-      : []
-    const c = await createConversation(
-      token,
-      repos,
-      modelForRequest || null,
-      selectedSandboxId || null,
-    )
+    // Conversa nova é sempre de um workspace (a sandbox e os repositórios vêm dele).
+    if (!selectedWorkspaceId) {
+      setNewChatError('Selecione um workspace para começar a conversa.')
+      return
+    }
+    let c
+    try {
+      setNewChatError(null)
+      rememberWorkspace(selectedWorkspaceId)
+      c = await createConversation(
+        token,
+        [],
+        modelForRequest || null,
+        null,
+        selectedWorkspaceId,
+        ticketNumber.trim() || null,
+      )
+      setTicketNumber('')
+    } catch (err) {
+      if (err instanceof AuthError) {
+        redirectToLogin()
+        return
+      }
+      setNewChatError(errorToUserMessage(err))
+      return
+    }
     // Update otimista do título — o backend renomeia "Nova conversa" para o
     // início da primeira mensagem (mesma lógica de _TITLE_MAX_LEN=80).
     const previewTitle =
@@ -1487,7 +1465,6 @@ export function ChatPage() {
     setStreamActivityAt(startedAt)
     setStreamElapsedMs(0)
     setPendingAction(null)
-    setSessionProgress(createSessionProgress('initializing'))
     setContextProgress(null)
     setSubagentGroups([])
     setRuntimeStates([])
@@ -1570,12 +1547,10 @@ export function ChatPage() {
               setPermissionWarningRuntimeConfirmed(true)
             }
             if (!status.stage) return
-            const statusWithMode = { ...status, mode: status.mode ?? 'initializing' }
-            setSessionProgress((prev) =>
-              reduceSessionProgress(
-                prev.length ? prev : createSessionProgress(statusWithMode.mode),
-                statusWithMode,
-              )
+            const atMs = Date.now()
+            setThoughtSteps((prev) => applyPhaseToThoughts(prev, status, atMs))
+            setActivityTraces((prev) =>
+              updateActivityTrace(prev, userMsg, (steps) => applyPhaseToThoughts(steps, status, atMs)),
             )
           },
           onPayloadDiagnostic(diagnostics) {
@@ -1588,21 +1563,18 @@ export function ChatPage() {
           },
           onSubagentGroup(group) {
             setStreamActivityAt(Date.now())
-            setSubagentGroups((prev) => {
-              const key = group.parent_turn_id ?? group.label
-              const next = prev.filter((item) => (item.parent_turn_id ?? item.label) !== key)
-              return [...next, group]
-            })
+            setSubagentGroups((prev) => mergeSubagentGroup(prev, group, Date.now()))
           },
           onRuntimeState(state) {
             setStreamActivityAt(Date.now())
             setRuntimeStates((prev) => [...prev.slice(-3), state])
           },
           onError(message) {
-            setStreamActivityAt(Date.now())
-            setThoughtSteps((prev) => finishPendingThoughtTools(prev, true))
+            const atMs = Date.now()
+            setStreamActivityAt(atMs)
+            setThoughtSteps((prev) => finishPendingThoughtTools(prev, true, atMs))
             setActivityTraces((prev) =>
-              updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps, true)),
+              updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps, true, atMs)),
             )
             setMessages((m) => [
               ...m,
@@ -1616,11 +1588,12 @@ export function ChatPage() {
             ])
           },
           onDone(usage) {
-            setStreamActivityAt(Date.now())
+            const atMs = Date.now()
+            setStreamActivityAt(atMs)
             setLiveUsage(usage)
-            setThoughtSteps((prev) => finishPendingThoughtTools(prev))
+            setThoughtSteps((prev) => finishPendingThoughtTools(prev, false, atMs))
             setActivityTraces((prev) =>
-              updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps)),
+              updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps, false, atMs)),
             )
           },
           signal: ctrl.signal,
@@ -1652,7 +1625,7 @@ export function ChatPage() {
       optimisticConversationIdRef.current = null
       setConvUsage(totals)
       setLiveUsage(null)
-      setSessionProgress([])
+      void loadActivityHistory(c.id, msgs)
     } catch (e) {
       if (e instanceof AuthError) {
         redirectToLogin(); return
@@ -1693,12 +1666,11 @@ export function ChatPage() {
     const text = (textOverride ?? input).trim() ||
       (sendableAttachments.length ? IMAGE_ONLY_PROMPT : '')
     if (!text) return
-    const modelForRequest = modelIdForAttachments(
-      models,
-      selectedModelId,
-      sendableAttachments.some(trayItemHasImage),
-    )
-    if (modelForRequest && modelForRequest !== selectedModelId) {
+    // Claude CLI lê imagens direto; o modelo vem da escolha do Claude CLI.
+    const modelForRequest = onClaudeCli
+      ? claudeCliModelId
+      : modelIdForAttachments(models, selectedModelId, sendableAttachments.some(trayItemHasImage))
+    if (!onClaudeCli && modelForRequest && modelForRequest !== selectedModelId) {
       setSelectedModelId(modelForRequest)
     }
     const uploadedAttachmentIds = trayItems
@@ -1722,7 +1694,6 @@ export function ChatPage() {
     setStreamElapsedMs(0)
     setPendingAction(null)
       if (!isActionResume) {
-        setSessionProgress([])
         setContextProgress(null)
         setSubagentGroups([])
         setRuntimeStates([])
@@ -1831,13 +1802,13 @@ export function ChatPage() {
               setPermissionWarningRuntimeConfirmed(true)
             }
             if (!status.stage) return
-            const statusWithMode = { ...status, mode: status.mode ?? 'initializing' }
-            setSessionProgress((prev) =>
-              reduceSessionProgress(
-                prev.length ? prev : createSessionProgress(statusWithMode.mode),
-                statusWithMode,
+            const atMs = Date.now()
+            setThoughtSteps((prev) => applyPhaseToThoughts(prev, status, atMs))
+            if (!isActionResume) {
+              setActivityTraces((prev) =>
+                updateActivityTrace(prev, userMsg, (steps) => applyPhaseToThoughts(steps, status, atMs)),
               )
-            )
+            }
           },
           onPayloadDiagnostic(diagnostics) {
             setStreamActivityAt(Date.now())
@@ -1849,22 +1820,19 @@ export function ChatPage() {
           },
           onSubagentGroup(group) {
             setStreamActivityAt(Date.now())
-            setSubagentGroups((prev) => {
-              const key = group.parent_turn_id ?? group.label
-              const next = prev.filter((item) => (item.parent_turn_id ?? item.label) !== key)
-              return [...next, group]
-            })
+            setSubagentGroups((prev) => mergeSubagentGroup(prev, group, Date.now()))
           },
           onRuntimeState(state) {
             setStreamActivityAt(Date.now())
             setRuntimeStates((prev) => [...prev.slice(-3), state])
           },
           onError(message) {
-            setStreamActivityAt(Date.now())
-            setThoughtSteps((prev) => finishPendingThoughtTools(prev, true))
+            const atMs = Date.now()
+            setStreamActivityAt(atMs)
+            setThoughtSteps((prev) => finishPendingThoughtTools(prev, true, atMs))
             if (!isActionResume) {
               setActivityTraces((prev) =>
-                updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps, true)),
+                updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps, true, atMs)),
               )
             }
             setMessages((m) => [
@@ -1879,12 +1847,13 @@ export function ChatPage() {
             ])
           },
           onDone(usage) {
-            setStreamActivityAt(Date.now())
+            const atMs = Date.now()
+            setStreamActivityAt(atMs)
             setLiveUsage(usage)
-            setThoughtSteps((prev) => finishPendingThoughtTools(prev))
+            setThoughtSteps((prev) => finishPendingThoughtTools(prev, false, atMs))
             if (!isActionResume) {
               setActivityTraces((prev) =>
-                updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps)),
+                updateActivityTrace(prev, userMsg, (steps) => finishPendingThoughtTools(steps, false, atMs)),
               )
             }
           },
@@ -1918,6 +1887,7 @@ export function ChatPage() {
       setMessages(msgs)
       setConvUsage(totals)
       setLiveUsage(null)
+      void loadActivityHistory(activeId, msgs)
     } catch (e) {
       if (e instanceof AuthError) {
         redirectToLogin(); return
@@ -1949,21 +1919,26 @@ export function ChatPage() {
 
   const activeConv = conversations.find((c) => c.id === activeId)
   const activeEnvSlug = activeConv?.repos?.[0]?.slug ?? null
+  const activeProjectWorkspace = activeConv?.workspace_id
+    ? projectWorkspaces.find((workspace) => workspace.id === activeConv.workspace_id) ?? null
+    : null
   const activeSandboxName =
     sandboxes.find((sandbox) => sandbox.id === activeConv?.sandbox_id)?.name ??
     selectedSandbox?.name ??
     null
   const showThinking =
     streaming &&
-    !sessionProgress.length &&
     thoughtSteps.length === 0 &&
     !pendingAction
 
   const normalizedConversationSearch = conversationSearch.trim().toLocaleLowerCase('pt-BR')
   const filteredConversations = useMemo(() => {
-    if (!normalizedConversationSearch) return conversations
+    // Arquivadas ficam no estado (a conversa aberta continua funcionando), mas
+    // fora da lista: aparecem em "Arquivadas", no rodapé.
+    const active = conversations.filter((conversation) => !conversation.archived_at)
+    if (!normalizedConversationSearch) return active
 
-    return conversations.filter((conversation) => {
+    return active.filter((conversation) => {
       const repoText = conversation.repos
         ?.map((repo) => [repo.slug, repo.alias, repo.base_branch].filter(Boolean).join(' '))
         .join(' ') ?? ''
@@ -2017,7 +1992,8 @@ export function ChatPage() {
       <div className={styles.body}>
         {/* ── Conversation panel ───────────────────────────────── */}
         <aside
-          className={`${styles.sidebar} ${conversationsCollapsed ? styles.sidebarCollapsed : ''} ${mobileOpened ? styles.sidebarOpen : ''}`}
+          className={`${styles.sidebar} ${!isMobile && conversationsCollapsed ? styles.sidebarCollapsed : ''} ${isMobile && mobileOpened ? styles.sidebarOpen : ''}`}
+          aria-hidden={isMobile && !mobileOpened ? true : undefined}
         >
           <div className={styles.sidebarHead}>
             <div className={styles.sidebarHeadLeft}>
@@ -2027,7 +2003,9 @@ export function ChatPage() {
                 <div className={styles.sidebarSubtitle}>Workspace</div>
               </div>
             </div>
-            <Burger opened={mobileOpened} onClick={toggleMobile} size="sm" color="var(--cc-on-surface-variant)" hiddenFrom="sm" />
+            {isMobile && (
+              <Burger opened={mobileOpened} onClick={toggleMobile} size="sm" color="var(--cc-on-surface-variant)" aria-label="Fechar menu" />
+            )}
           </div>
 
           {/* New session button */}
@@ -2108,23 +2086,25 @@ export function ChatPage() {
                 <h3 className={styles.groupLabel}>{g.label}</h3>
                 <div className={styles.groupItems}>
                   {g.items.map((c) => (
-                    <button
+                    <ConversationListItem
                       key={c.id}
-                      className={`${styles.sessionItem} ${c.id === activeId ? styles.sessionItemActive : ''}`}
-                      onClick={() => handleSelectConversation(c.id)}
-                    >
-                      <span className={`${styles.icon} ${styles.sessionIcon}`}>
-                        chat_bubble
-                      </span>
-                      <span className={styles.sessionLabel}>{c.title}</span>
-                      {c.repos?.[0]?.slug && (
-                        <span className={styles.sessionEnvDot} title={c.repos[0].slug} />
-                      )}
-                    </button>
+                      conversation={c}
+                      active={c.id === activeId}
+                      onSelect={() => handleSelectConversation(c.id)}
+                      onRename={(title) => handleRenameConversation(c, title)}
+                      onArchive={(archived) => handleArchiveConversation(c, archived)}
+                    />
                   ))}
                 </div>
               </section>
             ))}
+            <ArchivedConversations
+              activeId={activeId}
+              refreshKey={archivedRefreshKey}
+              onSelect={handleOpenArchived}
+              onRename={handleRenameConversation}
+              onUnarchive={(conversation) => handleArchiveConversation(conversation, false)}
+            />
             {hiddenConversationCount > 0 && (
               <div className={styles.sessionListFooter}>
                 <button
@@ -2142,6 +2122,12 @@ export function ChatPage() {
             <SidebarUserMenu user={currentUser} />
           </div>
         </aside>
+        {isMobile && mobileOpened && <div className={styles.mobileBackdrop} onClick={closeMobile} aria-hidden="true" />}
+        {isMobile && !mobileOpened && (
+          <button type="button" className={styles.mobileMenuBtn} onClick={toggleMobile} aria-label="Abrir menu de conversas">
+            <span className={styles.icon}>menu</span>
+          </button>
+        )}
 
         {/* ── Main ─────────────────────────────────────────────── */}
         <main className={styles.main}>
@@ -2159,16 +2145,19 @@ export function ChatPage() {
             inputRef={inputRef}
             onExecute={(text) => handleNewChatWithMessage(text)}
             streaming={streaming}
-            sandboxes={availableSandboxes}
-            selectedSandboxId={selectedSandboxId}
-            setSelectedSandboxId={setSelectedSandboxId}
             selectableWorkspaces={selectableWorkspaces}
+            projectWorkspaces={projectWorkspaces}
+            selectedWorkspaceId={selectedWorkspaceId}
+            setSelectedWorkspaceId={setSelectedWorkspaceId}
+            newChatError={newChatError}
             selectedSlug={selectedSlug}
-            setSelectedSlug={setSelectedSlug}
-            selectedBranch={selectedBranch}
-            setSelectedBranch={setSelectedBranch}
+            requireTicket={requireTicket}
+            ticketNumber={ticketNumber}
+            setTicketNumber={setTicketNumber}
+            ticketRef={ticketRef}
             permissionMode={permissionMode}
             setPermissionMode={setPermissionMode}
+            planModeEnabled={planModeEnabled}
             executionProfile={executionProfile}
             setExecutionProfile={setExecutionProfile}
             permissionWarningRuntimeConfirmed={permissionWarningRuntimeConfirmed}
@@ -2190,8 +2179,8 @@ export function ChatPage() {
               thoughtSteps={thoughtSteps}
               activityTraces={activityTraces}
               streamElapsedMs={streamElapsedMs}
+              streamNowMs={streamStartedAt !== null ? streamStartedAt + streamElapsedMs : 0}
               streamIdleMs={streamIdleMs}
-              sessionProgress={sessionProgress}
               pendingAction={pendingAction}
               contextProgress={contextProgress}
               subagentGroups={subagentGroups}
@@ -2206,24 +2195,31 @@ export function ChatPage() {
               onStop={handleStop}
               onActionReply={handleActionReply}
               activeEnvSlug={activeEnvSlug}
-              activeEnvName={workspaces.find(w => w.slug === activeEnvSlug)?.name ?? activeEnvSlug ?? workspaces[0]?.name ?? null}
+              activeEnvName={
+                activeProjectWorkspace
+                  ? `${activeProjectWorkspace.name} · ${activeProjectWorkspace.repositories.length} repositórios${
+                      activeConv?.ticket_number ? ` · Chamado ${activeConv.ticket_number}` : ''
+                    }`
+                  : workspaces.find(w => w.slug === activeEnvSlug)?.name ?? activeEnvSlug ?? workspaces[0]?.name ?? null
+              }
               activeBaseBranch={activeConv?.repos?.[0]?.base_branch ?? null}
               activeSandboxName={activeSandboxName}
               sandboxAccessCount={sandboxAccessCount}
               diffStats={diffStats}
               prLoading={prLoading}
-              prUrl={prUrl}
+              prLinks={prLinks}
               prError={prError}
               headBranch={headBranch}
               onCreatePr={handleCreatePr}
               activeTitle={activeConv?.title ?? 'Conversa'}
               token={token}
               conversationId={activeId!}
-              models={sortedModels}
-              selectedModelId={selectedModelId}
-              setSelectedModelId={setSelectedModelId}
+              models={onClaudeCli ? CLAUDE_CLI_MODELS : sortedModels}
+              selectedModelId={onClaudeCli ? claudeCliModelId : selectedModelId}
+              setSelectedModelId={onClaudeCli ? chooseClaudeCliModel : setSelectedModelId}
               permissionMode={permissionMode}
               setPermissionMode={setPermissionMode}
+              planModeEnabled={planModeEnabled}
               executionProfile={executionProfile}
               setExecutionProfile={setExecutionProfile}
               permissionWarningRuntimeConfirmed={permissionWarningRuntimeConfirmed}
@@ -2252,10 +2248,12 @@ function PermissionModeControl({
   onChange,
   disabled,
   runtimeConfirmed: _runtimeConfirmed,
+  planModeEnabled,
   compact = false,
 }: {
   value: PermissionMode
   onChange: (mode: PermissionMode) => void
+  planModeEnabled: boolean
   disabled: boolean
   runtimeConfirmed: boolean
   compact?: boolean
@@ -2292,7 +2290,7 @@ function PermissionModeControl({
           <DropdownMenuLabel className={styles.permissionModeMenuLabel}>
             Permissões do agente
           </DropdownMenuLabel>
-          {PERMISSION_MODE_OPTIONS.map((mode) => {
+          {PERMISSION_MODE_OPTIONS.filter((mode) => planModeEnabled || mode.value !== 'plan').map((mode) => {
             const selected = mode.value === value
             const toneClass =
               mode.tone === 'danger'
@@ -2390,15 +2388,18 @@ interface EmptyStateProps {
   onExecute: (text: string) => void
   streaming: boolean
   selectableWorkspaces: Workspace[]
-  sandboxes: Sandbox[]
-  selectedSandboxId: string
-  setSelectedSandboxId: (id: string) => void
+  projectWorkspaces: AccessibleWorkspace[]
+  selectedWorkspaceId: string
+  setSelectedWorkspaceId: (id: string) => void
+  newChatError: string | null
   selectedSlug: string
-  setSelectedSlug: (s: string) => void
-  selectedBranch: string
-  setSelectedBranch: Dispatch<SetStateAction<string>>
+  requireTicket: boolean
+  ticketNumber: string
+  setTicketNumber: (value: string) => void
+  ticketRef: React.RefObject<HTMLInputElement | null>
   permissionMode: PermissionMode
   setPermissionMode: (mode: PermissionMode) => void
+  planModeEnabled: boolean
   executionProfile: ExecutionProfile
   setExecutionProfile: (profile: ExecutionProfile) => void
   permissionWarningRuntimeConfirmed: boolean
@@ -2412,20 +2413,48 @@ interface EmptyStateProps {
   setDragOver: (v: boolean) => void
 }
 
+const LAST_WORKSPACE_KEY = 'cappy.lastWorkspaceId'
+const CLAUDE_CLI_MODEL_KEY = 'cappy.claudeCliModel'
+
+/** Workspace da nova conversa: o atual se ainda existir, o último usado, ou o primeiro pronto. */
+function defaultWorkspaceId(list: AccessibleWorkspace[], current: string): string {
+  if (current && list.some((workspace) => workspace.id === current)) return current
+  let remembered = ''
+  try {
+    remembered = localStorage.getItem(LAST_WORKSPACE_KEY) ?? ''
+  } catch {
+    remembered = ''
+  }
+  const usable = (id: string) => list.some((workspace) => workspace.id === id && workspace.ready)
+  if (usable(remembered)) return remembered
+  return (list.find((workspace) => workspace.ready) ?? list[0])?.id ?? ''
+}
+
+function rememberWorkspace(id: string) {
+  try {
+    if (id) localStorage.setItem(LAST_WORKSPACE_KEY, id)
+  } catch {
+    // Sem storage (aba privada): só não lembra a escolha.
+  }
+}
+
 function EmptyState({
   input, setInput, inputRef, onExecute, streaming,
-  selectableWorkspaces, sandboxes, selectedSandboxId, setSelectedSandboxId,
-  selectedSlug, setSelectedSlug,
-  selectedBranch, setSelectedBranch,
+  selectableWorkspaces,
+  projectWorkspaces, selectedWorkspaceId, setSelectedWorkspaceId, newChatError,
+  selectedSlug,
+  requireTicket, ticketNumber, setTicketNumber, ticketRef,
   token,
-  permissionMode, setPermissionMode, executionProfile, setExecutionProfile, permissionWarningRuntimeConfirmed,
+  permissionMode, setPermissionMode, planModeEnabled, executionProfile, setExecutionProfile, permissionWarningRuntimeConfirmed,
   trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
 }: EmptyStateProps) {
-  const [branches, setBranches] = useState<string[]>([])
-  const [loadedSlug, setLoadedSlug] = useState('')
   const [suggestions, setSuggestions] = useState<ProjectSuggestionCard[]>([])
   const [suggestionsSlug, setSuggestionsSlug] = useState('')
-  const branchesLoading = !!selectedSlug && loadedSlug !== selectedSlug
+  const [ticketTouched, setTicketTouched] = useState(false)
+  // Workspace que exige chamado: o cursor já começa no campo do número.
+  useEffect(() => {
+    if (requireTicket && !ticketRef.current?.value) ticketRef.current?.focus()
+  }, [requireTicket, ticketRef])
   const selectedWorkspace = useMemo(
     () => selectableWorkspaces.find((workspace) => workspace.slug === selectedSlug) ?? null,
     [selectableWorkspaces, selectedSlug],
@@ -2434,26 +2463,13 @@ function EmptyState({
   // auto-clone trata o caso de repo não clonado
   const hasSendableAttachment = trayItems.some(isSendableTrayItem)
   const hasUploadInProgress = trayItems.some((item) => item.kind === 'uploading')
-  const sandboxRequired = !selectedSandboxId
+  const chosenWorkspace = projectWorkspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null
   const canExecute =
-    !sandboxRequired &&
-    !!selectedSlug &&
-    !!selectedBranch &&
+    !!chosenWorkspace?.ready &&
+    (!requireTicket || !!ticketNumber.trim()) &&
     (!!input.trim() || hasSendableAttachment) &&
     !hasUploadInProgress &&
     !streaming
-
-  useEffect(() => {
-    if (!selectedSlug) return
-    let cancelled = false
-    fetchBranches(token, selectedSlug).then(({ branches: list, default: def }) => {
-      if (cancelled) return
-      setBranches(list)
-      setLoadedSlug(selectedSlug)
-      setSelectedBranch((prev) => (list.includes(prev) ? prev : def))
-    })
-    return () => { cancelled = true }
-  }, [selectedSlug, token, setSelectedBranch])
 
   useEffect(() => {
     if (!selectedSlug) {
@@ -2477,12 +2493,16 @@ function EmptyState({
   function handleKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey && !streaming) {
       e.preventDefault()
+      // Falta o chamado: Enter leva ao campo em vez de enviar.
+      if (requireTicket && !ticketNumber.trim()) {
+        setTicketTouched(true)
+        ticketRef.current?.focus()
+        return
+      }
       if (canExecute) onExecute(input)
     }
   }
 
-  const repoRequired = selectableWorkspaces.length > 0 && !selectedSlug
-  const branchRequired = !!selectedSlug && !selectedBranch
   const quickActions = buildProjectQuickActions({
     repoName: selectedWorkspace?.name || selectedSlug || 'seu projeto',
     suggestions: selectedSlug && suggestionsSlug === selectedSlug ? suggestions : [],
@@ -2544,7 +2564,7 @@ function EmptyState({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,.txt,.md,.markdown,.log,.json,.yaml,.yml,.csv,.xml,.pdf,.docx"
+              accept={ATTACHMENT_ACCEPT}
               multiple
               style={{ display: 'none' }}
               onChange={(e) => {
@@ -2558,17 +2578,30 @@ function EmptyState({
               conversationId={null}
               onRemove={onRemoveTrayItem}
             />
+            {newChatError && (
+              <div className={styles.chatStateCardError} role="alert" style={{ padding: '0.5rem 0.75rem', fontSize: '0.8rem' }}>
+                {newChatError}
+              </div>
+            )}
+            {requireTicket && (
+              <TicketNumberField
+                value={ticketNumber}
+                onChange={setTicketNumber}
+                onDone={() => inputRef.current?.focus()}
+                inputRef={ticketRef}
+                missing={ticketTouched && !ticketNumber.trim()}
+                disabled={streaming}
+              />
+            )}
             <div className={styles.commandInputRow}>
               <span className={`${styles.icon} ${styles.boltIcon}`}>bolt</span>
               <textarea
                 ref={inputRef}
                 className={styles.commandTextarea}
                 placeholder={
-                  !selectedSlug
-                    ? 'Pergunte algo ao agente...'
-                    : !selectedBranch
-                      ? 'Selecione uma branch antes de continuar...'
-                      : 'Pergunte algo ao agente... (Enter para enviar)'
+                  chosenWorkspace?.ready
+                    ? 'Pergunte algo ao agente... (Enter para enviar)'
+                    : 'Pergunte algo ao agente...'
                 }
                 rows={2}
                 value={input}
@@ -2590,138 +2623,77 @@ function EmptyState({
                 >
                   <span className={styles.icon}>attachment</span>
                 </button>
-                {sandboxes.length > 0 ? (
+                {projectWorkspaces.length > 0 ? (
                   <Select
-                    value={selectedSandboxId}
+                    value={selectedWorkspaceId}
                     onValueChange={(id) => {
-                      setSelectedSandboxId(id)
-                      setSelectedSlug('')
-                      setSelectedBranch('')
+                      rememberWorkspace(id)
+                      setSelectedWorkspaceId(id)
                     }}
                   >
                     <SelectTrigger
                       className={`${styles.contextSelectTrigger} ${styles.contextSelectTriggerSandbox} ${
-                        sandboxRequired ? styles.contextPillRequired : ''
+                        chosenWorkspace ? '' : styles.contextPillRequired
                       }`}
-                      title="Selecionar sandbox"
-                      aria-label="Selecionar sandbox"
+                      title={
+                        chosenWorkspace?.sandbox_name
+                          ? `Workspace (roda na sandbox ${chosenWorkspace.sandbox_name})`
+                          : 'Selecionar workspace'
+                      }
+                      aria-label="Selecionar workspace"
                     >
                       <span className={styles.icon} aria-hidden="true">
-                        dns
+                        folder_open
                       </span>
-                      <SelectValue placeholder="Sandbox..." />
+                      <SelectValue placeholder="Workspace..." />
                     </SelectTrigger>
-                    <SelectContent
-                      className={styles.contextSelectContent}
-                      position="item-aligned"
-                    >
+                    <SelectContent className={styles.contextSelectContent} position="item-aligned">
                       <SelectGroup>
-                        <SelectLabel className={styles.contextSelectLabel}>
-                          Sandbox
-                        </SelectLabel>
-                        {sandboxes.map((sandbox) => (
+                        <SelectLabel className={styles.contextSelectLabel}>Workspace</SelectLabel>
+                        {projectWorkspaces.map((workspace) => (
                           <SelectItem
-                            key={sandbox.id}
-                            value={sandbox.id}
+                            key={workspace.id}
+                            value={workspace.id}
                             className={styles.contextSelectItem}
+                            disabled={!workspace.ready}
                           >
-                            {sandbox.name}
+                            {workspace.name}
+                            {workspace.sandbox_name ? ` · ${workspace.sandbox_name}` : ''}
+                            {workspace.ready ? '' : ' (sincronizando)'}
                           </SelectItem>
                         ))}
                       </SelectGroup>
                     </SelectContent>
                   </Select>
                 ) : (
-                  <div className={`${styles.contextPill} ${styles.contextPillRequired}`} style={{ marginLeft: '0.5rem' }}>
-                    <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.5 }}>dns</span>
-                    <span className={styles.contextPillLabel} style={{ opacity: 0.45 }}>Nenhuma sandbox</span>
+                  <div
+                    className={`${styles.contextPill} ${styles.contextPillRequired}`}
+                    title="Peça ao super admin acesso a um workspace"
+                  >
+                    <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.5 }}>folder_off</span>
+                    <span className={styles.contextPillLabel} style={{ opacity: 0.6 }}>
+                      Sem workspace — peça acesso ao super admin
+                    </span>
                   </div>
                 )}
-                {selectableWorkspaces.length > 0 ? (
-                  <Select
-                    value={selectedSlug}
-                    onValueChange={setSelectedSlug}
+                {chosenWorkspace && (
+                  <div
+                    className={styles.contextPill}
+                    title={chosenWorkspace.repositories
+                      .map((repo) => (repo.read_only ? `${repo.alias} (somente leitura)` : repo.alias))
+                      .join(', ')}
                   >
-                    <SelectTrigger
-                      className={`${styles.contextSelectTrigger} ${styles.contextSelectTriggerRepo} ${
-                        repoRequired ? styles.contextPillRequired : ''
-                      }`}
-                      title="Selecionar repositório"
-                      aria-label="Selecionar repositório"
-                    >
-                      <span className={styles.icon} aria-hidden="true">
-                        source
-                      </span>
-                      <SelectValue placeholder="Repositório..." />
-                    </SelectTrigger>
-                    <SelectContent
-                      className={styles.contextSelectContent}
-                      position="item-aligned"
-                    >
-                      <SelectGroup>
-                        <SelectLabel className={styles.contextSelectLabel}>
-                          Repositório
-                        </SelectLabel>
-                        {selectableWorkspaces.map((w) => (
-                          <SelectItem
-                            key={w.slug}
-                            value={w.slug}
-                            className={styles.contextSelectItem}
-                          >
-                            {w.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <div className={`${styles.contextPill} ${styles.contextPillRequired}`} style={{ marginLeft: '0.5rem' }}>
-                    <span className={styles.icon} style={{ fontSize: '0.875rem', opacity: 0.5 }}>source</span>
-                    <span className={styles.contextPillLabel} style={{ opacity: 0.45 }}>Nenhum repositório</span>
+                    <span className={styles.icon} style={{ fontSize: '0.875rem' }}>source</span>
+                    <span className={styles.contextPillLabel}>
+                      {chosenWorkspace.repositories.length}{' '}
+                      {chosenWorkspace.repositories.length === 1 ? 'repositório' : 'repositórios'}
+                    </span>
                   </div>
-                )}
-                {selectedSlug && (
-                  <Select
-                    value={selectedBranch}
-                    onValueChange={setSelectedBranch}
-                    disabled={branchesLoading}
-                  >
-                    <SelectTrigger
-                      className={`${styles.contextSelectTrigger} ${styles.contextSelectTriggerBranch} ${
-                        branchRequired ? styles.contextPillRequired : ''
-                      }`}
-                      title="Selecionar branch"
-                      aria-label="Selecionar branch"
-                    >
-                      <span className={styles.icon} aria-hidden="true">
-                        fork_right
-                      </span>
-                      <SelectValue placeholder={branchesLoading ? '...' : 'Branch...'} />
-                    </SelectTrigger>
-                    <SelectContent
-                      className={styles.contextSelectContent}
-                      position="item-aligned"
-                    >
-                      <SelectGroup>
-                        <SelectLabel className={styles.contextSelectLabel}>
-                          Branch
-                        </SelectLabel>
-                        {branches.map((b) => (
-                          <SelectItem
-                            key={b}
-                            value={b}
-                            className={styles.contextSelectItem}
-                          >
-                            {b}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
                 )}
                 <PermissionModeControl
                   value={permissionMode}
                   onChange={setPermissionMode}
+                  planModeEnabled={planModeEnabled}
                   disabled={streaming}
                   runtimeConfirmed={permissionWarningRuntimeConfirmed}
                 />
@@ -2738,8 +2710,8 @@ function EmptyState({
                   onClick={() => canExecute && onExecute(input)}
                   disabled={!canExecute}
                   title={
-                    !selectedSlug ? 'Selecione um repositório' :
-                    !selectedBranch ? 'Selecione uma branch' :
+                    !chosenWorkspace ? 'Selecione um workspace' :
+                    !chosenWorkspace.ready ? 'Workspace ainda sincronizando' :
                     hasUploadInProgress ? 'Aguarde os anexos terminarem o envio…' :
                     !input.trim() && !hasSendableAttachment ? 'Digite uma mensagem ou cole um print' : undefined
                   }
@@ -2883,11 +2855,12 @@ interface ActiveChatProps {
   thoughtSteps: ThoughtStep[]
   activityTraces: Record<string, ActivityTrace>
   streamElapsedMs: number
+  /** Relógio da resposta em andamento (início + decorrido), para os tempos dos cartões. */
+  streamNowMs: number
   streamIdleMs: number
-  sessionProgress: SessionStageState[]
   pendingAction: ActionRequiredEvent | null
   contextProgress: ContextProgressEvent | null
-  subagentGroups: SubagentGroupEvent[]
+  subagentGroups: TimedSubagentGroup[]
   runtimeStates: RuntimeStateEvent[]
   streamToolStats: StreamToolStats
   showThinking: boolean
@@ -2905,7 +2878,7 @@ interface ActiveChatProps {
   sandboxAccessCount: number
   diffStats: { added: number; removed: number } | null
   prLoading: boolean
-  prUrl: string | null
+  prLinks: PrLink[]
   prError: string | null
   headBranch: string | null
   onCreatePr: () => void
@@ -2917,6 +2890,7 @@ interface ActiveChatProps {
   setSelectedModelId: (id: string) => void
   permissionMode: PermissionMode
   setPermissionMode: (mode: PermissionMode) => void
+  planModeEnabled: boolean
   executionProfile: ExecutionProfile
   setExecutionProfile: (profile: ExecutionProfile) => void
   permissionWarningRuntimeConfirmed: boolean
@@ -2943,15 +2917,15 @@ function groupStatus(group: SubagentGroupEvent): AgentActivityStatus {
 }
 
 function ActiveChat({
-  messages, messagesLoading, messagesError, sessionProgressAnchor, thoughtSteps, activityTraces, streamElapsedMs, streamIdleMs, sessionProgress, pendingAction,
+  messages, messagesLoading, messagesError, sessionProgressAnchor, thoughtSteps, activityTraces, streamElapsedMs, streamNowMs, streamIdleMs, pendingAction,
   contextProgress, subagentGroups, runtimeStates, streamToolStats,
   showThinking, streaming, input, setInput, inputRef,
   onSend, onStop, onActionReply, activeEnvSlug, activeEnvName, activeBaseBranch, activeSandboxName, sandboxAccessCount: _sandboxAccessCount,
-  diffStats, prLoading, prUrl, prError, headBranch, onCreatePr,
+  diffStats, prLoading, prLinks, prError, headBranch, onCreatePr,
   activeTitle: _activeTitle,
   token, conversationId,
   models, selectedModelId, setSelectedModelId,
-  permissionMode, setPermissionMode, executionProfile, setExecutionProfile, permissionWarningRuntimeConfirmed,
+  permissionMode, setPermissionMode, planModeEnabled, executionProfile, setExecutionProfile, permissionWarningRuntimeConfirmed,
   convUsage, liveUsage,
   trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
 }: ActiveChatProps) {
@@ -3148,36 +3122,25 @@ function ActiveChat({
     } else {
       requestAnimationFrame(() => setShowJumpToLatest(true))
     }
-  }, [messages, thoughtSteps, sessionProgress, pendingAction, contextProgress, subagentGroups, runtimeStates, streaming, scrollToLatest])
+  }, [messages, thoughtSteps, activityTraces, pendingAction, contextProgress, subagentGroups, runtimeStates, streaming, scrollToLatest])
 
-  let sessionProgressBeforeIndex = -1
-  if (sessionProgressAnchor) {
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message = messages[index]
-      if (
-        message.id === sessionProgressAnchor.id ||
-        (message.role === 'user' && message.content === sessionProgressAnchor.content)
-      ) {
-        sessionProgressBeforeIndex = index
-        break
-      }
-    }
-    if (sessionProgressBeforeIndex < 0) {
-      for (let index = messages.length - 1; index >= 0; index -= 1) {
-        if (messages[index].role === 'user') {
-          sessionProgressBeforeIndex = index
-          break
-        }
-      }
-    }
-  }
-
-  const tracesByContent = Object.values(activityTraces)
+  const lastUserMessageId = [...messages].reverse().find((message) => message.role === 'user')?.id
+  /**
+   * O turno ao vivo fica guardado sob o id local da mensagem; quando as
+   * mensagens voltam do servidor com outro id, a última mensagem do utilizador
+   * continua ligada ao rastro ao vivo até o histórico ser recarregado.
+   */
+  const isLiveTurnMessage = (message: ChatMessage): boolean =>
+    !!sessionProgressAnchor &&
+    (message.id === sessionProgressAnchor.id ||
+      (message.id === lastUserMessageId && message.content === sessionProgressAnchor.content))
   const activityTraceFor = (message: ChatMessage): ActivityTrace | null => {
     if (message.role !== 'user') return null
-    return activityTraces[message.id]
-      ? (tracesByContent.find((trace) => trace.content === message.content) ?? null)
-      : null
+    if (activityTraces[message.id]) return activityTraces[message.id]
+    if (isLiveTurnMessage(message) && sessionProgressAnchor) {
+      return activityTraces[sessionProgressAnchor.id] ?? null
+    }
+    return null
   }
   const hasSendableAttachment = trayItems.some(isSendableTrayItem)
   const hasUploadInProgress = trayItems.some((item) => item.kind === 'uploading')
@@ -3205,11 +3168,13 @@ function ActiveChat({
               <span className={`${styles.icon} ${styles.sessionHeaderIcon}`}>folder_open</span>
               <span className={styles.sessionHeaderEnv}>{activeEnvName ?? activeEnvSlug}</span>
               {activeBaseBranch && (
-                <span className={styles.sessionHeaderBranch}>
+                // Só o ícone: o cabeçalho tem pouco espaço; o detalhe fica na dica.
+                <span
+                  className={styles.sessionHeaderBranch}
+                  title={`Seu espaço isolado: as alterações ficam numa branch só desta conversa (base ${activeBranchLabel}).`}
+                  aria-label={`Espaço isolado, base ${activeBranchLabel}`}
+                >
                   <span className={`${styles.icon} ${styles.sessionHeaderBranchIcon}`}>account_tree</span>
-                  <span className={styles.sessionHeaderBranchText}>seu espaço isolado</span>
-                  <span className={styles.sessionHeaderBranchSep}>·</span>
-                  <span className={styles.sessionHeaderBranchName}>{activeBranchLabel}</span>
                 </span>
               )}
             </>
@@ -3247,16 +3212,27 @@ function ActiveChat({
               <span className={styles.diffAdded}>+{diffStats.added}</span>
               <span className={styles.diffRemoved}>-{diffStats.removed}</span>
               {activeEnvSlug && (
-                prUrl ? (
-                  <a
-                    href={prUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={styles.prLink}
-                  >
-                    <span className={`${styles.icon}`} style={{ fontSize: '0.875rem' }}>open_in_new</span>
-                    Ver PR
-                  </a>
+                prLinks.length > 0 ? (
+                  <>
+                    {prLinks.map((pr) => (
+                      <a
+                        key={pr.url}
+                        href={pr.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={styles.prLink}
+                        title={pr.label ? `PR de ${pr.label}` : undefined}
+                      >
+                        <span className={`${styles.icon}`} style={{ fontSize: '0.875rem' }}>open_in_new</span>
+                        {prLinks.length > 1 && pr.label ? `PR ${pr.label}` : 'Ver PR'}
+                      </a>
+                    ))}
+                    {prError && (
+                      <span role="alert" style={{ fontSize: '0.72rem', color: 'var(--destructive)' }} title={prError}>
+                        falhou em parte
+                      </span>
+                    )}
+                  </>
                 ) : (
                   <>
                     <button
@@ -3317,26 +3293,11 @@ function ActiveChat({
                   <Text size="sm" c="dimmed">Esta conversa ainda não tem mensagens.</Text>
                 </div>
               )}
-              {sessionProgress.length > 0 && sessionProgressBeforeIndex < 0 && (
-                <AgentBubble compact>
-                  <SessionProgressCard
-                    stages={sessionProgress}
-                    elapsedMs={streamElapsedMs}
-                    idleMs={streamIdleMs}
-                  />
-                </AgentBubble>
-              )}
-              {messages.map((m, index) => (
+              {messages.map((m) => {
+                const trace = activityTraceFor(m)
+                const liveTurn = streaming && isLiveTurnMessage(m)
+                return (
                 <Fragment key={m.id}>
-                  {sessionProgress.length > 0 && index === sessionProgressBeforeIndex && (
-                    <AgentBubble compact>
-                      <SessionProgressCard
-                        stages={sessionProgress}
-                        elapsedMs={streamElapsedMs}
-                        idleMs={streamIdleMs}
-                      />
-                    </AgentBubble>
-                  )}
                   <div
                     ref={setMessageTargetRef(`message-${m.id}`)}
                     className={styles.messageAnchor}
@@ -3350,38 +3311,32 @@ function ActiveChat({
                       promptTokens={m.prompt_tokens ?? 0}
                       completionTokens={m.completion_tokens ?? 0}
                       costUsd={m.cost_usd ?? 0}
+                      planUsage={m.plan_usage ?? null}
                       payloadDiagnostics={m.payload_diagnostics ?? null}
                     />
                   </div>
-                  {activityTraceFor(m)?.steps.length ? (
+                  {trace?.steps.length ? (
                     <AgentBubble compact>
                       <ThinkingStream
-                        steps={activityTraceFor(m)!.steps}
-                        streaming={streaming && sessionProgressAnchor?.content === m.content}
-                        elapsedMs={
-                          streaming && sessionProgressAnchor?.content === m.content
-                            ? streamElapsedMs
-                            : activityTraceFor(m)!.elapsedMs
-                        }
-                        idleMs={
-                          streaming && sessionProgressAnchor?.content === m.content
-                            ? streamIdleMs
-                            : 0
-                        }
-                        interrupted={!!activityTraceFor(m)!.interrupted}
+                        steps={trace.steps}
+                        streaming={liveTurn}
+                        elapsedMs={liveTurn ? streamElapsedMs : trace.elapsedMs}
+                        idleMs={liveTurn ? streamIdleMs : 0}
+                        interrupted={!!trace.interrupted}
                       />
                     </AgentBubble>
                   ) : null}
                 </Fragment>
-              ))}
+                )
+              })}
               {streaming && (contextProgress || subagentGroups.length > 0 || runtimeStates.length > 0 || heavyStreamingReason) && (
                 <AgentBubble compact>
                   <Stack gap="xs">
                     {heavyStreamingReason && (
                       <AgentActivityCard
-                        title="Iteracao pesada"
+                        title="Iteração pesada"
                         status="warning"
-                        detail={`${heavyStreamingReason}. Considere usar Rapido para limitar a proxima rodada.`}
+                        detail={`${heavyStreamingReason}. Considere usar Rápido para limitar a próxima rodada.`}
                       />
                     )}
                     {contextProgress && (
@@ -3402,7 +3357,7 @@ function ActiveChat({
                         key={group.parent_turn_id ?? group.label}
                         title={group.label}
                         status={groupStatus(group)}
-                        detail={`${group.activities.length} atividade${group.activities.length === 1 ? '' : 's'} auxiliar${group.activities.length === 1 ? '' : 'es'}`}
+                        detail={subagentGroupDetail(group, streamNowMs)}
                         activities={group.activities}
                       />
                     ))}
@@ -3428,9 +3383,7 @@ function ActiveChat({
                         idleMs={streamIdleMs}
                       />
                     )}
-                    {streaming &&
-                      sessionProgress.length === 0 &&
-                      showThinking && <ThinkingIndicator />}
+                    {streaming && showThinking && <ThinkingIndicator />}
                   </Stack>
                 </AgentBubble>
               )}
@@ -3482,7 +3435,7 @@ function ActiveChat({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,.txt,.md,.markdown,.log,.json,.yaml,.yml,.csv,.xml,.pdf,.docx"
+            accept={ATTACHMENT_ACCEPT}
             multiple
             style={{ display: 'none' }}
             onChange={(e) => {
@@ -3582,6 +3535,7 @@ function ActiveChat({
             <PermissionModeControl
               value={permissionMode}
               onChange={setPermissionMode}
+              planModeEnabled={planModeEnabled}
               disabled={streaming}
               runtimeConfirmed={permissionWarningRuntimeConfirmed}
               compact
@@ -3636,99 +3590,6 @@ function ActiveChat({
           </div>
         </div>
       </div>
-    </div>
-  )
-}
-
-/** Card com progresso operacional da criação da sessão e execução do agente. */
-function SessionProgressCard({
-  stages,
-  elapsedMs,
-  idleMs,
-}: {
-  stages: SessionStageState[]
-  elapsedMs: number
-  idleMs: number
-}) {
-  const completed = stages.every((stage) => stage.status === 'done')
-  const doneCount = stages.filter((s) => s.status === 'done').length
-  const progressPct = stages.length > 0 ? (doneCount / stages.length) * 100 : 0
-  const activeStage = stages.find((stage) => stage.status === 'active')
-  const title = completed
-    ? 'Sistema ligado'
-    : activeStage?.key === 'agent'
-      ? 'Agente trabalhando'
-      : 'Ligando sistema'
-  const meta = completed
-    ? `Concluído em ${formatShortDuration(elapsedMs)}`
-    : `Em andamento há ${formatShortDuration(elapsedMs)}`
-  const idleLabel = !completed && activeStage?.key === 'agent' && idleMs >= 5000
-    ? `sem novos eventos há ${formatShortDuration(idleMs)}`
-    : null
-
-  return (
-    <div
-      className={`${styles.sessionProgressCard} ${
-        completed ? styles.sessionProgressCardComplete : ''
-      }`}
-      style={{ ['--cc-progress' as string]: `${progressPct}%` }}
-    >
-      <div
-        className={styles.sessionProgressHeader}
-        aria-live={completed ? 'off' : 'polite'}
-      >
-        <span
-          className={`${styles.sessionProgressBootIcon} ${
-            completed ? styles.sessionProgressBootIconDone : ''
-          }`}
-          aria-hidden="true"
-        >
-          {completed ? '✓' : ''}
-        </span>
-        <span className={styles.sessionProgressHeaderText}>
-          <span>{title}</span>
-          <span className={styles.sessionProgressMeta}>
-            {meta}{idleLabel ? ` · ${idleLabel}` : ''}
-          </span>
-        </span>
-      </div>
-      <div className={styles.sessionProgressList}>
-        {stages.map((stage, index) => (
-          <div
-            key={stage.key}
-            className={styles.sessionProgressItem}
-            style={{ ['--cc-step-delay' as string]: `${Math.min(index, 6) * 45}ms` }}
-          >
-            <span
-              className={`${styles.sessionProgressIcon} ${
-                stage.status === 'active'
-                  ? styles.sessionProgressIconActive
-                  : stage.status === 'done'
-                    ? styles.sessionProgressIconDone
-                    : ''
-              }`}
-              aria-hidden="true"
-            >
-              {stage.status === 'done' ? '✓' : ''}
-            </span>
-            <span className={styles.sessionProgressStepBody}>
-              <span
-                className={`${styles.sessionProgressLabel} ${
-                  stage.status === 'done' ? styles.sessionProgressLabelDone : ''
-                }`}
-              >
-                {stage.label}
-              </span>
-              {stage.detail && (
-                <span className={styles.sessionProgressDetail}>
-                  {stage.detail}
-                </span>
-              )}
-            </span>
-          </div>
-        ))}
-      </div>
-      {!completed && <div className={styles.sessionProgressPulse} aria-hidden="true" />}
     </div>
   )
 }
@@ -3842,6 +3703,7 @@ function PaperMessage({
   promptTokens,
   completionTokens,
   costUsd,
+  planUsage,
   payloadDiagnostics,
 }: {
   role: string
@@ -3851,16 +3713,29 @@ function PaperMessage({
   promptTokens?: number
   completionTokens?: number
   costUsd?: number
+  planUsage?: PlanUsage | null
   payloadDiagnostics?: PayloadSizeBreakdown | null
 }) {
   const isUser = role === 'user'
   const totalTokens = (promptTokens ?? 0) + (completionTokens ?? 0)
   const hasUsage =
     !isUser && (totalTokens > 0 || !!modelUsed)
-  const usageWarning = isUser ? null : heavyUsageReason(promptTokens, completionTokens, costUsd)
+  // Claude CLI (tem planUsage): os tokens de entrada são quase todos cache barato;
+  // só o custo equivalente indica uma resposta pesada.
+  const usageWarning = isUser
+    ? null
+    : planUsage
+      ? heavyUsageReason(0, 0, costUsd)
+      : heavyUsageReason(promptTokens, completionTokens, costUsd)
+  // Claude CLI: o custo é o equivalente pela tabela da API (coberto pela assinatura);
+  // o uso das janelas de 5h/7d fica na dica, sem ocupar espaço.
+  const planBadge = planUsageBadge(planUsage)
   const costLabel = totalTokens === 0 && (costUsd ?? 0) === 0
     ? 'uso não informado'
     : formatCostUsd(costUsd ?? 0)
+  const costTitle = planBadge
+    ? `Custo equivalente na API da Anthropic, coberto pela assinatura. ${planBadge.title}`
+    : undefined
   const messageBubble = (
     <div className={`${styles.message} ${isUser ? styles.messageUser : styles.messageAgent}`}>
       <Text
@@ -3901,7 +3776,12 @@ function PaperMessage({
       {usageWarning && (
         <div className={styles.heavyUsageNotice} role="note">
           <span className={styles.icon} aria-hidden="true">speed</span>
-          <span>Iteracao pesada: {usageWarning}. Use Rapido quando quiser limitar a proxima rodada.</span>
+          <span>
+            Iteração pesada: {usageWarning}.{' '}
+            {planUsage
+              ? 'Um modelo menor (Sonnet ou Haiku) gasta menos da janela da assinatura.'
+              : 'Use Rápido quando quiser limitar a próxima rodada.'}
+          </span>
         </div>
       )}
       {hasUsage && (
@@ -3912,7 +3792,13 @@ function PaperMessage({
               {(promptTokens ?? 0).toLocaleString('pt-BR')} in · {(completionTokens ?? 0).toLocaleString('pt-BR')} out
             </span>
           )}
-          <span className={styles.messageUsageCost}>{costLabel}</span>
+          <span
+            className={styles.messageUsageCost}
+            title={costTitle}
+            style={planBadge?.low ? { color: 'var(--destructive)' } : undefined}
+          >
+            {costLabel}
+          </span>
         </div>
       )}
     </div>

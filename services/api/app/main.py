@@ -14,19 +14,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from app.adapters.primary.http import admin_ai_catalog as admin_ai_catalog_router
+from app.adapters.primary.http import admin_conversations as admin_conversations_router
 from app.adapters.primary.http import admin_dashboard as admin_dashboard_router
 from app.adapters.primary.http import admin_mcp_telemetry as admin_mcp_telemetry_router
+from app.adapters.primary.http import admin_reports as admin_reports_router
 from app.adapters.primary.http import admin_sandbox_globals as admin_sandbox_globals_router
 from app.adapters.primary.http import admin_sandbox_mcps as admin_sandbox_mcps_router
+from app.adapters.primary.http import admin_sandbox_terminal as admin_sandbox_terminal_router
 from app.adapters.primary.http import admin_sandboxes as admin_sandboxes_router
 from app.adapters.primary.http import admin_user_access as admin_user_access_router
 from app.adapters.primary.http import admin_users as admin_users_router
+from app.adapters.primary.http import admin_workspace_knowledge as admin_ws_knowledge_router
+from app.adapters.primary.http import admin_workspaces as admin_workspaces_router
 from app.adapters.primary.http import ai_models as ai_models_router
 from app.adapters.primary.http import attachments as attachments_router
 from app.adapters.primary.http import auth as auth_router
+from app.adapters.primary.http import conversation_activity as conv_activity_router
 from app.adapters.primary.http import conversation_commands as conv_commands_router
 from app.adapters.primary.http import conversation_diff as conv_diff_router
 from app.adapters.primary.http import conversation_files as conv_files_router
+from app.adapters.primary.http import conversation_manage as conv_manage_router
 from app.adapters.primary.http import conversation_pr as conv_pr_router
 from app.adapters.primary.http import conversations as conv_router
 from app.adapters.primary.http import document_graph as document_graph_router
@@ -46,10 +53,13 @@ from app.adapters.primary.http import user_mcp_servers as user_mcp_servers_route
 from app.adapters.primary.http import user_preferences as user_preferences_router
 from app.adapters.primary.http import user_workspaces as user_workspaces_router
 from app.adapters.primary.http import webhooks as webhooks_router
+from app.adapters.primary.http import workspace_tickets as workspace_tickets_router
 from app.adapters.primary.http import workspaces as workspaces_router
+from app.adapters.primary.http import workspaces_accessible as workspaces_accessible_router
 from app.infrastructure.config import cors_origins_list, get_settings
 from app.infrastructure.database import init_db
 from app.infrastructure.project_suggestion_scheduler import register_project_suggestion_jobs
+from app.infrastructure.workspace_knowledge import register_knowledge_jobs
 
 logging.basicConfig(
     level=logging.INFO,
@@ -84,6 +94,7 @@ async def lifespan(app: FastAPI):
     watchdog = SandboxWatchdog(async_session_factory)
     scheduler.add_job(watchdog.run_once, "interval", seconds=10, id="sandbox_watchdog")
     register_project_suggestion_jobs(scheduler, async_session_factory)
+    register_knowledge_jobs(scheduler, async_session_factory)
     scheduler.add_job(
         prune_mcp_invocations,
         "interval",
@@ -190,13 +201,21 @@ app.add_middleware(
 
 app.include_router(auth_router.router, prefix="/api")
 app.include_router(admin_dashboard_router.router, prefix="/api")
+app.include_router(admin_reports_router.router, prefix="/api")
+app.include_router(admin_conversations_router.router, prefix="/api")
 app.include_router(admin_users_router.router, prefix="/api")
 app.include_router(admin_mcp_telemetry_router.router, prefix="/api")
 app.include_router(admin_sandboxes_router.router, prefix="/api")
+app.include_router(admin_sandbox_terminal_router.router, prefix="/api")
 app.include_router(admin_user_access_router.router, prefix="/api")
+app.include_router(admin_workspaces_router.router, prefix="/api")
+app.include_router(admin_workspaces_router.access_router, prefix="/api")
+app.include_router(admin_ws_knowledge_router.router, prefix="/api")
 app.include_router(admin_ai_catalog_router.router, prefix="/api")
 app.include_router(attachments_router.router)
 app.include_router(conv_router.router, prefix="/api")
+app.include_router(conv_manage_router.router, prefix="/api")
+app.include_router(conv_activity_router.router, prefix="/api")
 app.include_router(conv_commands_router.router, prefix="/api")
 app.include_router(conv_diff_router.router, prefix="/api")
 app.include_router(conv_files_router.router, prefix="/api")
@@ -206,6 +225,8 @@ app.include_router(routines_router.router, prefix="/api")
 app.include_router(tasks_router.router, prefix="/api")
 app.include_router(webhooks_router.router, prefix="/api")
 app.include_router(sandboxes_router.router, prefix="/api")
+app.include_router(workspaces_accessible_router.router, prefix="/api")
+app.include_router(workspace_tickets_router.router, prefix="/api")
 app.include_router(workspaces_router.router, prefix="/api")
 app.include_router(git_providers_router.router, prefix="/api")
 app.include_router(ai_models_router.router, prefix="/api")

@@ -53,6 +53,8 @@ class SQLAlchemyConversationRepository(ConversationRepository):
             ai_model_id=conversation.ai_model_id,
             repos=conversation.repos,
             session_root=conversation.session_root,
+            workspace_id=conversation.workspace_id,
+            ticket_number=conversation.ticket_number,
             permission_mode=validate_permission_mode(conversation.permission_mode),
         )
         self._session.add(orm)
@@ -64,6 +66,8 @@ class SQLAlchemyConversationRepository(ConversationRepository):
         result = await self._session.execute(select(ConvORM).where(ConvORM.id == conversation.id))
         orm = result.scalar_one()
         orm.title = conversation.title
+        orm.archived_at = conversation.archived_at
+        orm.ticket_number = conversation.ticket_number
         orm.sandbox_id = conversation.sandbox_id
         orm.ai_model_id = conversation.ai_model_id
         orm.repos = conversation.repos
@@ -85,6 +89,9 @@ class SQLAlchemyConversationRepository(ConversationRepository):
             ai_model_id=row.ai_model_id,
             repos=row.repos or [],
             session_root=row.session_root,
+            workspace_id=getattr(row, "workspace_id", None),
+            archived_at=getattr(row, "archived_at", None),
+            ticket_number=getattr(row, "ticket_number", None),
             permission_mode=validate_permission_mode(getattr(row, "permission_mode", None)),
             worktree_exists=row.worktree_exists,
             lines_added=row.lines_added,

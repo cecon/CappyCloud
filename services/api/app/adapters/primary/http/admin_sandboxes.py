@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Annotated
 
@@ -22,6 +23,7 @@ from app.adapters.secondary.sandbox_runtime import (
     DockerSandboxBootstrap,
     DockerSwarmSandboxRuntime,
 )
+from app.adapters.secondary.sandbox_runtime.docker_sidecar import fetch_claude_status
 from app.application.use_cases.admin_sandboxes import (
     BootSandbox,
     CloneSandbox,
@@ -95,6 +97,7 @@ def _serialize(sb: Sandbox) -> SandboxAdminOut:
         runtime=sb.runtime,
         image=sb.image,
         claude_md=sb.claude_md,
+        agent_runtime=sb.agent_runtime,
         env_vars=dict(sb.env_vars),
         container_status=sb.container_status,
         active_sessions=getattr(sb, "active_sessions", 0),
@@ -131,6 +134,22 @@ async def get_sandbox(
     return _serialize(sb)
 
 
+@router.get(
+    "/{sandbox_id}/claude-status",
+    dependencies=[Depends(require_role(UserRole.ADMIN))],
+)
+async def get_claude_status(
+    sandbox_id: uuid.UUID,
+    repo: Annotated[SandboxRepository, Depends(get_sandbox_repo)],
+) -> dict:
+    """Claude CLI no sandbox: instalado, versão e se o `claude login` já foi feito."""
+    try:
+        sb = await GetSandbox(repo).execute(sandbox_id)
+    except SandboxNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return await asyncio.to_thread(fetch_claude_status, sb)
+
+
 @router.post(
     "",
     response_model=SandboxAdminOut,
@@ -147,6 +166,7 @@ async def create_sandbox(
             runtime=body.runtime,
             image=body.image,
             claude_md=body.claude_md,
+            agent_runtime=body.agent_runtime,
             env_vars=body.env_vars,
             host=body.host,
             grpc_port=body.grpc_port,
@@ -174,6 +194,7 @@ async def update_sandbox(
             sandbox_id,
             image=body.image,
             claude_md=body.claude_md,
+            agent_runtime=body.agent_runtime,
             env_vars=body.env_vars,
             host=body.host,
             grpc_port=body.grpc_port,

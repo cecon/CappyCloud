@@ -3,21 +3,24 @@
 from __future__ import annotations
 
 import logging
+import time
 
-from ._evidence_prefetch import inject_evidence_prefetch
-from ._grpc_session import GrpcSession
+from ._agent_session import AGENT_RUNTIME_CLAUDE_CLI, AgentSession
+from ._claude_cli_session import ClaudeCliSession, claude_cli_model_label
+from ._evidence_tool import evidence_tool_context
 from ._grpc_helpers import sanitize_permission_mode
-from ._pipeline_helpers import (
-    build_prompt_with_worktree_context,
-    resolve_model_provider_runtime_config,
-)
+from ._grpc_session import GrpcSession
+from ._claude_cli_resume import claude_cli_session_exists
+from ._pipeline_helpers import resolve_model_provider_runtime_config
 from ._task_events import (
     insert_error_event,
     insert_status_event,
     update_task_status,
 )
+from ._memory_capture import memory_capture_for
 from ._task_runner import TaskRunner
-from ._worktree_validation import validate_and_inject_worktree
+from ._workspace_paths import workspace_root_of
+from ._task_context import prepare_turn_prompt
 
 log = logging.getLogger(__name__)
 
@@ -35,12 +38,26 @@ async def launch_runner(
     permission_mode: str = "bypass_permissions",
     sandbox_session_url: str = "",
     attachments: list[dict] | None = None,
+    user_message: str | None = None,
 ) -> None:
-    """Cria sessão, inicia gRPC e registra o runner ativo."""
+    """Cria sessão, inicia gRPC e registra o runner ativo.
+
+    ``user_message``: a pergunta sem o contexto montado pelo pipeline — é o que
+    vai para o Claude CLI quando a sessão dele é retomada.
+    """
     user_id = user_id or conversation_id or "system"
     chat_id = conversation_id or task_id
+    repo_label = _repo_label(repos)
 
     try:
+        # Só a primeira mensagem da conversa prepara workspace (clone/worktree);
+        # as seguintes reutilizam a sessão e não geram fase visível.
+        needs_workspace = not await dispatcher._env_manager.has_session(user_id, chat_id)
+        if needs_workspace:
+            await _emit_phase(
+                dispatcher, task_id, "workspace", f"Preparando workspace{repo_label}", "active"
+            )
+        started = time.monotonic()
         lease = await dispatcher._env_manager.get_or_create_session(
             user_id=user_id,
             chat_id=chat_id,
@@ -49,9 +66,15 @@ async def launch_runner(
             sandbox_id=sandbox_id,
         )
         sandbox = lease.record
-        emit_session_progress = lease.created
-        if emit_session_progress:
-            await _emit_session_ready(dispatcher, task_id, sandbox, repos)
+        if needs_workspace:
+            await _emit_phase(
+                dispatcher,
+                task_id,
+                "workspace",
+                f"Workspace pronto{repo_label}",
+                "done",
+                duration_ms=_elapsed_ms(started),
+            )
     except Exception as exc:
         log.exception("[Dispatcher] Falha ao criar sessão para task %s", task_id[:8])
         await update_task_status(dispatcher._pool, task_id, "error")
@@ -59,74 +82,80 @@ async def launch_runner(
         return
 
     working_directory = sandbox.working_directory
-    if repos and len(repos) == 1 and repos[0].get("worktree_path"):
+    if (
+        repos
+        and len(repos) == 1
+        and repos[0].get("worktree_path")
+        and not workspace_root_of(session_root or sandbox.session_root)
+    ):
         working_directory = repos[0]["worktree_path"]
     log.debug(
         "[Dispatcher] working_directory=%r for task %s", working_directory, task_id[:8]
     )
 
-    user_prompt = prompt
     sandbox_session_url = f"http://{sandbox.grpc_host}:{sandbox.session_port}"
-    prompt = await build_prompt_with_worktree_context(
-        prompt,
-        sandbox_session_url,
-        repos or [],
-        session_root or sandbox.session_root,
+    agent_runtime = await dispatcher._env_manager.resolve_agent_runtime(sandbox_id)
+    resumed_cli_session = agent_runtime == AGENT_RUNTIME_CLAUDE_CLI and await (
+        claude_cli_session_exists(sandbox_session_url, f"{user_id}:{chat_id}")
     )
-
-    if sandbox_session_url and repos:
-        new_prompt = await validate_and_inject_worktree(
-            pool=dispatcher._pool,
-            task_id=task_id,
-            prompt=prompt,
-            repos=repos,
-            sandbox_session_url=sandbox_session_url,
-            session_root=session_root,
-            working_directory=working_directory,
-        )
-        if new_prompt is None:
-            return
-        prompt = new_prompt
-
-    prompt = await inject_evidence_prefetch(
-        prompt,
-        user_message=user_prompt,
+    prepared = await prepare_turn_prompt(
+        emit_phase=lambda *args, **kwargs: _emit_phase(dispatcher, *args, **kwargs),
+        pool=dispatcher._pool,
+        task_id=task_id,
+        prompt=prompt,
+        user_message=user_message,
+        resumed_cli_session=resumed_cli_session,
         sandbox_session_url=sandbox_session_url,
         repos=repos or [],
         session_root=session_root or sandbox.session_root,
+        working_directory=working_directory,
+        openclaude=agent_runtime != AGENT_RUNTIME_CLAUDE_CLI,
     )
+    if prepared is None:
+        return
+    prompt = prepared
 
     effective_model = override_model or dispatcher._model
     resolved_permission_mode = sanitize_permission_mode(permission_mode)
-    provider_config = await resolve_model_provider_runtime_config(
-        dispatcher._db_url,
-        effective_model,
-    )
-    session = GrpcSession(
-        container_ip=sandbox.grpc_host,
-        grpc_port=sandbox.grpc_port,
-        session_id=f"{user_id}:{chat_id}",
-        model=effective_model,
-        working_directory=working_directory,
-        provider_base_url=provider_config.base_url if provider_config else "",
-        provider_api_key=provider_config.api_key if provider_config else "",
-        provider_api_format=provider_config.api_format if provider_config else "",
-        permission_mode=resolved_permission_mode,
-    )
-
-    if emit_session_progress:
-        await insert_status_event(
-            dispatcher._pool,
-            task_id,
-            "Aguardando resposta do agente.",
-            "agent",
-            "initializing",
-            state="active",
+    session: AgentSession
+    if agent_runtime == AGENT_RUNTIME_CLAUDE_CLI:
+        # Claude Code oficial: autentica com o `claude login` do sandbox,
+        # não com o provider do catálogo.
+        session = ClaudeCliSession(
+            host=sandbox.grpc_host,
+            session_port=sandbox.session_port,
+            conversation_key=f"{user_id}:{chat_id}",
+            model=effective_model,
+            working_directory=working_directory,
+            permission_mode=resolved_permission_mode,
+            tool_context=evidence_tool_context(repos or [], session_root or sandbox.session_root),
         )
+        waiting_label = f"Aguardando resposta do Claude CLI ({claude_cli_model_label(effective_model)})"
+    else:
+        provider_config = await resolve_model_provider_runtime_config(
+            dispatcher._db_url,
+            effective_model,
+        )
+        session = GrpcSession(
+            container_ip=sandbox.grpc_host,
+            grpc_port=sandbox.grpc_port,
+            session_id=f"{user_id}:{chat_id}",
+            model=effective_model,
+            working_directory=working_directory,
+            provider_base_url=provider_config.base_url if provider_config else "",
+            provider_api_key=provider_config.api_key if provider_config else "",
+            provider_api_format=provider_config.api_format if provider_config else "",
+            permission_mode=resolved_permission_mode,
+        )
+        waiting_label = f"Aguardando resposta de {effective_model}"
+
+    await _emit_phase(dispatcher, task_id, "agent", waiting_label, "active")
     try:
         await session.start(prompt, attachments=attachments)
     except Exception as exc:
-        log.exception("[Dispatcher] Falha ao iniciar gRPC para task %s", task_id[:8])
+        log.exception(
+            "[Dispatcher] Falha ao iniciar runtime %s para task %s", agent_runtime, task_id[:8]
+        )
         await update_task_status(dispatcher._pool, task_id, "error")
         await insert_error_event(dispatcher._pool, task_id, str(exc))
         await session.close()
@@ -145,51 +174,45 @@ async def launch_runner(
         db_url=dispatcher._db_url,
         model_used=effective_model,
         conversation_id=conversation_id,
-        emit_session_progress=emit_session_progress,
+        memory_capture=memory_capture_for(
+            session_url=sandbox_session_url,
+            session_root=session_root or sandbox.session_root,
+            question=user_message or prompt,
+            model=effective_model,
+            claude_cli=agent_runtime == AGENT_RUNTIME_CLAUDE_CLI,
+        ),
     )
     dispatcher._runners[task_id] = runner
     await runner.start()
     log.info("[Dispatcher] TaskRunner started for task %s", task_id[:8])
 
 
-async def _emit_session_ready(
-    dispatcher, task_id: str, sandbox, repos: list | None
+async def _emit_phase(
+    dispatcher,
+    task_id: str,
+    stage: str,
+    message: str,
+    state: str,
+    duration_ms: int | None = None,
 ) -> None:
+    """Registra uma fase real do turno (workspace, contexto, modelo).
+
+    Emitida no momento em que a fase começa/termina, para a timeline refletir
+    o tempo de verdade e ficar no histórico de ``agent_events``.
+    """
+    metadata = {"duration_ms": duration_ms} if duration_ms is not None else None
+    if duration_ms is not None:
+        log.info("[Dispatcher] task %s fase %s: %dms", task_id[:8], stage, duration_ms)
     await insert_status_event(
-        dispatcher._pool,
-        task_id,
-        "Sessão do agente preparada.",
-        "session",
-        "initializing",
+        dispatcher._pool, task_id, message, stage, "initializing", state=state, metadata=metadata
     )
-    if repos:
-        reused = [
-            str(repo.get("slug") or repo.get("alias") or "?")
-            for repo in repos
-            if repo.get("source_workspace_path")
-        ]
-        if reused:
-            await insert_status_event(
-                dispatcher._pool,
-                task_id,
-                f"Workspace persistente reutilizado: {', '.join(reused)}.",
-                "repository",
-                "initializing",
-            )
-        repo_slugs = ", ".join(
-            str(repo.get("slug") or repo.get("alias") or "?") for repo in repos
-        )
-        await insert_status_event(
-            dispatcher._pool,
-            task_id,
-            f"Repositório preparado: {repo_slugs}.",
-            "repository",
-            "initializing",
-        )
-    await insert_status_event(
-        dispatcher._pool,
-        task_id,
-        f"Sessão criada em {sandbox.working_directory}",
-        "ready",
-        "initializing",
-    )
+
+
+def _elapsed_ms(started: float) -> int:
+    return int((time.monotonic() - started) * 1000)
+
+
+def _repo_label(repos: list | None) -> str:
+    slugs = [str(repo.get("slug") or repo.get("alias") or "") for repo in repos or []]
+    slugs = [slug for slug in slugs if slug]
+    return f": {', '.join(slugs)}" if slugs else ""

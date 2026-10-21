@@ -8,6 +8,7 @@ import uuid
 
 import asyncpg
 
+from ._db_pool import create_pool, retry_read
 from ._environment_manager import EnvironmentManager
 from ._orphan_recovery import reconnect_orphaned_tasks
 from ._session_store import SessionStore
@@ -42,7 +43,7 @@ class TaskDispatcher:
 
     async def start(self) -> None:
         """Conecta ao DB e reconecta tasks órfãs de um restart anterior."""
-        self._pool = await asyncpg.create_pool(self._db_url, min_size=1, max_size=5)
+        self._pool = await create_pool(self._db_url, min_size=1, max_size=5)
         await self._reconnect_orphaned_tasks()
 
     async def stop(self) -> None:
@@ -71,6 +72,7 @@ class TaskDispatcher:
         permission_mode: str = "bypass_permissions",
         sandbox_session_url: str = "",
         attachments: list[dict] | None = None,
+        user_message: str | None = None,
     ) -> str:
         """Cria uma agent_task e arranca o runner; retorna o task_id (UUID).
 
@@ -101,6 +103,7 @@ class TaskDispatcher:
                 permission_mode=permission_mode,
                 sandbox_session_url=sandbox_session_url,
                 attachments=attachments,
+                user_message=user_message,
             ),
             name=f"dispatch-{task_id[:8]}",
         )
@@ -120,17 +123,20 @@ class TaskDispatcher:
 
     async def get_active_task_id(self, conversation_id: str) -> str | None:
         """Retorna o task_id da task running/paused para uma conversa."""
-        if not self._pool:
+        pool = self._pool
+        if not pool:
             return None
-        row = await self._pool.fetchrow(
-            """
-            SELECT id FROM agent_tasks
-            WHERE conversation_id = $1::uuid
-              AND status IN ('pending','running','paused')
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            conversation_id,
+        row = await retry_read(
+            lambda: pool.fetchrow(
+                """
+                SELECT id FROM agent_tasks
+                WHERE conversation_id = $1::uuid
+                  AND status IN ('pending','running','paused')
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                conversation_id,
+            )
         )
         return str(row["id"]) if row else None
 
@@ -196,6 +202,7 @@ class TaskDispatcher:
         permission_mode: str = "bypass_permissions",
         sandbox_session_url: str = "",
         attachments: list[dict] | None = None,
+        user_message: str | None = None,
     ) -> None:
         """Cria a sessão, inicia a GrpcSession e arranca o TaskRunner."""
         await launch_runner(
@@ -211,6 +218,7 @@ class TaskDispatcher:
             permission_mode=permission_mode,
             sandbox_session_url=sandbox_session_url,
             attachments=attachments,
+            user_message=user_message,
         )
 
     async def _reconnect_orphaned_tasks(self) -> None:

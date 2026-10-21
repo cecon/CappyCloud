@@ -29,6 +29,10 @@ class ConversationCreate(BaseModel):
     sandbox_id: uuid.UUID | None = None
     model_id: str | None = Field(default=None, max_length=256)
     repos: list[RepoSelection] = Field(default_factory=list)
+    # Workspace: ignora `repos`/`sandbox_id` e abre todos os repositórios dele.
+    workspace_id: uuid.UUID | None = None
+    # Número do chamado; obrigatório quando o workspace exige.
+    ticket_number: str | None = Field(default=None, max_length=64)
 
 
 class ConversationOut(BaseModel):
@@ -44,6 +48,7 @@ class ConversationOut(BaseModel):
     ai_model_id: uuid.UUID | None = None
     repos: list[dict] = Field(default_factory=list)
     session_root: str | None = None
+    workspace_id: uuid.UUID | None = None
     permission_mode: str = DEFAULT_PERMISSION_MODE
     worktree_exists: bool = False
     lines_added: int = 0
@@ -54,8 +59,19 @@ class ConversationOut(BaseModel):
     pr_approved: bool = False
     ci_status: str = "unknown"
     ci_url: str | None = None
+    archived_at: datetime | None = None
+    ticket_number: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ConversationPatch(BaseModel):
+    """Renomear e/ou arquivar (``archived=false`` desarquiva)."""
+
+    title: str | None = Field(default=None, max_length=512)
+    archived: bool | None = None
+    # Corrige o número do chamado (vazio remove).
+    ticket_number: str | None = Field(default=None, max_length=80)
 
 
 class PayloadSizeCategoryOut(BaseModel):
@@ -104,6 +120,8 @@ class MessageOut(BaseModel):
     completion_tokens: int = 0
     cost_usd: float = 0.0
     payload_diagnostics: PayloadSizeBreakdownOut | None = None
+    # Claude CLI: {"five_hour": {"used_pct", "resets_at"}, "seven_day": {...}}.
+    plan_usage: dict[str, object] | None = None
 
     model_config = {"from_attributes": True}
 

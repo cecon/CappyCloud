@@ -1,3 +1,4 @@
+import { MarkdownEditor } from './MarkdownEditor'
 import type { Skill, SkillCreate, Workspace } from '../api'
 import { Modal } from './ui/legacy'
 import styles from '../pages/settings.module.css'
@@ -119,10 +120,10 @@ export function SkillsPageSections(p: SkillsPageSectionsProps) {
         opened={p.formOpen}
         onClose={p.onCancelForm}
         title={editing ? 'Editar skill' : 'Nova skill'}
-        size="38rem"
+        size="56rem"
       >
         <p className={styles.sectionDesc}>
-          Defina o repo, titulo e a regra curta que o agente deve receber.
+          Defina o repositório, o título, um resumo curto e o conteúdo em markdown.
         </p>
         <form onSubmit={p.onSaveSkill} className={styles.form}>
           <label className={styles.label}>
@@ -152,17 +153,25 @@ export function SkillsPageSections(p: SkillsPageSectionsProps) {
             />
           </label>
           <label className={styles.label}>
-            Descricao
-            <textarea
+            Resumo
+            <input
               className={styles.input}
               value={p.skillForm.summary ?? ''}
               onChange={(e) => p.setSkillForm((prev) => ({ ...prev, summary: e.target.value }))}
-              placeholder="Quando esta skill deve ser usada e qual regra o agente precisa seguir."
-              rows={4}
-              style={{ resize: 'vertical' }}
+              placeholder="Quando usar esta skill (aparece no índice que o agente recebe)."
+              maxLength={300}
               required
             />
           </label>
+          <MarkdownEditor
+            label="Conteúdo"
+            description="Regra completa em markdown. O agente recebe este texto quando a skill bate com a pergunta."
+            value={p.skillForm.content ?? ''}
+            onChange={(content) => p.setSkillForm((prev) => ({ ...prev, content }))}
+            placeholder={'# NFS-e — configuração\n- Onde fica...\n- Regra...'}
+            required
+            softLimit={6000}
+          />
           {p.skillFormError && <p className={styles.errorMsg}>{p.skillFormError}</p>}
           <div className={styles.formActions}>
             <button type="button" className={styles.secondaryBtn} onClick={p.onCancelForm}>

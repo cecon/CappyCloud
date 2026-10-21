@@ -1,4 +1,5 @@
-﻿import { useCallback, useEffect, useMemo, useState } from 'react'
+﻿import { MarkdownEditor } from '../components/MarkdownEditor'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Badge,
@@ -13,7 +14,6 @@ import {
   Switch,
   Table,
   Text,
-  Textarea,
   TextInput,
   Title,
 } from '@/components/ui/legacy'
@@ -341,15 +341,11 @@ export function AdminGlobalSkillsPage() {
             required
             placeholder="Selecione uma ou mais sandboxes"
           />
-          <Textarea
+          <MarkdownEditor
             label="Conteúdo (markdown)"
-            placeholder="# Skill&#10;Instruções para o agente."
+            placeholder={'# Skill\nInstruções para o agente.'}
             value={form.content}
-            onChange={(e) => setForm({ ...form, content: e.currentTarget.value })}
-            autosize
-            minRows={8}
-            maxRows={20}
-            styles={{ input: { fontFamily: 'monospace' } }}
+            onChange={(content) => setForm({ ...form, content })}
           />
           <Switch
             label="Ativo"

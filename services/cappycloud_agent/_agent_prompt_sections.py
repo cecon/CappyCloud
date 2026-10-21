@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from urllib.parse import quote
 
 
@@ -25,14 +25,17 @@ def _clean_confluence_labels(raw_labels: object) -> list[str]:
 
 
 def render_repo_skills(skills: list[dict]) -> str:
+    """Índice das skills do repositório; o conteúdo vem pela busca de documentação.
+
+    As mais relevantes para a pergunta já entram completas nas evidências
+    automáticas, então aqui vai só título e resumo.
+    """
     lines = ["## Skills configuradas para este repositório"]
     lines.append(
-        "Estas skills foram cadastradas para o(s) repositório(s) da sessão. "
-        "Use título e descrição como contexto operacional antes de responder ou alterar código. "
-        "Não use skills globais do sandbox como substitutas das skills do repositório."
+        "Estas skills foram cadastradas para o(s) repositório(s) da sessão. Quando o "
+        "assunto bater, leia o conteúdo pela busca de documentação (`/skills/search`) "
+        "antes de responder ou alterar código."
     )
-
-
     for skill in skills:
         line = f"- **{skill['title']}**"
         if skill.get("summary"):
@@ -40,8 +43,6 @@ def render_repo_skills(skills: list[dict]) -> str:
         if skill.get("source_url"):
             line += f"  \n  Fonte: {skill['source_url']}"
         lines.append(line)
-        if skill.get("content"):
-            lines.append(f"\n{skill['content']}")
     return "\n".join(lines)
 
 
@@ -72,21 +73,43 @@ def render_execution_profile(profile: str) -> str:
     )
 
 
-def render_repo_agents(agent_profiles: list[dict]) -> str:
+def _agent_line(agent: dict, with_model: bool) -> str:
+    line = f"- **{agent['name']}** (`{agent['slug']}`)"
+    if agent.get("description"):
+        line += f" — {agent['description']}"
+    if with_model and agent.get("default_model"):
+        line += f"  \n  Modelo preferencial: `{agent['default_model']}`"
+    return line
+
+
+def render_repo_agents(
+    agent_profiles: list[dict], native_subagents: Collection[str] = ()
+) -> str:
+    """Perfis ``<repo>-architect``.
+
+    ``native_subagents``: nomes que o runtime já carrega como subagente
+    (``~/.claude/agents`` no Claude CLI). Esses o prompt só cita; os demais
+    (openclaude, ou arquivo ainda não gravado no sandbox) vão colados.
+    """
+    native = [a for a in agent_profiles if a["name"] in native_subagents]
+    pasted = [a for a in agent_profiles if a["name"] not in native_subagents]
     lines = ["## Agente arquitetural do repositório"]
-    lines.append(
-        "Estes perfis foram selecionados automaticamente pelo(s) repositório(s) "
-        "da sessão. Use-os como estratégia de investigação e validação antes das skills."
-    )
-    for agent in agent_profiles:
-        line = f"- **{agent['name']}** (`{agent['slug']}`)"
-        if agent.get("description"):
-            line += f" — {agent['description']}"
-        if agent.get("default_model"):
-            line += f"  \n  Modelo preferencial: `{agent['default_model']}`"
-        lines.append(line)
-        if agent.get("system_prompt"):
-            lines.append(f"\n{agent['system_prompt']}")
+    if native:
+        lines.append(
+            "Estes subagentes conhecem a arquitetura do(s) repositório(s) da sessão. "
+            "Delegue a eles (ferramenta Agent, pelo nome) a investigação arquitetural "
+            "e a validação de mudanças antes de consultar as skills."
+        )
+        lines.extend(_agent_line(agent, with_model=False) for agent in native)
+    if pasted:
+        lines.append(
+            "Estes perfis foram selecionados automaticamente pelo(s) repositório(s) "
+            "da sessão. Use-os como estratégia de investigação e validação antes das skills."
+        )
+        for agent in pasted:
+            lines.append(_agent_line(agent, with_model=True))
+            if agent.get("system_prompt"):
+                lines.append(f"\n{agent['system_prompt']}")
     return "\n".join(lines)
 
 
@@ -222,83 +245,4 @@ def render_session_tools(
             "Não consulte `/confluence/*` nesta execução; use apenas skills, código e "
             "outras MCPs explicitamente configuradas."
         )
-
-    if profile == "deep":
-        parts.append(
-            "\n### Sub-agente de investigação\n"
-            "Para delegar uma investigação a um sub-agente especializado, executa via Bash:\n"
-            "```bash\n"
-            f"curl -s -X POST '{sandbox_session_url}/task' \\\n"
-            "  -H 'Content-Type: application/json' \\\n"
-            '  -d \'{"description":"<título>","prompt":"<instrução completa>"}\'\n'
-            "```\n"
-            "O campo `result` da resposta contém o texto produzido pelo sub-agente.\n"
-            "Use `jq -r '.result'` para extrair apenas o texto."
-        )
     return "\n".join(parts)
-
-
-def render_response_rules() -> str:
-    return (
-        "## Regras de resposta\n\n"
-        "Responda diretamente ao utilizador. A resposta final deve começar pelo diagnóstico, "
-        "não pelo plano de investigação. Não inclua plano interno, checklist de investigação, "
-        "nomes de ferramentas chamadas ou anotações como 'Search...', 'Find...', 'Open...', "
-        "'Grep...' ou 'Bash...' na resposta final.\n\n"
-        "Enquanto estiver investigando, não escreva mensagens narrativas como 'vou verificar', "
-        "'agora vou abrir' ou 'já tenho evidências'. Use as ferramentas silenciosamente e só "
-        "produza texto quando tiver a resposta consolidada. Depois de chamar ferramentas, "
-        "sempre finalize com uma resposta ao utilizador; nunca encerre apenas com plano, "
-        "comandos usados ou resultados brutos de ferramenta.\n\n"
-        "`Grep`, listagem de arquivos e busca textual servem para localizar candidatos; "
-        "não são evidência suficiente para afirmar regra de negócio, procedimento, SQL, "
-        "campo de tabela ou configuração. Antes de recomendar um procedimento ou citar um "
-        "arquivo como prova, leia o trecho exato via Bash (`sed -n`, `nl -ba`, `cat` "
-        "ou equivalente) e baseie a resposta somente em arquivos, linhas, schema ou "
-        "documentação realmente abertos nesta conversa. Trechos de `documento importado` "
-        "exibidos na seção de evidências automáticas já são documentação aberta; não "
-        "reabra esses arquivos via ferramenta de leitura quando o bloco importado já "
-        "trouxer tabela, coluna, PK ou flag necessária. "
-        "Para perguntas de SQL/schema, um bloco importado `#### dbo.<tabela>` conta "
-        "como schema comprovado; não substitua essa evidência por uma entidade do código "
-        "se o próprio documento diferenciar cadastro legado/fiscal e camada SaaS. "
-        "Se você só encontrou nomes de arquivos, diga que ainda não há evidência "
-        "suficiente em vez de completar a resposta por inferência.\n\n"
-        "Quando consultar documentação externa, inclua uma seção curta de fontes consultadas "
-        "com o título e a URL das páginas realmente usadas. Quando cruzar com código, inclua "
-        "também a evidência do repositório com arquivo e símbolo/trecho relevante. "
-        "Não abra o diagnóstico com uma conclusão forte baseada em 'pelo código que consegui "
-        "abrir' ou formulação equivalente sem listar logo abaixo ao menos uma evidência "
-        "citável: arquivo e linha/símbolo, schema aberto, ou título e URL de documentação "
-        "externa realmente consultada. Se a evidência ainda for parcial, diga que a análise "
-        "é parcial e peça o log, fluxo executado, versão ou configuração que falta. "
-        "Para casos de suporte operacional, prefira a estrutura: Diagnóstico, "
-        "Evidências, Como corrigir, Como validar. Use como evidência documental "
-        "apenas páginas cujo produto, módulo ou conteúdo trate diretamente do assunto "
-        "investigado; ignore resultados de outros produtos quando eles forem apenas "
-        "coincidência textual. Se a documentação não trouxer evidência direta, diga "
-        "isso e sustente a resposta no código local.\n\n"
-        "Para suporte operacional, não recomende `UPDATE`, alteração direta no banco, "
-        "edição de XML ou manipulação de arquivo como correção principal, exceto se o "
-        "utilizador pedir explicitamente uma intervenção técnica de banco. A orientação "
-        "padrão deve ser por tela/configuração, sincronização/carga oficial da distribuidora, "
-        "relatório/consulta de validação e coleta de log.\n\n"
-        "Quando a pergunta pedir SQL, tabela, campo, flag, parâmetro ou configuração, "
-        "confirme nomes reais em migrations, mappings, XML/Glade, seeds ou consultas "
-        "existentes antes de responder. Se o schema não estiver comprovado, entregue "
-        "uma consulta-modelo claramente marcada como template e peça o DDL/log necessário. "
-        "Não invente nomes de colunas, flags de reprocessamento ou status sem evidência "
-        "direta no código/schema lido.\n\n"
-        "Para procedimento operacional, identifique primeiro a rotina oficial que o usuário "
-        "deveria acionar: tela/view, endpoint, job configurado ou comando documentado. Se você "
-        "leu apenas função interna, controller ou método de baixo nível, continue investigando "
-        "quem chama essa rotina antes de transformar isso em passo operacional. Não recomende "
-        "criar script novo, chamar função interna por shell, rodar código ad hoc ou contornar "
-        "a UI/rotina oficial como caminho principal, salvo pedido explícito de automação "
-        "técnica.\n\n"
-        "Cite caminhos exatamente como aparecem no worktree ou na ferramenta. Não adicione "
-        "prefixos como `src/`, pastas ou nomes de arquivo que não foram vistos no caminho lido.\n\n"
-        "Se o pedido estiver fora do escopo técnico do repositório selecionado, responda "
-        "em português de forma curta dizendo que atua no contexto técnico do produto/repositório "
-        "e peça uma dúvida técnica."
-    )

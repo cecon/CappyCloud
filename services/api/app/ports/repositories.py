@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from abc import ABC, abstractmethod
+from datetime import datetime
 
 from app.domain.entities import (
     ContainerStatus,
@@ -72,8 +73,13 @@ class UserRepository(ABC):
         hashed_password: str,
         *,
         must_change_password: bool,
+        reset_expires_at: datetime | None = None,
     ) -> User | None:
-        """Atualiza senha e estado de troca obrigatória do utilizador."""
+        """Atualiza senha e estado de troca obrigatória do utilizador.
+
+        ``reset_expires_at``: validade da senha temporária (redefinição pelo
+        admin); ``None`` limpa, como na troca feita pelo próprio usuário.
+        """
 
 
 class SandboxRepository(ABC):

@@ -84,12 +84,12 @@ export function SkillsPage() {
     setSavingSkill(true)
     setSkillFormError(null)
     try {
-      const description = (skillForm.summary || '').trim()
+      // Resumo curto vai no índice; o conteúdo (markdown) é o que o agente lê.
       const payload = {
         repository_id: skillForm.repository_id,
         title: skillForm.title.trim(),
-        summary: description,
-        content: description,
+        summary: (skillForm.summary || '').trim(),
+        content: (skillForm.content || '').trim(),
       }
       if (editingSkillId) {
         const updated = await updateSkill(token, editingSkillId, payload)
@@ -118,8 +118,9 @@ export function SkillsPage() {
     setSkillForm({
       repository_id: skill.repository_id || workspaces[0]?.id || '',
       title: skill.title,
-      summary: skill.summary || skill.content,
-      content: skill.summary || skill.content,
+      // Skills antigas gravavam o mesmo texto nos dois campos: o resumo fica curto.
+      summary: (skill.summary || '').slice(0, 300),
+      content: skill.content || skill.summary,
     })
     setSkillFormError(null)
     setFormOpen(true)
@@ -156,7 +157,7 @@ export function SkillsPage() {
       <header className={styles.header}>
         <h1 className={styles.title}>Skills</h1>
         <p className={styles.sectionDesc} style={{ marginTop: '0.35rem' }}>
-          Regras curtas por repositório que entram no contexto do openclaude.
+          Regras por repositório que o agente recebe quando o assunto bate.
         </p>
       </header>
 
