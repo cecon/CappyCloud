@@ -66,6 +66,10 @@ task_final_message = load_agent_module(
     "services.cappycloud_agent._task_final_message",
     ROOT / "services/cappycloud_agent/_task_final_message.py",
 )
+task_usage = load_agent_module(
+    "services.cappycloud_agent._task_usage",
+    ROOT / "services/cappycloud_agent/_task_usage.py",
+)
 evidence_terms = load_agent_module(
     "services.cappycloud_agent._evidence_terms",
     ROOT / "services/cappycloud_agent/_evidence_terms.py",

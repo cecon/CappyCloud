@@ -29,6 +29,8 @@ import {
 import { createPortal } from 'react-dom'
 import type { AiModel } from '../api'
 import styles from './model-picker.module.css'
+import { normalize } from './model-picker/helpers'
+import { ModelListEmpty, ModelRow } from './model-picker/ModelRow'
 
 export interface ModelPickerProps {
   models: AiModel[]
@@ -42,53 +44,6 @@ export interface ModelPickerProps {
   allowClear?: boolean
   /** Texto mostrado quando nada está seleccionado. */
   placeholder?: string
-}
-
-interface NormalizedRow {
-  model: AiModel
-  provider: string
-  cleanName: string
-  searchKey: string
-}
-
-function normalize(models: AiModel[]): NormalizedRow[] {
-  return models.map((m) => {
-    const slashIdx = m.model_id.indexOf('/')
-    const provider = slashIdx > 0 ? m.model_id.slice(0, slashIdx) : 'outro'
-    const colonIdx = m.display_name.indexOf(':')
-    const cleanName =
-      colonIdx > 0 ? m.display_name.slice(colonIdx + 1).trim() : m.display_name
-    return {
-      model: m,
-      provider,
-      cleanName,
-      searchKey: `${m.display_name} ${m.model_id} ${provider}`.toLowerCase(),
-    }
-  })
-}
-
-function fmtCost(value: number | null | undefined): string {
-  if (value == null) return '?? '
-  if (value === 0) return 'free'
-  if (value < 0.01) return `$${value.toFixed(4)}`
-  return `$${value.toFixed(2)}`
-}
-
-function fmtCtx(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000) return `${Math.round(n / 1_000)}k`
-  return String(n)
-}
-
-function modelStateLabel(model: AiModel): string | null {
-  if (!model.active) return 'retirado'
-  // Claude CLI: cobra da assinatura do `claude login`, não por token.
-  if (model.provider_id === 'claude-cli') return 'assinatura'
-  if (model.tier === 'paid') return 'pago'
-  if (model.tier === 'unknown' || model.input_cost_per_1m_usd == null || model.output_cost_per_1m_usd == null) {
-    return 'preço desconhecido'
-  }
-  return null
 }
 
 export function ModelPicker({
@@ -344,22 +299,8 @@ export function ModelPicker({
               </button>
             )}
 
-            {filtered.length === 0 && !allowClear && (
-              <div className={styles.empty}>
-                {rows.length === 0
-                  ? 'Nenhum modelo autorizado para este usuário.'
-                  : 'Sem resultados.'}
-              </div>
-            )}
-            {filtered.length === 0 && allowClear && rows.length === 0 && (
-              <div className={styles.empty}>
-                Nenhum modelo autorizado para este usuário.
-              </div>
-            )}
-            {filtered.length === 0 && allowClear && rows.length > 0 && (
-              <div className={styles.empty}>
-                Sem resultados para “{query}”.
-              </div>
+            {filtered.length === 0 && (
+              <ModelListEmpty allowClear={allowClear} totalRows={rows.length} query={query} />
             )}
 
             {filtered.map((row, i) => {
@@ -367,68 +308,19 @@ export function ModelPicker({
               const isActive = idx === activeIndex
               const isSelected = row.model.model_id === value
               return (
-                <button
+                <ModelRow
                   key={row.model.id}
-                  id={`model-row-${i}`}
-                  type="button"
-                  className={`${styles.row} ${isActive ? styles.rowActive : ''} ${
-                    isSelected ? styles.rowSelected : ''
-                  }`}
-                  role="option"
-                  aria-selected={isSelected}
-                  data-row-index={idx}
-                  onMouseEnter={() => setActiveIndex(idx)}
-                  onClick={() => {
+                  row={row}
+                  listIndex={i}
+                  rowIndex={idx}
+                  isActive={isActive}
+                  isSelected={isSelected}
+                  onHover={() => setActiveIndex(idx)}
+                  onSelect={() => {
                     onChange(row.model.model_id)
                     setOpen(false)
                   }}
-                >
-                  <span className={styles.rowProvider} aria-hidden="true">
-                    {row.provider.slice(0, 2).toUpperCase()}
-                  </span>
-                  <span className={styles.rowMain}>
-                    <span className={styles.rowName}>
-                      {row.cleanName}
-                      {modelStateLabel(row.model) && (
-                        <span className={styles.stateBadge}>
-                          {modelStateLabel(row.model)}
-                        </span>
-                      )}
-                      {row.model.capabilities?.includes('vision') && (
-                        <span
-                          className={styles.visionBadge}
-                          title="Suporta entrada de imagens (vision-capable)"
-                          aria-label="Suporta visão"
-                        >
-                          <span className={styles.icon}>visibility</span>
-                          vision
-                        </span>
-                      )}
-                    </span>
-                    <span className={styles.rowMeta}>
-                      <span className={styles.rowProviderTag}>
-                        {row.provider}
-                      </span>
-                      <span className={styles.rowModelId}>
-                        {row.model.model_id}
-                      </span>
-                    </span>
-                  </span>
-                  <span className={styles.rowStats}>
-                    <span className={styles.rowPricing}>
-                      <span className={styles.rowPriceIn}>
-                        {fmtCost(row.model.input_cost_per_1m_usd)}
-                      </span>
-                      <span className={styles.rowPriceSep}>/</span>
-                      <span className={styles.rowPriceOut}>
-                        {fmtCost(row.model.output_cost_per_1m_usd)}
-                      </span>
-                    </span>
-                    <span className={styles.rowCtx}>
-                      {fmtCtx(row.model.context_window)} ctx
-                    </span>
-                  </span>
-                </button>
+                />
               )
             })}
           </div>

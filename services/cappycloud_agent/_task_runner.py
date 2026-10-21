@@ -27,7 +27,7 @@ from ._db_pool import create_pool
 from ._grpc_helpers import PendingAction
 from ._memory_capture import MemoryCapture, schedule_turn_memory
 from ._task_final_message import persist_final_message_if_missing
-from ._task_usage import persist_usage
+from ._task_usage import optional_tokens, persist_usage, reported_cost
 
 log = logging.getLogger(__name__)
 
@@ -142,10 +142,19 @@ class TaskRunner:
 
                 if event_type == "done":
                     usage = data if isinstance(data, dict) else {}
-                    await self._persist_usage(
-                        model_used=str(usage.get("model_used") or self._model_used),
-                        prompt_tokens=int(usage.get("prompt_tokens") or 0),
-                        completion_tokens=int(usage.get("completion_tokens") or 0),
+                    await persist_usage(
+                        self._pool,
+                        self._task_id,
+                        str(usage.get("model_used") or self._model_used),
+                        int(usage.get("prompt_tokens") or 0),
+                        int(usage.get("completion_tokens") or 0),
+                        cache_read_tokens=optional_tokens(
+                            usage.get("cache_read_tokens")
+                        ),
+                        cache_write_tokens=optional_tokens(
+                            usage.get("cache_write_tokens")
+                        ),
+                        cost_usd=reported_cost(usage.get("cost_usd")),
                     )
 
                 await self._insert_event(event_type, _normalise(data))
@@ -280,16 +289,6 @@ class TaskRunner:
                 )
         except Exception:
             pass
-
-    async def _persist_usage(
-        self,
-        model_used: str,
-        prompt_tokens: int,
-        completion_tokens: int,
-    ) -> None:
-        await persist_usage(
-            self._pool, self._task_id, model_used, prompt_tokens, completion_tokens
-        )
 
     def _capture_output(self, event_type: str, data) -> None:
         normalised = _normalise(data)

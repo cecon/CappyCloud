@@ -59,9 +59,13 @@ https://platform.claude.com/docs/en/about-claude/pricing (US$/MTok):
 Modelos usados nas conversas com workspace em prod: `claude-sonnet-5` (127
 respostas), `claude-opus-5-5` (15) e um `gpt-5.4` (1, via OpenRouter, preço do
 OpenRouter). Por isso o relatório usa `cost_usd` sem recálculo e diz que é o
-custo pela tabela da API da Claude. A base não guarda a quebra entre entrada,
-leitura e gravação de cache (`prompt_tokens` soma as três), então não dá para
-recalcular por fora; se um dia for preciso, o runtime teria de gravar essa quebra.
+custo pela tabela da API da Claude. `prompt_tokens` soma entrada, leitura e
+gravação de cache; desde 2026-10-11 o runtime Claude CLI grava as duas parcelas
+de cache por resposta em `messages.cache_read_tokens` e
+`messages.cache_write_tokens` (também em `agent_tasks`). Linhas anteriores e o
+runtime openclaude ficam com NULL (não informado). O Claude Code não separa a
+gravação de cache de 5 min da de 1 h, então um recálculo por fora ainda assume
+uma das duas tarifas; o `cost_usd` do runtime continua sendo o valor oficial.
 
 ## Decisão 1 — Classificação por regras, não por LLM
 

@@ -56,7 +56,8 @@ async def persist_final_message_if_missing(
                 """
                 SELECT
                     created_at, completed_at, model_used, prompt_tokens,
-                    completion_tokens, cost_usd
+                    completion_tokens, cost_usd, cache_read_tokens,
+                    cache_write_tokens
                 FROM agent_tasks
                 WHERE id = $1::uuid
                 """,
@@ -74,10 +75,11 @@ async def persist_final_message_if_missing(
                 """
                 INSERT INTO messages (
                     id, conversation_id, role, content, model_used,
-                    prompt_tokens, completion_tokens, cost_usd
+                    prompt_tokens, completion_tokens, cost_usd,
+                    cache_read_tokens, cache_write_tokens
                 )
                 VALUES (
-                    gen_random_uuid(), $1, 'assistant', $2, $3, $4, $5, $6
+                    gen_random_uuid(), $1, 'assistant', $2, $3, $4, $5, $6, $7, $8
                 )
                 """,
                 conv_id,
@@ -86,6 +88,8 @@ async def persist_final_message_if_missing(
                 int(task["prompt_tokens"] or 0),
                 int(task["completion_tokens"] or 0),
                 _decimal_cost(task["cost_usd"]),
+                task["cache_read_tokens"],
+                task["cache_write_tokens"],
             )
     except Exception as exc:
         log.warning(
@@ -182,14 +186,18 @@ async def _clean_existing_message(
             model_used = COALESCE(model_used, $2),
             prompt_tokens = GREATEST(prompt_tokens, $3),
             completion_tokens = GREATEST(completion_tokens, $4),
-            cost_usd = GREATEST(cost_usd, $5::numeric)
-        WHERE id = $6
+            cost_usd = GREATEST(cost_usd, $5::numeric),
+            cache_read_tokens = COALESCE(cache_read_tokens, $6),
+            cache_write_tokens = COALESCE(cache_write_tokens, $7)
+        WHERE id = $8
         """,
         replacement,
         task["model_used"],
         int(task["prompt_tokens"] or 0),
         int(task["completion_tokens"] or 0),
         _decimal_cost(task["cost_usd"]),
+        task["cache_read_tokens"],
+        task["cache_write_tokens"],
         existing["id"],
     )
 
@@ -205,13 +213,17 @@ async def _update_message_metadata(
         SET model_used = COALESCE(model_used, $1),
             prompt_tokens = GREATEST(prompt_tokens, $2),
             completion_tokens = GREATEST(completion_tokens, $3),
-            cost_usd = GREATEST(cost_usd, $4::numeric)
-        WHERE id = $5
+            cost_usd = GREATEST(cost_usd, $4::numeric),
+            cache_read_tokens = COALESCE(cache_read_tokens, $5),
+            cache_write_tokens = COALESCE(cache_write_tokens, $6)
+        WHERE id = $7
         """,
         task["model_used"],
         int(task["prompt_tokens"] or 0),
         int(task["completion_tokens"] or 0),
         _decimal_cost(task["cost_usd"]),
+        task["cache_read_tokens"],
+        task["cache_write_tokens"],
         message_id,
     )
 

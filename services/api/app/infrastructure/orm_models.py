@@ -225,6 +225,9 @@ class Message(Base):
     prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cost_usd: Mapped[float] = mapped_column(Numeric(12, 6), nullable=False, default=0)
+    # Parcelas de cache dentro de prompt_tokens; NULL = o runtime não informou.
+    cache_read_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cache_write_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     payload_diagnostics: Mapped[dict | None] = mapped_column(JSONBType, nullable=True)
     # Claude CLI: % usado das janelas de 5h/7d da assinatura quando a resposta terminou.
     plan_usage: Mapped[dict | None] = mapped_column(JSONBType, nullable=True)

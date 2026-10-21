@@ -78,8 +78,8 @@ ENV NODE_PATH="/usr/local/lib/node_modules"
 # as credenciais ficam em CLAUDE_CONFIG_DIR, montado como volume persistente.
 # IS_SANDBOX=1 permite bypassPermissions rodando como root.
 RUN npm install -g \
-        @anthropic-ai/claude-code@2.1.281 \
-        @anthropic-ai/claude-agent-sdk@0.3.281 \
+        @anthropic-ai/claude-code@2.1.296 \
+        @anthropic-ai/claude-agent-sdk@0.3.296 \
     && npm cache clean --force
 ENV CLAUDE_CONFIG_DIR="/root/.claude" \
     IS_SANDBOX="1" \
@@ -165,6 +165,9 @@ COPY services/sandbox/session_start.sh /session_start.sh
 COPY services/sandbox/session_server.js /session_server.js
 COPY services/sandbox/git_handlers.js /git_handlers.js
 COPY services/sandbox/git_urls.js /git_urls.js
+COPY services/sandbox/git_auth_handler.js /git_auth_handler.js
+COPY services/sandbox/internal_search_handler.js /internal_search_handler.js
+COPY services/sandbox/user_workspace_handler.js /user_workspace_handler.js
 COPY services/sandbox/globals_handler.js /globals_handler.js
 COPY services/sandbox/mcp_handler.js /mcp_handler.js
 COPY services/sandbox/confluence_auth.js /confluence_auth.js
@@ -174,6 +177,7 @@ COPY services/sandbox/runtime_handler.js /runtime_handler.js
 COPY services/sandbox/claude_runtime_handler.js /claude_runtime_handler.js
 COPY services/sandbox/claude_runtime_setup.js /claude_runtime_setup.js
 COPY services/sandbox/claude_runtime_mapper.js /claude_runtime_mapper.js
+COPY services/sandbox/claude_runtime_usage.js /claude_runtime_usage.js
 COPY services/sandbox/readonly_commands.js /readonly_commands.js
 COPY services/sandbox/claude_runtime_subagents.js /claude_runtime_subagents.js
 COPY services/sandbox/session_cleanup.js /session_cleanup.js

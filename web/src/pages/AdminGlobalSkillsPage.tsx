@@ -1,23 +1,15 @@
-﻿import { MarkdownEditor } from '../components/MarkdownEditor'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
-  Badge,
   Button,
   Container,
   Group,
   Loader,
-  Modal,
-  MultiSelect,
   Paper,
   Stack,
-  Switch,
-  Table,
   Text,
-  TextInput,
   Title,
 } from '@/components/ui/legacy'
-import { IconPencil, IconTrash } from '@tabler/icons-react'
 import {
   createGlobalSkill,
   deleteGlobalSkill,
@@ -29,25 +21,9 @@ import {
   type Sandbox,
   updateGlobalSkill,
 } from '../api'
-import { ActionsCell, ActionsHeader, RowActionIcon } from '../components/TableActions'
-
-type FormState = {
-  id: string | null
-  name: string
-  description: string
-  content: string
-  enabled: boolean
-  sandbox_ids: string[]
-}
-
-const EMPTY_FORM: FormState = {
-  id: null,
-  name: '',
-  description: '',
-  content: '',
-  enabled: true,
-  sandbox_ids: [],
-}
+import { EMPTY_FORM, type FormState } from './admin-global-skills/form'
+import { GlobalSkillFormModal } from './admin-global-skills/GlobalSkillFormModal'
+import { GlobalSkillsTable } from './admin-global-skills/GlobalSkillsTable'
 
 export function AdminGlobalSkillsPage() {
   const [skills, setSkills] = useState<GlobalSkill[] | null>(null)
@@ -194,25 +170,6 @@ export function AdminGlobalSkillsPage() {
     }
   }
 
-  function renderAssignedSandboxes(skill: GlobalSkill) {
-    if (skill.sandbox_ids.length === 0) {
-      return (
-        <Text size="sm" c="dimmed" fs="italic">
-          Nenhuma
-        </Text>
-      )
-    }
-    return (
-      <Group gap={6}>
-        {skill.sandbox_ids.map((sandboxId) => (
-          <Badge key={sandboxId} variant="light" color="blue">
-            {sandboxById.get(sandboxId)?.name ?? sandboxId.slice(0, 8)}
-          </Badge>
-        ))}
-      </Group>
-    )
-  }
-
   const loading = skills === null || sandboxes === null
 
   return (
@@ -256,112 +213,27 @@ export function AdminGlobalSkillsPage() {
               Nenhuma skill global cadastrada.
             </Text>
           ) : (
-            <Table verticalSpacing="sm" highlightOnHover>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Nome</Table.Th>
-                  <Table.Th>Descrição</Table.Th>
-                  <Table.Th>Sandboxes</Table.Th>
-                  <Table.Th w={90}>Ativo</Table.Th>
-                  <ActionsHeader width={110} />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {skills.map((skill) => (
-                  <Table.Tr key={skill.id}>
-                    <Table.Td>
-                      <Text fw={600}>{skill.name}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm" lineClamp={2}>
-                        {skill.description || (
-                          <Text span c="dimmed" fs="italic">
-                            sem descrição
-                          </Text>
-                        )}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td>{renderAssignedSandboxes(skill)}</Table.Td>
-                    <Table.Td>
-                      <Switch
-                        checked={skill.enabled}
-                        onChange={() => void handleToggle(skill)}
-                        size="xs"
-                        aria-label={`Ativar ${skill.name}`}
-                      />
-                    </Table.Td>
-                    <ActionsCell>
-                      <RowActionIcon label="Editar" onClick={() => openEdit(skill)}>
-                        <IconPencil size={16} />
-                      </RowActionIcon>
-                      <RowActionIcon
-                        label="Apagar"
-                        color="red"
-                        onClick={() => void handleDelete(skill)}
-                      >
-                        <IconTrash size={16} />
-                      </RowActionIcon>
-                    </ActionsCell>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
+            <GlobalSkillsTable
+              skills={skills}
+              sandboxById={sandboxById}
+              onToggle={(skill) => void handleToggle(skill)}
+              onEdit={openEdit}
+              onDelete={(skill) => void handleDelete(skill)}
+            />
           )}
         </Paper>
       </Stack>
 
-      <Modal
+      <GlobalSkillFormModal
         opened={editOpen}
+        form={form}
+        setForm={setForm}
+        formError={formError}
+        saving={saving}
+        sandboxOptions={sandboxOptions}
         onClose={() => setEditOpen(false)}
-        title={form.id ? `Editar skill "${form.name}"` : 'Nova skill global'}
-        centered
-        size="lg"
-      >
-        <Stack gap="md">
-          {formError && <Alert color="red">{formError}</Alert>}
-          <TextInput
-            label="Nome (slug)"
-            placeholder="naming-conventions"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.currentTarget.value })}
-            required
-          />
-          <TextInput
-            label="Descrição curta"
-            placeholder="Convenções do time para esta sandbox."
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.currentTarget.value })}
-          />
-          <MultiSelect
-            label="Adicionar nas sandboxes"
-            data={sandboxOptions}
-            value={form.sandbox_ids}
-            onChange={(value) => setForm({ ...form, sandbox_ids: value })}
-            searchable
-            required
-            placeholder="Selecione uma ou mais sandboxes"
-          />
-          <MarkdownEditor
-            label="Conteúdo (markdown)"
-            placeholder={'# Skill\nInstruções para o agente.'}
-            value={form.content}
-            onChange={(content) => setForm({ ...form, content })}
-          />
-          <Switch
-            label="Ativo"
-            checked={form.enabled}
-            onChange={(e) => setForm({ ...form, enabled: e.currentTarget.checked })}
-          />
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setEditOpen(false)} disabled={saving}>
-              Cancelar
-            </Button>
-            <Button onClick={() => void handleSave()} loading={saving}>
-              {form.id ? 'Salvar' : 'Criar'}
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+        onSave={() => void handleSave()}
+      />
     </Container>
   )
 }

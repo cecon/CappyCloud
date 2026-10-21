@@ -1,32 +1,5 @@
 ﻿import { useCallback, useEffect, useState } from 'react'
-import {
-  ActionIcon,
-  Alert,
-  Badge,
-  Button,
-  Checkbox,
-  Container,
-  Group,
-  Loader,
-  Menu,
-  Modal,
-  PasswordInput,
-  Paper,
-  Select,
-  Stack,
-  Table,
-  Text,
-  TextInput,
-  Title,
-} from '@/components/ui/legacy'
-import {
-  IconDotsVertical,
-  IconKey,
-  IconLockOpen,
-  IconShieldDown,
-  IconShieldUp,
-  IconUserCog,
-} from '@tabler/icons-react'
+import { Alert, Button, Container, Group, Loader, Paper, Stack, Text, Title } from '@/components/ui/legacy'
 import {
   type AdminUser,
   errorToUserMessage,
@@ -38,23 +11,11 @@ import {
   updateAdminUserRole,
   type UserRole,
 } from '../api'
-import { ActionsCell, ActionsHeader } from '../components/TableActions'
 import { UserAccessDrawer } from '../components/UserAccessDrawer'
 import { isPlausibleEmail } from '../validation'
-
-type CreateFormState = {
-  email: string
-  password: string
-  role: UserRole
-  mustChangePassword: boolean
-}
-
-const EMPTY_FORM: CreateFormState = {
-  email: '',
-  password: '',
-  role: 'user',
-  mustChangePassword: true,
-}
+import { CreateUserModal } from './admin-users/CreateUserModal'
+import { type CreateFormState, EMPTY_FORM } from './admin-users/formState'
+import { UsersTable } from './admin-users/UsersTable'
 
 export function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUser[] | null>(null)
@@ -205,178 +166,28 @@ A senha volta para a temporária padrão, vale por 24 horas e a pessoa terá que
               Nenhum utilizador cadastrado. Use “Novo utilizador” para criar o primeiro.
             </Text>
           ) : (
-            <Table verticalSpacing="sm" highlightOnHover>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Email</Table.Th>
-                  <Table.Th style={{ width: 110 }}>Papel</Table.Th>
-                  <ActionsHeader width={180} />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {users.map((u) => {
-                  const isSelf = u.id === meId
-                  const isPending = pendingRoleChange === u.id
-                  return (
-                    <Table.Tr key={u.id}>
-                      <Table.Td>
-                        <Group gap="xs">
-                          <Text>{u.email}</Text>
-                          {isSelf && (
-                            <Badge size="xs" variant="light" color="blue">
-                              você
-                            </Badge>
-                          )}
-                          {u.is_super_admin && (
-                            <Badge size="xs" variant="filled" color="violet">
-                              SUPER ADMIN
-                            </Badge>
-                          )}
-                          {u.must_change_password && (
-                            <Badge size="xs" variant="light" color="orange">
-                              troca pendente
-                            </Badge>
-                          )}
-                        </Group>
-                      </Table.Td>
-                      <Table.Td>
-                        <Badge
-                          color={u.role === 'admin' ? 'yellow' : 'gray'}
-                          variant={u.role === 'admin' ? 'filled' : 'light'}
-                        >
-                          {u.role === 'admin' ? 'ADMIN' : 'USER'}
-                        </Badge>
-                      </Table.Td>
-                      <ActionsCell>
-                        <Button
-                          aria-label={u.role === 'admin' ? 'ADMIN tem acesso total' : 'Gerir acessos'}
-                          title={u.role === 'admin' ? 'ADMIN tem acesso total' : 'Gerir acessos'}
-                          size="xs"
-                          variant="light"
-                          color="blue"
-                          leftSection={<IconKey size={14} />}
-                          onClick={() => setAccessTarget(u)}
-                          disabled={u.role === 'admin'}
-                        >
-                          {u.role === 'admin' ? 'Acesso total' : 'Acessos'}
-                        </Button>
-                        <Menu shadow="md" position="bottom-end">
-                          <Menu.Target>
-                            <ActionIcon
-                              aria-label="Ações do usuário"
-                              title="Papel e senha"
-                              size="lg"
-                              variant="default"
-                              loading={isPending}
-                              disabled={isPending}
-                            >
-                              {isPending ? (
-                                <IconDotsVertical size={16} />
-                              ) : (
-                                <IconUserCog size={16} />
-                              )}
-                            </ActionIcon>
-                          </Menu.Target>
-                          <Menu.Dropdown>
-                            <Menu.Item
-                              disabled={u.role === 'admin'}
-                              leftSection={<IconShieldUp size={14} />}
-                              onClick={() => void changeRole(u, 'admin')}
-                            >
-                              Promover a ADMIN
-                            </Menu.Item>
-                            <Menu.Item
-                              disabled={u.role === 'user' || isSelf}
-                              leftSection={<IconShieldDown size={14} />}
-                              onClick={() => void changeRole(u, 'user')}
-                            >
-                              Rebaixar para USER
-                              {isSelf && (
-                                <Text size="xs" c="dimmed">
-                                  bloqueado: você mesmo
-                                </Text>
-                              )}
-                            </Menu.Item>
-                            {meIsSuperAdmin && !isSelf && (
-                              <Menu.Item
-                                leftSection={<IconLockOpen size={14} />}
-                                onClick={() => void resetPassword(u)}
-                              >
-                                Redefinir senha
-                              </Menu.Item>
-                            )}
-                          </Menu.Dropdown>
-                        </Menu>
-                      </ActionsCell>
-                    </Table.Tr>
-                  )
-                })}
-              </Table.Tbody>
-            </Table>
+            <UsersTable
+              users={users}
+              meId={meId}
+              meIsSuperAdmin={meIsSuperAdmin}
+              pendingRoleChange={pendingRoleChange}
+              onAccess={setAccessTarget}
+              onChangeRole={(u, role) => void changeRole(u, role)}
+              onResetPassword={(u) => void resetPassword(u)}
+            />
           )}
         </Paper>
       </Stack>
 
-      <Modal
+      <CreateUserModal
         opened={createOpen}
+        form={form}
+        setForm={setForm}
+        formError={formError}
+        creating={creating}
         onClose={() => setCreateOpen(false)}
-        title="Novo utilizador"
-        centered
-      >
-        <Stack gap="md">
-          {formError && (
-            <Alert color="red" title="Não foi possível criar">
-              {formError}
-            </Alert>
-          )}
-          <TextInput
-            label="Email"
-            placeholder="nome@dominio.com"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.currentTarget.value })}
-            type="email"
-            autoComplete="off"
-            required
-          />
-          <PasswordInput
-            label="Senha temporária"
-            description="Mínimo 8 caracteres. Use uma senha provisória para o primeiro login."
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.currentTarget.value })}
-            autoComplete="new-password"
-            required
-          />
-          <Checkbox
-            label="Exigir troca de senha no primeiro acesso"
-            checked={form.mustChangePassword}
-            onChange={(e) =>
-              setForm({ ...form, mustChangePassword: e.currentTarget.checked })
-            }
-          />
-          <Select
-            label="Papel"
-            data={[
-              { value: 'user', label: 'USER — uso normal' },
-              { value: 'admin', label: 'ADMIN — administração total' },
-            ]}
-            value={form.role}
-            onChange={(value) => {
-              if (value === 'admin' || value === 'user') {
-                setForm({ ...form, role: value })
-              }
-            }}
-            allowDeselect={false}
-          />
-          <Group justify="flex-end" mt="sm">
-            <Button variant="default" onClick={() => setCreateOpen(false)} disabled={creating}>
-              Cancelar
-            </Button>
-            <Button onClick={() => void handleCreate()} loading={creating}>
-              Criar
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+        onCreate={() => void handleCreate()}
+      />
 
       <UserAccessDrawer user={accessTarget} onClose={() => setAccessTarget(null)} />
     </Container>

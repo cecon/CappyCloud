@@ -37,6 +37,8 @@ class SQLAlchemyMessageRepository(MessageRepository):
             "prompt_tokens": message.prompt_tokens,
             "completion_tokens": message.completion_tokens,
             "cost_usd": message.cost_usd,
+            "cache_read_tokens": message.cache_read_tokens,
+            "cache_write_tokens": message.cache_write_tokens,
         }
         values["payload_diagnostics"] = (
             message.payload_diagnostics if message.payload_diagnostics is not None else null()
@@ -80,6 +82,8 @@ class SQLAlchemyMessageRepository(MessageRepository):
             prompt_tokens=row.prompt_tokens or 0,
             completion_tokens=row.completion_tokens or 0,
             cost_usd=float(row.cost_usd or 0),
+            cache_read_tokens=row.cache_read_tokens,
+            cache_write_tokens=row.cache_write_tokens,
             payload_diagnostics=row.payload_diagnostics,
             plan_usage=row.plan_usage,
         )

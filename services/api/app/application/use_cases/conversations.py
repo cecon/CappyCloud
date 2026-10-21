@@ -5,8 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from collections.abc import AsyncGenerator, Awaitable, Callable
-from typing import cast
+from collections.abc import AsyncGenerator
 
 from app.application.use_cases import _attachments_helpers as _att
 from app.application.use_cases._conversation_crud import (
@@ -15,22 +14,27 @@ from app.application.use_cases._conversation_crud import (
     ListMessages,
 )
 from app.application.use_cases._conversation_titles import DEFAULT_TITLE, TITLE_MAX_LEN
-from app.application.use_cases._payload_diagnostics import sanitize_payload_diagnostics
 from app.application.use_cases._stream_helpers import (
     build_pipeline_body,
-    command_result_payload,
-    command_start_payload,
     compute_cost,
     enrich_repos_for_pipeline,
     ensure_repo_ids,
     inject_diff_comments,
 )
-from app.application.use_cases.user_workspaces import (
-    EnsureUserRepositoryWorkspace,
-    UserWorkspaceAccessDeniedError,
-    UserWorkspaceNotFoundError,
+from app.application.use_cases._stream_message_support import (
+    EventOutcome,
+    StreamState,
+    attach_user_workspaces,
+    final_model_is_authorized,
+    next_chunk,
+    process_event,
+    resolve_model_uuid,
+    save_assistant_message,
+    sse_comment,
+    sse_payload,
 )
-from app.domain.entities import Conversation, Message, User, UserRole
+from app.application.use_cases.user_workspaces import EnsureUserRepositoryWorkspace
+from app.domain.entities import Conversation, Message, UserRole
 from app.domain.value_objects import validate_permission_mode
 from app.ports.agent import AgentPort
 from app.ports.repositories import (
@@ -54,20 +58,9 @@ _SSE_HEARTBEAT_INTERVAL_S = 10.0
 _SSE_INITIAL_FLUSH_BYTES = 2048
 
 
-def _sse_comment(message: str, *, padding: int = 0) -> bytes:
-    suffix = " " * max(0, padding)
-    return f": {message}{suffix}\n\n".encode()
-
-
-def _sse_payload(payload: dict) -> bytes:
-    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
-
-
-def _next_chunk(gen):
-    try:
-        return next(gen)
-    except StopIteration:
-        return None
+_sse_comment = sse_comment
+_sse_payload = sse_payload
+_next_chunk = next_chunk
 
 
 class StreamMessage:
@@ -214,13 +207,7 @@ class StreamMessage:
         user_role: UserRole,
         model_id: str | None,
     ) -> uuid.UUID | None:
-        resolver = cast(
-            Callable[[uuid.UUID, UserRole, str | None], Awaitable[uuid.UUID | None]] | None,
-            getattr(self._model_access, "resolve_model_uuid_for_user", None),
-        )
-        if resolver is None:
-            return None
-        return await resolver(user_id, user_role, model_id)
+        return await resolve_model_uuid(self._model_access, user_id, user_role, model_id)
 
     async def _load_attachment_bytes(
         self, conversation_id: uuid.UUID, attachment_ids: list[uuid.UUID]
@@ -277,34 +264,7 @@ class StreamMessage:
         user_id: uuid.UUID,
         user_role: UserRole,
     ) -> list[dict]:
-        if self._user_workspaces is None:
-            return repos
-        current = User(id=user_id, email="", hashed_password="", role=user_role)
-        enriched: list[dict] = []
-        for repo in repos:
-            next_repo = dict(repo)
-            repo_id_raw = next_repo.get("repo_id")
-            if not repo_id_raw:
-                enriched.append(next_repo)
-                continue
-            try:
-                workspace = await self._user_workspaces.execute(
-                    current_user=current,
-                    repository_id=uuid.UUID(str(repo_id_raw)),
-                    base_branch=str(next_repo.get("base_branch") or "main"),
-                )
-            except UserWorkspaceAccessDeniedError:
-                raise
-            except UserWorkspaceNotFoundError:
-                raise
-            except RuntimeError:
-                enriched.append(next_repo)
-                continue
-            next_repo["source_workspace_path"] = workspace.workspace_path
-            next_repo["user_workspace_id"] = str(workspace.id)
-            next_repo["user_workspace_status"] = workspace.status
-            enriched.append(next_repo)
-        return enriched
+        return await attach_user_workspaces(self._user_workspaces, repos, user_id, user_role)
 
     async def _stream_chunks(
         self,
@@ -317,45 +277,18 @@ class StreamMessage:
         user_role: UserRole,
         selected_model: str | None,
     ) -> AsyncGenerator[bytes]:
-        accumulated_text: list[str] = []
-        accumulated_error: list[str] = []
-        usage: dict = {}
-        latest_payload_diagnostics: dict[str, object] | None = None
-        assistant_saved = False
+        state = StreamState()
         gen = self._agent.pipe(content, model_id, messages_payload, pipeline_body)
 
         async def save_assistant_once() -> None:
-            nonlocal assistant_saved, latest_payload_diagnostics
-            if assistant_saved:
+            if state.assistant_saved:
                 return
-            assistant_saved = True
-            assistant_text = "".join(accumulated_text).strip()
-            cost_usd = await self._compute_cost(usage)
-            if assistant_text:
-                await self._messages.save(
-                    Message(
-                        id=uuid.uuid4(),
-                        conversation_id=conversation_id,
-                        role="assistant",
-                        content=assistant_text,
-                        model_used=usage.get("model_used") or None,
-                        prompt_tokens=int(usage.get("prompt_tokens") or 0),
-                        completion_tokens=int(usage.get("completion_tokens") or 0),
-                        cost_usd=cost_usd,
-                        payload_diagnostics=latest_payload_diagnostics,
-                        plan_usage=usage.get("plan_usage") or None,
-                    )
-                )
-            elif accumulated_error:
-                await self._messages.save(
-                    Message(
-                        id=uuid.uuid4(),
-                        conversation_id=conversation_id,
-                        role="assistant",
-                        content="**Erro:** " + " ".join(accumulated_error),
-                        payload_diagnostics=latest_payload_diagnostics,
-                    )
-                )
+            state.assistant_saved = True
+            cost_usd = await self._compute_cost(state.usage)
+            await save_assistant_message(self._messages, conversation_id, state, cost_usd)
+
+        async def is_authorized(model_used: str) -> bool:
+            return await self._final_model_is_authorized(user_id, user_role, model_used)
 
         yield _sse_comment("stream-open", padding=_SSE_INITIAL_FLUSH_BYTES)
         yield _sse_payload(
@@ -379,94 +312,19 @@ class StreamMessage:
             if chunk is None:
                 break
             line = chunk.strip()
-            save_before_yield = False
-            stop_after_yield = False
-            output_chunk = chunk
+            outcome = EventOutcome(output_chunk=chunk)
             if line.startswith("data: "):
                 try:
                     evt = json.loads(line[6:])
-                    evt_type = evt.get("type")
-                    if evt_type == "text":
-                        accumulated_text.append(evt.get("content", ""))
-                    elif evt_type == "error":
-                        accumulated_error.append(evt.get("message", ""))
-                    elif evt_type == "payload_diagnostic":
-                        diagnostics = sanitize_payload_diagnostics(evt.get("diagnostics"))
-                        if diagnostics is None:
-                            continue
-                        latest_payload_diagnostics = diagnostics
-                        output_chunk = _sse_payload(
-                            {
-                                "type": "payload_diagnostic",
-                                "diagnostics": diagnostics,
-                            }
-                        ).decode("utf-8")
-                    elif evt_type == "command_start":
-                        output_chunk = _sse_payload(command_start_payload(evt)).decode("utf-8")
-                    elif evt_type == "command_result":
-                        output_chunk = _sse_payload(command_result_payload(evt)).decode("utf-8")
-                    elif evt_type == "done":
-                        # O TaskRunner enriquece o evento done com tokens/modelo
-                        # para que possamos persistir o uso na mensagem assistant.
-                        model_used = str(evt.get("model_used") or "")
-                        if (
-                            selected_model
-                            and model_used
-                            and model_used != selected_model
-                            and evt.get("runtime") != "claude_cli"
-                            and not await self._final_model_is_authorized(
-                                user_id, user_role, model_used
-                            )
-                        ):
-                            message = (
-                                "O runtime tentou usar um modelo de fallback nao "
-                                "autorizado para esta conversa. Selecione um modelo "
-                                "autorizado e tente novamente."
-                            )
-                            accumulated_text.clear()
-                            accumulated_error.append(message)
-                            output_chunk = _sse_payload(
-                                {"type": "error", "message": message}
-                            ).decode("utf-8")
-                            save_before_yield = True
-                            stop_after_yield = True
-                        else:
-                            output_chunk = _sse_payload(
-                                {
-                                    "type": "done",
-                                    "model_used": model_used,
-                                    "prompt_tokens": int(evt.get("prompt_tokens") or 0),
-                                    "completion_tokens": int(evt.get("completion_tokens") or 0),
-                                    **(
-                                        {"fallback": evt["fallback"]}
-                                        if isinstance(evt.get("fallback"), dict)
-                                        else {}
-                                    ),
-                                    **(
-                                        {"plan_usage": evt["plan_usage"]}
-                                        if isinstance(evt.get("plan_usage"), dict)
-                                        else {}
-                                    ),
-                                }
-                            ).decode("utf-8")
-                        usage = {
-                            "model_used": model_used,
-                            "prompt_tokens": int(evt.get("prompt_tokens") or 0),
-                            "completion_tokens": int(evt.get("completion_tokens") or 0),
-                            "plan_usage": (
-                                evt["plan_usage"]
-                                if isinstance(evt.get("plan_usage"), dict)
-                                else None
-                            ),
-                            "cost_usd": evt.get("cost_usd"),
-                        }
-                        save_before_yield = True
+                    await process_event(outcome, evt, state, selected_model, is_authorized)
                 except Exception:
                     pass
-            if save_before_yield:
+            if outcome.skip:
+                continue
+            if outcome.save_before_yield:
                 await save_assistant_once()
-            yield output_chunk.encode("utf-8")
-            if stop_after_yield:
+            yield outcome.output_chunk.encode("utf-8")
+            if outcome.stop_after_yield:
                 return
 
         await save_assistant_once()
@@ -477,10 +335,4 @@ class StreamMessage:
     async def _final_model_is_authorized(
         self, user_id: uuid.UUID, user_role: UserRole, model_id: str
     ) -> bool:
-        if self._model_access is None:
-            return True
-        try:
-            resolved = await self._model_access.resolve_model_for_user(user_id, user_role, model_id)
-        except PermissionError:
-            return False
-        return resolved == model_id
+        return await final_model_is_authorized(self._model_access, user_id, user_role, model_id)
