@@ -1,7 +1,18 @@
 import { type UIEvent, useCallback, useMemo } from 'react'
+import type { Conversation } from '../../api'
 import { CONVERSATION_PAGE_SIZE } from './constants'
 import { groupConversations } from './formatting'
 import type { ChatPageState } from './useChatPageState'
+
+/** Busca por título, número do chamado e repositórios. `search` já vem normalizado. */
+export function conversationMatchesSearch(conversation: Conversation, search: string): boolean {
+  const repoText = conversation.repos
+    ?.map((repo) => [repo.slug, repo.alias, repo.base_branch].filter(Boolean).join(' '))
+    .join(' ') ?? ''
+  const searchableText = `${conversation.title} ${conversation.ticket_number ?? ''} ${repoText}`
+    .toLocaleLowerCase('pt-BR')
+  return searchableText.includes(search)
+}
 
 /** Busca, paginação incremental e agrupamento da lista lateral de conversas. */
 export function useConversationList(st: ChatPageState) {
@@ -13,14 +24,9 @@ export function useConversationList(st: ChatPageState) {
     const active = conversations.filter((conversation) => !conversation.archived_at)
     if (!normalizedConversationSearch) return active
 
-    return active.filter((conversation) => {
-      const repoText = conversation.repos
-        ?.map((repo) => [repo.slug, repo.alias, repo.base_branch].filter(Boolean).join(' '))
-        .join(' ') ?? ''
-      const searchableText = `${conversation.title} ${repoText}`.toLocaleLowerCase('pt-BR')
-
-      return searchableText.includes(normalizedConversationSearch)
-    })
+    return active.filter((conversation) =>
+      conversationMatchesSearch(conversation, normalizedConversationSearch),
+    )
   }, [conversations, normalizedConversationSearch])
   const visibleConversations = useMemo(
     () => filteredConversations.slice(0, visibleConversationCount),
