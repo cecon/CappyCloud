@@ -22,6 +22,7 @@ function roleLabel(user: CurrentUser | null) {
   if (!user) return 'Perfil'
   if (user.is_super_admin) return 'Super admin'
   if (user.role === 'admin') return 'Administrador'
+  if (user.admin_workspace_ids?.length) return 'Admin de workspace'
   return 'Usuário'
 }
 

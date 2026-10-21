@@ -11,7 +11,7 @@ import pytest
 import pytest_asyncio
 from app.adapters.primary.http import admin_workspace_knowledge
 from app.adapters.primary.http.deps import get_db_session
-from app.adapters.primary.http.deps_auth import require_super_admin
+from app.adapters.primary.http.deps_auth import require_workspace_manager
 from app.infrastructure.orm_models import Base, Sandbox, SandboxSyncQueue
 from app.infrastructure.orm_models_workspaces import Workspace
 from app.infrastructure.sandbox_watchdog import SandboxWatchdog
@@ -120,7 +120,7 @@ async def test_admin_le_status_arquivo_e_atualiza(
     app = FastAPI()
     app.include_router(admin_workspace_knowledge.router, prefix="/api")
     app.dependency_overrides[get_db_session] = session_dep
-    app.dependency_overrides[require_super_admin] = lambda: None
+    app.dependency_overrides[require_workspace_manager] = lambda: None
     app.dependency_overrides[admin_workspace_knowledge.get_sandbox_get] = lambda: fake_get
     base = f"/api/admin/workspaces/{ws.id}/knowledge"
 
@@ -163,7 +163,7 @@ async def test_resumo_junta_grafo_e_memoria_e_nao_falha_pela_metade(
     app = FastAPI()
     app.include_router(admin_workspace_knowledge.router, prefix="/api")
     app.dependency_overrides[get_db_session] = session_dep
-    app.dependency_overrides[require_super_admin] = lambda: None
+    app.dependency_overrides[require_workspace_manager] = lambda: None
     app.dependency_overrides[admin_workspace_knowledge.get_sandbox_get] = lambda: fake_get
     url = f"/api/admin/workspaces/{ws.id}/knowledge/summary"
 

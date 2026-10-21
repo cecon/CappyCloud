@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
@@ -9,10 +10,19 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.secondary.persistence.sqlalchemy_user_repo import SQLAlchemyUserRepository
+from app.adapters.secondary.persistence.sqlalchemy_workspace_admin_repo import (
+    SQLAlchemyWorkspaceAdminRepository,
+)
+from app.application.use_cases.admin_scope import (
+    AdminScope,
+    AdminScopeDeniedError,
+    ResolveAdminScope,
+)
 from app.application.use_cases.auth import ChangePassword, GetCurrentUser, LoginUser, RegisterUser
 from app.domain.entities import User, UserRole
 from app.ports.repositories import UserRepository
 from app.ports.services import PasswordService, TokenService
+from app.ports.workspace_admin import WorkspaceAdminRepository
 
 from .deps_base import get_db_session
 
@@ -102,6 +112,58 @@ def require_role(required: UserRole):
         )
 
     return _dep
+
+
+def get_workspace_admin_repo(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> WorkspaceAdminRepository:
+    return SQLAlchemyWorkspaceAdminRepository(session)
+
+
+async def get_admin_scope(
+    current: Annotated[User, Depends(get_authenticated_user)],
+    repo: Annotated[WorkspaceAdminRepository, Depends(get_workspace_admin_repo)],
+) -> AdminScope:
+    """ADMIN global ou admin de workspace; qualquer outro recebe 403."""
+    try:
+        return await ResolveAdminScope(repo).execute(current)
+    except AdminScopeDeniedError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+
+def _ensure_allows(scope: AdminScope, workspace_id: uuid.UUID) -> AdminScope:
+    if not scope.allows(workspace_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Você não administra este workspace."
+        )
+    return scope
+
+
+async def require_workspace_in_scope(
+    workspace_id: uuid.UUID,
+    scope: Annotated[AdminScope, Depends(get_admin_scope)],
+) -> AdminScope:
+    """Para rotas com ``{workspace_id}`` no caminho: ADMIN global ou admin dele."""
+    return _ensure_allows(scope, workspace_id)
+
+
+async def get_workspace_manager_scope(
+    scope: Annotated[AdminScope, Depends(get_admin_scope)],
+) -> AdminScope:
+    """Super admin ou admin de workspace: ADMIN global comum nunca geriu workspaces."""
+    if scope.is_global and not scope.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Permissão de super admin necessária."
+        )
+    return scope
+
+
+async def require_workspace_manager(
+    workspace_id: uuid.UUID,
+    scope: Annotated[AdminScope, Depends(get_workspace_manager_scope)],
+) -> AdminScope:
+    """Configuração do workspace (CLAUDE.md, conhecimento): super admin ou admin dele."""
+    return _ensure_allows(scope, workspace_id)
 
 
 async def require_super_admin(

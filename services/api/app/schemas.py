@@ -44,6 +44,8 @@ class UserOut(BaseModel):
     role: UserRole
     is_super_admin: bool = False
     must_change_password: bool = False
+    # Workspaces que o usuário administra sem ser ADMIN global (só no /auth/me).
+    admin_workspace_ids: list[uuid.UUID] = []
 
     model_config = {"from_attributes": True}
 

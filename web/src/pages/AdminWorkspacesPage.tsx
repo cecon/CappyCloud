@@ -13,15 +13,18 @@ import {
   updateAdminWorkspace,
 } from '../api'
 import { WorkspaceKnowledgeModal } from '../components/WorkspaceKnowledgeModal'
+import { useAdminWorkspaceIds } from '../hooks/useAdminWorkspaceIds'
 import { EMPTY_FORM, type FormState, formFromWorkspace, linksFromForm } from './admin-workspaces/formState'
 import { WorkspaceFormModal } from './admin-workspaces/WorkspaceFormModal'
 import { WorkspacesTable } from './admin-workspaces/WorkspacesTable'
 
 /**
  * Workspaces: pasta de trabalho numa sandbox que agrupa repositórios do
- * catálogo, com CLAUDE.md próprio. Só o super admin cria e edita.
+ * catálogo, com CLAUDE.md próprio. O super admin cria e edita tudo; o admin de
+ * workspace vê só os dele e muda CLAUDE.md, chamado obrigatório e modo de planejamento.
  */
 export function AdminWorkspacesPage() {
+  const limited = useAdminWorkspaceIds() !== null
   const [workspaces, setWorkspaces] = useState<AdminWorkspace[] | null>(null)
   const [sandboxes, setSandboxes] = useState<Sandbox[]>([])
   const [repositories, setRepositories] = useState<Repository[]>([])
@@ -39,10 +42,11 @@ export function AdminWorkspacesPage() {
     const token = getToken()
     if (!token) return
     try {
+      // Admin de workspace não lê o catálogo de sandboxes e repositórios.
       const [ws, sb, repos] = await Promise.all([
         fetchAdminWorkspaces(token),
-        fetchSandboxes(token),
-        fetchRepositories(token),
+        limited ? Promise.resolve([]) : fetchSandboxes(token),
+        limited ? Promise.resolve([]) : fetchRepositories(token),
       ])
       setWorkspaces(ws)
       setSandboxes(sb)
@@ -51,7 +55,7 @@ export function AdminWorkspacesPage() {
     } catch (err) {
       setLoadError(errorToUserMessage(err))
     }
-  }, [])
+  }, [limited])
 
   useEffect(() => {
     void reload()
@@ -90,7 +94,13 @@ export function AdminWorkspacesPage() {
     setFormError(null)
     try {
       const repositories = linksFromForm(form)
-      if (editing) {
+      if (editing && limited) {
+        await updateAdminWorkspace(token, editing.id, {
+          claude_md: form.claude_md,
+          plan_mode_enabled: form.plan_mode_enabled,
+          require_ticket: form.require_ticket,
+        })
+      } else if (editing) {
         await updateAdminWorkspace(token, editing.id, {
           name: form.name,
           claude_md: form.claude_md,
@@ -144,9 +154,11 @@ export function AdminWorkspacesPage() {
               conversa abre todos os repositórios do workspace.
             </Text>
           </Stack>
-          <Button onClick={openCreate} disabled={sandboxes.length === 0}>
-            Novo workspace
-          </Button>
+          {!limited && (
+            <Button onClick={openCreate} disabled={sandboxes.length === 0}>
+              Novo workspace
+            </Button>
+          )}
         </Group>
 
         {actionError && (
@@ -176,6 +188,7 @@ export function AdminWorkspacesPage() {
               onEdit={openEdit}
               onKnowledge={setKnowledgeOf}
               runAction={(id, action) => void runAction(id, action)}
+              limited={limited}
             />
           )}
         </Paper>
@@ -184,6 +197,7 @@ export function AdminWorkspacesPage() {
       <WorkspaceKnowledgeModal key={knowledgeOf?.id ?? 'none'} workspace={knowledgeOf} onClose={() => setKnowledgeOf(null)} />
 
       <WorkspaceFormModal
+        limited={limited}
         opened={formOpen}
         editing={editing}
         form={form}

@@ -18,15 +18,14 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.primary.http.deps import get_db_session
-from app.adapters.primary.http.deps_auth import require_role
-from app.domain.entities import UserRole
+from app.adapters.primary.http.deps_auth import require_workspace_in_scope
 from app.infrastructure.orm_models import Conversation, Message, User
 from app.infrastructure.orm_models_workspaces import Workspace
 
 router = APIRouter(
     prefix="/admin/workspaces",
     tags=["admin"],
-    dependencies=[Depends(require_role(UserRole.ADMIN))],
+    dependencies=[Depends(require_workspace_in_scope)],
 )
 
 COLUMNS = [

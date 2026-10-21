@@ -14,6 +14,7 @@ import {
   fetchUserRepositoryAccess,
   fetchUserSandboxAccess,
   fetchUserWorkspaceAccess,
+  fetchUserWorkspaceAdminFlags,
   getToken,
   grantUserAiModelAccess,
   grantUserRepositoryAccess,
@@ -27,10 +28,22 @@ import {
   revokeUserSandboxAccess,
   revokeUserWorkspaceAccess,
   type Sandbox,
+  setUserWorkspaceAdmin,
 } from '../api'
 import { AccessAlert, AccessList, BulkButton, ModelLabel, ResourceLabel } from './user-access/AccessParts'
 
-type Props = { user: AdminUser | null; onClose: () => void }
+/**
+ * - `workspace-admin`: só a aba de workspaces, com os workspaces que administra.
+ * - `super-admin`: tudo, mais o interruptor "admin do workspace".
+ */
+type Props = {
+  user: AdminUser | null
+  mode?: 'workspace-admin' | 'admin' | 'super-admin'
+  onClose: () => void
+}
+
+// Os interruptores de admin reaproveitam AccessList; o prefixo evita ids repetidos.
+const ADMIN_PREFIX = 'admin:'
 
 type Pair<T> = { available: T[] | null; allowed: Set<string>; busy: Set<string> }
 
@@ -41,7 +54,9 @@ function countVisibleAllowed<T extends { id: string }>(pair: Pair<T>): number {
   return pair.available.reduce((total, item) => total + (pair.allowed.has(item.id) ? 1 : 0), 0)
 }
 
-export function UserAccessDrawer({ user, onClose }: Props) {
+export function UserAccessDrawer({ user, mode = 'admin', onClose }: Props) {
+  const onlyWorkspaces = mode === 'workspace-admin'
+  const [adminFlags, setAdminFlags] = useState<Pair<AdminWorkspace>>(EMPTY())
   const [sandboxes, setSandboxes] = useState<Pair<Sandbox>>(EMPTY())
   const [repos, setRepos] = useState<Pair<Repository>>(EMPTY())
   const [models, setModels] = useState<Pair<AiModel>>(EMPTY())
@@ -61,6 +76,7 @@ export function UserAccessDrawer({ user, onClose }: Props) {
     setRepos(EMPTY())
     setModels(EMPTY())
     setWorkspaces(EMPTY())
+    setAdminFlags(EMPTY())
     setError(null)
 
     // Workspaces só existem para super admin; 403 aqui não pode derrubar as outras abas.
@@ -69,6 +85,18 @@ export function UserAccessDrawer({ user, onClose }: Props) {
         setWorkspaces({ available: all, allowed: new Set(allowed), busy: new Set() }),
       )
       .catch(() => setWorkspaces({ available: [], allowed: new Set(), busy: new Set() }))
+
+    if (mode === 'super-admin') {
+      void Promise.all([fetchAdminWorkspaces(token), fetchUserWorkspaceAdminFlags(token, user.id)]).then(
+        ([all, flags]) =>
+          setAdminFlags({
+            available: all.map((ws) => ({ ...ws, id: ADMIN_PREFIX + ws.id })),
+            allowed: new Set(flags.map((id) => ADMIN_PREFIX + id)),
+            busy: new Set(),
+          }),
+      )
+    }
+    if (onlyWorkspaces) return
 
     void (async () => {
       try {
@@ -88,7 +116,7 @@ export function UserAccessDrawer({ user, onClose }: Props) {
         setError(errorToUserMessage(err))
       }
     })()
-  }, [user])
+  }, [user, mode, onlyWorkspaces])
 
   async function toggleAccess<T>(
     state: Pair<T>,
@@ -122,6 +150,15 @@ export function UserAccessDrawer({ user, onClose }: Props) {
     }
   }
 
+  // Ligar admin também libera o acesso (a API faz o mesmo).
+  const grantAdmin = async (token: string, userId: string, id: string) => {
+    const wsId = id.slice(ADMIN_PREFIX.length)
+    await setUserWorkspaceAdmin(token, userId, wsId, true)
+    setWorkspaces((prev) => ({ ...prev, allowed: new Set(prev.allowed).add(wsId) }))
+  }
+  const revokeAdmin = (token: string, userId: string, id: string) =>
+    setUserWorkspaceAdmin(token, userId, id.slice(ADMIN_PREFIX.length), false)
+
   async function bulkByTier(tier: ModelTier) {
     if (!user) return
     const token = getToken()
@@ -151,14 +188,16 @@ export function UserAccessDrawer({ user, onClose }: Props) {
             <SheetHeader className="border-b border-border px-6 py-5 pr-12">
               <SheetTitle>Acessos · {user.email}</SheetTitle>
               <SheetDescription>
-                ADMIN vê tudo; USER vê apenas os recursos selecionados aqui.
+                {onlyWorkspaces
+                  ? 'Libere ou tire o acesso aos workspaces que você administra.'
+                  : 'ADMIN vê tudo; USER vê apenas os recursos selecionados aqui.'}
               </SheetDescription>
             </SheetHeader>
 
             <div className="flex-1 space-y-4 px-6 py-5">
               {error && <AccessAlert message={error} onClose={() => setError(null)} />}
-              <Tabs defaultValue="sandboxes" className="space-y-4">
-                <TabsList className="grid w-full grid-cols-4">
+              <Tabs defaultValue={onlyWorkspaces ? 'workspaces' : 'sandboxes'} className="space-y-4">
+                <TabsList className={onlyWorkspaces ? 'hidden' : 'grid w-full grid-cols-4'}>
                   <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
                   <TabsTrigger value="sandboxes">Sandboxes</TabsTrigger>
                   <TabsTrigger value="repos">Repositórios</TabsTrigger>
@@ -175,6 +214,22 @@ export function UserAccessDrawer({ user, onClose }: Props) {
                       toggleAccess(workspaces, setWorkspaces, id, grantUserWorkspaceAccess, revokeUserWorkspaceAccess)
                     }
                   />
+                  {mode === 'super-admin' && (
+                    <div className="mt-5 space-y-2">
+                      <p className="text-sm font-medium">Admin do workspace</p>
+                      <p className="text-xs text-muted-foreground">
+                        Vê conversas e relatórios, gerencia as pessoas e edita o CLAUDE.md só deste
+                        workspace, sem virar ADMIN.
+                      </p>
+                      <AccessList
+                        available={adminFlags.available}
+                        allowed={adminFlags.allowed}
+                        busy={adminFlags.busy}
+                        renderLabel={(w) => <ResourceLabel title={w.name} badge={w.slug} />}
+                        onToggle={(id) => toggleAccess(adminFlags, setAdminFlags, id, grantAdmin, revokeAdmin)}
+                      />
+                    </div>
+                  )}
                 </TabsContent>
 
                 <TabsContent value="sandboxes" className="mt-0">

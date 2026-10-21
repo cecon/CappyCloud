@@ -4,41 +4,30 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import case, desc, func, or_, select
+from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import Select
 
-from app.adapters.primary.http.deps import get_db_session, require_role
-from app.domain.entities import User, UserRole
-from app.infrastructure.orm_models import Conversation, Message, Sandbox
+from app.adapters.primary.http._admin_dashboard_totals import (
+    AdminDashboardTotals,
+    as_float,
+    as_int,
+    conversations_in,
+    dashboard_totals,
+    in_workspace,
+)
+from app.adapters.primary.http.deps import get_db_session
+from app.adapters.primary.http.deps_auth import get_admin_scope
+from app.application.use_cases.admin_scope import AdminScope
+from app.infrastructure.orm_models import Conversation, Message
 from app.infrastructure.orm_models import User as UserORM
-from app.infrastructure.orm_models_execution import AgentTask
 
 router = APIRouter(prefix="/admin/dashboard", tags=["admin"])
 
 COST_PERIOD_DAYS = (7, 15, 30)
-
-
-class AdminDashboardTotals(BaseModel):
-    users: int
-    admins: int
-    conversations: int
-    conversations_24h: int
-    messages: int
-    assistant_messages: int
-    running_tasks: int
-    failed_tasks_24h: int
-    open_pull_requests: int
-    sandboxes: int
-    active_sandboxes: int
-    prompt_tokens: int
-    completion_tokens: int
-    total_cost_usd: float
 
 
 class AdminDashboardConversation(BaseModel):
@@ -74,16 +63,6 @@ class AdminDashboardOut(BaseModel):
     recent_conversations: list[AdminDashboardConversation]
 
 
-def _as_int(value: Any) -> int:
-    return int(value or 0)
-
-
-def _as_float(value: Any) -> float:
-    if isinstance(value, Decimal):
-        return float(value)
-    return float(value or 0)
-
-
 def _preview(content: str | None, max_len: int = 180) -> str | None:
     if not content:
         return None
@@ -93,22 +72,8 @@ def _preview(content: str | None, max_len: int = 180) -> str | None:
     return text[: max_len - 1] + "..." if len(text) > max_len else text
 
 
-async def _scalar_int(session: AsyncSession, stmt: Any) -> int:
-    value = await session.scalar(stmt)
-    return _as_int(value)
-
-
-def _in_workspace(stmt: Select[Any], workspace_id: uuid.UUID | None) -> Select[Any]:
-    """Restringe uma consulta sobre ``Message`` às conversas do workspace."""
-    if workspace_id is None:
-        return stmt
-    return stmt.join(Conversation, Conversation.id == Message.conversation_id).where(
-        Conversation.workspace_id == workspace_id
-    )
-
-
 async def _cost_periods(
-    session: AsyncSession, now: datetime, workspace_id: uuid.UUID | None
+    session: AsyncSession, now: datetime, workspace_id: list[uuid.UUID] | None
 ) -> list[AdminDashboardCostPeriod]:
     """Custo real (``messages.cost_usd``) das janelas de 7, 15 e 30 dias."""
     columns: list[Any] = []
@@ -121,75 +86,17 @@ async def _cost_periods(
             func.count(func.distinct(case((recent, Message.conversation_id)))),
         ]
     stmt = select(*columns).where(Message.created_at >= now - timedelta(days=max(COST_PERIOD_DAYS)))
-    row = (await session.execute(_in_workspace(stmt, workspace_id))).one()
+    row = (await session.execute(in_workspace(stmt, workspace_id))).one()
     return [
         AdminDashboardCostPeriod(
             days=days,
-            cost_usd=_as_float(row[idx * 4]),
-            prompt_tokens=_as_int(row[idx * 4 + 1]),
-            completion_tokens=_as_int(row[idx * 4 + 2]),
-            conversations=_as_int(row[idx * 4 + 3]),
+            cost_usd=as_float(row[idx * 4]),
+            prompt_tokens=as_int(row[idx * 4 + 1]),
+            completion_tokens=as_int(row[idx * 4 + 2]),
+            conversations=as_int(row[idx * 4 + 3]),
         )
         for idx, days in enumerate(COST_PERIOD_DAYS)
     ]
-
-
-async def _dashboard_totals(
-    session: AsyncSession, cutoff_24h: datetime, workspace_id: uuid.UUID | None
-) -> AdminDashboardTotals:
-    usage_stmt = select(
-        func.coalesce(func.sum(Message.prompt_tokens), 0),
-        func.coalesce(func.sum(Message.completion_tokens), 0),
-        func.coalesce(func.sum(Message.cost_usd), 0),
-    )
-    usage = (await session.execute(_in_workspace(usage_stmt, workspace_id))).one()
-
-    return AdminDashboardTotals(
-        users=await _scalar_int(session, select(func.count(UserORM.id))),
-        admins=await _scalar_int(
-            session, select(func.count(UserORM.id)).where(UserORM.role == UserRole.ADMIN.value)
-        ),
-        conversations=await _scalar_int(session, select(func.count(Conversation.id))),
-        conversations_24h=await _scalar_int(
-            session,
-            select(func.count(Conversation.id)).where(Conversation.created_at >= cutoff_24h),
-        ),
-        messages=await _scalar_int(session, select(func.count(Message.id))),
-        assistant_messages=await _scalar_int(
-            session, select(func.count(Message.id)).where(Message.role == "assistant")
-        ),
-        running_tasks=await _scalar_int(
-            session,
-            select(func.count(AgentTask.id)).where(
-                AgentTask.status.in_(("pending", "running", "paused"))
-            ),
-        ),
-        failed_tasks_24h=await _scalar_int(
-            session,
-            select(func.count(AgentTask.id)).where(
-                AgentTask.status == "error", AgentTask.created_at >= cutoff_24h
-            ),
-        ),
-        open_pull_requests=await _scalar_int(
-            session,
-            select(func.count(Conversation.id)).where(
-                Conversation.pr_status.in_(("open", "draft"))
-            ),
-        ),
-        sandboxes=await _scalar_int(session, select(func.count(Sandbox.id))),
-        active_sandboxes=await _scalar_int(
-            session,
-            select(func.count(Sandbox.id)).where(
-                or_(
-                    Sandbox.status == "active",
-                    Sandbox.container_status.in_(("running", "configuring", "configured")),
-                )
-            ),
-        ),
-        prompt_tokens=_as_int(usage[0]),
-        completion_tokens=_as_int(usage[1]),
-        total_cost_usd=_as_float(usage[2]),
-    )
 
 
 async def _last_messages(
@@ -214,7 +121,7 @@ async def _last_messages(
 
 
 async def _recent_conversations(
-    session: AsyncSession, limit: int, workspace_id: uuid.UUID | None
+    session: AsyncSession, limit: int, workspace_id: list[uuid.UUID] | None
 ) -> list[AdminDashboardConversation]:
     stmt = (
         select(
@@ -247,8 +154,7 @@ async def _recent_conversations(
         .order_by(desc(Conversation.updated_at))
         .limit(limit)
     )
-    if workspace_id is not None:
-        stmt = stmt.where(Conversation.workspace_id == workspace_id)
+    stmt = conversations_in(stmt, workspace_id)
     rows = (await session.execute(stmt)).fetchall()
     last_by_conversation = await _last_messages(session, [row.id for row in rows])
     return [
@@ -263,8 +169,8 @@ async def _recent_conversations(
             last_message_at=row.last_message_at,
             last_message_preview=last_by_conversation.get(row.id, (None, None))[0],
             model_used=last_by_conversation.get(row.id, (None, None))[1],
-            message_count=_as_int(row.message_count),
-            cost_usd=_as_float(row.cost_usd),
+            message_count=as_int(row.message_count),
+            cost_usd=as_float(row.cost_usd),
             ci_status=row.ci_status,
             pr_status=row.pr_status,
         )
@@ -274,7 +180,7 @@ async def _recent_conversations(
 
 @router.get("", response_model=AdminDashboardOut)
 async def get_admin_dashboard(
-    _admin: Annotated[User, Depends(require_role(UserRole.ADMIN))],
+    scope: Annotated[AdminScope, Depends(get_admin_scope)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     limit: int = Query(default=12, ge=1, le=50),
     workspace_id: uuid.UUID | None = None,
@@ -282,15 +188,26 @@ async def get_admin_dashboard(
     """Return high-level operational metrics for administrators.
 
     Com ``workspace_id``, tokens, custo (total e por período) e as últimas
-    conversas ficam restritos ao workspace; os contadores operacionais
-    (usuários, sandboxes, execuções) continuam globais.
+    conversas ficam restritos ao workspace; para ADMIN global os contadores
+    operacionais (usuários, sandboxes, execuções) continuam globais. Admin de
+    workspace só vê os workspaces que administra, inclusive nos contadores.
     """
+    if workspace_id is not None and not scope.allows(workspace_id):
+        raise HTTPException(status_code=403, detail="Você não administra este workspace.")
+    if workspace_id is not None:
+        ws_ids: list[uuid.UUID] | None = [workspace_id]
+    elif scope.workspace_ids is not None:
+        ws_ids = sorted(scope.workspace_ids)
+    else:
+        ws_ids = None
     now = datetime.now(UTC)
     cutoff_24h = now - timedelta(hours=24)
     return AdminDashboardOut(
         generated_at=now,
         workspace_id=workspace_id,
-        totals=await _dashboard_totals(session, cutoff_24h, workspace_id),
-        cost_periods=await _cost_periods(session, now, workspace_id),
-        recent_conversations=await _recent_conversations(session, limit, workspace_id),
+        totals=await dashboard_totals(
+            session, cutoff_24h, ws_ids, scoped_counters=not scope.is_global
+        ),
+        cost_periods=await _cost_periods(session, now, ws_ids),
+        recent_conversations=await _recent_conversations(session, limit, ws_ids),
     )

@@ -8,7 +8,7 @@ export type AccessResource = 'sandboxes' | 'repositories' | 'ai-models' | 'works
 async function fetchUserAccess(
   token: string,
   userId: string,
-  resource: AccessResource,
+  resource: AccessResource | 'workspaces/admin-flags',
 ): Promise<string[]> {
   const res = await apiFetch(`/api/admin/users/${userId}/access/${resource}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -70,13 +70,38 @@ export const revokeUserRepositoryAccess = (token: string, userId: string, repoId
 export const revokeUserAiModelAccess = (token: string, userId: string, modelId: string) =>
   revokeUserAccess(token, userId, 'ai-models', modelId)
 
-/** Acesso a workspaces: rotas só para super admin (admin comum recebe 403). */
+/**
+ * Acesso a workspaces: super admin ou admin do workspace (este só vê e muda os
+ * que administra). ADMIN comum recebe 403.
+ */
 export const fetchUserWorkspaceAccess = (token: string, userId: string) =>
   fetchUserAccess(token, userId, 'workspaces')
 export const grantUserWorkspaceAccess = (token: string, userId: string, workspaceId: string) =>
   grantUserAccess(token, userId, 'workspaces', workspaceId)
 export const revokeUserWorkspaceAccess = (token: string, userId: string, workspaceId: string) =>
   revokeUserAccess(token, userId, 'workspaces', workspaceId)
+
+/** Workspaces em que a pessoa é admin (só super admin). */
+export const fetchUserWorkspaceAdminFlags = (token: string, userId: string) =>
+  fetchUserAccess(token, userId, 'workspaces/admin-flags')
+
+/** Liga/desliga o admin do workspace; ligar também libera o acesso (só super admin). */
+export async function setUserWorkspaceAdmin(
+  token: string,
+  userId: string,
+  workspaceId: string,
+  isAdmin: boolean,
+): Promise<void> {
+  const res = await apiFetch(`/api/admin/users/${userId}/access/workspaces/${workspaceId}/admin`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ is_admin: isAdmin }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao mudar o admin do workspace')
+  }
+}
 
 export interface BulkTierResult {
   granted: number

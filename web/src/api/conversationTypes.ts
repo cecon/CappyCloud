@@ -46,6 +46,19 @@ export async function fetchAccessibleWorkspaces(token: string): Promise<Accessib
   return res.json()
 }
 
+/**
+ * Workspaces para os filtros do admin: ADMIN vê todos; admin de workspace só
+ * os que administra (`adminWorkspaceIds`), não os que só usa.
+ */
+export async function fetchAdminFilterWorkspaces(
+  token: string,
+  adminWorkspaceIds: string[] | null,
+): Promise<AccessibleWorkspace[]> {
+  const all = await fetchAccessibleWorkspaces(token)
+  if (!adminWorkspaceIds) return all
+  return all.filter((ws) => adminWorkspaceIds.includes(ws.id))
+}
+
 export type ChatMessage = {
   id: string
   role: string

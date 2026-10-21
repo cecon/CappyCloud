@@ -17,9 +17,19 @@ type Props = {
   onEdit: (ws: AdminWorkspace) => void
   onKnowledge: (ws: AdminWorkspace) => void
   runAction: (id: string, action: (token: string) => Promise<unknown>) => void
+  /** Admin de workspace: sem sincronizar nem remover. */
+  limited?: boolean
 }
 
-export function WorkspacesTable({ workspaces, sandboxName, busyId, onEdit, onKnowledge, runAction }: Props) {
+export function WorkspacesTable({
+  workspaces,
+  sandboxName,
+  busyId,
+  onEdit,
+  onKnowledge,
+  runAction,
+  limited = false,
+}: Props) {
   return (
     <Table verticalSpacing="sm" highlightOnHover>
       <Table.Thead>
@@ -100,26 +110,30 @@ export function WorkspacesTable({ workspaces, sandboxName, busyId, onEdit, onKno
               >
                 <IconFileSpreadsheet size={16} />
               </RowActionIcon>
-              <RowActionIcon
-                label="Sincronizar no sandbox"
-                color="blue"
-                loading={busyId === ws.id}
-                disabled={busyId !== null}
-                onClick={() => runAction(ws.id, (t) => syncAdminWorkspace(t, ws.id))}
-              >
-                <IconRefresh size={16} />
-              </RowActionIcon>
-              <RowActionIcon
-                label="Remover workspace"
-                color="red"
-                disabled={busyId !== null}
-                onClick={() => {
-                  if (!window.confirm(`Remover o workspace ${ws.name}? Os repositórios do catálogo não são afetados.`)) return
-                  runAction(ws.id, (t) => deleteAdminWorkspace(t, ws.id))
-                }}
-              >
-                <IconTrash size={16} />
-              </RowActionIcon>
+              {!limited && (
+                <>
+                  <RowActionIcon
+                    label="Sincronizar no sandbox"
+                    color="blue"
+                    loading={busyId === ws.id}
+                    disabled={busyId !== null}
+                    onClick={() => runAction(ws.id, (t) => syncAdminWorkspace(t, ws.id))}
+                  >
+                    <IconRefresh size={16} />
+                  </RowActionIcon>
+                  <RowActionIcon
+                    label="Remover workspace"
+                    color="red"
+                    disabled={busyId !== null}
+                    onClick={() => {
+                      if (!window.confirm(`Remover o workspace ${ws.name}? Os repositórios do catálogo não são afetados.`)) return
+                      runAction(ws.id, (t) => deleteAdminWorkspace(t, ws.id))
+                    }}
+                  >
+                    <IconTrash size={16} />
+                  </RowActionIcon>
+                </>
+              )}
             </ActionsCell>
           </Table.Tr>
         ))}

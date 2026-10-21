@@ -58,6 +58,7 @@ from .fakes_sandbox import (  # noqa: F401
     InMemorySandboxSkillRepository,
     InMemoryUserMcpServerRepository,
 )
+from .fakes_workspace_admin import InMemoryWorkspaceAdminRepository
 
 # Fakes de workspaces por usuário (``fakes_workspaces.py``).
 from .fakes_workspaces import (
@@ -321,6 +322,11 @@ def msg_repo() -> InMemoryMessageRepository:
 @pytest.fixture
 def user_workspace_repo() -> InMemoryUserWorkspaceRepository:
     return InMemoryUserWorkspaceRepository()
+
+
+@pytest.fixture
+def workspace_admin_repo() -> InMemoryWorkspaceAdminRepository:
+    return InMemoryWorkspaceAdminRepository()
 
 
 @pytest.fixture

@@ -49,6 +49,8 @@ class InvalidReportPeriodError(ValueError):
 class ReportViewer:
     user_id: uuid.UUID
     is_super_admin: bool
+    # Admin de workspace: só os workspaces que administra (None = regra do ADMIN).
+    admin_workspace_ids: frozenset[uuid.UUID] | None = None
 
 
 @dataclass(frozen=True)
@@ -99,6 +101,8 @@ async def visible_workspaces(
     workspaces = await repo.list_workspaces()
     if viewer.is_super_admin:
         return workspaces
+    if viewer.admin_workspace_ids is not None:
+        return [ws for ws in workspaces if ws.id in viewer.admin_workspace_ids]
     allowed = await repo.accessible_workspace_ids(viewer.user_id)
     return [ws for ws in workspaces if ws.id in allowed]
 

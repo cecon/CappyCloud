@@ -1,11 +1,15 @@
 ﻿import { useCallback, useEffect, useState } from 'react'
 import { Alert, Button, Container, Group, Loader, Paper, Stack, Text, Title } from '@/components/ui/legacy'
 import {
+  addWorkspaceMember,
   type AdminUser,
+  type AdminWorkspace,
   errorToUserMessage,
   fetchAdminUsers,
+  fetchAdminWorkspaces,
   fetchCurrentUser,
   getToken,
+  isWorkspaceAdmin,
   registerRequest,
   resetAdminUserPassword,
   updateAdminUserRole,
@@ -21,6 +25,9 @@ export function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUser[] | null>(null)
   const [meId, setMeId] = useState<string | null>(null)
   const [meIsSuperAdmin, setMeIsSuperAdmin] = useState(false)
+  // Admin de workspace: os workspaces que administra (null = ADMIN global).
+  const [myWorkspaces, setMyWorkspaces] = useState<AdminWorkspace[] | null>(null)
+  const meIsWorkspaceAdmin = myWorkspaces !== null
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -40,6 +47,7 @@ export function AdminUsersPage() {
       const [me, list] = await Promise.all([fetchCurrentUser(token), fetchAdminUsers(token)])
       setMeId(me.id)
       setMeIsSuperAdmin(Boolean(me.is_super_admin))
+      setMyWorkspaces(isWorkspaceAdmin(me) ? await fetchAdminWorkspaces(token) : null)
       setUsers(list)
       setLoadError(null)
     } catch (err) {
@@ -63,10 +71,18 @@ export function AdminUsersPage() {
       setFormError('A password deve ter pelo menos 8 caracteres.')
       return
     }
+    if (meIsWorkspaceAdmin && !form.workspaceId) {
+      setFormError('Escolha o workspace.')
+      return
+    }
     setCreating(true)
     setFormError(null)
     try {
-      await registerRequest(token, email, form.password, form.role, form.mustChangePassword)
+      if (meIsWorkspaceAdmin) {
+        await addWorkspaceMember(token, { email, password: form.password, workspace_id: form.workspaceId })
+      } else {
+        await registerRequest(token, email, form.password, form.role, form.mustChangePassword)
+      }
       setForm(EMPTY_FORM)
       setCreateOpen(false)
       await reload()
@@ -127,17 +143,19 @@ A senha volta para a temporária padrão, vale por 24 horas e a pessoa terá que
           <Stack gap={4}>
             <Title order={2}>Usuários</Title>
             <Text c="dimmed" size="sm">
-              Cadastro de utilizadores da plataforma. Apenas ADMINs criam, promovem e rebaixam contas.
+              {meIsWorkspaceAdmin
+                ? 'Pessoas dos workspaces que você administra: inclua, libere ou tire acesso e redefina senhas.'
+                : 'Cadastro de utilizadores da plataforma. Apenas ADMINs criam, promovem e rebaixam contas.'}
             </Text>
           </Stack>
           <Button
             onClick={() => {
-              setForm(EMPTY_FORM)
+              setForm({ ...EMPTY_FORM, workspaceId: myWorkspaces?.[0]?.id ?? '' })
               setFormError(null)
               setCreateOpen(true)
             }}
           >
-            Novo utilizador
+            {meIsWorkspaceAdmin ? 'Incluir pessoa' : 'Novo utilizador'}
           </Button>
         </Group>
 
@@ -170,6 +188,7 @@ A senha volta para a temporária padrão, vale por 24 horas e a pessoa terá que
               users={users}
               meId={meId}
               meIsSuperAdmin={meIsSuperAdmin}
+              meIsWorkspaceAdmin={meIsWorkspaceAdmin}
               pendingRoleChange={pendingRoleChange}
               onAccess={setAccessTarget}
               onChangeRole={(u, role) => void changeRole(u, role)}
@@ -180,6 +199,7 @@ A senha volta para a temporária padrão, vale por 24 horas e a pessoa terá que
       </Stack>
 
       <CreateUserModal
+        workspaces={myWorkspaces}
         opened={createOpen}
         form={form}
         setForm={setForm}
@@ -189,7 +209,14 @@ A senha volta para a temporária padrão, vale por 24 horas e a pessoa terá que
         onCreate={() => void handleCreate()}
       />
 
-      <UserAccessDrawer user={accessTarget} onClose={() => setAccessTarget(null)} />
+      <UserAccessDrawer
+        user={accessTarget}
+        mode={meIsWorkspaceAdmin ? 'workspace-admin' : meIsSuperAdmin ? 'super-admin' : 'admin'}
+        onClose={() => {
+          setAccessTarget(null)
+          void reload()
+        }}
+      />
     </Container>
   )
 }

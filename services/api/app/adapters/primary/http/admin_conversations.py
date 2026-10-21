@@ -17,19 +17,18 @@ from pydantic import BaseModel
 from sqlalchemy import case, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.primary.http.deps import get_db_session, require_role
-from app.domain.entities import UserRole
+from app.adapters.primary.http.deps import get_db_session
+from app.adapters.primary.http.deps_auth import get_admin_scope
+from app.application.use_cases.admin_scope import AdminScope
 from app.infrastructure.orm_models import Conversation, Message
 from app.infrastructure.orm_models import User as UserORM
 from app.infrastructure.orm_models_workspaces import Workspace
 
-router = APIRouter(
-    prefix="/admin/conversations",
-    tags=["admin"],
-    dependencies=[Depends(require_role(UserRole.ADMIN))],
-)
+router = APIRouter(prefix="/admin/conversations", tags=["admin"])
 
 Session = Annotated[AsyncSession, Depends(get_db_session)]
+# Admin de workspace só vê conversas dos workspaces que administra.
+Scope = Annotated[AdminScope, Depends(get_admin_scope)]
 
 
 class AdminConversationItem(BaseModel):
@@ -113,6 +112,7 @@ def _item(row) -> dict:
 @router.get("", response_model=AdminConversationPage)
 async def list_conversations(
     session: Session,
+    scope: Scope,
     q: str = Query(default="", max_length=200),
     workspace_id: uuid.UUID | None = None,
     limit: int = Query(default=50, ge=1, le=200),
@@ -131,7 +131,11 @@ async def list_conversations(
             )
         )
     if workspace_id:
+        if not scope.allows(workspace_id):
+            raise HTTPException(status_code=403, detail="Você não administra este workspace.")
         query = query.where(Conversation.workspace_id == workspace_id)
+    elif scope.workspace_ids is not None:
+        query = query.where(Conversation.workspace_id.in_(scope.workspace_ids))
     total = await session.scalar(select(func.count()).select_from(query.subquery()))
     rows = (
         await session.execute(
@@ -146,11 +150,15 @@ async def list_conversations(
 
 
 @router.get("/{conversation_id}", response_model=AdminConversationDetail)
-async def get_conversation(conversation_id: uuid.UUID, session: Session) -> AdminConversationDetail:
+async def get_conversation(
+    conversation_id: uuid.UUID, session: Session, scope: Scope
+) -> AdminConversationDetail:
     usage = _usage()
     row = (await session.execute(_query(usage).where(Conversation.id == conversation_id))).first()
     if row is None:
         raise HTTPException(status_code=404, detail="Conversa não encontrada.")
+    if not scope.allows(row[0].workspace_id):
+        raise HTTPException(status_code=403, detail="Você não administra este workspace.")
     messages = (
         await session.execute(
             select(Message)

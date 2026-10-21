@@ -16,6 +16,8 @@ import type { AdminWorkspace, Repository, Sandbox } from '../../api'
 import type { FormState, RepoChoice } from './formState'
 
 type Props = {
+  /** Admin de workspace: só CLAUDE.md, chamado obrigatório e modo de planejamento. */
+  limited?: boolean
   opened: boolean
   editing: AdminWorkspace | null
   form: FormState
@@ -30,6 +32,7 @@ type Props = {
 
 export function WorkspaceFormModal({
   opened,
+  limited = false,
   editing,
   form,
   setForm,
@@ -67,76 +70,80 @@ export function WorkspaceFormModal({
             {formError}
           </Alert>
         )}
-        <Group grow>
-          <TextInput
-            label="Nome"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.currentTarget.value })}
-            required
-          />
-          <TextInput
-            label="Slug"
-            description="Minúsculas, números e hífen. Vira a pasta no sandbox."
-            value={form.slug}
-            disabled={!!editing}
-            onChange={(e) => setForm({ ...form, slug: e.currentTarget.value.toLowerCase() })}
-            required
-          />
-        </Group>
-        <Select
-          label="Sandbox"
-          description={editing ? 'Não muda depois de criado.' : 'Só repositórios desta sandbox podem entrar.'}
-          data={sandboxes.map((sandbox) => ({ value: sandbox.id, label: sandbox.name }))}
-          value={form.sandbox_id}
-          disabled={!!editing}
-          onChange={(value) => setForm({ ...form, sandbox_id: value ?? '', repos: {} })}
-          allowDeselect={false}
-        />
+        {!limited && (
+          <>
+            <Group grow>
+              <TextInput
+                label="Nome"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.currentTarget.value })}
+                required
+              />
+              <TextInput
+                label="Slug"
+                description="Minúsculas, números e hífen. Vira a pasta no sandbox."
+                value={form.slug}
+                disabled={!!editing}
+                onChange={(e) => setForm({ ...form, slug: e.currentTarget.value.toLowerCase() })}
+                required
+              />
+            </Group>
+            <Select
+              label="Sandbox"
+              description={editing ? 'Não muda depois de criado.' : 'Só repositórios desta sandbox podem entrar.'}
+              data={sandboxes.map((sandbox) => ({ value: sandbox.id, label: sandbox.name }))}
+              value={form.sandbox_id}
+              disabled={!!editing}
+              onChange={(value) => setForm({ ...form, sandbox_id: value ?? '', repos: {} })}
+              allowDeselect={false}
+            />
 
-        <Stack gap="xs">
-          <Text fw={600} size="sm">
-            Repositórios
-          </Text>
-          {sandboxRepos.length === 0 ? (
-            <Text size="sm" c="dimmed">
-              Nenhum repositório cadastrado nesta sandbox.
-            </Text>
-          ) : (
-            sandboxRepos.map((repo) => {
-              const choice = form.repos[repo.id]
-              return (
-                <Group key={repo.id} gap="sm" wrap="nowrap">
-                  <Checkbox
-                    checked={!!choice?.selected}
-                    onChange={(e) => updateRepo(repo.id, { selected: e.currentTarget.checked }, repo.slug)}
-                    label={`${repo.name} (${repo.slug})`}
-                  />
-                  {choice?.selected && (
-                    <>
-                      <TextInput
-                        aria-label={`Alias de ${repo.slug}`}
-                        placeholder={`alias (${repo.slug})`}
-                        value={choice.alias}
-                        onChange={(e) => updateRepo(repo.id, { alias: e.currentTarget.value }, repo.slug)}
-                      />
-                      <TextInput
-                        aria-label={`Branch base de ${repo.slug}`}
-                        placeholder={`branch (${repo.default_branch})`}
-                        value={choice.base_branch}
-                        onChange={(e) => updateRepo(repo.id, { base_branch: e.currentTarget.value }, repo.slug)}
-                      />
+            <Stack gap="xs">
+              <Text fw={600} size="sm">
+                Repositórios
+              </Text>
+              {sandboxRepos.length === 0 ? (
+                <Text size="sm" c="dimmed">
+                  Nenhum repositório cadastrado nesta sandbox.
+                </Text>
+              ) : (
+                sandboxRepos.map((repo) => {
+                  const choice = form.repos[repo.id]
+                  return (
+                    <Group key={repo.id} gap="sm" wrap="nowrap">
                       <Checkbox
-                        label="Somente leitura (sem edição nem PR)"
-                        checked={choice.read_only}
-                        onChange={(e) => updateRepo(repo.id, { read_only: e.currentTarget.checked }, repo.slug)}
+                        checked={!!choice?.selected}
+                        onChange={(e) => updateRepo(repo.id, { selected: e.currentTarget.checked }, repo.slug)}
+                        label={`${repo.name} (${repo.slug})`}
                       />
-                    </>
-                  )}
-                </Group>
-              )
-            })
-          )}
-        </Stack>
+                      {choice?.selected && (
+                        <>
+                          <TextInput
+                            aria-label={`Alias de ${repo.slug}`}
+                            placeholder={`alias (${repo.slug})`}
+                            value={choice.alias}
+                            onChange={(e) => updateRepo(repo.id, { alias: e.currentTarget.value }, repo.slug)}
+                          />
+                          <TextInput
+                            aria-label={`Branch base de ${repo.slug}`}
+                            placeholder={`branch (${repo.default_branch})`}
+                            value={choice.base_branch}
+                            onChange={(e) => updateRepo(repo.id, { base_branch: e.currentTarget.value }, repo.slug)}
+                          />
+                          <Checkbox
+                            label="Somente leitura (sem edição nem PR)"
+                            checked={choice.read_only}
+                            onChange={(e) => updateRepo(repo.id, { read_only: e.currentTarget.checked }, repo.slug)}
+                          />
+                        </>
+                      )}
+                    </Group>
+                  )
+                })
+              )}
+            </Stack>
+          </>
+        )}
 
         <Stack gap={4}>
           <Switch

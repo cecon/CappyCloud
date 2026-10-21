@@ -90,11 +90,29 @@ function AuthenticatedBarePage({ children }: { children: ReactNode }) {
   return token ? <>{children}</> : <Navigate to="/login" replace />
 }
 
-function AdminPage({ children }: { children: ReactNode }) {
+function AdminPage({
+  children,
+  workspaceAdmin = false,
+}: {
+  children: ReactNode
+  /** Admin de workspace também acessa (dados limitados ao workspace dele). */
+  workspaceAdmin?: boolean
+}) {
   return (
     <ProtectedPage>
-      <RequireAdmin>
+      <RequireAdmin allowWorkspaceAdmin={workspaceAdmin}>
         <AdminOverlayRouter>{children}</AdminOverlayRouter>
+      </RequireAdmin>
+    </ProtectedPage>
+  )
+}
+
+/** Workspaces: super admin ou admin de workspace (ADMIN comum não). */
+function WorkspaceManagerPage({ children }: { children: ReactNode }) {
+  return (
+    <ProtectedPage>
+      <RequireAdmin allowWorkspaceAdmin superAdminOnly>
+        {children}
       </RequireAdmin>
     </ProtectedPage>
   )
@@ -182,7 +200,7 @@ export default function App() {
         <Route
           path="/admin"
           element={
-            <AdminPage>
+            <AdminPage workspaceAdmin>
               <AdminDashboardPage />
             </AdminPage>
           }
@@ -190,7 +208,7 @@ export default function App() {
         <Route
           path="/admin/conversations"
           element={
-            <AdminPage>
+            <AdminPage workspaceAdmin>
               <AdminConversationsPage />
             </AdminPage>
           }
@@ -198,7 +216,7 @@ export default function App() {
         <Route
           path="/admin/reports"
           element={
-            <AdminPage>
+            <AdminPage workspaceAdmin>
               <AdminReportsPage />
             </AdminPage>
           }
@@ -207,7 +225,7 @@ export default function App() {
           path="/admin/reports/print"
           element={
             <AuthenticatedBarePage>
-              <RequireAdmin>
+              <RequireAdmin allowWorkspaceAdmin>
                 <AdminReportPrintPage />
               </RequireAdmin>
             </AuthenticatedBarePage>
@@ -216,7 +234,7 @@ export default function App() {
         <Route
           path="/admin/users"
           element={
-            <AdminPage>
+            <AdminPage workspaceAdmin>
               <AdminUsersPage />
             </AdminPage>
           }
@@ -232,9 +250,9 @@ export default function App() {
         <Route
           path="/admin/workspaces"
           element={
-            <SuperAdminPage>
+            <WorkspaceManagerPage>
               <AdminWorkspacesPage />
-            </SuperAdminPage>
+            </WorkspaceManagerPage>
           }
         />
         <Route

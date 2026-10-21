@@ -14,6 +14,8 @@ type Props = {
   users: AdminUser[]
   meId: string | null
   meIsSuperAdmin: boolean
+  /** Admin de workspace: sem mudar papel; senha só de USER dos workspaces dele. */
+  meIsWorkspaceAdmin?: boolean
   pendingRoleChange: string | null
   onAccess: (user: AdminUser) => void
   onChangeRole: (user: AdminUser, role: UserRole) => void
@@ -24,6 +26,7 @@ export function UsersTable({
   users,
   meId,
   meIsSuperAdmin,
+  meIsWorkspaceAdmin = false,
   pendingRoleChange,
   onAccess,
   onChangeRole,
@@ -99,26 +102,30 @@ export function UsersTable({
                     </ActionIcon>
                   </Menu.Target>
                   <Menu.Dropdown>
-                    <Menu.Item
-                      disabled={u.role === 'admin'}
-                      leftSection={<IconShieldUp size={14} />}
-                      onClick={() => onChangeRole(u, 'admin')}
-                    >
-                      Promover a ADMIN
-                    </Menu.Item>
-                    <Menu.Item
-                      disabled={u.role === 'user' || isSelf}
-                      leftSection={<IconShieldDown size={14} />}
-                      onClick={() => onChangeRole(u, 'user')}
-                    >
-                      Rebaixar para USER
-                      {isSelf && (
-                        <Text size="xs" c="dimmed">
-                          bloqueado: você mesmo
-                        </Text>
-                      )}
-                    </Menu.Item>
-                    {meIsSuperAdmin && !isSelf && (
+                    {!meIsWorkspaceAdmin && (
+                      <>
+                        <Menu.Item
+                          disabled={u.role === 'admin'}
+                          leftSection={<IconShieldUp size={14} />}
+                          onClick={() => onChangeRole(u, 'admin')}
+                        >
+                          Promover a ADMIN
+                        </Menu.Item>
+                        <Menu.Item
+                          disabled={u.role === 'user' || isSelf}
+                          leftSection={<IconShieldDown size={14} />}
+                          onClick={() => onChangeRole(u, 'user')}
+                        >
+                          Rebaixar para USER
+                          {isSelf && (
+                            <Text size="xs" c="dimmed">
+                              bloqueado: você mesmo
+                            </Text>
+                          )}
+                        </Menu.Item>
+                      </>
+                    )}
+                    {(meIsSuperAdmin || (meIsWorkspaceAdmin && u.role === 'user')) && !isSelf && (
                       <Menu.Item leftSection={<IconLockOpen size={14} />} onClick={() => onResetPassword(u)}>
                         Redefinir senha
                       </Menu.Item>
