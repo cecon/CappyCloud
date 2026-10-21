@@ -12,6 +12,7 @@ from app.application.use_cases._payload_diagnostics import sanitize_payload_diag
 from app.application.use_cases._stream_helpers import (
     command_result_payload,
     command_start_payload,
+    optional_tokens,
 )
 from app.application.use_cases.user_workspaces import (
     EnsureUserRepositoryWorkspace,
@@ -85,6 +86,8 @@ async def save_assistant_message(
                 prompt_tokens=int(usage.get("prompt_tokens") or 0),
                 completion_tokens=int(usage.get("completion_tokens") or 0),
                 cost_usd=cost_usd,
+                cache_read_tokens=usage.get("cache_read_tokens"),
+                cache_write_tokens=usage.get("cache_write_tokens"),
                 payload_diagnostics=state.latest_payload_diagnostics,
                 plan_usage=usage.get("plan_usage") or None,
             )
@@ -119,6 +122,8 @@ def done_usage(evt: dict, model_used: str) -> dict:
         "completion_tokens": int(evt.get("completion_tokens") or 0),
         "plan_usage": (evt["plan_usage"] if isinstance(evt.get("plan_usage"), dict) else None),
         "cost_usd": evt.get("cost_usd"),
+        "cache_read_tokens": optional_tokens(evt.get("cache_read_tokens")),
+        "cache_write_tokens": optional_tokens(evt.get("cache_write_tokens")),
     }
 
 
