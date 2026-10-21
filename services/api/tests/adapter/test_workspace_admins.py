@@ -192,11 +192,13 @@ async def test_acessos_e_flag_de_admin(factory: Factory) -> None:
             base.format(user=ids["ana"], ws=ids["proteus"]) + "/admin", json={"is_admin": True}
         )
         listed = (await h.get(f"/api/admin/users/{ids['bia']}/access/workspaces")).json()
-    async with _client(factory, ids, "super") as h:
+    # ADMIN global comum (não super) também libera acessos e promove admin de workspace.
+    async with _client(factory, ids, "adm") as h:
         promoted = await h.put(
             base.format(user=ids["ana"], ws=ids["proteus"]) + "/admin", json={"is_admin": True}
         )
         flags = (await h.get(f"/api/admin/users/{ids['ana']}/access/workspaces/admin-flags")).json()
+        adm_grant = await h.post(base.format(user=ids["bia"], ws=ids["outro"]))
     async with _client(factory, ids, "rodolfo") as h:
         revoke_admin = await h.delete(base.format(user=ids["ana"], ws=ids["proteus"]))
         revoke_member = await h.delete(base.format(user=ids["bia"], ws=ids["proteus"]))
@@ -204,6 +206,7 @@ async def test_acessos_e_flag_de_admin(factory: Factory) -> None:
     assert grant.status_code == 204 and listed == [str(ids["proteus"])]
     assert grant_other.status_code == promote.status_code == 403
     assert promoted.status_code == 204 and flags == [str(ids["proteus"])]
+    assert adm_grant.status_code == 204
     assert revoke_admin.status_code == 403
     assert revoke_member.status_code == 204
 
@@ -220,8 +223,10 @@ async def test_workspaces_edicao_restrita(factory: Factory) -> None:
         other = await h.patch(f"/api/admin/workspaces/{ids['outro']}", json={"claude_md": "x"})
         delete = await h.delete(f"/api/admin/workspaces/{ids['proteus']}")
     async with _client(factory, ids, "adm") as h:
-        adm_list = await h.get("/api/admin/workspaces")
+        adm_list = [w["slug"] for w in (await h.get("/api/admin/workspaces")).json()]
+        adm_patch = await h.patch(f"/api/admin/workspaces/{ids['outro']}", json={"claude_md": "x"})
 
     assert listed == ["proteus"]
     assert claude.status_code == 200 and claude.json()["claude_md"] == "# Regras"
-    assert {r.status_code for r in (rename, other, delete, adm_list)} == {403}
+    assert {r.status_code for r in (rename, other, delete, adm_patch)} == {403}
+    assert adm_list == ["outro", "proteus"]  # ADMIN comum lê a lista, mas não edita

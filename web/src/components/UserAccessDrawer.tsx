@@ -34,11 +34,11 @@ import { AccessAlert, AccessList, BulkButton, ModelLabel, ResourceLabel } from '
 
 /**
  * - `workspace-admin`: só a aba de workspaces, com os workspaces que administra.
- * - `super-admin`: tudo, mais o interruptor "admin do workspace".
+ * - `admin` (ADMIN global, inclui super admin): tudo, mais o interruptor "admin do workspace".
  */
 type Props = {
   user: AdminUser | null
-  mode?: 'workspace-admin' | 'admin' | 'super-admin'
+  mode?: 'workspace-admin' | 'admin'
   onClose: () => void
 }
 
@@ -86,7 +86,7 @@ export function UserAccessDrawer({ user, mode = 'admin', onClose }: Props) {
       )
       .catch(() => setWorkspaces({ available: [], allowed: new Set(), busy: new Set() }))
 
-    if (mode === 'super-admin') {
+    if (!onlyWorkspaces) {
       void Promise.all([fetchAdminWorkspaces(token), fetchUserWorkspaceAdminFlags(token, user.id)]).then(
         ([all, flags]) =>
           setAdminFlags({
@@ -214,7 +214,7 @@ export function UserAccessDrawer({ user, mode = 'admin', onClose }: Props) {
                       toggleAccess(workspaces, setWorkspaces, id, grantUserWorkspaceAccess, revokeUserWorkspaceAccess)
                     }
                   />
-                  {mode === 'super-admin' && (
+                  {!onlyWorkspaces && (
                     <div className="mt-5 space-y-2">
                       <p className="text-sm font-medium">Admin do workspace</p>
                       <p className="text-xs text-muted-foreground">

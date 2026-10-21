@@ -2,7 +2,7 @@
 
 Super admin cria, edita, sincroniza e exclui. Admin de workspace vê só os que
 administra e, neles, muda apenas CLAUDE.md, chamado obrigatório e modo de
-planejamento.
+planejamento. ADMIN global comum só lê a lista (para liberar acessos).
 
 Um workspace agrupa repositórios do catálogo numa sandbox. Cada alteração
 enfileira ``sync_workspace`` no ``sandbox_sync_queue``; o watchdog materializa
@@ -20,7 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.adapters.primary.http.deps import get_db_session
-from app.adapters.primary.http.deps_auth import get_workspace_manager_scope, require_super_admin
+from app.adapters.primary.http.deps_auth import (
+    get_admin_scope,
+    get_workspace_manager_scope,
+    require_super_admin,
+)
 from app.application.use_cases.admin_scope import AdminScope
 from app.infrastructure.orm_models import Repository, Sandbox, SandboxSyncQueue
 from app.infrastructure.orm_models_workspaces import Workspace, WorkspaceRepository
@@ -41,6 +45,8 @@ WORKSPACE_ADMIN_FIELDS = {"claude_md", "plan_mode_enabled", "require_ticket"}
 
 
 Manager = Annotated[AdminScope, Depends(get_workspace_manager_scope)]
+# Ler a lista: qualquer admin (ADMIN global precisa dela para liberar acessos).
+Reader = Annotated[AdminScope, Depends(get_admin_scope)]
 
 
 def _ensure_in_scope(scope: AdminScope, workspace_id: uuid.UUID) -> None:
@@ -159,7 +165,7 @@ async def _enqueue_sync(session: AsyncSession, ws: Workspace) -> None:
 
 
 @router.get("", response_model=list[WorkspaceOut])
-async def list_workspaces(session: Session, scope: Manager) -> list[WorkspaceOut]:
+async def list_workspaces(session: Session, scope: Reader) -> list[WorkspaceOut]:
     stmt = (
         select(Workspace)
         .options(selectinload(Workspace.repositories).selectinload(WorkspaceRepository.repository))
@@ -171,7 +177,7 @@ async def list_workspaces(session: Session, scope: Manager) -> list[WorkspaceOut
 
 
 @router.get("/{workspace_id}", response_model=WorkspaceOut)
-async def get_workspace(workspace_id: uuid.UUID, session: Session, scope: Manager) -> WorkspaceOut:
+async def get_workspace(workspace_id: uuid.UUID, session: Session, scope: Reader) -> WorkspaceOut:
     _ensure_in_scope(scope, workspace_id)
     return _serialize(await _load(session, workspace_id))
 

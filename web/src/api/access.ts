@@ -71,8 +71,8 @@ export const revokeUserAiModelAccess = (token: string, userId: string, modelId: 
   revokeUserAccess(token, userId, 'ai-models', modelId)
 
 /**
- * Acesso a workspaces: super admin ou admin do workspace (este só vê e muda os
- * que administra). ADMIN comum recebe 403.
+ * Acesso a workspaces: ADMIN global ou admin do workspace (este só vê e muda os
+ * que administra).
  */
 export const fetchUserWorkspaceAccess = (token: string, userId: string) =>
   fetchUserAccess(token, userId, 'workspaces')
@@ -81,11 +81,11 @@ export const grantUserWorkspaceAccess = (token: string, userId: string, workspac
 export const revokeUserWorkspaceAccess = (token: string, userId: string, workspaceId: string) =>
   revokeUserAccess(token, userId, 'workspaces', workspaceId)
 
-/** Workspaces em que a pessoa é admin (só super admin). */
+/** Workspaces em que a pessoa é admin (ADMIN global). */
 export const fetchUserWorkspaceAdminFlags = (token: string, userId: string) =>
   fetchUserAccess(token, userId, 'workspaces/admin-flags')
 
-/** Liga/desliga o admin do workspace; ligar também libera o acesso (só super admin). */
+/** Liga/desliga o admin do workspace; ligar também libera o acesso (ADMIN global). */
 export async function setUserWorkspaceAdmin(
   token: string,
   userId: string,
