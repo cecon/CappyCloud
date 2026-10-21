@@ -78,8 +78,8 @@ ENV NODE_PATH="/usr/local/lib/node_modules"
 # as credenciais ficam em CLAUDE_CONFIG_DIR, montado como volume persistente.
 # IS_SANDBOX=1 permite bypassPermissions rodando como root.
 RUN npm install -g \
-        @anthropic-ai/claude-code@2.1.281 \
-        @anthropic-ai/claude-agent-sdk@0.3.281 \
+        @anthropic-ai/claude-code@2.1.296 \
+        @anthropic-ai/claude-agent-sdk@0.3.296 \
     && npm cache clean --force
 ENV CLAUDE_CONFIG_DIR="/root/.claude" \
     IS_SANDBOX="1" \
