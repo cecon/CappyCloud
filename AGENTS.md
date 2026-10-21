@@ -90,5 +90,5 @@ Nao inclua artefatos temporarios, backups locais, dumps de webview ou arquivos
 grandes que nao sejam parte intencional do produto.
 
 <!-- SPECKIT START -->
-Current Spec Kit plan: [specs/011-workspace-report-dashboard/plan.md](specs/011-workspace-report-dashboard/plan.md)
+Current Spec Kit plan: [specs/013-c3theme-frontend/plan.md](specs/013-c3theme-frontend/plan.md)
 <!-- SPECKIT END -->

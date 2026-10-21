@@ -4,8 +4,30 @@
     {
       "name": "web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["-C", "web", "exec", "vite", "--host", "--port", "5174"],
+      "runtimeArgs": [
+        "-C",
+        "web",
+        "exec",
+        "vite",
+        "--host",
+        "--port",
+        "5174"
+      ],
       "port": 5174
+    },
+    {
+      "name": "web-c3",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "-C",
+        "web-c3",
+        "exec",
+        "vite",
+        "--host",
+        "--port",
+        "5175"
+      ],
+      "port": 5175
     }
   ]
 }
