@@ -23,7 +23,6 @@ _MUTATIONS = [
     ("post", "/api/git-providers", {"name": "p", "provider_type": "github", "token": "t"}),
     ("patch", f"/api/git-providers/{_PROVIDER_ID}/token", {"token": "t"}),
     ("delete", f"/api/git-providers/{_PROVIDER_ID}", None),
-    ("get", "/api/admin/workspaces", None),
     (
         "post",
         "/api/admin/workspaces",
@@ -31,9 +30,13 @@ _MUTATIONS = [
     ),
     ("patch", f"/api/admin/workspaces/{_REPO_ID}", {"name": "x"}),
     ("delete", f"/api/admin/workspaces/{_REPO_ID}", None),
-    ("post", f"/api/admin/users/{_REPO_ID}/access/workspaces/{_REPO_ID}", None),
     ("get", f"/api/admin/workspaces/{_REPO_ID}/knowledge", None),
     ("post", f"/api/admin/workspaces/{_REPO_ID}/knowledge/build", None),
+]
+# ADMIN global comum lê os workspaces e libera acesso a eles; USER comum não.
+_ADMIN_ALLOWED = [
+    ("get", "/api/admin/workspaces", None),
+    ("post", f"/api/admin/users/{_REPO_ID}/access/workspaces/{_REPO_ID}", None),
 ]
 
 
@@ -53,7 +56,7 @@ async def test_admin_sem_super_admin_recebe_403(
     assert "super admin" in r.json()["detail"]
 
 
-@pytest.mark.parametrize(("method", "url", "body"), _MUTATIONS)
+@pytest.mark.parametrize(("method", "url", "body"), _MUTATIONS + _ADMIN_ALLOWED)
 async def test_usuario_comum_recebe_403(
     client: AsyncClient,
     user_headers: dict[str, str],

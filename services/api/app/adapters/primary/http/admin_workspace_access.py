@@ -1,13 +1,14 @@
 """Acesso de usuários a workspaces.
 
   GET    /admin/users/{user_id}/access/workspaces                     → workspaces liberados
-  GET    /admin/users/{user_id}/access/workspaces/admin-flags         → onde é admin (super admin)
+  GET    /admin/users/{user_id}/access/workspaces/admin-flags         → onde é admin (ADMIN)
   POST   /admin/users/{user_id}/access/workspaces/{workspace_id}      → libera
   DELETE /admin/users/{user_id}/access/workspaces/{workspace_id}      → revoga
   PUT    /admin/users/{user_id}/access/workspaces/{workspace_id}/admin → liga/desliga admin
 
-Super admin mexe em tudo. Admin de workspace só nos workspaces que administra e
-só em USER comum; promover a admin de workspace é só do super admin.
+ADMIN global (inclui super admin) mexe em tudo, inclusive em quem é admin de
+workspace. Admin de workspace só nos workspaces que administra e só em USER
+comum; promover a admin de workspace é só do ADMIN global.
 """
 
 from __future__ import annotations
@@ -22,22 +23,23 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.primary.http.deps import get_db_session, get_user_repo
-from app.adapters.primary.http.deps_auth import get_workspace_manager_scope, require_super_admin
+from app.adapters.primary.http.deps_auth import get_admin_scope, require_role
 from app.application.use_cases.admin_scope import (
     AdminScope,
     AdminScopeDeniedError,
     ensure_can_grant,
     ensure_can_revoke,
 )
-from app.domain.entities import User
+from app.domain.entities import User, UserRole
 from app.infrastructure.orm_models_workspaces import UserWorkspaceAccess
 from app.ports.repositories import UserRepository
 
 router = APIRouter(prefix="/admin/users/{user_id}/access/workspaces", tags=["admin"])
 
 Session = Annotated[AsyncSession, Depends(get_db_session)]
-# Super admin ou admin de workspace; ADMIN global comum nunca geriu workspaces.
-Scope = Annotated[AdminScope, Depends(get_workspace_manager_scope)]
+# ADMIN global ou admin de workspace (este limitado aos workspaces que administra).
+Scope = Annotated[AdminScope, Depends(get_admin_scope)]
+GlobalAdmin = [Depends(require_role(UserRole.ADMIN))]
 Users = Annotated[UserRepository, Depends(get_user_repo)]
 
 
@@ -82,7 +84,7 @@ async def list_workspace_access(
 @router.get(
     "/admin-flags",
     response_model=list[uuid.UUID],
-    dependencies=[Depends(require_super_admin)],
+    dependencies=GlobalAdmin,
 )
 async def list_workspace_admin_flags(user_id: uuid.UUID, session: Session) -> list[uuid.UUID]:
     rows = await session.execute(
@@ -128,7 +130,7 @@ async def revoke_workspace_access(
 @router.put(
     "/{workspace_id}/admin",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=GlobalAdmin,
 )
 async def set_workspace_admin(
     user_id: uuid.UUID,

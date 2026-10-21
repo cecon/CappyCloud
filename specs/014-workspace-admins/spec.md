@@ -19,7 +19,7 @@ O super admin abre Admin → Usuários → Acessos → Workspaces e, além de li
 
 1. **Given** um USER com acesso ao PROTHEUS, **When** o super admin liga "admin" no PROTHEUS, **Then** o usuário vira admin só do PROTHEUS.
 2. **Given** um USER sem acesso ao workspace, **When** o super admin liga "admin", **Then** o acesso é concedido junto.
-3. **Given** um admin de workspace, **When** ele tenta ligar "admin" para outra pessoa, **Then** recebe 403 (só o super admin promove).
+3. **Given** um admin de workspace, **When** ele tenta ligar "admin" para outra pessoa, **Then** recebe 403 (só ADMIN global promove).
 
 ### User Story 2 - Admin de workspace acompanha o uso do workspace dele (Priority: P1)
 
@@ -68,7 +68,7 @@ Rodolfo abre Admin → Workspaces, vê só o PROTHEUS e edita CLAUDE.md, "chamad
 
 ### Functional Requirements
 
-- **FR-001**: O acesso de um usuário a um workspace MUST ter um indicador "admin do workspace", ligado e desligado só pelo super admin.
+- **FR-001**: O acesso de um usuário a um workspace MUST ter um indicador "admin do workspace", ligado e desligado por ADMIN global (inclui super admin). ADMIN global também libera e tira acesso a workspaces de outros usuários.
 - **FR-002**: `GET /api/auth/me` MUST devolver `admin_workspace_ids` (vazio para quem não administra nenhum).
 - **FR-003**: Rotas de conversas, dashboard, relatórios e CSV de chamados MUST aceitar admin de workspace e limitar dados aos workspaces que ele administra, devolvendo 403 para outro workspace.
 - **FR-004**: A lista de usuários MUST, para admin de workspace, trazer só usuários com acesso a algum workspace administrado por ele.

@@ -211,7 +211,7 @@ A senha volta para a temporária padrão, vale por 24 horas e a pessoa terá que
 
       <UserAccessDrawer
         user={accessTarget}
-        mode={meIsWorkspaceAdmin ? 'workspace-admin' : meIsSuperAdmin ? 'super-admin' : 'admin'}
+        mode={meIsWorkspaceAdmin ? 'workspace-admin' : 'admin'}
         onClose={() => {
           setAccessTarget(null)
           void reload()
