@@ -15,11 +15,12 @@ import {
   type AccessibleWorkspace,
   type AdminDashboard,
   errorToUserMessage,
-  fetchAccessibleWorkspaces,
+  fetchAdminFilterWorkspaces,
   fetchAdminDashboard,
   getToken,
 } from '../api'
 import { AdminConsole } from '../components/admin/AdminConsole'
+import { useAdminWorkspaceIds } from '../hooks/useAdminWorkspaceIds'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
@@ -46,6 +47,7 @@ export function AdminDashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [workspaceId, setWorkspaceId] = useState(ALL_WORKSPACES)
   const [workspaces, setWorkspaces] = useState<AccessibleWorkspace[]>([])
+  const adminWorkspaceIds = useAdminWorkspaceIds()
 
   const load = useCallback(async () => {
     const token = getToken()
@@ -67,8 +69,8 @@ export function AdminDashboardPage() {
 
   useEffect(() => {
     const token = getToken()
-    if (token) void fetchAccessibleWorkspaces(token).then(setWorkspaces)
-  }, [])
+    if (token) void fetchAdminFilterWorkspaces(token, adminWorkspaceIds).then(setWorkspaces)
+  }, [adminWorkspaceIds])
 
   const generatedAt = useMemo(
     () => (data ? formatDateTime(data.generated_at) : null),

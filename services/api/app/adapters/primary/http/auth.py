@@ -14,8 +14,10 @@ from app.adapters.primary.http.deps import (
     get_register_uc,
     require_role,
 )
+from app.adapters.primary.http.deps_auth import get_workspace_admin_repo
 from app.application.use_cases.auth import ChangePassword, LoginUser, RegisterUser
 from app.domain.entities import User, UserRole
+from app.ports.workspace_admin import WorkspaceAdminRepository
 from app.schemas import PasswordChangeBody, Token, UserCreate, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -78,9 +80,13 @@ async def login(
 @router.get("/me", response_model=UserOut)
 async def me(
     current: Annotated[User, Depends(get_authenticated_user)],
+    workspace_admins: Annotated[WorkspaceAdminRepository, Depends(get_workspace_admin_repo)],
 ) -> UserOut:
-    """Devolve dados do utilizador autenticado, incluindo o papel."""
-    return _to_user_out(current)
+    """Devolve dados do utilizador autenticado, incluindo o papel e os workspaces que administra."""
+    out = _to_user_out(current)
+    if current.role is not UserRole.ADMIN:
+        out.admin_workspace_ids = sorted(await workspace_admins.admin_workspace_ids(current.id))
+    return out
 
 
 @router.post("/change-password", response_model=UserOut)

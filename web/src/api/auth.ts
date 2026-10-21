@@ -26,6 +26,13 @@ export interface CurrentUser {
   role: UserRole
   is_super_admin: boolean
   must_change_password: boolean
+  /** Workspaces que a pessoa administra sem ser ADMIN global. */
+  admin_workspace_ids?: string[]
+}
+
+/** USER que administra ao menos um workspace (vê o admin restrito a eles). */
+export function isWorkspaceAdmin(user: Pick<CurrentUser, 'role' | 'admin_workspace_ids'> | null): boolean {
+  return Boolean(user && user.role !== 'admin' && user.admin_workspace_ids?.length)
 }
 
 /**
@@ -112,7 +119,27 @@ export interface AdminUser {
 }
 
 /** Lista todos os utilizadores (admin only). */
-/** Volta a senha para a temporária padrão (vale 24 h) e obriga a troca. Só super admin. */
+/**
+ * Inclui alguém num workspace: cria USER (troca de senha obrigatória) já com
+ * acesso, ou só libera o acesso se o e-mail existir.
+ */
+export async function addWorkspaceMember(
+  token: string,
+  data: { email: string; password: string; workspace_id: string },
+): Promise<AdminUser> {
+  const res = await apiFetch('/api/admin/users/workspace-member', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao incluir a pessoa no workspace')
+  }
+  return (await res.json()) as AdminUser
+}
+
+/** Volta a senha para a temporária padrão (vale 24 h) e obriga a troca. Super admin ou admin do workspace. */
 export async function resetAdminUserPassword(token: string, userId: string): Promise<AdminUser> {
   const res = await apiFetch(`/api/admin/users/${userId}/reset-password`, {
     method: 'POST',

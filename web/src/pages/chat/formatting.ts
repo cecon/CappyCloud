@@ -63,10 +63,13 @@ export function userInitials(email?: string | null): string {
   return name.slice(0, 2).toUpperCase()
 }
 
-export function userRoleLabel(user: { role?: string; is_super_admin?: boolean } | null): string {
+export function userRoleLabel(
+  user: { role?: string; is_super_admin?: boolean; admin_workspace_ids?: string[] } | null,
+): string {
   if (!user) return 'Conta'
   if (user.is_super_admin) return 'Super admin'
   if (user.role === 'admin') return 'Administrador'
+  if (user.admin_workspace_ids?.length) return 'Admin de workspace'
   return 'Usuário'
 }
 

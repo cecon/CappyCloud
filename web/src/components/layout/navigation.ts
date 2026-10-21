@@ -1,6 +1,6 @@
 import type { CappyIconName } from './icons'
 
-export type CappyRole = 'user' | 'admin' | 'super-admin'
+export type CappyRole = 'user' | 'workspace-admin' | 'admin' | 'super-admin'
 
 export type NavigationItem = {
   to: string
@@ -10,6 +10,8 @@ export type NavigationItem = {
   section: 'primary' | 'work' | 'admin' | 'account'
   adminOnly?: boolean
   superAdminOnly?: boolean
+  /** Admin de workspace também vê (restrito aos workspaces que administra). */
+  workspaceAdmin?: boolean
   overlay?: boolean
 }
 
@@ -46,12 +48,12 @@ export const navigationItems: NavigationItem[] = [
   { to: '/mcp', label: 'MCP Server', description: 'Servidores MCP', icon: 'mcp', section: 'work', overlay: true },
   { to: '/settings', label: 'Configuracoes', description: 'Preferencias', icon: 'settings', section: 'account', superAdminOnly: true },
   { to: '/change-password', label: 'Alterar senha', description: 'Conta e acesso', icon: 'changePassword', section: 'account' },
-  { to: '/admin', label: 'Dashboard admin', description: 'Operacao e conversas', icon: 'dashboard', section: 'admin', adminOnly: true, overlay: true },
-  { to: '/admin/conversations', label: 'Conversas', description: 'Ler conversas dos usuarios', icon: 'chat', section: 'admin', adminOnly: true, overlay: true },
-  { to: '/admin/reports', label: 'Relatorios', description: 'Uso e custo por workspace', icon: 'analytics', section: 'admin', adminOnly: true, overlay: true },
-  { to: '/admin/users', label: 'Usuarios', description: 'Papeis e acesso', icon: 'users', section: 'admin', adminOnly: true, overlay: true },
+  { to: '/admin', label: 'Dashboard admin', description: 'Operacao e conversas', icon: 'dashboard', section: 'admin', adminOnly: true, overlay: true, workspaceAdmin: true },
+  { to: '/admin/conversations', label: 'Conversas', description: 'Ler conversas dos usuarios', icon: 'chat', section: 'admin', adminOnly: true, overlay: true, workspaceAdmin: true },
+  { to: '/admin/reports', label: 'Relatorios', description: 'Uso e custo por workspace', icon: 'analytics', section: 'admin', adminOnly: true, overlay: true, workspaceAdmin: true },
+  { to: '/admin/users', label: 'Usuarios', description: 'Papeis e acesso', icon: 'users', section: 'admin', adminOnly: true, overlay: true, workspaceAdmin: true },
   { to: '/admin/sandboxes', label: 'Sandboxes', description: 'Ambientes isolados', icon: 'sandboxes', section: 'admin', adminOnly: true, overlay: true },
-  { to: '/admin/workspaces', label: 'Workspaces', description: 'Repositorios agrupados', icon: 'workspaces', section: 'admin', superAdminOnly: true, overlay: true },
+  { to: '/admin/workspaces', label: 'Workspaces', description: 'Repositorios agrupados', icon: 'workspaces', section: 'admin', superAdminOnly: true, overlay: true, workspaceAdmin: true },
   { to: '/admin/repositories', label: 'Repositorios', description: 'Catalogo Git', icon: 'repositories', section: 'admin', superAdminOnly: true, overlay: true },
   {
     to: '/admin/skills-global',
@@ -66,13 +68,17 @@ export const navigationItems: NavigationItem[] = [
   { to: '/admin/providers', label: 'Providers LLM', description: 'Credenciais e providers', icon: 'providers', section: 'admin', adminOnly: true, overlay: true },
 ]
 
-export function roleFromUser(user: { role: string; is_super_admin?: boolean } | null): CappyRole {
+export function roleFromUser(
+  user: { role: string; is_super_admin?: boolean; admin_workspace_ids?: string[] } | null,
+): CappyRole {
   if (user?.is_super_admin) return 'super-admin'
   if (user?.role === 'admin') return 'admin'
+  if (user?.admin_workspace_ids?.length) return 'workspace-admin'
   return 'user'
 }
 
 export function canAccessNavigationItem(item: NavigationItem, role: CappyRole): boolean {
+  if (role === 'workspace-admin') return Boolean(item.workspaceAdmin) || (!item.adminOnly && !item.superAdminOnly)
   if (item.superAdminOnly) return role === 'super-admin'
   if (item.adminOnly) return role === 'admin' || role === 'super-admin'
   return true

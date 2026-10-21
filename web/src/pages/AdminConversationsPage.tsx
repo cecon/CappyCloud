@@ -6,12 +6,13 @@ import {
   type AdminConversationDetail,
   type AdminConversationItem,
   errorToUserMessage,
-  fetchAccessibleWorkspaces,
+  fetchAdminFilterWorkspaces,
   fetchAdminConversation,
   fetchAdminConversations,
   getToken,
 } from '../api'
 import { AdminConsole } from '../components/admin/AdminConsole'
+import { useAdminWorkspaceIds } from '../hooks/useAdminWorkspaceIds'
 import { ChatMessage } from '../components/chat/ChatMessage'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -33,6 +34,7 @@ export function AdminConversationsPage() {
   const [appliedQuery, setAppliedQuery] = useState('')
   const [workspaceId, setWorkspaceId] = useState(ALL_WORKSPACES)
   const [workspaces, setWorkspaces] = useState<AccessibleWorkspace[]>([])
+  const adminWorkspaceIds = useAdminWorkspaceIds()
   const [items, setItems] = useState<AdminConversationItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
@@ -67,8 +69,8 @@ export function AdminConversationsPage() {
 
   useEffect(() => {
     const token = getToken()
-    if (token) void fetchAccessibleWorkspaces(token).then(setWorkspaces)
-  }, [])
+    if (token) void fetchAdminFilterWorkspaces(token, adminWorkspaceIds).then(setWorkspaces)
+  }, [adminWorkspaceIds])
 
   function open(id: string | null) {
     const next = new URLSearchParams(params)

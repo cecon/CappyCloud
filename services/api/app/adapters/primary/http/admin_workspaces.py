@@ -1,4 +1,8 @@
-"""Admin de workspaces (só super admin).
+"""Admin de workspaces.
+
+Super admin cria, edita, sincroniza e exclui. Admin de workspace vê só os que
+administra e, neles, muda apenas CLAUDE.md, chamado obrigatório e modo de
+planejamento.
 
 Um workspace agrupa repositórios do catálogo numa sandbox. Cada alteração
 enfileira ``sync_workspace`` no ``sandbox_sync_queue``; o watchdog materializa
@@ -12,18 +16,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.adapters.primary.http.deps import get_db_session
-from app.adapters.primary.http.deps_auth import require_super_admin
+from app.adapters.primary.http.deps_auth import get_workspace_manager_scope, require_super_admin
+from app.application.use_cases.admin_scope import AdminScope
 from app.infrastructure.orm_models import Repository, Sandbox, SandboxSyncQueue
-from app.infrastructure.orm_models_workspaces import (
-    UserWorkspaceAccess,
-    Workspace,
-    WorkspaceRepository,
-)
+from app.infrastructure.orm_models_workspaces import Workspace, WorkspaceRepository
 from app.schemas_workspaces import (
     WorkspaceCreate,
     WorkspaceOut,
@@ -32,18 +32,20 @@ from app.schemas_workspaces import (
     WorkspaceUpdate,
 )
 
-router = APIRouter(
-    prefix="/admin/workspaces",
-    tags=["admin"],
-    dependencies=[Depends(require_super_admin)],
-)
-access_router = APIRouter(
-    prefix="/admin/users/{user_id}/access/workspaces",
-    tags=["admin"],
-    dependencies=[Depends(require_super_admin)],
-)
+router = APIRouter(prefix="/admin/workspaces", tags=["admin"])
 
 Session = Annotated[AsyncSession, Depends(get_db_session)]
+SuperAdmin = [Depends(require_super_admin)]
+# Campos que o admin de workspace pode mudar; o resto é do super admin.
+WORKSPACE_ADMIN_FIELDS = {"claude_md", "plan_mode_enabled", "require_ticket"}
+
+
+Manager = Annotated[AdminScope, Depends(get_workspace_manager_scope)]
+
+
+def _ensure_in_scope(scope: AdminScope, workspace_id: uuid.UUID) -> None:
+    if not scope.allows(workspace_id):
+        raise HTTPException(status_code=403, detail="Você não administra este workspace.")
 
 
 def _serialize(ws: Workspace) -> WorkspaceOut:
@@ -157,25 +159,29 @@ async def _enqueue_sync(session: AsyncSession, ws: Workspace) -> None:
 
 
 @router.get("", response_model=list[WorkspaceOut])
-async def list_workspaces(session: Session) -> list[WorkspaceOut]:
-    rows = (
-        await session.execute(
-            select(Workspace)
-            .options(
-                selectinload(Workspace.repositories).selectinload(WorkspaceRepository.repository)
-            )
-            .order_by(Workspace.name)
-        )
-    ).scalars()
-    return [_serialize(ws) for ws in rows]
+async def list_workspaces(session: Session, scope: Manager) -> list[WorkspaceOut]:
+    stmt = (
+        select(Workspace)
+        .options(selectinload(Workspace.repositories).selectinload(WorkspaceRepository.repository))
+        .order_by(Workspace.name)
+    )
+    if scope.workspace_ids is not None:
+        stmt = stmt.where(Workspace.id.in_(scope.workspace_ids))
+    return [_serialize(ws) for ws in (await session.execute(stmt)).scalars()]
 
 
 @router.get("/{workspace_id}", response_model=WorkspaceOut)
-async def get_workspace(workspace_id: uuid.UUID, session: Session) -> WorkspaceOut:
+async def get_workspace(workspace_id: uuid.UUID, session: Session, scope: Manager) -> WorkspaceOut:
+    _ensure_in_scope(scope, workspace_id)
     return _serialize(await _load(session, workspace_id))
 
 
-@router.post("", response_model=WorkspaceOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=WorkspaceOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=SuperAdmin,
+)
 async def create_workspace(body: WorkspaceCreate, session: Session) -> WorkspaceOut:
     if await session.get(Sandbox, body.sandbox_id) is None:
         raise HTTPException(status_code=404, detail="Sandbox não encontrada.")
@@ -202,8 +208,16 @@ async def create_workspace(body: WorkspaceCreate, session: Session) -> Workspace
 
 @router.patch("/{workspace_id}", response_model=WorkspaceOut)
 async def update_workspace(
-    workspace_id: uuid.UUID, body: WorkspaceUpdate, session: Session
+    workspace_id: uuid.UUID, body: WorkspaceUpdate, session: Session, scope: Manager
 ) -> WorkspaceOut:
+    _ensure_in_scope(scope, workspace_id)
+    extra = body.model_fields_set - WORKSPACE_ADMIN_FIELDS
+    if not scope.is_global and extra:
+        raise HTTPException(
+            status_code=403,
+            detail="Admin de workspace só altera CLAUDE.md, chamado obrigatório e modo de "
+            "planejamento.",
+        )
     ws = await _load(session, workspace_id)
     if body.name is not None:
         ws.name = body.name.strip()
@@ -222,7 +236,7 @@ async def update_workspace(
     return _serialize(await _load(session, workspace_id))
 
 
-@router.post("/{workspace_id}/sync", response_model=WorkspaceOut)
+@router.post("/{workspace_id}/sync", response_model=WorkspaceOut, dependencies=SuperAdmin)
 async def sync_workspace(workspace_id: uuid.UUID, session: Session) -> WorkspaceOut:
     ws = await _load(session, workspace_id)
     await _enqueue_sync(session, ws)
@@ -230,7 +244,7 @@ async def sync_workspace(workspace_id: uuid.UUID, session: Session) -> Workspace
     return _serialize(await _load(session, workspace_id))
 
 
-@router.delete("/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=SuperAdmin)
 async def delete_workspace(workspace_id: uuid.UUID, session: Session) -> None:
     ws = await _load(session, workspace_id)
     session.add(
@@ -243,45 +257,4 @@ async def delete_workspace(workspace_id: uuid.UUID, session: Session) -> None:
         )
     )
     await session.delete(ws)
-    await session.commit()
-
-
-# ── Acesso de utilizadores ──────────────────────────────────────────────────
-
-
-@access_router.get("", response_model=list[uuid.UUID])
-async def list_workspace_access(user_id: uuid.UUID, session: Session) -> list[uuid.UUID]:
-    rows = await session.execute(
-        select(UserWorkspaceAccess.workspace_id).where(UserWorkspaceAccess.user_id == user_id)
-    )
-    return list(rows.scalars())
-
-
-@access_router.post("/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def grant_workspace_access(
-    user_id: uuid.UUID, workspace_id: uuid.UUID, session: Session
-) -> None:
-    session.add(UserWorkspaceAccess(id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id))
-    try:
-        await session.commit()
-    except IntegrityError:
-        # Já concedido (idempotente) ou usuário/workspace inexistente.
-        await session.rollback()
-
-
-@access_router.delete("/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def revoke_workspace_access(
-    user_id: uuid.UUID, workspace_id: uuid.UUID, session: Session
-) -> None:
-    row = (
-        await session.execute(
-            select(UserWorkspaceAccess).where(
-                UserWorkspaceAccess.user_id == user_id,
-                UserWorkspaceAccess.workspace_id == workspace_id,
-            )
-        )
-    ).scalar_one_or_none()
-    if row is None:
-        raise HTTPException(status_code=404, detail="Acesso não existia.")
-    await session.delete(row)
     await session.commit()

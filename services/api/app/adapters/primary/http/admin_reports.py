@@ -33,11 +33,13 @@ from app.adapters.primary.http.admin_reports_schemas import (
     report_out,
     themes_out,
 )
-from app.adapters.primary.http.deps import get_db_session, require_role
+from app.adapters.primary.http.deps import get_db_session
+from app.adapters.primary.http.deps_auth import get_admin_scope
 from app.adapters.secondary.bcb_ptax import BcbPtaxRateProvider
 from app.adapters.secondary.persistence.sqlalchemy_workspace_report_repo import (
     SQLAlchemyWorkspaceReportRepository,
 )
+from app.application.use_cases.admin_scope import AdminScope
 from app.application.use_cases.workspace_report import (
     BuildWorkspaceReport,
     BuiltReport,
@@ -49,14 +51,14 @@ from app.application.use_cases.workspace_report import (
     WorkspaceReportAccessDeniedError,
     WorkspaceReportNotFoundError,
 )
-from app.domain.entities import User, UserRole
 from app.domain.report_themes import InvalidThemeRulesError
 from app.ports.exchange_rates import UsdBrlRateProvider
 from app.ports.workspace_report import WorkspaceReportRepository
 
 router = APIRouter(prefix="/admin/reports", tags=["admin"])
 
-Admin = Annotated[User, Depends(require_role(UserRole.ADMIN))]
+# ADMIN global ou admin de workspace (este só vê os workspaces que administra).
+Admin = Annotated[AdminScope, Depends(get_admin_scope)]
 
 
 def get_workspace_report_repo(
@@ -78,8 +80,12 @@ def get_usd_brl_rates() -> UsdBrlRateProvider:
 Rates = Annotated[UsdBrlRateProvider, Depends(get_usd_brl_rates)]
 
 
-def _viewer(user: User) -> ReportViewer:
-    return ReportViewer(user_id=user.id, is_super_admin=user.is_super_admin)
+def _viewer(scope: AdminScope) -> ReportViewer:
+    return ReportViewer(
+        user_id=scope.user.id,
+        is_super_admin=scope.is_super_admin,
+        admin_workspace_ids=scope.workspace_ids,
+    )
 
 
 def _http_error(exc: Exception) -> HTTPException:
@@ -101,7 +107,7 @@ _REPORT_ERRORS = (
 async def _build(
     repo: WorkspaceReportRepository,
     rates: UsdBrlRateProvider,
-    user: User,
+    user: AdminScope,
     workspace_id: uuid.UUID | None,
     branch: str | None,
     start: date | None,

@@ -43,6 +43,7 @@ from app.adapters.primary.http.deps import (
     get_user_repository_access_repo,
     get_user_workspace_repo,
 )
+from app.adapters.primary.http.deps_auth import get_workspace_admin_repo
 from app.adapters.primary.http.repository_mcp import get_mcp_telemetry_recorder
 from app.application.use_cases.admin_user_access import ModelsByTierLookup
 from app.application.use_cases.user_workspaces import (
@@ -81,6 +82,7 @@ from tests.conftest import (
     InMemoryUserWorkspaceRepository,
 )
 from tests.fakes_chat_commands import FakeChatCommandRuntime, FakeModelProfileLookup
+from tests.fakes_workspace_admin import InMemoryWorkspaceAdminRepository
 
 
 class _StubModelsByTierLookup(ModelsByTierLookup):
@@ -232,6 +234,7 @@ async def client(
     repository_access_repo: InMemoryUserRepositoryAccessRepository,
     ai_model_access_repo: InMemoryUserAiModelAccessRepository,
     user_workspace_repo: InMemoryUserWorkspaceRepository,
+    workspace_admin_repo: InMemoryWorkspaceAdminRepository,
     sandbox_workspace_gateway: FakeSandboxWorkspaceGateway,
     models_by_tier_lookup: _StubModelsByTierLookup,
 ) -> AsyncClient:
@@ -292,6 +295,7 @@ async def client(
     app.dependency_overrides[get_user_repository_access_repo] = lambda: repository_access_repo
     app.dependency_overrides[get_ai_model_access_repo] = lambda: ai_model_access_repo
     app.dependency_overrides[get_user_workspace_repo] = lambda: user_workspace_repo
+    app.dependency_overrides[get_workspace_admin_repo] = lambda: workspace_admin_repo
     app.dependency_overrides[get_sandbox_workspace_gateway] = lambda: sandbox_workspace_gateway
     app.dependency_overrides[get_ensure_user_workspace_uc] = lambda: EnsureUserRepositoryWorkspace(
         user_workspace_repo,

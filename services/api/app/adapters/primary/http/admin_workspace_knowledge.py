@@ -1,4 +1,4 @@
-"""Admin do conhecimento de um workspace (só super admin).
+"""Admin do conhecimento de um workspace (super admin ou admin daquele workspace).
 
   GET  /admin/workspaces/{id}/knowledge            → status do grafo e arquivos
   GET  /admin/workspaces/{id}/knowledge/file?path= → um arquivo de knowledge/ ou memory/
@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.primary.http.deps import get_db_session
-from app.adapters.primary.http.deps_auth import require_super_admin
+from app.adapters.primary.http.deps_auth import require_workspace_manager
 from app.infrastructure.orm_models import Sandbox
 from app.infrastructure.orm_models_workspaces import Workspace
 from app.infrastructure.workspace_knowledge import enqueue_knowledge_build
@@ -28,7 +28,7 @@ from app.infrastructure.workspace_knowledge import enqueue_knowledge_build
 router = APIRouter(
     prefix="/admin/workspaces/{workspace_id}/knowledge",
     tags=["admin"],
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_workspace_manager)],
 )
 
 Session = Annotated[AsyncSession, Depends(get_db_session)]
