@@ -36,6 +36,12 @@ export function ProviderFormModal({
   onClose,
   onSave,
 }: ProviderFormModalProps) {
+  // Lê o valor do evento já no handler: o updater de setForm roda depois, quando
+  // event.currentTarget é null (o React zera o evento) e a tela quebrava.
+  function setField<K extends keyof ProviderFormState>(key: K, value: ProviderFormState[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
   function updateBaseUrl(value: string) {
     setForm((prev) => ({
       ...prev,
@@ -56,7 +62,7 @@ export function ProviderFormModal({
           label="Nome"
           placeholder="Azure Eduar"
           value={form.name}
-          onChange={(event) => setForm((prev) => ({ ...prev, name: event.currentTarget.value }))}
+          onChange={(event) => setField('name', event.currentTarget.value)}
           required
         />
         <TextInput
@@ -86,9 +92,7 @@ export function ProviderFormModal({
           label="Chave"
           placeholder={editingProvider ? 'Deixe em branco para manter a chave atual' : 'API key'}
           value={form.api_key}
-          onChange={(event) =>
-            setForm((prev) => ({ ...prev, api_key: event.currentTarget.value }))
-          }
+          onChange={(event) => setField('api_key', event.currentTarget.value)}
         />
 
         {!editingProvider && (
@@ -99,18 +103,14 @@ export function ProviderFormModal({
                 label="Modelo / deployment"
                 placeholder="gpt-5.4-mini"
                 value={form.model_id}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, model_id: event.currentTarget.value }))
-                }
+                onChange={(event) => setField('model_id', event.currentTarget.value)}
                 required
               />
               <TextInput
                 label="Nome exibido"
                 placeholder="Azure GPT-5.4 Mini"
                 value={form.display_name}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, display_name: event.currentTarget.value }))
-                }
+                onChange={(event) => setField('display_name', event.currentTarget.value)}
               />
             </Group>
             <Group grow align="flex-start">
@@ -129,12 +129,7 @@ export function ProviderFormModal({
                 label="Modelo padrão para texto"
                 checked={form.is_default_text}
                 disabled={!form.capabilities.includes('text')}
-                onChange={(event) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    is_default_text: event.currentTarget.checked,
-                  }))
-                }
+                onChange={(event) => setField('is_default_text', event.currentTarget.checked)}
                 mt="xl"
               />
             </Group>
@@ -164,12 +159,7 @@ export function ProviderFormModal({
               label="Modelo padrão para embedding"
               checked={form.is_default_embedding}
               disabled={!form.capabilities.includes('embedding')}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  is_default_embedding: event.currentTarget.checked,
-                }))
-              }
+              onChange={(event) => setField('is_default_embedding', event.currentTarget.checked)}
             />
           </>
         )}
@@ -177,9 +167,7 @@ export function ProviderFormModal({
         <Switch
           label="Provider ativo"
           checked={form.active}
-          onChange={(event) =>
-            setForm((prev) => ({ ...prev, active: event.currentTarget.checked }))
-          }
+          onChange={(event) => setField('active', event.currentTarget.checked)}
         />
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>
