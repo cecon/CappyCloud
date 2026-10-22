@@ -84,7 +84,7 @@ services:
 
   sandbox:
     image: ghcr.io/cecon/cappycloud-sandbox:latest
-    environment:
+    environment: &sandbox_env
       CLAUDE_CODE_USE_OPENAI: "1"
       OPENAI_BASE_URL: https://openrouter.ai/api/v1
       OPENAI_API_KEY: ${OPENAI_API_KEY:-not-used-db-provider-configured}
@@ -119,6 +119,29 @@ services:
         aliases:
           - cappycloud-sandbox
           - sandbox
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # Segunda sandbox, do workspace PROTHEUS: roda o runtime openclaude (cadastro
+  # em Admin → Sandboxes) para usar o provider do catálogo, ex. o proxy LiteLLM
+  # da TOTVS. Mesma imagem e ambiente da sandbox principal; clones próprios.
+  sandbox-protheus:
+    image: ghcr.io/cecon/cappycloud-sandbox:latest
+    environment: *sandbox_env
+    volumes:
+      - cappycloud_repos_protheus_data:/repos
+    networks:
+      cappycloud_internal:
+        aliases:
+          - cappycloud-sandbox-protheus
     deploy:
       replicas: 1
       restart_policy:
@@ -259,6 +282,8 @@ volumes:
     name: cappycloud_redis_data
   cappycloud_repos_data:
     name: cappycloud_repos_data
+  cappycloud_repos_protheus_data:
+    name: cappycloud_repos_protheus_data
   cappycloud_claude_config:
     name: cappycloud_claude_config
   cappycloud_agentmemory_data:
