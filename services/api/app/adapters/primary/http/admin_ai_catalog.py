@@ -35,7 +35,7 @@ from app.adapters.primary.http.admin_ai_catalog_sync import (
     supports_azure_foundry_sync,
     sync_azure_foundry_provider,
 )
-from app.adapters.primary.http.deps import require_role, require_super_admin
+from app.adapters.primary.http.deps import require_role
 from app.adapters.primary.http.deps_base import get_db_session
 from app.domain.entities import ModelTier, UserRole
 from app.infrastructure.encryption import get_encryptor
@@ -67,7 +67,7 @@ async def list_providers(
     "/providers",
     response_model=AdminProviderOut,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
 async def create_provider(
     body: AdminProviderCreate,
@@ -117,7 +117,7 @@ async def create_provider(
 @router.patch(
     "/providers/{provider_id}",
     response_model=AdminProviderOut,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
 async def patch_provider(
     provider_id: uuid.UUID,
@@ -163,7 +163,7 @@ async def patch_provider(
     "/providers/{provider_id}/models",
     response_model=AiModelOut,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
 async def create_provider_model(
     provider_id: uuid.UUID,
@@ -186,7 +186,7 @@ async def create_provider_model(
 @router.post(
     "/providers/{provider_id}/sync",
     response_model=AiModelSyncResult,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
 async def sync_provider(
     provider_id: uuid.UUID,
@@ -257,7 +257,7 @@ class AdminModelPatch(BaseModel):
 @router.patch(
     "/models/{model_id}",
     response_model=AiModelOut,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
 async def patch_model_admin(
     model_id: uuid.UUID,

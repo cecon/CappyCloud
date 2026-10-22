@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.adapters.primary.http.deps import (
     get_authenticated_user,
     get_db_session,
-    require_super_admin,
+    require_role,
 )
 from app.adapters.secondary.persistence.sqlalchemy_user_access_repo import (
     SQLAlchemyUserAiModelAccessRepository,
@@ -85,7 +85,7 @@ async def list_ai_providers(
     "/ai-providers",
     response_model=AiProviderOut,
     status_code=201,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
 async def create_ai_provider(
     body: AiProviderCreate,
@@ -108,7 +108,7 @@ async def create_ai_provider(
 @router.patch(
     "/ai-providers/{provider_id}/key",
     response_model=AiProviderOut,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
 async def update_ai_provider_key(
     provider_id: uuid.UUID,
@@ -159,7 +159,7 @@ async def list_ai_models(
     "/ai-models",
     response_model=AiModelOut,
     status_code=201,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
 async def create_ai_model(
     body: AiModelCreate,
@@ -185,7 +185,7 @@ async def create_ai_model(
 @router.delete(
     "/ai-models/{model_id}",
     status_code=204,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
 async def delete_ai_model(
     model_id: uuid.UUID,
@@ -201,7 +201,7 @@ async def delete_ai_model(
 @router.post(
     "/ai-models/sync-from-openrouter",
     response_model=AiModelSyncResult,
-    dependencies=[Depends(require_super_admin)],
+    dependencies=[Depends(require_role(UserRole.ADMIN))],
 )
 async def sync_ai_models_from_openrouter(
     session: Annotated[AsyncSession, Depends(get_db_session)],

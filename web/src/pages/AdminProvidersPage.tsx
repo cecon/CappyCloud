@@ -30,7 +30,7 @@ import { ProvidersTable } from './admin-providers/ProvidersTable'
 export function AdminProvidersPage() {
   const currentUser = useCurrentUser()
   const canSyncProviders =
-    currentUser.status === 'ready' && currentUser.user.is_super_admin
+    currentUser.status === 'ready' && currentUser.user.role === 'admin'
   const [providers, setProviders] = useState<AdminAiProvider[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [syncing, setSyncing] = useState<string | null>(null)
@@ -163,7 +163,7 @@ export function AdminProvidersPage() {
         )}
 
         {!canSyncProviders && (
-          <Alert color="yellow" title="Somente super admin sincroniza providers">
+          <Alert color="yellow" title="Somente ADMIN sincroniza providers">
             A sincronização pode ativar novos modelos free e atualizar preços globais.
           </Alert>
         )}
