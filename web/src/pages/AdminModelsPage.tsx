@@ -28,7 +28,7 @@ import { ModelsTable } from './admin-models/ModelsTable'
 export function AdminModelsPage() {
   const currentUser = useCurrentUser()
   const canManageCatalog =
-    currentUser.status === 'ready' && currentUser.user.is_super_admin
+    currentUser.status === 'ready' && currentUser.user.role === 'admin'
   const [providers, setProviders] = useState<AdminAiProvider[]>([])
   const [models, setModels] = useState<AiModel[] | null>(null)
   const [tier, setTier] = useState<TierFilter>('all')
@@ -192,7 +192,7 @@ export function AdminModelsPage() {
         )}
 
         {!canManageCatalog && (
-          <Alert color="yellow" title="Somente super admin altera o catálogo">
+          <Alert color="yellow" title="Somente ADMIN altera o catálogo">
             Você pode consultar os modelos, mas ativação global e tier são bloqueados.
           </Alert>
         )}

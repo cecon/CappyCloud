@@ -1,6 +1,7 @@
 """Integration HTTP — /api/admin/providers, /api/admin/models (ADR-006).
 
-Cobre a porta admin: garante que **só ADMIN** acessa essas rotas. As
+Cobre a porta admin: garante que **só ADMIN** acessa essas rotas (ADMIN
+global, não só o super admin, também cadastra providers, chaves e modelos). As
 queries SQL em si são triviais (``select(AiModel)``) e não justificam
 fixture com DB — a regra de negócio crítica aqui é o gate de papel.
 """
@@ -38,22 +39,6 @@ class TestAdminAiCatalogRoleGuard:
             f"/api/admin/models/{uuid.uuid4()}",
             json={"active": False},
             headers=user_headers,
-        )
-        assert r.status_code == 403
-
-    async def test_sync_provider_blocks_plain_admin(
-        self, client: AsyncClient, admin_headers: dict[str, str]
-    ) -> None:
-        r = await client.post(f"/api/admin/providers/{uuid.uuid4()}/sync", headers=admin_headers)
-        assert r.status_code == 403
-
-    async def test_patch_model_blocks_plain_admin(
-        self, client: AsyncClient, admin_headers: dict[str, str]
-    ) -> None:
-        r = await client.patch(
-            f"/api/admin/models/{uuid.uuid4()}",
-            json={"active": False},
-            headers=admin_headers,
         )
         assert r.status_code == 403
 
