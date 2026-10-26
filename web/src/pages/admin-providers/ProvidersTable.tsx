@@ -1,5 +1,5 @@
 import { Badge, Stack, Table, Text } from '@/components/ui/legacy'
-import { IconPencil, IconRefresh } from '@tabler/icons-react'
+import { IconPencil, IconPlus, IconRefresh } from '@tabler/icons-react'
 import type { AdminAiProvider } from '../../api'
 import { ActionsCell, ActionsHeader, RowActionIcon } from '../../components/TableActions'
 import { authStateColor, formatTimestamp } from './form'
@@ -9,6 +9,7 @@ type ProvidersTableProps = {
   canSyncProviders: boolean
   syncing: string | null
   onEdit: (provider: AdminAiProvider) => void
+  onAddModel: (provider: AdminAiProvider) => void
   onSync: (providerId: string) => void
 }
 
@@ -17,6 +18,7 @@ export function ProvidersTable({
   canSyncProviders,
   syncing,
   onEdit,
+  onAddModel,
   onSync,
 }: ProvidersTableProps) {
   return (
@@ -30,7 +32,7 @@ export function ProvidersTable({
           <Table.Th style={{ width: 90 }}>Estado</Table.Th>
           <Table.Th style={{ width: 190 }}>Autenticação</Table.Th>
           <Table.Th style={{ width: 180 }}>Último sync</Table.Th>
-          <ActionsHeader width={112} />
+          <ActionsHeader width={152} />
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
@@ -80,6 +82,14 @@ export function ProvidersTable({
                 onClick={() => onEdit(p)}
               >
                 <IconPencil size={16} />
+              </RowActionIcon>
+              <RowActionIcon
+                label="Adicionar modelo"
+                color="gray"
+                disabled={!canSyncProviders || syncing !== null}
+                onClick={() => onAddModel(p)}
+              >
+                <IconPlus size={16} />
               </RowActionIcon>
               <RowActionIcon
                 label="Sincronizar provider"

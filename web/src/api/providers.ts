@@ -85,6 +85,33 @@ export async function patchAdminProvider(
   return res.json()
 }
 
+export interface AdminProviderModelCreate {
+  model_id: string
+  display_name?: string
+  capabilities?: string[]
+  context_window?: number
+}
+
+export async function createAdminProviderModel(
+  token: string,
+  providerId: string,
+  payload: AdminProviderModelCreate,
+): Promise<AiModel> {
+  const res = await apiFetch(`/api/admin/providers/${providerId}/models`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(formatApiErrorPayload(err) || 'Falha ao adicionar modelo')
+  }
+  return res.json()
+}
+
 export async function syncAdminProvider(
   token: string,
   providerId: string,
