@@ -5,6 +5,7 @@ import {
   attachmentValidationError,
   isImageFile,
   modelIdForAttachments,
+  modelSwitchNotice,
   normalizedClipboardFile,
 } from './attachments'
 import { randomId } from './formatting'
@@ -26,6 +27,14 @@ export function useAttachmentTray({
   // Apenas itens `kind === 'uploaded'` viajam no payload do streamAssistantReply.
   const [trayItems, setTrayItems] = useState<TrayItem[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
+  // Aviso de troca automática de modelo por causa de imagem; some ao fechar ou ao trocar o modelo.
+  const [modelNotice, setModelNotice] = useState<string | null>(null)
+  const notifyModelSwitch = useCallback(
+    (fromModelId: string, toModelId: string) =>
+      setModelNotice(modelSwitchNotice(models, fromModelId, toModelId)),
+    [models],
+  )
+  const dismissModelNotice = useCallback(() => setModelNotice(null), [])
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   /**
@@ -41,6 +50,7 @@ export function useAttachmentTray({
       const modelForImages = onClaudeCli ? '' : modelIdForAttachments(models, selectedModelId, hasImage)
       if (modelForImages && modelForImages !== selectedModelId) {
         setSelectedModelId(modelForImages)
+        notifyModelSwitch(selectedModelId, modelForImages)
       }
 
       for (const file of normalized) {
@@ -113,7 +123,7 @@ export function useAttachmentTray({
       }
     },
     // setSelectedModelId é o setter estável do useState; listado só para o lint.
-    [activeId, models, onClaudeCli, selectedModelId, token, setSelectedModelId],
+    [activeId, models, onClaudeCli, selectedModelId, token, setSelectedModelId, notifyModelSwitch],
   )
 
   const uploadPendingAttachments = useCallback(
@@ -220,6 +230,7 @@ export function useAttachmentTray({
   return {
     trayItems, setTrayItems, isDragOver, setIsDragOver, fileInputRef,
     uploadPendingAttachments, removeTrayItem, clearTrayLocal, handleFileSelection, handlePaste,
+    modelNotice, notifyModelSwitch, dismissModelNotice,
   }
 }
 

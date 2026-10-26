@@ -98,6 +98,7 @@ export function ChatPage() {
     onPickFiles: tray.handleFileSelection,
     onPasteFiles: tray.handlePaste,
     onRemoveTrayItem: tray.removeTrayItem,
+    trayNotice: tray.modelNotice ? { text: tray.modelNotice, onDismiss: tray.dismissModelNotice } : null,
     fileInputRef: tray.fileInputRef,
     isDragOver: tray.isDragOver,
     setDragOver: tray.setIsDragOver,
@@ -106,7 +107,12 @@ export function ChatPage() {
   const modelProps = {
     models: onClaudeCli ? CLAUDE_CLI_MODELS : sortedModels,
     selectedModelId: onClaudeCli ? claudeCliModelId : st.selectedModelId,
-    setSelectedModelId: onClaudeCli ? chooseClaudeCliModel : st.setSelectedModelId,
+    // Escolha manual do modelo encerra o aviso de troca automática.
+    setSelectedModelId: (id: string) => {
+      tray.dismissModelNotice()
+      if (onClaudeCli) chooseClaudeCliModel(id)
+      else st.setSelectedModelId(id)
+    },
   }
   const controlProps = {
     permissionMode,

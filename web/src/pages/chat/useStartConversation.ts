@@ -51,6 +51,7 @@ export function useStartConversation({ st, selection, tray, token, loadActivityH
       : modelIdForAttachments(models, selectedModelId, sendableAttachments.some(trayItemHasImage))
     if (!onClaudeCli && modelForRequest && modelForRequest !== selectedModelId) {
       setSelectedModelId(modelForRequest)
+      tray.notifyModelSwitch(selectedModelId, modelForRequest)
     }
     // Conversa nova é sempre de um workspace (a sandbox e os repositórios vêm dele).
     if (!selectedWorkspaceId) {

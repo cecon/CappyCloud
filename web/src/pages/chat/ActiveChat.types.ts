@@ -9,7 +9,7 @@ import type {
   PermissionMode,
   RuntimeStateEvent,
 } from '../../api'
-import type { TrayItem } from '../../components/AttachmentTray'
+import type { TrayItem, TrayNotice } from '../../components/AttachmentTray'
 import type { ThoughtStep } from '../../components/ThinkingStream'
 import type { TimedSubagentGroup } from '../../components/chat/subagentGroups'
 import type { ActivityTrace, PrLink, SessionProgressAnchor, StreamToolStats } from './types'
@@ -71,6 +71,7 @@ export interface ActiveChatProps {
   onPickFiles: (files: FileList | null | undefined) => void
   onPasteFiles: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void
   onRemoveTrayItem: (localId: string) => void
+  trayNotice: TrayNotice | null
   fileInputRef: React.RefObject<HTMLInputElement | null>
   isDragOver: boolean
   setDragOver: (v: boolean) => void

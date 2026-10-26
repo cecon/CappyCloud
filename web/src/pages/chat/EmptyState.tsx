@@ -8,7 +8,7 @@ import {
   type ProjectSuggestionCard,
   type Workspace,
 } from '../../api'
-import { AttachmentTray, type TrayItem } from '../../components/AttachmentTray'
+import { AttachmentTray, type TrayItem, type TrayNotice } from '../../components/AttachmentTray'
 import { ModelPicker } from '../../components/ModelPicker'
 import { TicketNumberField } from '../../components/chat/TicketNumberField'
 import styles from '../../components/chat.module.css'
@@ -52,6 +52,7 @@ interface EmptyStateProps {
   onPickFiles: (files: FileList | null | undefined) => void
   onPasteFiles: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void
   onRemoveTrayItem: (localId: string) => void
+  trayNotice: TrayNotice | null
   fileInputRef: React.RefObject<HTMLInputElement | null>
   isDragOver: boolean
   setDragOver: (v: boolean) => void
@@ -59,13 +60,11 @@ interface EmptyStateProps {
 
 export function EmptyState({
   input, setInput, inputRef, onExecute, streaming,
-  selectableWorkspaces,
-  projectWorkspaces, selectedWorkspaceId, setSelectedWorkspaceId, newChatError,
-  selectedSlug,
-  requireTicket, ticketNumber, setTicketNumber, ticketRef,
+  selectableWorkspaces, projectWorkspaces, selectedWorkspaceId, setSelectedWorkspaceId, newChatError,
+  selectedSlug, requireTicket, ticketNumber, setTicketNumber, ticketRef,
   models, selectedModelId, setSelectedModelId, token,
   permissionMode, setPermissionMode, planModeEnabled, executionProfile, setExecutionProfile, permissionWarningRuntimeConfirmed,
-  trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
+  trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, trayNotice, fileInputRef, isDragOver, setDragOver,
 }: EmptyStateProps) {
   const [suggestions, setSuggestions] = useState<ProjectSuggestionCard[]>([])
   const [suggestionsSlug, setSuggestionsSlug] = useState('')
@@ -196,6 +195,7 @@ export function EmptyState({
               token={token}
               conversationId={null}
               onRemove={onRemoveTrayItem}
+              notice={trayNotice}
             />
             {newChatError && (
               <div className={styles.chatStateCardError} role="alert" style={{ padding: '0.5rem 0.75rem', fontSize: '0.8rem' }}>

@@ -52,6 +52,7 @@ function renderEmptyState(setSelectedModelId = vi.fn()) {
       onPickFiles={vi.fn()}
       onPasteFiles={vi.fn()}
       onRemoveTrayItem={vi.fn()}
+      trayNotice={null}
       fileInputRef={createRef()}
       isDragOver={false}
       setDragOver={vi.fn()}

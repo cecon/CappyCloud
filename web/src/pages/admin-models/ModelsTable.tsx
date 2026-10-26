@@ -83,6 +83,13 @@ export function ModelsTable({
                     disabled={!canManageCatalog || busyId === m.id}
                     onChange={() => onToggleCapability(m, 'embedding')}
                   />
+                  <Switch
+                    size="xs"
+                    label="vision"
+                    checked={m.capabilities?.includes('vision') ?? false}
+                    disabled={!canManageCatalog || busyId === m.id}
+                    onChange={() => onToggleCapability(m, 'vision')}
+                  />
                 </Group>
               </Table.Td>
               <Table.Td>
