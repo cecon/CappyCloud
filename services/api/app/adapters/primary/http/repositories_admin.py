@@ -9,9 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.primary.http.deps import get_authenticated_user, get_db_session
+from app.adapters.primary.http.deps import get_authenticated_user, get_db_session, require_role
 from app.adapters.primary.http.deps_auth import require_super_admin
-from app.domain.entities import User
+from app.domain.entities import User, UserRole
 from app.infrastructure.encryption import get_encryptor
 from app.infrastructure.orm_models import GitProvider, Repository, Sandbox, SandboxSyncQueue
 from app.schemas import RepositoryCreate, RepositoryOut
@@ -133,7 +133,6 @@ async def list_repositories(
     from app.adapters.secondary.persistence.sqlalchemy_user_access_repo import (
         SQLAlchemyUserRepositoryAccessRepository,
     )
-    from app.domain.entities import UserRole
 
     stmt = select(Repository).order_by(Repository.name)
     if current.role is not UserRole.ADMIN:
@@ -150,7 +149,7 @@ async def list_repositories(
 @router.post("", response_model=RepositoryOut, status_code=201)
 async def create_repository(
     body: RepositoryCreate,
-    _current: Annotated[User, Depends(require_super_admin)],
+    _current: Annotated[User, Depends(require_role(UserRole.ADMIN))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RepositoryOut:
     sandbox_id = body.sandbox_id
@@ -196,7 +195,7 @@ async def create_repository(
 async def update_repository(
     repo_id: uuid.UUID,
     body: RepositoryCreate,
-    _current: Annotated[User, Depends(require_super_admin)],
+    _current: Annotated[User, Depends(require_role(UserRole.ADMIN))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RepositoryOut:
     """Atualiza o repositório (em particular, permite associar provider_id ou PAT inline)."""
@@ -234,7 +233,7 @@ async def update_repository(
 @router.post("/{repo_id}/sync", status_code=202)
 async def enqueue_sync(
     repo_id: uuid.UUID,
-    _current: Annotated[User, Depends(require_super_admin)],
+    _current: Annotated[User, Depends(require_role(UserRole.ADMIN))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> dict:
     """Enfileira clone/update do repo no sandbox via sandbox_sync_queue."""

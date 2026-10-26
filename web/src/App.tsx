@@ -258,9 +258,9 @@ export default function App() {
         <Route
           path="/admin/repositories"
           element={
-            <SuperAdminPage>
+            <AdminPage>
               <AdminRepositoriesPage />
-            </SuperAdminPage>
+            </AdminPage>
           }
         />
         <Route
