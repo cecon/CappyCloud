@@ -102,6 +102,12 @@ export function ChatPage() {
     isDragOver: tray.isDragOver,
     setDragOver: tray.setIsDragOver,
   }
+  // Novo chat e conversa aberta usam a mesma escolha de modelo.
+  const modelProps = {
+    models: onClaudeCli ? CLAUDE_CLI_MODELS : sortedModels,
+    selectedModelId: onClaudeCli ? claudeCliModelId : st.selectedModelId,
+    setSelectedModelId: onClaudeCli ? chooseClaudeCliModel : st.setSelectedModelId,
+  }
   const controlProps = {
     permissionMode,
     setPermissionMode,
@@ -155,6 +161,7 @@ export function ChatPage() {
             ticketNumber={st.ticketNumber}
             setTicketNumber={st.setTicketNumber}
             ticketRef={st.ticketRef}
+            {...modelProps}
             {...controlProps}
             {...attachmentProps}
           />
@@ -201,9 +208,7 @@ export function ChatPage() {
               onCreatePr={actions.handleCreatePr}
               activeTitle={activeConv?.title ?? 'Conversa'}
               conversationId={activeId!}
-              models={onClaudeCli ? CLAUDE_CLI_MODELS : sortedModels}
-              selectedModelId={onClaudeCli ? claudeCliModelId : st.selectedModelId}
-              setSelectedModelId={onClaudeCli ? chooseClaudeCliModel : st.setSelectedModelId}
+              {...modelProps}
               convUsage={st.convUsage}
               liveUsage={st.liveUsage}
               {...controlProps}
