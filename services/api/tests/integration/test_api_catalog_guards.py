@@ -1,4 +1,7 @@
-"""Integration HTTP — só super admin altera repositórios, git providers e workspaces.
+"""Integration HTTP — guardas de repositórios, git providers e workspaces.
+
+Só super admin apaga repositório e mexe em git providers e workspaces; ADMIN
+global cadastra, edita (inclusive o PAT) e sincroniza repositórios.
 
 Antes, estas rotas exigiam apenas login: qualquer utilizador criava ou apagava
 repositórios e credenciais Git.
@@ -15,9 +18,6 @@ _REPO_ID = uuid.uuid4()
 _PROVIDER_ID = uuid.uuid4()
 
 _MUTATIONS = [
-    ("post", "/api/repositories", {"slug": "x", "name": "x", "clone_url": "https://x"}),
-    ("patch", f"/api/repositories/{_REPO_ID}", {"name": "y"}),
-    ("post", f"/api/repositories/{_REPO_ID}/sync", None),
     ("delete", f"/api/repositories/{_REPO_ID}", None),
     ("get", "/api/git-providers", None),
     ("post", "/api/git-providers", {"name": "p", "provider_type": "github", "token": "t"}),
@@ -38,6 +38,17 @@ _ADMIN_ALLOWED = [
     ("get", "/api/admin/workspaces", None),
     ("post", f"/api/admin/users/{_REPO_ID}/access/workspaces/{_REPO_ID}", None),
 ]
+# ADMIN global cadastra, edita (inclusive o PAT) e sincroniza repositórios.
+_ADMIN_REPOSITORY = [
+    ("post", "/api/repositories", {"slug": "x", "name": "x", "clone_url": "https://x"}),
+    (
+        "patch",
+        f"/api/repositories/{_REPO_ID}",
+        {"slug": "y", "name": "y", "clone_url": "https://y", "pat_token": "t"},
+    ),
+    # Id inválido: passa pela guarda e responde 422 sem tocar no banco.
+    ("post", "/api/repositories/sem-uuid/sync", None),
+]
 
 
 @pytest.mark.parametrize(("method", "url", "body"), _MUTATIONS)
@@ -56,7 +67,22 @@ async def test_admin_sem_super_admin_recebe_403(
     assert "super admin" in r.json()["detail"]
 
 
-@pytest.mark.parametrize(("method", "url", "body"), _MUTATIONS + _ADMIN_ALLOWED)
+@pytest.mark.parametrize(("method", "url", "body"), _ADMIN_REPOSITORY)
+async def test_admin_global_gerencia_repositorios(
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+    method: str,
+    url: str,
+    body: dict | None,
+) -> None:
+    kwargs = {"headers": admin_headers}
+    if body is not None:
+        kwargs["json"] = body
+    r = await getattr(client, method)(url, **kwargs)
+    assert r.status_code != 403
+
+
+@pytest.mark.parametrize(("method", "url", "body"), _MUTATIONS + _ADMIN_ALLOWED + _ADMIN_REPOSITORY)
 async def test_usuario_comum_recebe_403(
     client: AsyncClient,
     user_headers: dict[str, str],
