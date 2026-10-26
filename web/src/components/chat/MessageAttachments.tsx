@@ -53,7 +53,7 @@ export function MessageAttachments({
               <AttachmentIcon attachment={attachment} />
             )}
           </div>
-          <span className={styles.filename}>{attachment.original_filename}</span>
+          <span className={`${styles.meta} ${styles.filename}`}>{attachment.original_filename}</span>
         </button>
       ))}
     </div>
