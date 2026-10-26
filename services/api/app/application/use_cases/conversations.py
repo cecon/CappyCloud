@@ -233,8 +233,9 @@ class StreamMessage:
         query: str,
         prompt: str,
     ) -> str:
+        atts, storage = self._attachments, self._storage
         return await _att.inject_artifact_chunks(
-            self._attachments, conversation_id, attachment_ids, query, prompt
+            atts, conversation_id, attachment_ids, query, prompt, storage=storage
         )
 
     async def _ensure_repo_ids(self, conv: Conversation) -> None:
