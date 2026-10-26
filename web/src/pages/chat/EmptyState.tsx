@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   fetchProjectSuggestions,
   type AccessibleWorkspace,
+  type AiModel,
   type ExecutionProfile,
   type PermissionMode,
   type ProjectSuggestionCard,
   type Workspace,
 } from '../../api'
 import { AttachmentTray, type TrayItem } from '../../components/AttachmentTray'
+import { ModelPicker } from '../../components/ModelPicker'
 import { TicketNumberField } from '../../components/chat/TicketNumberField'
 import styles from '../../components/chat.module.css'
 import { ExecutionProfileControl, PermissionModeControl } from './AgentControls'
@@ -36,6 +38,9 @@ interface EmptyStateProps {
   ticketNumber: string
   setTicketNumber: (value: string) => void
   ticketRef: React.RefObject<HTMLInputElement | null>
+  models: AiModel[]
+  selectedModelId: string
+  setSelectedModelId: (id: string) => void
   permissionMode: PermissionMode
   setPermissionMode: (mode: PermissionMode) => void
   planModeEnabled: boolean
@@ -58,7 +63,7 @@ export function EmptyState({
   projectWorkspaces, selectedWorkspaceId, setSelectedWorkspaceId, newChatError,
   selectedSlug,
   requireTicket, ticketNumber, setTicketNumber, ticketRef,
-  token,
+  models, selectedModelId, setSelectedModelId, token,
   permissionMode, setPermissionMode, planModeEnabled, executionProfile, setExecutionProfile, permissionWarningRuntimeConfirmed,
   trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
 }: EmptyStateProps) {
@@ -243,6 +248,15 @@ export function EmptyState({
                   setSelectedWorkspaceId={setSelectedWorkspaceId}
                   chosenWorkspace={chosenWorkspace}
                 />
+                {models.length > 0 && (
+                  <ModelPicker
+                    models={models}
+                    value={selectedModelId}
+                    onChange={setSelectedModelId}
+                    disabled={streaming}
+                    compact
+                  />
+                )}
                 <PermissionModeControl
                   value={permissionMode}
                   onChange={setPermissionMode}
