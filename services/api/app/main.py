@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from app.adapters.primary.http import admin_ai_catalog as admin_ai_catalog_router
+from app.adapters.primary.http import admin_conversation_timeline as admin_conv_timeline_router
 from app.adapters.primary.http import admin_conversations as admin_conversations_router
 from app.adapters.primary.http import admin_dashboard as admin_dashboard_router
 from app.adapters.primary.http import admin_mcp_telemetry as admin_mcp_telemetry_router
@@ -204,6 +205,7 @@ app.include_router(auth_router.router, prefix="/api")
 app.include_router(admin_dashboard_router.router, prefix="/api")
 app.include_router(admin_reports_router.router, prefix="/api")
 app.include_router(admin_conversations_router.router, prefix="/api")
+app.include_router(admin_conv_timeline_router.router, prefix="/api")
 app.include_router(admin_users_router.router, prefix="/api")
 app.include_router(admin_mcp_telemetry_router.router, prefix="/api")
 app.include_router(admin_sandboxes_router.router, prefix="/api")

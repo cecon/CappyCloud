@@ -6,6 +6,7 @@
 
 export * from './api/http'
 export * from './api/auth'
+export * from './api/adminConversations'
 export * from './api/adminDashboard'
 export * from './api/preferences'
 export * from './api/conversationTypes'

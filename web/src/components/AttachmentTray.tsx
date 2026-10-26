@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { Attachment } from '../api'
-import { fetchAttachmentBlobUrl } from '../api'
+import { fetchAdminAttachmentBlobUrl, fetchAttachmentBlobUrl } from '../api'
 import styles from './attachment-tray.module.css'
 
 export interface UploadingAttachment {
@@ -60,24 +60,30 @@ interface Props {
   notice?: TrayNotice | null
 }
 
+/** De onde vem o arquivo: rota do dono da conversa ou rota de leitura do admin. */
+export type AttachmentSource = 'owner' | 'admin'
+
 /**
  * Componente de thumbnail individual com lazy-load do Object URL.
  */
-function Thumbnail({
+export function Thumbnail({
   token,
   conversationId,
   attachment,
+  source = 'owner',
 }: {
   token: string
   conversationId: string
   attachment: Attachment
+  source?: AttachmentSource
 }): React.JSX.Element {
   const [src, setSrc] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     let url: string | null = null
-    fetchAttachmentBlobUrl(token, conversationId, attachment.id)
+    const load = source === 'admin' ? fetchAdminAttachmentBlobUrl : fetchAttachmentBlobUrl
+    load(token, conversationId, attachment.id)
       .then((u) => {
         if (cancelled) {
           URL.revokeObjectURL(u)
@@ -91,7 +97,7 @@ function Thumbnail({
       cancelled = true
       if (url) URL.revokeObjectURL(url)
     }
-  }, [token, conversationId, attachment.id])
+  }, [token, conversationId, attachment.id, source])
 
   if (!src) {
     return <div className={styles.thumbnailSkeleton} />
@@ -99,7 +105,7 @@ function Thumbnail({
   return <img src={src} alt={attachment.original_filename} className={styles.thumbnailImg} />
 }
 
-function AttachmentIcon({ attachment }: { attachment: Attachment }) {
+export function AttachmentIcon({ attachment }: { attachment: Attachment }) {
   const icon =
     attachment.kind === 'pdf'
       ? 'picture_as_pdf'

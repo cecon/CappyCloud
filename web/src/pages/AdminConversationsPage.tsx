@@ -13,7 +13,7 @@ import {
 } from '../api'
 import { AdminConsole } from '../components/admin/AdminConsole'
 import { useAdminWorkspaceIds } from '../hooks/useAdminWorkspaceIds'
-import { ChatMessage } from '../components/chat/ChatMessage'
+import { AdminConversationThread } from '../components/admin/AdminConversationThread'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -256,23 +256,7 @@ function ConversationViewer({ id, onClose }: { id: string | null; onClose: () =>
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
           {error && <p className="text-sm text-destructive">{error}</p>}
           {!detail && !error && <Skeleton className="h-24 w-full" />}
-          {detail?.messages.length === 0 && <p className="text-sm text-muted-foreground">Sem mensagens.</p>}
-          {detail?.messages.map((message) => (
-            <ChatMessage
-              key={message.id}
-              role={message.role}
-              content={message.content}
-              authorLabel={message.role === 'user' ? (detail.user_email ?? 'Usuário') : undefined}
-              meta={
-                <span>
-                  {formatDateTime(message.created_at)}
-                  {message.role !== 'user' && message.model_used && ` · ${message.model_used}`}
-                  {message.role !== 'user' &&
-                    ` · ${formatTokens(message.prompt_tokens + message.completion_tokens)} tokens · ${formatCurrency(message.cost_usd)}`}
-                </span>
-              }
-            />
-          ))}
+          {detail && <AdminConversationThread detail={detail} token={getToken() ?? ''} />}
         </div>
       </SheetContent>
     </Sheet>
@@ -285,8 +269,4 @@ function formatDateTime(value: string): string {
 
 function formatCurrency(value: number): string {
   return `US$ ${value.toFixed(value < 1 ? 4 : 2)}`
-}
-
-function formatTokens(value: number): string {
-  return value.toLocaleString('pt-BR')
 }

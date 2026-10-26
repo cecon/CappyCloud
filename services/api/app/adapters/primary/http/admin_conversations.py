@@ -61,6 +61,8 @@ class AdminConversationMessage(BaseModel):
     prompt_tokens: int
     completion_tokens: int
     cost_usd: float
+    plan_usage: dict | None = None
+    payload_diagnostics: dict | None = None
 
 
 class AdminConversationDetail(AdminConversationItem):
@@ -178,6 +180,8 @@ async def get_conversation(
                 prompt_tokens=m.prompt_tokens,
                 completion_tokens=m.completion_tokens,
                 cost_usd=float(m.cost_usd or 0),
+                plan_usage=m.plan_usage,
+                payload_diagnostics=m.payload_diagnostics,
             )
             for m in messages
         ],
