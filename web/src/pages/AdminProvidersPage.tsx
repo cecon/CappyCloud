@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Alert,
   Button,
@@ -13,8 +13,10 @@ import {
 import { IconPlus } from '@tabler/icons-react'
 import {
   createAdminProvider,
+  createAdminProviderModel,
   type AdminAiProvider,
   type AdminProviderCreate,
+  type AdminProviderModelCreate,
   type AiModelSyncResult,
   errorToUserMessage,
   fetchAdminProviders,
@@ -24,6 +26,7 @@ import {
 } from '../api'
 import { useCurrentUser } from '../hooks/useCurrentUser'
 import { EMPTY_FORM, formFromProvider, type ProviderFormState } from './admin-providers/form'
+import { AddModelModal } from './admin-providers/AddModelModal'
 import { ProviderFormModal } from './admin-providers/ProviderFormModal'
 import { ProvidersTable } from './admin-providers/ProvidersTable'
 
@@ -40,6 +43,7 @@ export function AdminProvidersPage() {
   const [formOpened, setFormOpened] = useState(false)
   const [editingProvider, setEditingProvider] = useState<AdminAiProvider | null>(null)
   const [form, setForm] = useState<ProviderFormState>(EMPTY_FORM)
+  const [modelProvider, setModelProvider] = useState<AdminAiProvider | null>(null)
 
   const reload = useCallback(async () => {
     const token = getToken()
@@ -127,6 +131,22 @@ export function AdminProvidersPage() {
     }
   }
 
+  async function handleAddModel(payload: AdminProviderModelCreate) {
+    const token = getToken()
+    if (!token || !modelProvider) return
+    setSaving(true)
+    setActionError(null)
+    try {
+      await createAdminProviderModel(token, modelProvider.id, payload)
+      setModelProvider(null)
+      await reload()
+    } catch (err) {
+      setActionError(errorToUserMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const canSubmit =
     form.name.trim().length > 0 &&
     form.base_url.trim().length > 0 &&
@@ -195,6 +215,10 @@ export function AdminProvidersPage() {
               canSyncProviders={canSyncProviders}
               syncing={syncing}
               onEdit={openEditForm}
+              onAddModel={(provider) => {
+                setActionError(null)
+                setModelProvider(provider)
+              }}
               onSync={(providerId) => void handleSync(providerId)}
             />
           )}
@@ -209,6 +233,15 @@ export function AdminProvidersPage() {
           canSubmit={canSubmit}
           onClose={() => setFormOpened(false)}
           onSave={() => void handleSaveProvider()}
+        />
+
+        <AddModelModal
+          // Remonta a cada provider para começar com o formulário vazio.
+          key={modelProvider?.id ?? 'closed'}
+          provider={modelProvider}
+          saving={saving}
+          onClose={() => setModelProvider(null)}
+          onSave={(payload) => void handleAddModel(payload)}
         />
       </Stack>
     </Container>
