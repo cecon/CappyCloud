@@ -125,6 +125,18 @@ def process_artifact(
     return ArtifactProcessingResult(kind=kind, chunks=chunks)
 
 
+def extract_artifact_text(filename: str, mime_type: str, content: bytes) -> str:
+    """Devolve o texto completo do artefato (vazio para imagens)."""
+    kind = detect_artifact_kind(filename, mime_type)
+    if kind == "image":
+        return ""
+    if kind == "pdf":
+        return "\n\n".join(page for page in _extract_pdf_pages(content) if page)
+    if kind == "docx":
+        return _extract_docx(content)
+    return _decode_text(content)
+
+
 def _decode_text(content: bytes) -> str:
     for encoding in ("utf-8-sig", "utf-8", "latin-1"):
         try:
@@ -211,11 +223,7 @@ def _chunks_from_log(
     return chunks
 
 
-def _chunks_from_pdf(
-    attachment_id: uuid.UUID,
-    conversation_id: uuid.UUID,
-    content: bytes,
-) -> list[ConversationArtifactChunk]:
+def _extract_pdf_pages(content: bytes) -> list[str]:
     try:
         from pypdf import PdfReader
     except ImportError as exc:
@@ -226,12 +234,22 @@ def _chunks_from_pdf(
     except Exception as exc:
         raise ArtifactProcessingError("PDF inválido ou ilegível.") from exc
 
-    chunks: list[ConversationArtifactChunk] = []
-    for page_index, page in enumerate(reader.pages):
+    pages: list[str] = []
+    for page in reader.pages:
         try:
-            text = _normalise_text(page.extract_text() or "")
+            pages.append(_normalise_text(page.extract_text() or ""))
         except Exception:
-            text = ""
+            pages.append("")
+    return pages
+
+
+def _chunks_from_pdf(
+    attachment_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    content: bytes,
+) -> list[ConversationArtifactChunk]:
+    chunks: list[ConversationArtifactChunk] = []
+    for page_index, text in enumerate(_extract_pdf_pages(content)):
         for partial in _chunks_from_text(
             attachment_id,
             conversation_id,

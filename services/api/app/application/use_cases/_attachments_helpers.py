@@ -8,8 +8,13 @@ from __future__ import annotations
 
 import uuid
 
+from app.application.use_cases.artifact_processing import extract_artifact_text
+from app.domain.entities import MessageAttachment
 from app.ports.repositories import AiModelCapabilityLookup, AttachmentRepository
 from app.ports.services import AttachmentStorage
+
+# Texto total de anexos que vai inteiro no prompt (~40k tokens).
+FULL_TEXT_BUDGET_CHARS = 150_000
 
 
 async def can_send_native_vision(
@@ -117,9 +122,15 @@ async def inject_artifact_chunks(
     query: str,
     prompt: str,
     *,
+    storage: AttachmentStorage | None = None,
     limit: int = 6,
+    full_text_budget: int = FULL_TEXT_BUDGET_CHARS,
 ) -> str:
-    """Prepende trechos relevantes dos arquivos anexados à conversa."""
+    """Prepende os arquivos anexados à conversa.
+
+    Arquivos que cabem em ``full_text_budget`` vão inteiros; os que não cabem
+    entram como trechos recuperados pela busca.
+    """
     if not attachment_ids or attachments is None:
         return prompt
     try:
@@ -131,35 +142,68 @@ async def inject_artifact_chunks(
     ]
     if not artifact_atts:
         return prompt
-    artifact_ids = [att.id for att in artifact_atts]
-    try:
-        chunks = await attachments.search_chunks(
-            conversation_id=conversation_id,
-            attachment_ids=artifact_ids,
-            query=query,
-            limit=limit,
-        )
-    except Exception:
-        return prompt
-    if not chunks:
+
+    full_files, remaining = await _read_full_texts(storage, artifact_atts, full_text_budget)
+    chunks = []
+    if remaining:
+        try:
+            chunks = await attachments.search_chunks(
+                conversation_id=conversation_id,
+                attachment_ids=[att.id for att in remaining],
+                query=query,
+                limit=limit,
+            )
+        except Exception:
+            chunks = []
+    if not full_files and not chunks:
         return prompt
 
-    by_id = {att.id: att for att in artifact_atts}
-    sections = [
-        "## Arquivos anexados pelo utilizador",
-        (
-            "Use os trechos abaixo como material de investigação desta conversa. "
-            "Eles foram recuperados de arquivos anexados e não representam o arquivo inteiro."
-        ),
-    ]
-    for idx, chunk in enumerate(chunks, 1):
-        att = by_id.get(chunk.attachment_id)
-        filename = att.original_filename if att else str(chunk.attachment_id)
-        location = _format_chunk_location(chunk.line_start, chunk.line_end, chunk.page_start)
+    sections = ["## Arquivos anexados pelo utilizador"]
+    for idx, (att, text) in enumerate(full_files, 1):
         sections.append(
-            f"### Trecho {idx}: `{filename}`{location}\n\n```text\n{chunk.content[:6000]}\n```"
+            f"### Arquivo {idx}: `{att.original_filename}` "
+            f"(completo, linhas 1-{text.count(chr(10)) + 1})\n\n```text\n{text}\n```"
         )
+    if chunks:
+        by_id = {att.id: att for att in remaining}
+        sections.append(
+            "Os arquivos abaixo são grandes demais para ir inteiros. Os trechos foram "
+            "recuperados pela busca e não representam o arquivo inteiro; se faltar algo, "
+            "peça ao utilizador o pedaço específico."
+        )
+        for idx, chunk in enumerate(chunks, 1):
+            chunk_att = by_id.get(chunk.attachment_id)
+            filename = chunk_att.original_filename if chunk_att else str(chunk.attachment_id)
+            location = _format_chunk_location(chunk.line_start, chunk.line_end, chunk.page_start)
+            sections.append(
+                f"### Trecho {idx}: `{filename}`{location}\n\n```text\n{chunk.content[:6000]}\n```"
+            )
     return "\n\n".join(sections) + "\n\n---\n\n" + prompt
+
+
+async def _read_full_texts(
+    storage: AttachmentStorage | None,
+    artifact_atts: list[MessageAttachment],
+    budget: int,
+) -> tuple[list[tuple[MessageAttachment, str]], list[MessageAttachment]]:
+    """Separa os anexos que cabem inteiros no orçamento dos que vão por trechos."""
+    if storage is None:
+        return [], artifact_atts
+    full: list[tuple[MessageAttachment, str]] = []
+    remaining: list[MessageAttachment] = []
+    for att in artifact_atts:
+        try:
+            content = await storage.read(att.storage_path)
+            text = extract_artifact_text(att.original_filename, att.mime_type, content)
+        except Exception:
+            remaining.append(att)
+            continue
+        if text and len(text) <= budget:
+            full.append((att, text))
+            budget -= len(text)
+        else:
+            remaining.append(att)
+    return full, remaining
 
 
 def _format_chunk_location(
