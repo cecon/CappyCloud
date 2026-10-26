@@ -54,7 +54,11 @@ async def get_conversation_activity(
     owner = owner_row.fetchone()
     if not owner or (owner.user_id != current.id and current.role is not UserRole.ADMIN):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada")
+    return await load_conversation_activity(db, conversation_id)
 
+
+async def load_conversation_activity(db: AsyncSession, conversation_id: uuid.UUID) -> list[dict]:
+    """Monta os turnos da conversa; quem chama já checou o acesso."""
     tasks = (
         await db.execute(
             text(

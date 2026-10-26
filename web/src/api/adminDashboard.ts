@@ -1,3 +1,4 @@
+import type { PayloadSizeBreakdown, PlanUsage } from './streamTypes'
 import { apiFetch, formatApiErrorPayload } from './http'
 
 // -- Admin · Dashboard -----------------------------------------------------
@@ -80,6 +81,8 @@ export interface AdminConversationMessage {
   prompt_tokens: number
   completion_tokens: number
   cost_usd: number
+  plan_usage?: PlanUsage | null
+  payload_diagnostics?: PayloadSizeBreakdown | null
 }
 
 export interface AdminConversationDetail extends AdminConversationItem {

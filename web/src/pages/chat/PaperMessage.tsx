@@ -19,6 +19,8 @@ export function PaperMessage({
   costUsd,
   planUsage,
   payloadDiagnostics,
+  authorLabel,
+  attachments,
 }: {
   role: string
   content: string
@@ -29,6 +31,10 @@ export function PaperMessage({
   costUsd?: number
   planUsage?: PlanUsage | null
   payloadDiagnostics?: PayloadSizeBreakdown | null
+  /** Rótulo do autor da pergunta (o admin vê o e-mail no lugar de "Tu"). */
+  authorLabel?: string
+  /** Anexos enviados com a pergunta, abaixo do texto. */
+  attachments?: React.ReactNode
 }) {
   const isUser = role === 'user'
   const totalTokens = (promptTokens ?? 0) + (completionTokens ?? 0)
@@ -64,7 +70,7 @@ export function PaperMessage({
           fontSize: '0.6rem',
         }}
       >
-        {isUser ? 'Tu' : 'Agente'}
+        {isUser ? (authorLabel ?? 'Tu') : 'Agente'}
       </Text>
       {isUser ? (
         <Text
@@ -84,6 +90,7 @@ export function PaperMessage({
           {streaming && <span className={styles.streamingCursor} aria-hidden />}
         </div>
       )}
+      {attachments}
       {!isUser && payloadDiagnostics && (
         <PayloadDiagnosticSummary diagnostics={payloadDiagnostics} />
       )}
