@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, Group, Modal, Stack, TextInput } from '@/components/ui/legacy'
+import { Button, Group, Modal, Stack, Switch, TextInput } from '@/components/ui/legacy'
 import type { AdminAiProvider, AdminProviderModelCreate } from '../../api'
 
 type AddModelModalProps = {
@@ -12,6 +12,7 @@ type AddModelModalProps = {
 export function AddModelModal({ provider, saving, onClose, onSave }: AddModelModalProps) {
   const [modelId, setModelId] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [vision, setVision] = useState(false)
 
   const trimmedId = modelId.trim()
 
@@ -35,6 +36,12 @@ export function AddModelModal({ provider, saving, onClose, onSave }: AddModelMod
           value={displayName}
           onChange={(event) => setDisplayName(event.currentTarget.value)}
         />
+        <Switch
+          // Sem visão, o chat troca para outro modelo quando houver imagem anexada.
+          label="Lê imagem (visão)"
+          checked={vision}
+          onChange={(event) => setVision(event.currentTarget.checked)}
+        />
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>
             Cancelar
@@ -43,7 +50,11 @@ export function AddModelModal({ provider, saving, onClose, onSave }: AddModelMod
             loading={saving}
             disabled={trimmedId.length === 0}
             onClick={() =>
-              onSave({ model_id: trimmedId, display_name: displayName.trim() || trimmedId })
+              onSave({
+                model_id: trimmedId,
+                display_name: displayName.trim() || trimmedId,
+                capabilities: vision ? ['text', 'vision'] : ['text'],
+              })
             }
           >
             Salvar

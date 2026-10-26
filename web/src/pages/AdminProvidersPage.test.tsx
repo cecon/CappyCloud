@@ -105,13 +105,18 @@ describe('AdminProvidersPage', () => {
     fireEvent.change(screen.getByPlaceholderText('Claude Opus 5.5'), {
       target: { value: 'Claude Opus 5.5' },
     })
+    fireEvent.click(screen.getByLabelText('Lê imagem (visão)'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
 
     await waitFor(() => {
       expect(calls).toContainEqual({
         path: expect.stringContaining('/api/admin/providers/provider-1/models'),
         method: 'POST',
-        body: { model_id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5' },
+        body: {
+          model_id: 'claude-opus-5-5',
+          display_name: 'Claude Opus 5.5',
+          capabilities: ['text', 'vision'],
+        },
       })
     })
   })

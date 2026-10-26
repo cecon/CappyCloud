@@ -46,11 +46,18 @@ export interface FailedAttachment {
 
 export type TrayItem = PendingAttachment | UploadingAttachment | UploadedAttachment | FailedAttachment
 
+/** Aviso exibido acima dos anexos (ex.: troca automática de modelo por causa de imagem). */
+export interface TrayNotice {
+  text: string
+  onDismiss: () => void
+}
+
 interface Props {
   items: TrayItem[]
   token: string
   conversationId: string | null
   onRemove: (localId: string) => void
+  notice?: TrayNotice | null
 }
 
 /**
@@ -165,10 +172,29 @@ function statusLabel(attachment: Attachment): string {
   return attachment.processing_status || 'anexado'
 }
 
-export function AttachmentTray({ items, token, conversationId, onRemove }: Props): React.JSX.Element | null {
-  if (items.length === 0) return null
+export function AttachmentTray({
+  items, token, conversationId, onRemove, notice,
+}: Props): React.JSX.Element | null {
+  if (items.length === 0 && !notice) return null
 
   return (
+    <>
+    {notice && (
+      <div className={styles.notice} role="status">
+        <span className={styles.icon}>swap_horiz</span>
+        <span className={styles.noticeText}>{notice.text}</span>
+        <button
+          type="button"
+          className={styles.noticeClose}
+          onClick={notice.onDismiss}
+          aria-label="Fechar aviso"
+          title="Fechar aviso"
+        >
+          <span className={styles.icon}>close</span>
+        </button>
+      </div>
+    )}
+    {items.length > 0 && (
     <div className={styles.tray} role="list" aria-label="Anexos pendentes">
       {items.map((item) => {
         const filename =
@@ -222,5 +248,7 @@ export function AttachmentTray({ items, token, conversationId, onRemove }: Props
         )
       })}
     </div>
+    )}
+    </>
   )
 }

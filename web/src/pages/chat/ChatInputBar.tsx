@@ -14,7 +14,7 @@ type ChatInputBarProps = Pick<
   | 'streaming' | 'input' | 'setInput' | 'inputRef' | 'onSend' | 'onStop' | 'pendingAction'
   | 'token' | 'conversationId' | 'permissionMode' | 'setPermissionMode' | 'planModeEnabled'
   | 'executionProfile' | 'setExecutionProfile' | 'permissionWarningRuntimeConfirmed'
-  | 'convUsage' | 'liveUsage' | 'trayItems' | 'onPickFiles' | 'onPasteFiles' | 'onRemoveTrayItem'
+  | 'convUsage' | 'liveUsage' | 'trayItems' | 'onPickFiles' | 'onPasteFiles' | 'onRemoveTrayItem' | 'trayNotice'
   | 'fileInputRef' | 'isDragOver' | 'setDragOver'
 > & { slash: SlashCommandsState; elapsedSecs: number }
 
@@ -23,7 +23,7 @@ export function ChatInputBar({
   streaming, input, setInput, inputRef, onSend, onStop, pendingAction, token, conversationId,
   permissionMode, setPermissionMode, planModeEnabled, executionProfile, setExecutionProfile,
   permissionWarningRuntimeConfirmed, convUsage, liveUsage,
-  trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, fileInputRef, isDragOver, setDragOver,
+  trayItems, onPickFiles, onPasteFiles, onRemoveTrayItem, trayNotice, fileInputRef, isDragOver, setDragOver,
   slash, elapsedSecs,
 }: ChatInputBarProps) {
   const {
@@ -56,6 +56,7 @@ export function ChatInputBar({
             token={token}
             conversationId={conversationId}
             onRemove={onRemoveTrayItem}
+            notice={trayNotice}
           />
           <div className={styles.chatInputWrapper}>
           <input

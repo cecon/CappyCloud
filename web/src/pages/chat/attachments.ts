@@ -68,6 +68,12 @@ function preferredVisionModelId(models: AiModel[]): string {
   )
 }
 
+/** Aviso mostrado quando a imagem anexada obriga a trocar de modelo. */
+export function modelSwitchNotice(models: AiModel[], fromModelId: string, toModelId: string): string {
+  const name = (id: string) => models.find((model) => model.model_id === id)?.display_name || id
+  return `${name(fromModelId)} não lê imagem; a mensagem vai com ${name(toModelId)}.`
+}
+
 export function modelIdForAttachments(
   models: AiModel[],
   selectedModelId: string,

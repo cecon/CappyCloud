@@ -57,6 +57,7 @@ export function useSendMessage({ st, selection, tray, token, loadActivityHistory
       : modelIdForAttachments(models, selectedModelId, sendableAttachments.some(trayItemHasImage))
     if (!onClaudeCli && modelForRequest && modelForRequest !== selectedModelId) {
       setSelectedModelId(modelForRequest)
+      tray.notifyModelSwitch(selectedModelId, modelForRequest)
     }
     const uploadedAttachmentIds = trayItems
       .filter((it): it is Extract<TrayItem, { kind: 'uploaded' }> => it.kind === 'uploaded')
