@@ -3,11 +3,14 @@ import type { AiModel, AiModelSyncResult, ModelTier } from './models'
 
 // ── Admin LLM catalog (ADR-006) ─────────────────────────────────────────────
 
+/** ``anthropic``: API de mensagens da Anthropic (no Azure Foundry, a única que lê imagem no Claude). */
+export type ProviderApiFormat = 'chat_completions' | 'responses' | 'anthropic'
+
 export interface AdminAiProvider {
   id: string
   name: string
   base_url: string
-  api_format: 'chat_completions' | 'responses'
+  api_format: ProviderApiFormat
   active: boolean
   last_synced_at: string | null
   models_count: number
@@ -19,7 +22,7 @@ export interface AdminAiProvider {
 export interface AdminProviderCreate {
   name: string
   base_url: string
-  api_format?: 'chat_completions' | 'responses'
+  api_format?: ProviderApiFormat
   api_key?: string
   model_id?: string
   display_name?: string
@@ -33,7 +36,7 @@ export interface AdminProviderCreate {
 export interface AdminProviderPatch {
   name?: string
   base_url?: string
-  api_format?: 'chat_completions' | 'responses'
+  api_format?: ProviderApiFormat
   api_key?: string
   active?: boolean
 }

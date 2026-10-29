@@ -1,4 +1,4 @@
-import type { AdminAiProvider } from '../../api'
+import type { AdminAiProvider, ProviderApiFormat } from '../../api'
 
 export function formatTimestamp(iso: string | null): string {
   if (!iso) return '—'
@@ -19,7 +19,7 @@ export function authStateColor(state: AdminAiProvider['auth_state']): string {
 export type ProviderFormState = {
   name: string
   base_url: string
-  api_format: 'chat_completions' | 'responses'
+  api_format: ProviderApiFormat
   api_key: string
   model_id: string
   display_name: string

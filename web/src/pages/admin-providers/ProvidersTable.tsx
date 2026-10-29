@@ -1,8 +1,14 @@
 import { Badge, Stack, Table, Text } from '@/components/ui/legacy'
 import { IconPencil, IconPlus, IconRefresh } from '@tabler/icons-react'
-import type { AdminAiProvider } from '../../api'
+import type { AdminAiProvider, ProviderApiFormat } from '../../api'
 import { ActionsCell, ActionsHeader, RowActionIcon } from '../../components/TableActions'
 import { authStateColor, formatTimestamp } from './form'
+
+const API_FORMAT_BADGE: Record<ProviderApiFormat, { label: string; color: string }> = {
+  chat_completions: { label: 'Chat', color: 'gray' },
+  responses: { label: 'Responses', color: 'cyan' },
+  anthropic: { label: 'Anthropic', color: 'orange' },
+}
 
 type ProvidersTableProps = {
   providers: AdminAiProvider[]
@@ -47,8 +53,8 @@ export function ProvidersTable({
               </Text>
             </Table.Td>
             <Table.Td>
-              <Badge variant="light" color={p.api_format === 'responses' ? 'cyan' : 'gray'}>
-                {p.api_format === 'responses' ? 'Responses' : 'Chat'}
+              <Badge variant="light" color={API_FORMAT_BADGE[p.api_format].color}>
+                {API_FORMAT_BADGE[p.api_format].label}
               </Badge>
             </Table.Td>
             <Table.Td>

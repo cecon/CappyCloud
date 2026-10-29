@@ -43,10 +43,15 @@ export function ProviderFormModal({
   }
 
   function updateBaseUrl(value: string) {
+    const lower = value.toLowerCase()
     setForm((prev) => ({
       ...prev,
       base_url: value,
-      api_format: value.toLowerCase().includes('/responses') ? 'responses' : prev.api_format,
+      api_format: lower.includes('/responses')
+        ? 'responses'
+        : lower.endsWith('/messages')
+          ? 'anthropic'
+          : prev.api_format,
     }))
   }
 
@@ -77,7 +82,9 @@ export function ProviderFormModal({
           data={[
             { value: 'chat_completions', label: 'Chat Completions' },
             { value: 'responses', label: 'Responses' },
+            { value: 'anthropic', label: 'Anthropic (Messages)' },
           ]}
+          description="Para Claude no Azure Foundry use Anthropic: nos outros formatos a Azure descarta as imagens."
           value={form.api_format}
           onChange={(value) =>
             value &&

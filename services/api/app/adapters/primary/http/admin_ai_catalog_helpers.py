@@ -15,14 +15,14 @@ from app.domain.entities import ModelTier
 from app.infrastructure.azure_foundry_models import is_azure_foundry_endpoint
 from app.infrastructure.orm_models import AiModel, AiProvider
 
-_SUPPORTED_API_FORMATS = {"chat_completions", "responses"}
+_SUPPORTED_API_FORMATS = {"chat_completions", "responses", "anthropic"}
 _SUPPORTED_CAPABILITIES = {"text", "vision", "embedding", "audio", "video", "image"}
 
 
 def _normalise_api_format(value: str | None) -> str:
     raw = (value or "chat_completions").strip().lower()
     if raw not in _SUPPORTED_API_FORMATS:
-        raise ValueError("Formato de API deve ser chat_completions ou responses.")
+        raise ValueError("Formato de API deve ser chat_completions, responses ou anthropic.")
     return raw
 
 
@@ -47,7 +47,14 @@ def _normalise_provider_endpoint(
     elif lower_path.endswith("/chat/completions"):
         path = path[: -len("/chat/completions")]
         inferred = "chat_completions"
+    elif lower_path.endswith("/messages"):
+        path = path[: -len("/messages")]
+        inferred = "anthropic"
 
+    if inferred == "anthropic":
+        # O agente monta a URL da API da Anthropic a partir do host.
+        base_url = urlunsplit((parsed.scheme, parsed.netloc, path.rstrip("/"), "", ""))
+        return base_url, inferred
     if not path and is_azure_foundry_endpoint(raw):
         path = "/openai/v1"
 
