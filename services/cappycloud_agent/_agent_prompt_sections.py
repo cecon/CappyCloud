@@ -24,12 +24,28 @@ def _clean_confluence_labels(raw_labels: object) -> list[str]:
     return labels
 
 
-def render_repo_skills(skills: list[dict]) -> str:
-    """Índice das skills do repositório; o conteúdo vem pela busca de documentação.
+def render_repo_skills(skills: list[dict], inline_max_chars: int = 0) -> str:
+    """Skills do repositório: completas quando cabem, senão um índice.
 
-    As mais relevantes para a pergunta já entram completas nas evidências
-    automáticas, então aqui vai só título e resumo.
+    Quando o conteúdo de todas soma até ``inline_max_chars``, elas entram
+    inteiras: nem todo modelo busca a skill antes de responder (o Claude Opus
+    no openclaude não buscou em nenhuma conversa do PROTHEUS-azure). Acima do
+    limite vai só título e resumo, e o conteúdo vem pela busca de documentação.
     """
+    contents = [str(skill.get("content") or "").strip() for skill in skills]
+    if inline_max_chars and all(contents) and sum(map(len, contents)) <= inline_max_chars:
+        lines = [
+            "## Skills configuradas para este repositório",
+            "Estas skills foram cadastradas para o(s) repositório(s) da sessão e estão "
+            "completas abaixo. Siga as que baterem com o assunto antes de responder ou "
+            "alterar código; não é preciso buscá-las.",
+        ]
+        for skill, content in zip(skills, contents, strict=True):
+            lines.append(f"\n### {skill['title']}\n\n{content}")
+            if skill.get("source_url"):
+                lines.append(f"\nFonte: {skill['source_url']}")
+        return "\n".join(lines)
+
     lines = ["## Skills configuradas para este repositório"]
     lines.append(
         "Estas skills foram cadastradas para o(s) repositório(s) da sessão. Quando o "

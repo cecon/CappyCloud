@@ -27,6 +27,8 @@ from ._agent_prompt_sections import (  # noqa: E402
 
 _RAG_TOP_N = int(os.getenv("RAG_TOP_N", "3"))
 _REPO_SKILLS_LIMIT = int(os.getenv("REPO_SKILLS_LIMIT", "20"))
+# Até este total (caracteres) as skills dos repos entram completas no prompt.
+_INLINE_SKILLS_MAX_CHARS = int(os.getenv("INLINE_SKILLS_MAX_CHARS", "30000"))
 _TOPLEVEL_LIMIT = int(os.getenv("WORKTREE_TOPLEVEL_LIMIT", "80"))
 
 
@@ -134,7 +136,7 @@ async def _load_repo_skills(
 
     placeholders = ", ".join(f"${i + 2}::uuid" for i in range(len(repo_ids)))
     rows = await conn.fetch(
-        f"SELECT title, summary, source_url FROM skills "
+        f"SELECT title, summary, content, source_url FROM skills "
         f"WHERE active = TRUE AND repository_id IN ({placeholders}) "
         f"AND document_id IS NULL "
         f"ORDER BY title LIMIT $1",
@@ -145,6 +147,7 @@ async def _load_repo_skills(
         {
             "title": r["title"],
             "summary": r["summary"] or "",
+            "content": r["content"] or "",
             "source_url": r["source_url"],
         }
         for r in rows
@@ -313,7 +316,7 @@ def build_prompt_with_agent(
 
 
     if skills:
-        parts.append(render_repo_skills(skills))
+        parts.append(render_repo_skills(skills, _INLINE_SKILLS_MAX_CHARS))
 
     if sandbox_session_url:
         parts.append(render_session_tools(sandbox_session_url, repos, execution_profile))
