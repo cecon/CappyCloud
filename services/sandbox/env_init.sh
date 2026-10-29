@@ -274,6 +274,8 @@ if (!c.includes('process.env.OPENAI_BASE_URL = previousOpenAIBaseUrl') && c.incl
 fs.writeFileSync(file, c);
 console.log('[env_init] gRPC dynamic model patch applied.');
 PATCH_EOF
+    # Provider "anthropic": depende do bloco de override inserido acima.
+    node /patch_openclaude_anthropic_provider.js "$_GRPC_TS" || true
 fi
 
 # ── Exporta vars para openclaude e session_server ────────────

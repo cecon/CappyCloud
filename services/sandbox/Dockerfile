@@ -164,6 +164,7 @@ COPY sandbox/CLAUDE.md /app/CLAUDE.md
 
 # Entrypoints e scripts
 COPY services/sandbox/env_init.sh /env_init.sh
+COPY services/sandbox/patch_openclaude_anthropic_provider.js /patch_openclaude_anthropic_provider.js
 COPY services/sandbox/session_start.sh /session_start.sh
 COPY services/sandbox/session_server.js /session_server.js
 COPY services/sandbox/git_handlers.js /git_handlers.js

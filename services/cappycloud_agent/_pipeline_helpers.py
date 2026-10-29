@@ -242,6 +242,24 @@ def _normalise_runtime_base_url(raw_url: str) -> tuple[str, str | None]:
     ), inferred
 
 
+def _anthropic_runtime_base_url(raw_url: str) -> str:
+    """Base da API de mensagens da Anthropic, sem ``/v1/messages``.
+
+    No Azure Foundry a API da Anthropic fica em ``https://<recurso>/anthropic``,
+    fora do caminho do projeto que a API estilo OpenAI usa.
+    """
+    parsed = urlsplit((raw_url or "").strip())
+    host = parsed.netloc.split("@")[-1].split(":")[0].lower()
+    if host.endswith(".services.ai.azure.com"):
+        return urlunsplit((parsed.scheme, parsed.netloc, "/anthropic", "", ""))
+    path = parsed.path.rstrip("/")
+    for suffix in ("/v1/messages", "/messages", "/v1"):
+        if path.lower().endswith(suffix):
+            path = path[: -len(suffix)]
+            break
+    return urlunsplit((parsed.scheme, parsed.netloc, path.rstrip("/"), "", ""))
+
+
 def _path_has_azure_project_openai_v1(path: str) -> bool:
     parts = [part.lower() for part in path.strip("/").split("/") if part]
     return (
@@ -295,6 +313,14 @@ async def resolve_model_provider_runtime_config(
         if not base_url:
             return None
         configured_format = str(row["api_format"] or "chat_completions").strip()
+        if configured_format == "anthropic":
+            # Claude no Azure Foundry só lê imagem pela API da Anthropic; a
+            # rota estilo OpenAI aceita a chamada e descarta a imagem.
+            return LlmProviderRuntimeConfig(
+                base_url=_anthropic_runtime_base_url(str(row["base_url"] or "")),
+                api_key=api_key,
+                api_format="anthropic",
+            )
         api_format = inferred_format or configured_format or "chat_completions"
         if api_format not in {"chat_completions", "responses"}:
             api_format = "chat_completions"

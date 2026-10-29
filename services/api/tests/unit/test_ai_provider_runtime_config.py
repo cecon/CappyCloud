@@ -83,6 +83,66 @@ async def test_resolve_model_provider_runtime_config_decrypts_and_normalises(
     assert captured["closed"] is True
 
 
+def test_admin_provider_endpoint_keeps_azure_project_url_for_anthropic() -> None:
+    # A URL do projeto continua servindo para listar os deployments na sincronização.
+    base_url, api_format = _normalise_provider_endpoint(
+        "https://example.services.ai.azure.com/api/projects/demo/openai/v1",
+        "anthropic",
+    )
+
+    assert base_url == "https://example.services.ai.azure.com/api/projects/demo/openai/v1"
+    assert api_format == "anthropic"
+
+
+def test_admin_provider_endpoint_infers_anthropic_messages_url() -> None:
+    base_url, api_format = _normalise_provider_endpoint(
+        "https://example.services.ai.azure.com/anthropic/v1/messages",
+        "chat_completions",
+    )
+
+    assert base_url == "https://example.services.ai.azure.com/anthropic/v1"
+    assert api_format == "anthropic"
+
+
+def test_anthropic_runtime_base_url_points_to_azure_anthropic_route() -> None:
+    to_base = _pipeline_helpers._anthropic_runtime_base_url
+
+    assert (
+        to_base("https://example.services.ai.azure.com/api/projects/demo/openai/v1")
+        == "https://example.services.ai.azure.com/anthropic"
+    )
+    assert to_base("https://api.anthropic.com/v1/messages") == "https://api.anthropic.com"
+    assert to_base("https://proxy.example.com/claude/v1") == "https://proxy.example.com/claude"
+
+
+async def test_resolve_runtime_config_keeps_anthropic_format(monkeypatch) -> None:
+    class FakeConn:
+        async def fetchrow(self, query: str, model_id: str) -> dict[str, str]:
+            return {
+                "base_url": "https://example.services.ai.azure.com/api/projects/demo/openai/v1",
+                "api_key_encrypted": "ciphertext",
+                "api_format": "anthropic",
+                "name": "Azure Claude",
+            }
+
+        async def close(self) -> None:
+            return None
+
+    async def fake_connect(database_url: str) -> FakeConn:
+        return FakeConn()
+
+    monkeypatch.setattr(_pipeline_helpers.asyncpg, "connect", fake_connect)
+    monkeypatch.setattr(_pipeline_helpers, "_decrypt_secret", lambda value: "plain-key")
+
+    config = await _pipeline_helpers.resolve_model_provider_runtime_config(
+        "postgresql://db", "claude-opus-5-5"
+    )
+
+    assert config is not None
+    assert config.base_url == "https://example.services.ai.azure.com/anthropic"
+    assert config.api_format == "anthropic"
+
+
 def test_azure_deployment_catalog_url_uses_project_from_path_first() -> None:
     urls = _deployment_catalog_urls(
         "https://example.services.ai.azure.com/api/projects/custom/openai/v1"
