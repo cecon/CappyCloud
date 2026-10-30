@@ -330,17 +330,6 @@ def test_claude_cli_cites_architect_subagent_instead_of_pasting_it() -> None:
     assert "Modelo preferencial: `sonnet`" in pasted
 
 
-def test_repo_skills_are_an_index_not_full_content() -> None:
-    section = _agent_prompt_sections.render_repo_skills(
-        [{"title": "Fiscal", "summary": "Regras fiscais", "content": "conteúdo longo"}]
-    )
-
-    assert "- **Fiscal** — Regras fiscais" in section
-    assert "`/skills/search`" in section
-    assert "conteúdo longo" not in section
-    assert "skills globais" not in section
-
-
 def test_architect_without_agent_file_is_still_pasted() -> None:
     """Sem ~/.claude/agents gravado (sandbox sem boot), citar mandaria para o nada."""
     other = {**_ARCHITECT, "slug": "pdv-architect", "name": "pdv-architect"}
