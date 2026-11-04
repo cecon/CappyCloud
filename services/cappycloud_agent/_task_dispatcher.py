@@ -73,6 +73,7 @@ class TaskDispatcher:
         sandbox_session_url: str = "",
         attachments: list[dict] | None = None,
         user_message: str | None = None,
+        history: list[dict] | None = None,
     ) -> str:
         """Cria uma agent_task e arranca o runner; retorna o task_id (UUID).
 
@@ -104,6 +105,7 @@ class TaskDispatcher:
                 sandbox_session_url=sandbox_session_url,
                 attachments=attachments,
                 user_message=user_message,
+                history=history,
             ),
             name=f"dispatch-{task_id[:8]}",
         )
@@ -203,6 +205,7 @@ class TaskDispatcher:
         sandbox_session_url: str = "",
         attachments: list[dict] | None = None,
         user_message: str | None = None,
+        history: list[dict] | None = None,
     ) -> None:
         """Cria a sessão, inicia a GrpcSession e arranca o TaskRunner."""
         await launch_runner(
@@ -219,6 +222,7 @@ class TaskDispatcher:
             sandbox_session_url=sandbox_session_url,
             attachments=attachments,
             user_message=user_message,
+            history=history,
         )
 
     async def _reconnect_orphaned_tasks(self) -> None:

@@ -39,11 +39,13 @@ async def launch_runner(
     sandbox_session_url: str = "",
     attachments: list[dict] | None = None,
     user_message: str | None = None,
+    history: list[dict] | None = None,
 ) -> None:
     """Cria sessão, inicia gRPC e registra o runner ativo.
 
     ``user_message``: a pergunta sem o contexto montado pelo pipeline — é o que
     vai para o Claude CLI quando a sessão dele é retomada.
+    ``history``: mensagens da conversa (a atual por último); só o openclaude usa.
     """
     user_id = user_id or conversation_id or "system"
     chat_id = conversation_id or task_id
@@ -110,6 +112,7 @@ async def launch_runner(
         session_root=session_root or sandbox.session_root,
         working_directory=working_directory,
         openclaude=agent_runtime != AGENT_RUNTIME_CLAUDE_CLI,
+        history=history,
     )
     if prepared is None:
         return
