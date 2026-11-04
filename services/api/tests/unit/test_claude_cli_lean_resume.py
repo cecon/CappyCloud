@@ -91,7 +91,9 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
     return seen
 
 
-async def _prepare(resumed: bool, phases: list, openclaude: bool = False) -> str | None:
+async def _prepare(
+    resumed: bool, phases: list, openclaude: bool = False, history: list[dict] | None = None
+) -> str | None:
     async def emit(task_id, stage, label, state, duration_ms=None):
         phases.append((label, state))
 
@@ -107,6 +109,7 @@ async def _prepare(resumed: bool, phases: list, openclaude: bool = False) -> str
         session_root="/repos/workspaces/loja/sessions/abc",
         working_directory="/repos/workspaces/loja/sessions/abc",
         openclaude=openclaude,
+        history=history,
     )
 
 
@@ -181,3 +184,25 @@ async def test_lista_os_subagentes_gravados_no_sandbox(monkeypatch: pytest.Monke
     _patch_http(monkeypatch, lambda _r: httpx.Response(404, json={"error": "Not found"}))
     assert await _resume.claude_cli_agent_names("http://sb:8080") == set()
     assert await _resume.claude_cli_agent_names("") == set()
+
+
+_HISTORY = [
+    {"role": "user", "content": "analise a rejeição E0604"},
+    {"role": "assistant", "content": "a DPS saiu com pAliq"},
+    {"role": "user", "content": "qual a versão do banco?"},
+]
+
+
+async def test_openclaude_recebe_o_historico_da_conversa(calls: dict[str, int]) -> None:
+    # O openclaude zera os turnos a cada pedido: sem isto o complemento chega sem contexto.
+    prompt = await _prepare(False, [], openclaude=True, history=_HISTORY)
+    assert prompt is not None
+    assert "## Histórico desta conversa" in prompt
+    assert "a DPS saiu com pAliq" in prompt
+
+
+async def test_claude_cli_nao_recebe_o_historico_no_prompt(calls: dict[str, int]) -> None:
+    # O Claude CLI retoma a própria sessão; repetir o histórico duplicaria o contexto.
+    prompt = await _prepare(False, [], history=_HISTORY)
+    assert prompt is not None
+    assert "## Histórico desta conversa" not in prompt

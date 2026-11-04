@@ -214,6 +214,8 @@ class Pipeline(PipelinePromptMixin):
             "attachments": attachments_payload,
             # Claude CLI com sessão retomada recebe só a pergunta, sem o contexto acima.
             "user_message": user_message,
+            # O openclaude não guarda turnos: o histórico vai no prompt dele.
+            "history": messages,
         }
 
         # Envia config MCP ao sandbox antes de cada dispatch (idempotente).

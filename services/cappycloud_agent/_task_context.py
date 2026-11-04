@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Awaitable, Callable
 
+from ._conversation_history import inject_conversation_history
 from ._evidence_prefetch import inject_evidence_prefetch
 from ._knowledge_prefetch import inject_workspace_knowledge
 from ._pipeline_helpers import add_workspace_section, inject_repo_context
@@ -30,12 +31,14 @@ async def prepare_turn_prompt(
     session_root: str,
     working_directory: str,
     openclaude: bool = False,
+    history: list[dict] | None = None,
 ) -> str | None:
     """Prompt do turno, ou ``None`` se o worktree não pôde ser validado.
 
     Sessão do Claude CLI retomada: vai só a mensagem do usuário — o contexto da
     primeira mensagem (workspace, estrutura dos repositórios) já está no
     histórico do Claude Code. Os worktrees continuam sendo conferidos.
+    O openclaude não guarda turnos: recebe ``history`` renderizado no prompt.
     """
     started = time.monotonic()
     pipeline_prompt = prompt
@@ -67,6 +70,7 @@ async def prepare_turn_prompt(
     # do MCP ``cappy`` (services/sandbox/evidence_mcp_server.py). Só o openclaude
     # ainda recebe a busca prévia no prompt.
     if openclaude:
+        prompt = inject_conversation_history(prompt, history)
         prompt = await inject_evidence_prefetch(
             prompt,
             user_message=pipeline_prompt,
