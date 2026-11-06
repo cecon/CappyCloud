@@ -258,3 +258,22 @@ def test_done_event_reports_sanitized_runtime_fallback() -> None:
         "final_model": "openrouter/fallback:free",
         "reason": "rate_limit",
     }
+
+
+def test_done_event_forwards_cache_tokens_when_runtime_reports_them() -> None:
+    def done(**cache: int) -> dict:
+        msg = types.SimpleNamespace(
+            done=types.SimpleNamespace(
+                full_text="", prompt_tokens=33000, completion_tokens=500, **cache
+            )
+        )
+        return _grpc_event_handlers.done_event(
+            msg, session_id="s", model="claude-opus-5-5", wd="/w", streamed_text=True
+        )[1]
+
+    data = done(cache_read_tokens=30000, cache_write_tokens=2000)
+    assert data["cache_read_tokens"] == 30000
+    assert data["cache_write_tokens"] == 2000
+    # Sem os campos (proto antigo) ou zerados: o custo continua a preço cheio.
+    assert "cache_read_tokens" not in done()
+    assert "cache_write_tokens" not in done(cache_read_tokens=0, cache_write_tokens=0)

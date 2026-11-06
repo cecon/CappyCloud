@@ -1,3 +1,5 @@
+    # Tokens de cache no FinalResponse, para a Cappy precificar o cache.
+    node /patch_openclaude_cache_usage.js "$_GRPC_TS" || true
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────
 # CappyCloud Sandbox — Persistent Environment Init

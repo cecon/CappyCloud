@@ -103,3 +103,29 @@ def test_optional_tokens(value: Any, expected: int | None) -> None:
 )
 def test_reported_cost(value: Any, expected: float | None) -> None:
     assert _task_usage.reported_cost(value) == expected
+
+
+async def test_catalog_cost_prices_cache_tokens_apart() -> None:
+    # openclaude com provider anthropic: 33k de entrada, 30k lidos do cache.
+    conn = FakeConn(price_row={"input_cost_per_1m_usd": 4, "output_cost_per_1m_usd": 20})
+
+    await _task_usage.persist_usage(
+        FakePool(conn),
+        TASK_ID,
+        "claude-opus-5-5",
+        33_000,
+        500,
+        cache_read_tokens=30_000,
+        cache_write_tokens=2_000,
+    )
+
+    # 1k novo a 4 + 30k a 0,4 + 2k a 5 + 500 de saída a 20 (US$ por milhão).
+    assert conn.execute_args == (
+        "claude-opus-5-5",
+        33_000,
+        500,
+        round((1_000 * 4 + 30_000 * 0.4 + 2_000 * 5 + 500 * 20) / 1_000_000, 6),
+        30_000,
+        2_000,
+        TASK_ID,
+    )

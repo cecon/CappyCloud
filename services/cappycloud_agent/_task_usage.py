@@ -18,6 +18,10 @@ log = logging.getLogger(__name__)
 
 _OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 _OPENROUTER_TIMEOUT_SECONDS = 30
+# Preço do cache em relação ao input (tabela da Anthropic: leitura 0,1x,
+# gravação de 5 min 1,25x). Só entra quando o runtime separa os tokens de cache.
+_CACHE_READ_PRICE_FACTOR = 0.1
+_CACHE_WRITE_PRICE_FACTOR = 1.25
 
 
 def _price_per_1m(value: Any) -> float | None:
@@ -146,7 +150,13 @@ async def persist_usage(
         async with pool.acquire() as conn:
             if cost_usd is None:
                 cost_usd = await _cost_from_catalog(
-                    conn, task_id, model_used, prompt_tokens, completion_tokens
+                    conn,
+                    task_id,
+                    model_used,
+                    prompt_tokens,
+                    completion_tokens,
+                    cache_read_tokens=cache_read_tokens or 0,
+                    cache_write_tokens=cache_write_tokens or 0,
                 )
             await conn.execute(
                 """
@@ -178,6 +188,9 @@ async def _cost_from_catalog(
     model_used: str,
     prompt_tokens: int,
     completion_tokens: int,
+    *,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
 ) -> float:
     try:
         updated = await _refresh_openrouter_prices_for_configured_models(conn)
@@ -213,7 +226,11 @@ async def _cost_from_catalog(
         return 0.0
     input_cost = float(row["input_cost_per_1m_usd"] or 0)
     output_cost = float(row["output_cost_per_1m_usd"] or 0)
-    return round(
-        (prompt_tokens * input_cost + completion_tokens * output_cost) / 1_000_000.0,
-        6,
+    # prompt_tokens já inclui leitura e gravação de cache.
+    fresh_tokens = max(prompt_tokens - cache_read_tokens - cache_write_tokens, 0)
+    input_usd = input_cost * (
+        fresh_tokens
+        + cache_read_tokens * _CACHE_READ_PRICE_FACTOR
+        + cache_write_tokens * _CACHE_WRITE_PRICE_FACTOR
     )
+    return round((input_usd + completion_tokens * output_cost) / 1_000_000.0, 6)
