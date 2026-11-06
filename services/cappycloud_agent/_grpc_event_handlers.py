@@ -251,6 +251,11 @@ def done_event(
         "completion_tokens": int(done.completion_tokens),
         "model_used": final_model,
     }
+    # Só o provider "anthropic" separa o cache; sem ele o custo sai a preço cheio.
+    for field in ("cache_read_tokens", "cache_write_tokens"):
+        value = int(getattr(done, field, 0) or 0)
+        if value > 0:
+            payload[field] = value
     if final_model != model:
         payload["fallback"] = {
             "selected_model": model,

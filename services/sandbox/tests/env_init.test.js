@@ -16,7 +16,7 @@ test('patches do openclaude rodam depois do patch de modelo dinâmico', () => {
   const lines = source.split('\n')
   const anchor = lines.findIndex((line) => line.includes('/patch_openclaude_anthropic_provider.js'))
   assert.ok(anchor > 0)
-  for (const script of ['/patch_openclaude_long_lines.js']) {
+  for (const script of ['/patch_openclaude_long_lines.js', '/patch_openclaude_cache_usage.js']) {
     const index = lines.findIndex((line) => line.includes(script))
     assert.ok(index > anchor, `${script} fora do bloco do gRPC`)
   }
