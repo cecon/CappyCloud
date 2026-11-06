@@ -1,5 +1,3 @@
-    # Tokens de cache no FinalResponse, para a Cappy precificar o cache.
-    node /patch_openclaude_cache_usage.js "$_GRPC_TS" || true
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────
 # CappyCloud Sandbox — Persistent Environment Init
@@ -278,6 +276,10 @@ console.log('[env_init] gRPC dynamic model patch applied.');
 PATCH_EOF
     # Provider "anthropic": depende do bloco de override inserido acima.
     node /patch_openclaude_anthropic_provider.js "$_GRPC_TS" || true
+    # Read do openclaude: corta linhas gigantes (templates base64 do tssnewnfse.json).
+    node /patch_openclaude_long_lines.js "$_GRPC_TS" || true
+    # Tokens de cache no FinalResponse, para a Cappy precificar o cache.
+    node /patch_openclaude_cache_usage.js "$_GRPC_TS" || true
 fi
 
 # ── Exporta vars para openclaude e session_server ────────────
