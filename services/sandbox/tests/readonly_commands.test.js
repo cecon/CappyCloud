@@ -18,6 +18,7 @@ test('comandos de leitura passam', () => {
     `cd ${RO} && git log --oneline -5`,
     `find ${RO} -name "*.js" | xargs grep -l Realm`,
     `cat ${RO}/package.json | jq .dependencies`,
+    `sed -n '10350p' "${RO}/New Nfse/tssnewnfse.json" | sed -E 's/^[^:]*: *"//' | base64 -d`,
   ]) {
     assert.equal(isReadOnlyCommand(cmd), true, cmd)
   }

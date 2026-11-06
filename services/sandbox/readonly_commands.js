@@ -9,7 +9,7 @@ const READ_COMMANDS = new Set([
   'cat', 'head', 'tail', 'less', 'nl', 'wc', 'grep', 'egrep', 'fgrep', 'rg', 'find', 'ls', 'tree',
   'sed', 'awk', 'sort', 'uniq', 'cut', 'tr', 'file', 'stat', 'du', 'jq', 'diff', 'xargs', 'git',
   'echo', 'printf', 'basename', 'dirname', 'realpath', 'readlink', 'pwd', 'cd', 'true', 'test',
-  'graphify',
+  'graphify', 'base64',
 ])
 // graphify só consulta o grafo do workspace; update/merge-graphs escrevem.
 const GRAPHIFY_READ = new Set(['query', 'path', 'explain', 'god-nodes', 'affected'])
