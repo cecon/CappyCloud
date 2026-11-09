@@ -12,6 +12,11 @@ if TYPE_CHECKING:
 from app.application.use_cases.chat_command_sanitization import sanitize_command_text
 from app.domain.value_objects import validate_execution_profile, validate_permission_mode
 
+# Preço do cache em relação ao input (tabela da Anthropic: leitura 0,1x,
+# gravação de 5 min 1,25x). Igual ao ``_task_usage`` do agente.
+CACHE_READ_PRICE_FACTOR = 0.1
+CACHE_WRITE_PRICE_FACTOR = 1.25
+
 
 def optional_tokens(value: object) -> int | None:
     """Tokens de cache do evento ``done``; ``None`` quando o runtime não informou."""
@@ -37,8 +42,15 @@ async def compute_cost(messages: MessageRepository, usage: dict) -> float:
         return 0.0
     pricing = await messages.get_model_pricing(model_used)
     input_cost, output_cost = pricing or (0.0, 0.0)
+    # prompt_tokens já inclui leitura e gravação de cache, que custam menos.
+    cache_read = optional_tokens(usage.get("cache_read_tokens")) or 0
+    cache_write = optional_tokens(usage.get("cache_write_tokens")) or 0
+    fresh = max(prompt_tokens - cache_read - cache_write, 0)
+    billed_input = (
+        fresh + cache_read * CACHE_READ_PRICE_FACTOR + cache_write * CACHE_WRITE_PRICE_FACTOR
+    )
     return round(
-        (prompt_tokens * input_cost + completion_tokens * output_cost) / 1_000_000.0,
+        (billed_input * input_cost + completion_tokens * output_cost) / 1_000_000.0,
         6,
     )
 
