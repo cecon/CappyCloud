@@ -1,12 +1,17 @@
 'use strict'
 // Gravação automática da memória do workspace ao fim de cada turno.
 //
-//   POST /memory/extract  {workspace, question, answer}   (X-Internal-Token; `model` é ignorado)
+//   POST /memory/extract  {workspace, question, answer, model?, provider?}   (X-Internal-Token)
 //
 // O agente quase nunca grava por conta própria, então o pipeline chama esta rota
 // depois do "done". Um passo separado do Claude (sem ferramentas, uma volta) lê
 // a pergunta e a resposta, compara com o que já está gravado e devolve só o que
 // foi confirmado no código ou na documentação. Cada item vira uma memória.
+//
+// Sem `provider`, o passo roda no Claude CLI (login do sandbox) com o modelo
+// barato. Com `provider` ({base_url, api_key}, conversa do openclaude), roda na
+// API de mensagens desse provider com o modelo da conversa: o recurso da Azure
+// só tem os deployments cadastrados.
 
 const { saveMemory, searchMemory, createClient } = require('./memory_handler')
 
@@ -92,19 +97,50 @@ async function askClaude(prompt, model) {
   return text
 }
 
+// SDKs do openclaude (Foundry para *.services.ai.azure.com, Anthropic no resto).
+function loadAnthropicSdk(baseUrl) {
+  const paths = [process.env.OPENCLAUDE_DIR || '/openclaude']
+  let host = ''
+  try { host = new URL(baseUrl).hostname.toLowerCase() } catch { /* URL inválida cai no SDK padrão */ }
+  if (host.endsWith('.services.ai.azure.com')) {
+    return require(require.resolve('@anthropic-ai/foundry-sdk', { paths })).AnthropicFoundry
+  }
+  const sdk = require(require.resolve('@anthropic-ai/sdk', { paths }))
+  return sdk.Anthropic || sdk.default || sdk
+}
+
+/** Uma volta na API de mensagens do provider da conversa, sem ferramentas. */
+async function askProvider(prompt, model, provider, loadSdk = loadAnthropicSdk) {
+  const Client = loadSdk(provider.base_url)
+  const client = new Client({ baseURL: provider.base_url, apiKey: provider.api_key })
+  const message = await client.messages.create({
+    model,
+    max_tokens: 8000,
+    system: SYSTEM,
+    messages: [{ role: 'user', content: prompt }],
+  })
+  return (message.content || []).filter((block) => block.type === 'text').map((block) => block.text).join('')
+}
+
+function askModel(prompt, model, provider) {
+  return provider ? askProvider(prompt, model, provider) : askClaude(prompt, model)
+}
+
 // Extrair fatos de uma resposta pronta é tarefa simples: roda no modelo barato,
 // e não no da conversa (que pode ser Opus). MEMORY_EXTRACT_MODEL troca o padrão.
 function extractionModel() {
   return process.env.MEMORY_EXTRACT_MODEL || 'haiku'
 }
 
-async function extractAndSave(call, { workspace, question, answer }, ask = askClaude) {
+async function extractAndSave(call, { workspace, question, answer, model, provider }, ask = askModel) {
   if (!String(answer || '').trim() || !String(question || '').trim()) return { saved: 0, memories: [] }
   // O que já existe sobre o assunto entra no prompt para não gravar repetido.
   const related = await searchMemory(call, { workspace, q: String(question).slice(0, 300), limit: 5 })
     .then((found) => found.results)
     .catch(() => [])
-  const items = parseItems(await ask(buildPrompt({ question, answer, existing: related }), extractionModel()))
+  const usable = provider && provider.base_url && provider.api_key && model ? provider : null
+  const prompt = buildPrompt({ question, answer, existing: related })
+  const items = parseItems(await ask(prompt, usable ? model : extractionModel(), usable))
   const memories = []
   for (const item of items) {
     const { id } = await saveMemory(call, { workspace, ...item })
@@ -131,4 +167,4 @@ async function tryHandle(req, res, { json, readBody }, call = createClient()) {
   return true
 }
 
-module.exports = { askClaude, buildPrompt, extractAndSave, extractionModel, parseItems, tryHandle }
+module.exports = { askClaude, askProvider, buildPrompt, extractAndSave, extractionModel, parseItems, tryHandle }
