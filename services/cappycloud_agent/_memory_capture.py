@@ -4,6 +4,10 @@ O agente quase nunca grava por iniciativa própria. Ao fim de um turno com
 resposta, o runner chama ``POST /memory/extract`` no sandbox, que extrai da
 pergunta e da resposta só o que foi confirmado e grava no agentmemory. Roda em
 segundo plano: falha aqui nunca afeta a conversa.
+
+No Claude CLI a extração usa o login do sandbox. No openclaude o sandbox não
+tem credencial própria: vai junto o provider da conversa (só formato
+"anthropic", como o Azure Foundry), pela mesma rede interna do gRPC.
 """
 
 from __future__ import annotations
@@ -31,6 +35,7 @@ class MemoryCapture:
     workspace: str
     question: str
     model: str
+    provider: dict[str, str] | None = None
 
 
 def memory_capture_for(
@@ -40,12 +45,20 @@ def memory_capture_for(
     question: str | None,
     model: str,
     claude_cli: bool,
+    provider_base_url: str = "",
+    provider_api_key: str = "",
+    provider_api_format: str = "",
 ) -> MemoryCapture | None:
-    """Só sessão de workspace no Claude CLI: a extração usa o login do sandbox."""
+    """Sessão de workspace no Claude CLI, ou no openclaude com provider "anthropic"."""
     root = workspace_root_of(session_root)
-    if not (claude_cli and root and session_url and (question or "").strip()):
+    if not (root and session_url and (question or "").strip()):
         return None
-    return MemoryCapture(session_url, posixpath.basename(root), question or "", model)
+    provider: dict[str, str] | None = None
+    if not claude_cli:
+        if provider_api_format != "anthropic" or not (provider_base_url and provider_api_key):
+            return None
+        provider = {"base_url": provider_base_url, "api_key": provider_api_key}
+    return MemoryCapture(session_url, posixpath.basename(root), question or "", model, provider)
 
 
 async def capture_turn_memory(capture: MemoryCapture, answer: str) -> int:
@@ -61,6 +74,7 @@ async def capture_turn_memory(capture: MemoryCapture, answer: str) -> int:
                     "question": capture.question,
                     "answer": answer,
                     "model": capture.model,
+                    **({"provider": capture.provider} if capture.provider else {}),
                 },
                 headers={"X-Internal-Token": os.getenv("INTERNAL_API_TOKEN", "").strip()},
             )

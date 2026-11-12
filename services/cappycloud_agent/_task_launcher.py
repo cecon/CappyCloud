@@ -121,6 +121,7 @@ async def launch_runner(
     effective_model = override_model or dispatcher._model
     resolved_permission_mode = sanitize_permission_mode(permission_mode)
     session: AgentSession
+    provider_config = None
     if agent_runtime == AGENT_RUNTIME_CLAUDE_CLI:
         # Claude Code oficial: autentica com o `claude login` do sandbox,
         # não com o provider do catálogo.
@@ -183,6 +184,9 @@ async def launch_runner(
             question=user_message or prompt,
             model=effective_model,
             claude_cli=agent_runtime == AGENT_RUNTIME_CLAUDE_CLI,
+            provider_base_url=provider_config.base_url if provider_config else "",
+            provider_api_key=provider_config.api_key if provider_config else "",
+            provider_api_format=provider_config.api_format if provider_config else "",
         ),
     )
     dispatcher._runners[task_id] = runner

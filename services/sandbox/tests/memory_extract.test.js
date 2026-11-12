@@ -3,7 +3,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-const { buildPrompt, extractAndSave, parseItems } = require('../memory_extract')
+const { askProvider, buildPrompt, extractAndSave, parseItems } = require('../memory_extract')
 
 function fakeMemory(existing = []) {
   const saved = []
@@ -62,4 +62,48 @@ test('prompt corta pergunta e resposta enormes', () => {
   const prompt = buildPrompt({ question: 'q'.repeat(10000), answer: 'a'.repeat(50000), existing: [] })
   assert.ok(prompt.length < 20000)
   assert.match(prompt, /nada gravado sobre isso/)
+})
+
+test('conversa do openclaude: extrai pelo provider com o modelo da conversa', async () => {
+  const mem = fakeMemory()
+  const provider = { base_url: 'https://recurso.services.ai.azure.com/api/projects/x/openai/v1', api_key: 'k' }
+  let seen
+  const ask = async (prompt, model, used) => {
+    seen = { model, used }
+    return '[{"type":"fact","content":"O template 0000037 de Sorocaba só manda pAliq para o Simples Nacional"}]'
+  }
+
+  const result = await extractAndSave(mem.call, {
+    workspace: 'loja', question: 'pAliq em Sorocaba?', answer: 'Só no Simples…', model: 'claude-opus-5-5', provider,
+  }, ask)
+
+  assert.equal(result.saved, 1)
+  assert.deepEqual(seen, { model: 'claude-opus-5-5', used: provider })
+})
+
+test('provider incompleto volta para o Claude CLI com o modelo barato', async () => {
+  const mem = fakeMemory()
+  let seen
+  const ask = async (prompt, model, used) => { seen = { model, used }; return '[]' }
+  await extractAndSave(mem.call, { workspace: 'loja', question: 'q', answer: 'a', model: 'claude-opus-5-5', provider: { base_url: 'x' } }, ask)
+  assert.deepEqual(seen, { model: 'haiku', used: null })
+})
+
+test('askProvider chama a API de mensagens e junta só o texto', async () => {
+  let built, request
+  class FakeClient {
+    constructor(opts) { built = opts }
+    get messages() {
+      return { create: async (body) => { request = body; return { content: [{ type: 'thinking', thinking: 'x' }, { type: 'text', text: '[' }, { type: 'text', text: ']' }] } } }
+    }
+  }
+  const provider = { base_url: 'https://r.services.ai.azure.com/api/projects/p/openai/v1', api_key: 'k' }
+
+  const text = await askProvider('prompt', 'claude-opus-5-5', provider, () => FakeClient)
+
+  assert.equal(text, '[]')
+  assert.deepEqual(built, { baseURL: provider.base_url, apiKey: 'k' })
+  assert.equal(request.model, 'claude-opus-5-5')
+  assert.deepEqual(request.messages, [{ role: 'user', content: 'prompt' }])
+  assert.match(request.system, /memória compartilhada/)
 })
