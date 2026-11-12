@@ -119,13 +119,24 @@ async def test_catalog_cost_prices_cache_tokens_apart() -> None:
         cache_write_tokens=2_000,
     )
 
-    # 1k novo a 4 + 30k a 0,4 + 2k a 5 + 500 de saída a 20 (US$ por milhão).
+    # 1k novo a 4 + 30k a 0,2 (Opus 5.5 lê cache a 0,05x) + 2k a 5 + 500 de saída a 20,
+    # em US$ por milhão.
     assert conn.execute_args == (
         "claude-opus-5-5",
         33_000,
         500,
-        round((1_000 * 4 + 30_000 * 0.4 + 2_000 * 5 + 500 * 20) / 1_000_000, 6),
+        round((1_000 * 4 + 30_000 * 0.2 + 2_000 * 5 + 500 * 20) / 1_000_000, 6),
         30_000,
         2_000,
         TASK_ID,
     )
+
+
+async def test_outros_modelos_leem_cache_a_um_decimo() -> None:
+    conn = FakeConn(price_row={"input_cost_per_1m_usd": 2, "output_cost_per_1m_usd": 10})
+
+    await _task_usage.persist_usage(
+        FakePool(conn), TASK_ID, "claude-sonnet-5-5", 10_000, 0, cache_read_tokens=10_000
+    )
+
+    assert conn.execute_args[3] == round(10_000 * 0.2 / 1_000_000, 6)

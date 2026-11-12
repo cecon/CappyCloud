@@ -12,10 +12,20 @@ if TYPE_CHECKING:
 from app.application.use_cases.chat_command_sanitization import sanitize_command_text
 from app.domain.value_objects import validate_execution_profile, validate_permission_mode
 
-# Preço do cache em relação ao input (tabela da Anthropic: leitura 0,1x,
-# gravação de 5 min 1,25x). Igual ao ``_task_usage`` do agente.
+# Preço do cache em relação ao input (tabela da Anthropic: gravação de 5 min
+# 1,25x; leitura 0,1x, exceto os modelos abaixo). Igual ao ``_task_usage``.
 CACHE_READ_PRICE_FACTOR = 0.1
+CACHE_READ_PRICE_FACTOR_BY_MODEL = {
+    "claude-opus-5-5": 0.05,
+    "claude-fable-5-1": 0.025,
+    "claude-mythos-5-1": 0.025,
+}
 CACHE_WRITE_PRICE_FACTOR = 1.25
+
+
+def cache_read_price_factor(model_used: str) -> float:
+    """Fração do preço de input cobrada na leitura de cache do modelo."""
+    return CACHE_READ_PRICE_FACTOR_BY_MODEL.get(model_used, CACHE_READ_PRICE_FACTOR)
 
 
 def optional_tokens(value: object) -> int | None:
@@ -47,7 +57,9 @@ async def compute_cost(messages: MessageRepository, usage: dict) -> float:
     cache_write = optional_tokens(usage.get("cache_write_tokens")) or 0
     fresh = max(prompt_tokens - cache_read - cache_write, 0)
     billed_input = (
-        fresh + cache_read * CACHE_READ_PRICE_FACTOR + cache_write * CACHE_WRITE_PRICE_FACTOR
+        fresh
+        + cache_read * cache_read_price_factor(model_used)
+        + cache_write * CACHE_WRITE_PRICE_FACTOR
     )
     return round(
         (billed_input * input_cost + completion_tokens * output_cost) / 1_000_000.0,
