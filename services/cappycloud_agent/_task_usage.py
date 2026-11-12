@@ -21,6 +21,12 @@ _OPENROUTER_TIMEOUT_SECONDS = 30
 # Preço do cache em relação ao input (tabela da Anthropic: leitura 0,1x,
 # gravação de 5 min 1,25x). Só entra quando o runtime separa os tokens de cache.
 _CACHE_READ_PRICE_FACTOR = 0.1
+# Modelos com leitura de cache mais barata que 0,1x (tabela da Anthropic).
+_CACHE_READ_PRICE_FACTOR_BY_MODEL = {
+    "claude-opus-5-5": 0.05,
+    "claude-fable-5-1": 0.025,
+    "claude-mythos-5-1": 0.025,
+}
 _CACHE_WRITE_PRICE_FACTOR = 1.25
 
 
@@ -230,7 +236,8 @@ async def _cost_from_catalog(
     fresh_tokens = max(prompt_tokens - cache_read_tokens - cache_write_tokens, 0)
     input_usd = input_cost * (
         fresh_tokens
-        + cache_read_tokens * _CACHE_READ_PRICE_FACTOR
+        + cache_read_tokens
+        * _CACHE_READ_PRICE_FACTOR_BY_MODEL.get(model_used, _CACHE_READ_PRICE_FACTOR)
         + cache_write_tokens * _CACHE_WRITE_PRICE_FACTOR
     )
     return round((input_usd + completion_tokens * output_cost) / 1_000_000.0, 6)
