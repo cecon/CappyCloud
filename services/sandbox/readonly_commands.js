@@ -9,7 +9,7 @@ const READ_COMMANDS = new Set([
   'cat', 'head', 'tail', 'less', 'nl', 'wc', 'grep', 'egrep', 'fgrep', 'rg', 'find', 'ls', 'tree',
   'sed', 'awk', 'sort', 'uniq', 'cut', 'tr', 'file', 'stat', 'du', 'jq', 'diff', 'xargs', 'git',
   'echo', 'printf', 'basename', 'dirname', 'realpath', 'readlink', 'pwd', 'cd', 'true', 'test',
-  'graphify', 'base64',
+  'graphify', 'base64', 'read',
 ])
 // graphify só consulta o grafo do workspace; update/merge-graphs escrevem.
 const GRAPHIFY_READ = new Set(['query', 'path', 'explain', 'god-nodes', 'affected'])
@@ -48,6 +48,15 @@ function splitCommand(command) {
       i++
       continue
     }
+    if (char === '$' && next === '(' && command[i + 2] === '(') {
+      // $((l-3)) é aritmética, não executa nada: vira um número.
+      const end = command.indexOf('))', i + 3)
+      if (end !== -1) {
+        buffer += '0'
+        i = end + 1
+        continue
+      }
+    }
     if ((char === '$' || char === '<') && next === '(') {
       flush()
       i++
@@ -84,6 +93,37 @@ function splitCommand(command) {
   return { segments, writes }
 }
 
+/** Palavras do comando simples, sem quebrar o que está entre aspas. */
+function splitWords(segment) {
+  const words = []
+  let word = ''
+  let quote = null
+  for (let i = 0; i < segment.length; i++) {
+    const char = segment[i]
+    if (quote) {
+      if (char === quote) quote = null
+      word += char
+    } else if (char === '\\') {
+      word += char + (segment[i + 1] ?? '')
+      i++
+    } else if (char === "'" || char === '"') {
+      quote = char
+      word += char
+    } else if (/\s/.test(char)) {
+      if (word) words.push(word)
+      word = ''
+    } else {
+      word += char
+    }
+  }
+  if (word) words.push(word)
+  return words
+}
+
+// Palavras reservadas do shell: não executam nada, o comando vem depois delas.
+const SHELL_PREFIX_KEYWORDS = new Set(['do', 'then', 'else', 'elif', 'if', 'while', 'until', '!', '{', '}'])
+const SHELL_CLOSING_KEYWORDS = new Set(['done', 'fi', 'esac'])
+
 /** True se o comando só lê arquivos (lista de programas + sem escrita). */
 function isReadOnlyCommand(command) {
   const text = String(command || '')
@@ -91,7 +131,10 @@ function isReadOnlyCommand(command) {
   const { segments, writes } = splitCommand(text)
   if (writes) return false
   for (const segment of segments) {
-    const words = segment.split(/\s+/).filter((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word))
+    const words = splitWords(segment).filter((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word))
+    while (words.length && SHELL_PREFIX_KEYWORDS.has(words[0])) words.shift()
+    // `for x in a b` só monta a lista; `done`/`fi` fecham o bloco.
+    if (words[0] === 'for' || SHELL_CLOSING_KEYWORDS.has(words[0])) continue
     const [program, ...args] = words
     if (!program) continue
     const name = program.replace(/^["']|["']$/g, '').split('/').pop()

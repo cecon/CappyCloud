@@ -85,6 +85,22 @@ test('escrita e saída do workspace continuam bloqueadas', async () => {
   assert.match(guard('Read', { file_path: '/etc/passwd' }, SESSION), /Tool blocked/)
 })
 
+test('laço for/sed -n com $((...)) e caminho com espaço passa (caso Guaíba)', async () => {
+  const guard = await loadGuard()
+  const dir = `${REPO}/NFSEXMLENV_IA_LIMPO/TSS/Arquivos_Auxiliares/NFSE/New Nfse`
+  const loop = 'for l in 8404 11186; do sed -n "$((l-3)),$((l+12))p" tssnewnfse.json | cut -c1-200; echo ---; done'
+  assert.equal(guard('Bash', { command: `cd "${dir}"; ${loop}` }, SESSION), null)
+  assert.equal(guard('Bash', { command: `F="${dir}/tssnewnfse.json"; ${loop.replace('tssnewnfse.json', '"$F"')}` }, SESSION), null)
+})
+
+test('bloqueio de Bash nos repos do workspace explica o somente leitura', async () => {
+  const guard = await loadGuard()
+  const blocked = guard('Bash', { command: `python3 -c "print(open('${REPO}/a.json').read())"` }, SESSION)
+  assert.match(blocked, /Tool blocked/)
+  assert.match(blocked, /Somente leitura/)
+  assert.doesNotMatch(guard('Bash', { command: 'cat /repos/Seller/x' }, SESSION), /Somente leitura/)
+})
+
 test('sessão fora de workspace mantém o guard estrito', async () => {
   const guard = await loadGuard()
   const worktree = '/repos/sessions/abc123'
