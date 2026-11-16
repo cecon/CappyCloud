@@ -46,10 +46,30 @@ function cappycloudWorkspaceAllows(toolName, input, worktree) {
   })
 }
 
+const CAPPYCLOUD_WORKSPACE_READONLY_HINT =
+  ' Somente leitura: nos repos do workspace o Bash aceita só comandos de leitura (rg, grep, find, cat, sed -n, head, ls, jq, base64, git log/show), sem python/node e sem gravar arquivo. Para trechos de arquivo grande use Read com offset/limit ou Grep.'
+
+// Bloqueio de Bash que só toca repos do workspace: explica o motivo, senão o
+// agente repete o comando e o openclaude encerra por "repeated tool failures".
+function cappycloudWorkspaceHint(toolName, input, worktree) {
+  const roots = cappycloudWorkspaceRoots(worktree)
+  if (toolName !== 'Bash' || !roots.length || !input || typeof input.command !== 'string') {
+    return ''
+  }
+  const touchesWorkspace = cappycloudExtractRepoPaths(input.command).some((rawPath) => {
+    const resolved = cappycloudResolveToolPath(worktree, rawPath)
+    return resolved && cappycloudInsideAny(roots, resolved)
+  })
+  return touchesWorkspace ? CAPPYCLOUD_WORKSPACE_READONLY_HINT : ''
+}
+
 function cappycloudValidateToolScope(toolName, input, worktree, ...rest) {
   const blocked = cappycloudValidateToolScopeStrict(toolName, input, worktree, ...rest)
-  if (!blocked || !cappycloudWorkspaceAllows(toolName, input, worktree)) {
+  if (!blocked) {
     return blocked
   }
-  return null
+  if (cappycloudWorkspaceAllows(toolName, input, worktree)) {
+    return null
+  }
+  return blocked + cappycloudWorkspaceHint(toolName, input, worktree)
 }

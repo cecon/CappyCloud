@@ -82,3 +82,22 @@ test('graphify só com os subcomandos de consulta', () => {
   assert.equal(isReadOnlyCommand('graphify update /repos/workspaces/loja/repos/pdv'), false)
   assert.equal(isReadOnlyCommand(`graphify merge-graphs a.json b.json --out ${graph}`), false)
 })
+
+test('laços e aritmética do shell: leitura passa, escrita dentro do laço não', () => {
+  for (const cmd of [
+    `for l in 8404 11186; do sed -n "$((l-3)),$((l+12))p" "${RO}/New Nfse/a.json" | cut -c1-200; echo ---; done`,
+    `F="${RO}/New Nfse/a.json"; head -5 "$F"`,
+    `if test -f ${RO}/a; then cat ${RO}/a; else echo nao; fi`,
+    `find ${RO} -name "*.prw" | while read f; do grep -l IPM "$f"; done`,
+  ]) {
+    assert.equal(isReadOnlyCommand(cmd), true, cmd)
+  }
+  for (const cmd of [
+    `for f in ${RO}/*; do rm "$f"; done`,
+    `if true; then touch ${RO}/x; fi`,
+    `F=$(rm -rf ${RO}); ls`,
+    `python3 -c "print(1)" ${RO}/a`,
+  ]) {
+    assert.equal(isReadOnlyCommand(cmd), false, cmd)
+  }
+})
