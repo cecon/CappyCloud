@@ -19,14 +19,22 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from app.application.use_cases._workspace_report_teams import (
+    NO_TEAM_FILTER,
+    NO_TEAM_LABEL,
+    TeamRow,
+    analyst_team,
+    money,
+    team_matches,
+    team_rows,
+)
 from app.domain.report_themes import OTHER_THEME_KEY, ThemeClassifier, resolve_rules
 from app.ports.workspace_report import ReportConversation, ReportMessage, ReportWorkspace
 
+__all__ = ["NO_TEAM_FILTER", "NO_TEAM_LABEL", "TeamRow"]
+
 REPORT_TZ = ZoneInfo("America/Sao_Paulo")
-_COST_DIGITS = 6
 # Filtro "sem time" no relatório e rótulo de quem não tem time.
-NO_TEAM_FILTER = "__none__"
-NO_TEAM_LABEL = "Sem time"
 
 
 @dataclass(frozen=True)
@@ -68,16 +76,6 @@ class WeekRow:
 class ThemeRow:
     key: str
     label: str
-    questions: int
-    conversations: int
-    cost_usd: float
-    share: float  # fração das perguntas do período (0 a 1)
-
-
-@dataclass(frozen=True)
-class TeamRow:
-    name: str
-    analysts: int
     questions: int
     conversations: int
     cost_usd: float
@@ -151,24 +149,12 @@ def period_weeks(start: date, end: date) -> list[tuple[date, date]]:
     return weeks
 
 
-def _money(value: float) -> float:
-    return round(value, _COST_DIGITS)
-
-
 def _avg(total: float, count: int) -> float:
-    return _money(total / count) if count else 0.0
+    return money(total / count) if count else 0.0
 
 
 def _analyst_label(email: str) -> str:
     return email.split("@", 1)[0] or email
-
-
-def _team_matches(conv: ReportConversation, team: str | None) -> bool:
-    if team is None:
-        return True
-    if team == NO_TEAM_FILTER:
-        return conv.team is None
-    return (conv.team or "").lower() == team.lower()
 
 
 def _conversations(
@@ -188,7 +174,7 @@ def _conversations(
         for conv in conversations
         if conv.workspace_id in by_ws
         and (branch is None or branch in conv.branches)
-        and _team_matches(conv, team)
+        and team_matches(conv, team)
     }
     grouped: dict[uuid.UUID, list[ReportMessage]] = defaultdict(list)
     for msg in messages:
@@ -213,7 +199,7 @@ def _conversations(
                 branches=sorted(conv.branches),
                 questions=sum(1 for m in msgs if m.is_question),
                 messages=len(msgs),
-                cost_usd=_money(sum(m.cost_usd for m in msgs)),
+                cost_usd=money(sum(m.cost_usd for m in msgs)),
                 first_message_at=min(m.created_at for m in msgs).astimezone(tz),
                 last_message_at=max(m.created_at for m in msgs).astimezone(tz),
             )
@@ -244,7 +230,7 @@ def _weeks(
             label=week_label(first, last),
             questions=questions[idx],
             conversations=len(convs[idx]),
-            cost_usd=_money(costs[idx]),
+            cost_usd=money(costs[idx]),
         )
         for idx, (first, last) in enumerate(blocks)
     ]
@@ -258,31 +244,6 @@ def _group_rows(rows: Sequence[ConversationRow], key: str) -> dict[str, tuple[in
         convs, questions, cost = totals.get(value, (0, 0, 0.0))
         totals[value] = (convs + 1, questions + row.questions, cost + row.cost_usd)
     return totals
-
-
-def _analyst_team(rows: Sequence[ConversationRow], email: str) -> str:
-    """Time da pessoa; com times diferentes por workspace, junta os nomes."""
-    names = sorted({row.team for row in rows if row.analyst_email == email}, key=str.lower)
-    return " / ".join(names)
-
-
-def _teams(rows: Sequence[ConversationRow], total_questions: int) -> list[TeamRow]:
-    analysts: dict[str, set[str]] = defaultdict(set)
-    for row in rows:
-        analysts[row.team].add(row.analyst_email)
-    teams = [
-        TeamRow(
-            name=name,
-            analysts=len(analysts[name]),
-            questions=questions,
-            conversations=convs,
-            cost_usd=_money(cost),
-            share=round(questions / total_questions, 4) if total_questions else 0.0,
-        )
-        for name, (convs, questions, cost) in _group_rows(rows, "team").items()
-    ]
-    teams.sort(key=lambda t: (t.name == NO_TEAM_LABEL, -t.questions, -t.cost_usd, t.name.lower()))
-    return teams
 
 
 def aggregate_report(
@@ -299,15 +260,16 @@ def aggregate_report(
     rows, grouped = _conversations(workspaces, conversations, messages, branch, tz, team)
     total_cost = sum(row.cost_usd for row in rows)
     total_questions = sum(row.questions for row in rows)
+    pairs = [(row.analyst_email, row.team) for row in rows]
 
     analysts = [
         AnalystRow(
             email=email,
             label=_analyst_label(email),
-            team=_analyst_team(rows, email),
+            team=analyst_team(pairs, email),
             questions=questions,
             conversations=convs,
-            cost_usd=_money(cost),
+            cost_usd=money(cost),
             avg_cost_per_question=_avg(cost, questions),
         )
         for email, (convs, questions, cost) in _group_rows(rows, "analyst_email").items()
@@ -321,14 +283,14 @@ def aggregate_report(
             label=labels[key],
             questions=questions,
             conversations=convs,
-            cost_usd=_money(cost),
+            cost_usd=money(cost),
             share=round(questions / total_questions, 4) if total_questions else 0.0,
         )
         for key, (convs, questions, cost) in _group_rows(rows, "theme_key").items()
     ]
     themes.sort(key=lambda t: (t.key == OTHER_THEME_KEY, -t.questions, -t.conversations, t.label))
 
-    teams = _teams(rows, total_questions)
+    teams = team_rows(pairs, _group_rows(rows, "team"), total_questions)
 
     per_ws = _group_rows(rows, "workspace_slug")
     ws_rows = []
@@ -341,7 +303,7 @@ def aggregate_report(
                 name=ws.name,
                 questions=questions,
                 conversations=convs,
-                cost_usd=_money(cost),
+                cost_usd=money(cost),
             )
         )
 
@@ -352,7 +314,7 @@ def aggregate_report(
         conversations_without_ticket=sum(1 for row in rows if not row.ticket_number),
         analysts=len(analysts),
         messages=sum(row.messages for row in rows),
-        cost_usd=_money(total_cost),
+        cost_usd=money(total_cost),
         avg_cost_per_question=_avg(total_cost, total_questions),
         avg_cost_per_conversation=_avg(total_cost, len(rows)),
         avg_cost_per_analyst=_avg(total_cost, len(analysts)),
