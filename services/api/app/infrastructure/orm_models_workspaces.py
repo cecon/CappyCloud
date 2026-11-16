@@ -12,7 +12,17 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.orm_base import Base, JSONBType, UUIDType
@@ -104,4 +114,27 @@ class UserWorkspaceAccess(Base):
     is_admin: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Time da pessoa neste workspace (relatório por time); apagar o time limpa.
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUIDType,
+        ForeignKey("workspace_teams.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+
+class WorkspaceTeam(Base):
+    """Time de um workspace (ex.: PROTHEUS SPED); nome único sem diferenciar maiúsculas."""
+
+    __tablename__ = "workspace_teams"
+    __table_args__ = (
+        Index("uq_workspace_teams_name", "workspace_id", text("lower(name)"), unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUIDType, primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUIDType, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

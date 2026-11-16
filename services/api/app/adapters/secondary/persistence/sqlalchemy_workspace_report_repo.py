@@ -13,7 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.orm_models import Conversation, Message
 from app.infrastructure.orm_models import User as UserORM
-from app.infrastructure.orm_models_workspaces import UserWorkspaceAccess, Workspace
+from app.infrastructure.orm_models_workspaces import (
+    UserWorkspaceAccess,
+    Workspace,
+    WorkspaceTeam,
+)
 from app.ports.workspace_report import (
     ReportConversation,
     ReportMessage,
@@ -117,8 +121,15 @@ class SQLAlchemyWorkspaceReportRepository(WorkspaceReportRepository):
                     Conversation.ticket_number,
                     Conversation.repos,
                     UserORM.email,
+                    WorkspaceTeam.name.label("team"),
                 )
                 .join(UserORM, UserORM.id == Conversation.user_id)
+                .outerjoin(
+                    UserWorkspaceAccess,
+                    (UserWorkspaceAccess.user_id == Conversation.user_id)
+                    & (UserWorkspaceAccess.workspace_id == Conversation.workspace_id),
+                )
+                .outerjoin(WorkspaceTeam, WorkspaceTeam.id == UserWorkspaceAccess.team_id)
                 .where(Conversation.id.in_(ids), Conversation.workspace_id.is_not(None))
             )
         ).all()
@@ -132,6 +143,7 @@ class SQLAlchemyWorkspaceReportRepository(WorkspaceReportRepository):
                 ticket_number=row.ticket_number,
                 branches=branches_from_repos(row.repos),
                 first_user_message=first.get(row.id, ""),
+                team=row.team,
             )
             for row in rows
         ]
@@ -146,6 +158,14 @@ class SQLAlchemyWorkspaceReportRepository(WorkspaceReportRepository):
         for repos in rows.scalars():
             found |= branches_from_repos(repos)
         return sorted(found)
+
+    async def list_teams(self, workspace_ids: Sequence[uuid.UUID]) -> list[str]:
+        if not workspace_ids:
+            return []
+        rows = await self._session.execute(
+            select(WorkspaceTeam.name).where(WorkspaceTeam.workspace_id.in_(list(workspace_ids)))
+        )
+        return sorted(set(rows.scalars()), key=str.lower)
 
     async def save_theme_config(
         self,

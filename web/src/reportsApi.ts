@@ -4,9 +4,14 @@ import { apiFetch, formatApiErrorPayload } from './api'
 export type ReportFilters = {
   workspaceId?: string
   branch?: string
+  /** Nome do time; `NO_TEAM` = quem não tem time. */
+  team?: string
   start: string
   end: string
 }
+
+/** Valor do filtro de time para "Sem time" (igual ao da API). */
+export const NO_TEAM = '__none__'
 
 export type ReportWorkspaceOption = { id: string; slug: string; name: string }
 
@@ -14,6 +19,7 @@ export type ReportOptions = {
   workspaces: ReportWorkspaceOption[]
   branches: string[]
   can_edit_themes: boolean
+  teams: string[]
 }
 
 export type ReportTotals = {
@@ -32,6 +38,7 @@ export type ReportTotals = {
 export type ReportAnalyst = {
   email: string
   label: string
+  team: string
   questions: number
   conversations: number
   cost_usd: number
@@ -43,11 +50,13 @@ type Usage = { questions: number; conversations: number; cost_usd: number }
 export type ReportWeek = Usage & { start: string; end: string; label: string }
 export type ReportTheme = Usage & { key: string; label: string; share: number }
 export type ReportWorkspaceTotals = ReportWorkspaceOption & Usage
+export type ReportTeam = Usage & { name: string; analysts: number; share: number }
 
 export type ReportConversation = {
   conversation_id: string
   workspace_slug: string
   analyst_email: string
+  team: string
   ticket_number: string | null
   title: string
   theme_key: string
@@ -69,6 +78,7 @@ export type WorkspaceReport = {
     workspace_id: string | null
     workspace_name: string | null
     branch: string | null
+    team: string | null
     start: string
     end: string
     timezone: string
@@ -81,6 +91,7 @@ export type WorkspaceReport = {
   themes: ReportTheme[]
   workspaces: ReportWorkspaceTotals[]
   conversations: ReportConversation[]
+  teams: ReportTeam[]
 }
 
 export type ThemeRule = { key: string; label: string; patterns: string[] }
@@ -97,6 +108,7 @@ function reportParams(filters: ReportFilters): URLSearchParams {
   const params = new URLSearchParams({ start: filters.start, end: filters.end })
   if (filters.workspaceId) params.set('workspace_id', filters.workspaceId)
   if (filters.branch) params.set('branch', filters.branch)
+  if (filters.team) params.set('team', filters.team)
   return params
 }
 
@@ -170,6 +182,7 @@ export function filtersFromSearch(search: URLSearchParams, fallback: ReportFilte
   return {
     workspaceId: search.get('workspace_id') ?? fallback.workspaceId,
     branch: search.get('branch') ?? fallback.branch,
+    team: search.get('team') ?? fallback.team,
     start: search.get('start') ?? fallback.start,
     end: search.get('end') ?? fallback.end,
   }
@@ -208,17 +221,31 @@ export function formatCount(value: number): string {
   return new Intl.NumberFormat('pt-BR').format(value)
 }
 
+export function formatPercent(share: number): string {
+  return `${Math.round(share * 100)}%`
+}
+
 export function formatDate(iso: string): string {
   const [y, m, d] = iso.slice(0, 10).split('-')
   return `${d}/${m}/${y}`
 }
 
-/** Workspace, período e branch — cabeçalho do relatório. */
+/** Times só aparecem quando algum foi cadastrado (todo mundo "Sem time" não diz nada). */
+export function hasTeams(report: WorkspaceReport): boolean {
+  return report.teams.some((t) => t.name !== 'Sem time')
+}
+
+export function teamLabel(team: string): string {
+  return team === NO_TEAM ? 'Sem time' : team
+}
+
+/** Workspace, período, branch e time — cabeçalho do relatório. */
 export function describeFilters(report: WorkspaceReport): string {
   const f = report.filters
   return [
     f.workspace_name ?? 'Todos os workspaces',
     `${formatDate(f.start)} a ${formatDate(f.end)}`,
     f.branch ? `branch ${f.branch}` : 'todas as branches',
+    ...(f.team ? [`time ${teamLabel(f.team)}`] : []),
   ].join(' · ')
 }

@@ -4,7 +4,8 @@ Consulta = pergunta do usuário (mensagem ``role='user'``) dentro do período,
 como no relatório que o time leva à Diretoria. Conversa = conversa do escopo com
 ao menos uma mensagem no período. Custo = soma de ``messages.cost_usd`` das
 mensagens do período (dado do provedor). Ticket = número de chamado distinto das
-conversas do escopo. Semanas são de calendário (segunda a domingo), recortadas
+conversas do escopo. Time = time da pessoa no workspace da conversa, no momento
+da consulta ("Sem time" quando não tem). Semanas são de calendário (segunda a domingo), recortadas
 ao período: a primeira e a última podem ser menores.
 """
 
@@ -23,6 +24,9 @@ from app.ports.workspace_report import ReportConversation, ReportMessage, Report
 
 REPORT_TZ = ZoneInfo("America/Sao_Paulo")
 _COST_DIGITS = 6
+# Filtro "sem time" no relatório e rótulo de quem não tem time.
+NO_TEAM_FILTER = "__none__"
+NO_TEAM_LABEL = "Sem time"
 
 
 @dataclass(frozen=True)
@@ -43,6 +47,7 @@ class ReportTotals:
 class AnalystRow:
     email: str
     label: str
+    team: str
     questions: int
     conversations: int
     cost_usd: float
@@ -70,6 +75,16 @@ class ThemeRow:
 
 
 @dataclass(frozen=True)
+class TeamRow:
+    name: str
+    analysts: int
+    questions: int
+    conversations: int
+    cost_usd: float
+    share: float  # fração das perguntas do período (0 a 1)
+
+
+@dataclass(frozen=True)
 class WorkspaceRow:
     id: uuid.UUID
     slug: str
@@ -84,6 +99,7 @@ class ConversationRow:
     conversation_id: uuid.UUID
     workspace_slug: str
     analyst_email: str
+    team: str
     ticket_number: str | None
     title: str
     theme_key: str
@@ -104,6 +120,7 @@ class WorkspaceReport:
     themes: list[ThemeRow]
     workspaces: list[WorkspaceRow]
     conversations: list[ConversationRow]
+    teams: list[TeamRow]
 
 
 def period_bounds(start: date, end: date, tz: ZoneInfo = REPORT_TZ) -> tuple[datetime, datetime]:
@@ -146,12 +163,21 @@ def _analyst_label(email: str) -> str:
     return email.split("@", 1)[0] or email
 
 
+def _team_matches(conv: ReportConversation, team: str | None) -> bool:
+    if team is None:
+        return True
+    if team == NO_TEAM_FILTER:
+        return conv.team is None
+    return (conv.team or "").lower() == team.lower()
+
+
 def _conversations(
     workspaces: Sequence[ReportWorkspace],
     conversations: Sequence[ReportConversation],
     messages: Sequence[ReportMessage],
     branch: str | None,
     tz: ZoneInfo,
+    team: str | None = None,
 ) -> tuple[list[ConversationRow], dict[uuid.UUID, list[ReportMessage]]]:
     by_ws = {ws.id: ws for ws in workspaces}
     classifiers = {
@@ -160,7 +186,9 @@ def _conversations(
     in_scope = {
         conv.id: conv
         for conv in conversations
-        if conv.workspace_id in by_ws and (branch is None or branch in conv.branches)
+        if conv.workspace_id in by_ws
+        and (branch is None or branch in conv.branches)
+        and _team_matches(conv, team)
     }
     grouped: dict[uuid.UUID, list[ReportMessage]] = defaultdict(list)
     for msg in messages:
@@ -177,6 +205,7 @@ def _conversations(
                 conversation_id=conv.id,
                 workspace_slug=by_ws[conv.workspace_id].slug,
                 analyst_email=conv.user_email,
+                team=conv.team or NO_TEAM_LABEL,
                 ticket_number=conv.ticket_number,
                 title=conv.title,
                 theme_key=theme_key,
@@ -231,6 +260,31 @@ def _group_rows(rows: Sequence[ConversationRow], key: str) -> dict[str, tuple[in
     return totals
 
 
+def _analyst_team(rows: Sequence[ConversationRow], email: str) -> str:
+    """Time da pessoa; com times diferentes por workspace, junta os nomes."""
+    names = sorted({row.team for row in rows if row.analyst_email == email}, key=str.lower)
+    return " / ".join(names)
+
+
+def _teams(rows: Sequence[ConversationRow], total_questions: int) -> list[TeamRow]:
+    analysts: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        analysts[row.team].add(row.analyst_email)
+    teams = [
+        TeamRow(
+            name=name,
+            analysts=len(analysts[name]),
+            questions=questions,
+            conversations=convs,
+            cost_usd=_money(cost),
+            share=round(questions / total_questions, 4) if total_questions else 0.0,
+        )
+        for name, (convs, questions, cost) in _group_rows(rows, "team").items()
+    ]
+    teams.sort(key=lambda t: (t.name == NO_TEAM_LABEL, -t.questions, -t.cost_usd, t.name.lower()))
+    return teams
+
+
 def aggregate_report(
     *,
     workspaces: Sequence[ReportWorkspace],
@@ -240,8 +294,9 @@ def aggregate_report(
     end: date,
     branch: str | None = None,
     tz: ZoneInfo = REPORT_TZ,
+    team: str | None = None,
 ) -> WorkspaceReport:
-    rows, grouped = _conversations(workspaces, conversations, messages, branch, tz)
+    rows, grouped = _conversations(workspaces, conversations, messages, branch, tz, team)
     total_cost = sum(row.cost_usd for row in rows)
     total_questions = sum(row.questions for row in rows)
 
@@ -249,6 +304,7 @@ def aggregate_report(
         AnalystRow(
             email=email,
             label=_analyst_label(email),
+            team=_analyst_team(rows, email),
             questions=questions,
             conversations=convs,
             cost_usd=_money(cost),
@@ -271,6 +327,8 @@ def aggregate_report(
         for key, (convs, questions, cost) in _group_rows(rows, "theme_key").items()
     ]
     themes.sort(key=lambda t: (t.key == OTHER_THEME_KEY, -t.questions, -t.conversations, t.label))
+
+    teams = _teams(rows, total_questions)
 
     per_ws = _group_rows(rows, "workspace_slug")
     ws_rows = []
@@ -306,4 +364,5 @@ def aggregate_report(
         themes=themes,
         workspaces=ws_rows,
         conversations=rows,
+        teams=teams,
     )

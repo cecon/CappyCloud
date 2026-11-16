@@ -14,7 +14,7 @@ from app.adapters.primary.http.deps import get_db_session
 from app.domain.entities import UserRole
 from app.infrastructure.orm_models import Base, Conversation, Message, Sandbox
 from app.infrastructure.orm_models import User as UserORM
-from app.infrastructure.orm_models_workspaces import Workspace
+from app.infrastructure.orm_models_workspaces import UserWorkspaceAccess, Workspace, WorkspaceTeam
 from app.main import app as fastapi_app
 from app.ports.workspace_report import ReportConversation, ReportMessage, ReportWorkspace
 from httpx import AsyncClient
@@ -261,7 +261,15 @@ async def test_exports_match_report(
     assert res.status_code == 200
     assert "relatorio-todos-" in res.headers["content-disposition"]
     wb = load_workbook(io.BytesIO(res.content))
-    assert wb.sheetnames == ["Resumo", "Analistas", "Semanas", "Temas", "Workspaces", "Conversas"]
+    assert wb.sheetnames == [
+        "Resumo",
+        "Analistas",
+        "Times",
+        "Semanas",
+        "Temas",
+        "Workspaces",
+        "Conversas",
+    ]
     summary = {row[0]: row[1] for row in wb["Resumo"].iter_rows(min_row=2, values_only=True)}
     assert summary["Total de consultas (perguntas)"] == 5
     assert summary["Conversas"] == 4
@@ -309,8 +317,12 @@ async def test_real_repository_wiring(
     await sql_session.flush()
     sql_session.add(ws)
     await sql_session.flush()
-    sql_session.add(conv)
+    team = WorkspaceTeam(id=uuid.uuid4(), workspace_id=ws.id, name="PROTHEUS SPED")
+    sql_session.add_all([conv, team])
     await sql_session.flush()
+    sql_session.add(
+        UserWorkspaceAccess(id=uuid.uuid4(), user_id=user.id, workspace_id=ws.id, team_id=team.id)
+    )
     sql_session.add(
         Message(
             id=uuid.uuid4(),
@@ -330,4 +342,58 @@ async def test_real_repository_wiring(
     assert body["brl"] is None
     options = (await client.get("/api/admin/reports/options", headers=headers)).json()
     assert options["branches"] == ["main"]
+    assert options["teams"] == ["PROTHEUS SPED"]
+    assert body["conversations"][0]["team"] == "PROTHEUS SPED"
+    assert [(t["name"], t["analysts"]) for t in body["teams"]] == [("PROTHEUS SPED", 1)]
+    none = (
+        await client.get(
+            "/api/admin/reports/workspace",
+            headers=headers,
+            params={**PERIOD, "team": "__none__"},
+        )
+    ).json()
+    assert none["totals"]["conversations"] == 0
     fastapi_app.dependency_overrides.pop(get_usd_brl_rates, None)
+
+
+async def test_team_filter_and_breakdown(
+    client: AsyncClient,
+    user_repo: InMemoryUserRepository,
+    report_repo: InMemoryWorkspaceReportRepository,
+) -> None:
+    from dataclasses import replace
+
+    for conv in list(report_repo.conversations.values()):
+        if conv.user_email == "ana@linx.com":
+            report_repo.conversations[conv.id] = replace(conv, team="SPED")
+    headers, _ = await _headers(client, user_repo, super_admin=True)
+    params = {"workspace_id": str(PROTEUS.id), **PERIOD}
+    body = (await client.get("/api/admin/reports/workspace", headers=headers, params=params)).json()
+    teams = [(t["name"], t["analysts"], t["questions"], t["cost_usd"]) for t in body["teams"]]
+    assert teams == [("SPED", 1, 3, 1.75), ("Sem time", 1, 1, 2.0)]
+    assert sum(t["questions"] for t in body["teams"]) == body["totals"]["questions"]
+    assert {a["email"]: a["team"] for a in body["analysts"]} == {
+        "ana@linx.com": "SPED",
+        "bruno@linx.com": "Sem time",
+    }
+    sped = (
+        await client.get(
+            "/api/admin/reports/workspace", headers=headers, params={**params, "team": " sped "}
+        )
+    ).json()
+    assert sped["filters"]["team"] == "sped"
+    assert {c["analyst_email"] for c in sped["conversations"]} == {"ana@linx.com"}
+    none = (
+        await client.get(
+            "/api/admin/reports/workspace", headers=headers, params={**params, "team": "__none__"}
+        )
+    ).json()
+    assert {c["analyst_email"] for c in none["conversations"]} == {"bruno@linx.com"}
+    res = await client.get(
+        "/api/admin/reports/workspace/export",
+        headers=headers,
+        params={**params, "format": "csv", "team": "SPED"},
+    )
+    rows = list(csv.reader(io.StringIO(res.content.decode("utf-8-sig")), delimiter=";"))
+    assert rows[0][-1] == "time"
+    assert {r[-1] for r in rows[1:]} == {"SPED"}

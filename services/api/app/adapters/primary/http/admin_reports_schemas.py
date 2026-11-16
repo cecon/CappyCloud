@@ -25,12 +25,14 @@ class ReportOptionsOut(_Out):
     workspaces: list[WorkspaceOptionOut]
     branches: list[str]
     can_edit_themes: bool
+    teams: list[str]
 
 
 class ReportFiltersOut(_Out):
     workspace_id: uuid.UUID | None
     workspace_name: str | None
     branch: str | None
+    team: str | None = None
     start: date
     end: date
     timezone: str
@@ -59,6 +61,7 @@ class ReportTotalsOut(_Out):
 class AnalystOut(_Out):
     email: str
     label: str
+    team: str
     questions: int
     conversations: int
     cost_usd: float
@@ -83,6 +86,15 @@ class ThemeOut(_Out):
     share: float
 
 
+class TeamOut(_Out):
+    name: str
+    analysts: int
+    questions: int
+    conversations: int
+    cost_usd: float
+    share: float
+
+
 class WorkspaceTotalsOut(_Out):
     id: uuid.UUID
     slug: str
@@ -96,6 +108,7 @@ class ConversationOut(_Out):
     conversation_id: uuid.UUID
     workspace_slug: str
     analyst_email: str
+    team: str
     ticket_number: str | None
     title: str
     theme_key: str
@@ -118,6 +131,7 @@ class WorkspaceReportOut(BaseModel):
     themes: list[ThemeOut]
     workspaces: list[WorkspaceTotalsOut]
     conversations: list[ConversationOut]
+    teams: list[TeamOut]
 
 
 class ThemeRuleOut(_Out):
@@ -156,6 +170,7 @@ def report_out(built: BuiltReport) -> WorkspaceReportOut:
         themes=[ThemeOut.model_validate(t) for t in report.themes],
         workspaces=[WorkspaceTotalsOut.model_validate(w) for w in report.workspaces],
         conversations=[ConversationOut.model_validate(c) for c in report.conversations],
+        teams=[TeamOut.model_validate(t) for t in report.teams],
     )
 
 

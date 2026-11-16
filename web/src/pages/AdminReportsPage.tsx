@@ -4,13 +4,18 @@ import { errorToUserMessage, getToken } from '../api'
 import { AdminConsole } from '../components/admin/AdminConsole'
 import { ReportFiltersBar } from '../components/reports/ReportFiltersBar'
 import { ExecutiveSummary } from '../components/reports/ExecutiveSummary'
-import { AnalystsTable, ConversationsTable, WorkspacesTable } from '../components/reports/ReportSections'
+import {
+  AnalystsTable,
+  ConversationsTable,
+  TeamsTable,
+  WorkspacesTable,
+} from '../components/reports/ReportSections'
 import { ThemeRulesDialog } from '../components/reports/ThemeRulesDialog'
 import { useWorkspaceReport } from '../components/reports/useWorkspaceReport'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
 import { cn } from '../lib/utils'
-import { downloadWorkspaceReport, filtersToSearch } from '../reportsApi'
+import { downloadWorkspaceReport, filtersToSearch, hasTeams } from '../reportsApi'
 
 export function AdminReportsPage() {
   const { filters, setFilters, report, options, loading, error, reload } = useWorkspaceReport()
@@ -88,6 +93,7 @@ export function AdminReportsPage() {
       ) : report ? (
         <div className={cn('space-y-4', loading && 'opacity-60')}>
           <ExecutiveSummary report={report} />
+          {hasTeams(report) && <TeamsTable report={report} />}
           <div className="grid gap-4 xl:grid-cols-2">
             <AnalystsTable report={report} />
             {!report.filters.workspace_id && <WorkspacesTable report={report} />}

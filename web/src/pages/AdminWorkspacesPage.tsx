@@ -13,6 +13,7 @@ import {
   updateAdminWorkspace,
 } from '../api'
 import { WorkspaceKnowledgeModal } from '../components/WorkspaceKnowledgeModal'
+import { WorkspaceTeamsDialog } from '../components/WorkspaceTeamsDialog'
 import { useAdminWorkspaceIds } from '../hooks/useAdminWorkspaceIds'
 import { EMPTY_FORM, type FormState, formFromWorkspace, linksFromForm } from './admin-workspaces/formState'
 import { WorkspaceFormModal } from './admin-workspaces/WorkspaceFormModal'
@@ -37,6 +38,7 @@ export function AdminWorkspacesPage() {
   const [saving, setSaving] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [knowledgeOf, setKnowledgeOf] = useState<AdminWorkspace | null>(null)
+  const [teamsOf, setTeamsOf] = useState<AdminWorkspace | null>(null)
 
   const reload = useCallback(async () => {
     const token = getToken()
@@ -187,12 +189,15 @@ export function AdminWorkspacesPage() {
               busyId={busyId}
               onEdit={openEdit}
               onKnowledge={setKnowledgeOf}
+              onTeams={setTeamsOf}
               runAction={(id, action) => void runAction(id, action)}
               limited={limited}
             />
           )}
         </Paper>
       </Stack>
+
+      <WorkspaceTeamsDialog workspace={teamsOf} onClose={() => setTeamsOf(null)} />
 
       <WorkspaceKnowledgeModal key={knowledgeOf?.id ?? 'none'} workspace={knowledgeOf} onClose={() => setKnowledgeOf(null)} />
 

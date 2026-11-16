@@ -27,6 +27,7 @@ from app.adapters.primary.http import admin_user_access as admin_user_access_rou
 from app.adapters.primary.http import admin_users as admin_users_router
 from app.adapters.primary.http import admin_workspace_access as admin_workspace_access_router
 from app.adapters.primary.http import admin_workspace_knowledge as admin_ws_knowledge_router
+from app.adapters.primary.http import admin_workspace_teams as admin_workspace_teams_router
 from app.adapters.primary.http import admin_workspaces as admin_workspaces_router
 from app.adapters.primary.http import ai_models as ai_models_router
 from app.adapters.primary.http import attachments as attachments_router
@@ -213,6 +214,7 @@ app.include_router(admin_sandbox_terminal_router.router, prefix="/api")
 app.include_router(admin_user_access_router.router, prefix="/api")
 app.include_router(admin_workspaces_router.router, prefix="/api")
 app.include_router(admin_workspace_access_router.router, prefix="/api")
+app.include_router(admin_workspace_teams_router.router, prefix="/api")
 app.include_router(admin_ws_knowledge_router.router, prefix="/api")
 app.include_router(admin_ai_catalog_router.router, prefix="/api")
 app.include_router(attachments_router.router)

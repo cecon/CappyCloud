@@ -328,4 +328,5 @@ from app.infrastructure.orm_models_workspaces import (  # noqa: F401, E402
     UserWorkspaceAccess,
     Workspace,
     WorkspaceRepository,
+    WorkspaceTeam,
 )

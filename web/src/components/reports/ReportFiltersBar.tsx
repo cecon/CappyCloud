@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { type ReportFilters, type ReportOptions, isoDaysAgo } from '../../reportsApi'
+import { NO_TEAM, type ReportFilters, type ReportOptions, isoDaysAgo } from '../../reportsApi'
 
 const PERIOD_SHORTCUTS = [7, 15, 30, 90] as const
 
@@ -28,7 +28,9 @@ export function ReportFiltersBar({ filters, options, onChange }: Props) {
         <select
           className={selectClass}
           value={filters.workspaceId ?? ''}
-          onChange={(e) => onChange({ ...filters, workspaceId: e.target.value || undefined, branch: undefined })}
+          onChange={(e) =>
+            onChange({ ...filters, workspaceId: e.target.value || undefined, branch: undefined, team: undefined })
+          }
         >
           <option value="">Todos os workspaces</option>
           {options?.workspaces.map((ws) => (
@@ -53,6 +55,24 @@ export function ReportFiltersBar({ filters, options, onChange }: Props) {
           ))}
         </select>
       </label>
+      {(options?.teams.length ?? 0) > 0 && (
+        <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+          Time
+          <select
+            className={selectClass}
+            value={filters.team ?? ''}
+            onChange={(e) => onChange({ ...filters, team: e.target.value || undefined })}
+          >
+            <option value="">Todos</option>
+            {options?.teams.map((team) => (
+              <option key={team} value={team}>
+                {team}
+              </option>
+            ))}
+            <option value={NO_TEAM}>Sem time</option>
+          </select>
+        </label>
+      )}
       <label className="grid gap-1 text-xs font-medium text-muted-foreground">
         De
         <Input
