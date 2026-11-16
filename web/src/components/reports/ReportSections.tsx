@@ -5,6 +5,8 @@ import { cn } from '@/lib/utils'
 import {
   type ReportConversation,
   type WorkspaceReport,
+  formatPercent,
+  hasTeams,
   formatCount,
   formatDate,
   formatMoney,
@@ -32,8 +34,43 @@ export function ReportSection({
   )
 }
 
+export function TeamsTable({ report }: { report: WorkspaceReport }) {
+  const money = (usd: number) => formatMoney(usd, report.brl)
+  return (
+    <ReportSection title="Por time" hint="Time da pessoa no workspace da conversa">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Time</TableHead>
+            <TableHead className="text-right">Pessoas</TableHead>
+            <TableHead className="text-right">Consultas</TableHead>
+            <TableHead className="text-right">% consultas</TableHead>
+            <TableHead className="text-right">Conversas</TableHead>
+            <TableHead className="text-right">Custo</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {report.teams.map((t) => (
+            <TableRow key={t.name}>
+              <TableCell className={cn('font-medium', t.name === 'Sem time' && 'text-muted-foreground')}>
+                {t.name}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">{formatCount(t.analysts)}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatCount(t.questions)}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatPercent(t.share)}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatCount(t.conversations)}</TableCell>
+              <TableCell className="text-right tabular-nums">{money(t.cost_usd)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </ReportSection>
+  )
+}
+
 export function AnalystsTable({ report }: { report: WorkspaceReport }) {
   const money = (usd: number) => formatMoney(usd, report.brl)
+  const showTeam = hasTeams(report)
   return (
     <ReportSection title="Por analista" hint="Identificado pelo e-mail do usuário">
       {report.analysts.length === 0 ? (
@@ -43,6 +80,7 @@ export function AnalystsTable({ report }: { report: WorkspaceReport }) {
           <TableHeader>
             <TableRow>
               <TableHead>Analista</TableHead>
+              {showTeam && <TableHead>Time</TableHead>}
               <TableHead className="text-right">Consultas</TableHead>
               <TableHead className="text-right">Conversas</TableHead>
               <TableHead className="text-right">Custo</TableHead>
@@ -56,6 +94,7 @@ export function AnalystsTable({ report }: { report: WorkspaceReport }) {
                   <span className="font-medium">{a.label}</span>
                   <span className="ml-2 text-xs text-muted-foreground">{a.email}</span>
                 </TableCell>
+                {showTeam && <TableCell className="text-xs">{a.team}</TableCell>}
                 <TableCell className="text-right tabular-nums">{formatCount(a.questions)}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatCount(a.conversations)}</TableCell>
                 <TableCell className="text-right tabular-nums">{money(a.cost_usd)}</TableCell>
@@ -104,6 +143,7 @@ export function ConversationsTable({
   rows: ReportConversation[]
 }) {
   const showWorkspace = !report.filters.workspace_id
+  const showTeam = hasTeams(report)
   return (
     <ReportSection title="Conversas" hint={`${formatCount(rows.length)} com atividade no período`}>
       {rows.length === 0 ? (
@@ -117,6 +157,7 @@ export function ConversationsTable({
               <TableHead>Conversa</TableHead>
               <TableHead>Tema</TableHead>
               <TableHead>Analista</TableHead>
+              {showTeam && <TableHead>Time</TableHead>}
               <TableHead className="text-right">Consultas</TableHead>
               <TableHead className="text-right">Custo</TableHead>
             </TableRow>
@@ -132,6 +173,7 @@ export function ConversationsTable({
                 </TableCell>
                 <TableCell className="text-xs">{c.theme_label}</TableCell>
                 <TableCell className="text-xs">{c.analyst_email.split('@')[0]}</TableCell>
+                {showTeam && <TableCell className="text-xs">{c.team}</TableCell>}
                 <TableCell className="text-right tabular-nums">{formatCount(c.questions)}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatMoney(c.cost_usd, report.brl)}</TableCell>
               </TableRow>

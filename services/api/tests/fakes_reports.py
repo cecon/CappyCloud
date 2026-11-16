@@ -23,6 +23,7 @@ class InMemoryWorkspaceReportRepository(WorkspaceReportRepository):
         self.access: dict[uuid.UUID, set[uuid.UUID]] = {}
         self.conversations: dict[uuid.UUID, ReportConversation] = {}
         self.messages: list[ReportMessage] = []
+        self.teams: dict[uuid.UUID, list[str]] = {}
 
     def add_workspace(self, ws: ReportWorkspace) -> ReportWorkspace:
         self.workspaces[ws.id] = ws
@@ -65,6 +66,10 @@ class InMemoryWorkspaceReportRepository(WorkspaceReportRepository):
             if conv.workspace_id in wanted:
                 found |= conv.branches
         return sorted(found)
+
+    async def list_teams(self, workspace_ids: Sequence[uuid.UUID]) -> list[str]:
+        names = {name for ws_id in workspace_ids for name in self.teams.get(ws_id, [])}
+        return sorted(names, key=str.lower)
 
     async def save_theme_config(
         self,

@@ -31,6 +31,7 @@ import {
   setUserWorkspaceAdmin,
 } from '../api'
 import { AccessAlert, AccessList, BulkButton, ModelLabel, ResourceLabel } from './user-access/AccessParts'
+import { WorkspaceTeamPicker } from './user-access/WorkspaceTeamPicker'
 
 /**
  * - `workspace-admin`: só a aba de workspaces, com os workspaces que administra.
@@ -213,6 +214,11 @@ export function UserAccessDrawer({ user, mode = 'admin', onClose }: Props) {
                     onToggle={(id) =>
                       toggleAccess(workspaces, setWorkspaces, id, grantUserWorkspaceAccess, revokeUserWorkspaceAccess)
                     }
+                  />
+                  <WorkspaceTeamPicker
+                    userId={user.id}
+                    workspaces={(workspaces.available ?? []).filter((ws) => workspaces.allowed.has(ws.id))}
+                    onError={setError}
                   />
                   {!onlyWorkspaces && (
                     <div className="mt-5 space-y-2">

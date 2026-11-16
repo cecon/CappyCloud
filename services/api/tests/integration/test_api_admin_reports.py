@@ -10,16 +10,11 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from app.adapters.primary.http.admin_reports import get_usd_brl_rates, get_workspace_report_repo
-from app.adapters.primary.http.deps import get_db_session
 from app.domain.entities import UserRole
-from app.infrastructure.orm_models import Base, Conversation, Message, Sandbox
-from app.infrastructure.orm_models import User as UserORM
-from app.infrastructure.orm_models_workspaces import Workspace
 from app.main import app as fastapi_app
 from app.ports.workspace_report import ReportConversation, ReportMessage, ReportWorkspace
 from httpx import AsyncClient
 from openpyxl import load_workbook
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from tests.conftest import InMemoryUserRepository
 from tests.fakes_reports import FakeUsdBrlRateProvider, InMemoryWorkspaceReportRepository
@@ -261,7 +256,15 @@ async def test_exports_match_report(
     assert res.status_code == 200
     assert "relatorio-todos-" in res.headers["content-disposition"]
     wb = load_workbook(io.BytesIO(res.content))
-    assert wb.sheetnames == ["Resumo", "Analistas", "Semanas", "Temas", "Workspaces", "Conversas"]
+    assert wb.sheetnames == [
+        "Resumo",
+        "Analistas",
+        "Times",
+        "Semanas",
+        "Temas",
+        "Workspaces",
+        "Conversas",
+    ]
     summary = {row[0]: row[1] for row in wb["Resumo"].iter_rows(min_row=2, values_only=True)}
     assert summary["Total de consultas (perguntas)"] == 5
     assert summary["Conversas"] == 4
@@ -272,62 +275,44 @@ async def test_exports_match_report(
     assert wb["Conversas"].max_row == 5
 
 
-@pytest.fixture
-async def sql_session() -> AsyncGenerator[AsyncSession]:
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
-        fastapi_app.dependency_overrides[get_db_session] = lambda: session
-        yield session
-        fastapi_app.dependency_overrides.pop(get_db_session, None)
-    await engine.dispose()
-
-
-async def test_real_repository_wiring(
-    client: AsyncClient, user_repo: InMemoryUserRepository, sql_session: AsyncSession
+async def test_team_filter_and_breakdown(
+    client: AsyncClient,
+    user_repo: InMemoryUserRepository,
+    report_repo: InMemoryWorkspaceReportRepository,
 ) -> None:
-    fastapi_app.dependency_overrides[get_usd_brl_rates] = lambda: FakeUsdBrlRateProvider()
-    headers, _ = await _headers(client, user_repo, super_admin=True)
-    sandbox = Sandbox(id=uuid.uuid4(), name="sb", host="sb", session_port=8080)
-    user = UserORM(id=uuid.uuid4(), email="ana@linx.com", hashed_password="x")
-    ws = Workspace(
-        id=uuid.uuid4(),
-        slug="proteus",
-        name="PROTEUS",
-        sandbox_id=sandbox.id,
-        report_theme_preset="nfse-detalhado",
-    )
-    conv = Conversation(
-        id=uuid.uuid4(),
-        user_id=user.id,
-        workspace_id=ws.id,
-        title="Falha de schema",
-        repos=[{"base_branch": "main"}],
-    )
-    sql_session.add_all([sandbox, user])
-    await sql_session.flush()
-    sql_session.add(ws)
-    await sql_session.flush()
-    sql_session.add(conv)
-    await sql_session.flush()
-    sql_session.add(
-        Message(
-            id=uuid.uuid4(),
-            conversation_id=conv.id,
-            role="assistant",
-            content="ok",
-            cost_usd=0.5,
-            created_at=T0,
-        )
-    )
-    await sql_session.commit()
+    from dataclasses import replace
 
-    body = (await client.get("/api/admin/reports/workspace", headers=headers, params=PERIOD)).json()
-    assert body["totals"]["cost_usd"] == 0.5
-    assert body["conversations"][0]["theme_key"] == "nfse-schema-xml"
-    assert body["conversations"][0]["branches"] == ["main"]
-    assert body["brl"] is None
-    options = (await client.get("/api/admin/reports/options", headers=headers)).json()
-    assert options["branches"] == ["main"]
-    fastapi_app.dependency_overrides.pop(get_usd_brl_rates, None)
+    for conv in list(report_repo.conversations.values()):
+        if conv.user_email == "ana@linx.com":
+            report_repo.conversations[conv.id] = replace(conv, team="SPED")
+    headers, _ = await _headers(client, user_repo, super_admin=True)
+    params = {"workspace_id": str(PROTEUS.id), **PERIOD}
+    body = (await client.get("/api/admin/reports/workspace", headers=headers, params=params)).json()
+    teams = [(t["name"], t["analysts"], t["questions"], t["cost_usd"]) for t in body["teams"]]
+    assert teams == [("SPED", 1, 3, 1.75), ("Sem time", 1, 1, 2.0)]
+    assert sum(t["questions"] for t in body["teams"]) == body["totals"]["questions"]
+    assert {a["email"]: a["team"] for a in body["analysts"]} == {
+        "ana@linx.com": "SPED",
+        "bruno@linx.com": "Sem time",
+    }
+    sped = (
+        await client.get(
+            "/api/admin/reports/workspace", headers=headers, params={**params, "team": " sped "}
+        )
+    ).json()
+    assert sped["filters"]["team"] == "sped"
+    assert {c["analyst_email"] for c in sped["conversations"]} == {"ana@linx.com"}
+    none = (
+        await client.get(
+            "/api/admin/reports/workspace", headers=headers, params={**params, "team": "__none__"}
+        )
+    ).json()
+    assert {c["analyst_email"] for c in none["conversations"]} == {"bruno@linx.com"}
+    res = await client.get(
+        "/api/admin/reports/workspace/export",
+        headers=headers,
+        params={**params, "format": "csv", "team": "SPED"},
+    )
+    rows = list(csv.reader(io.StringIO(res.content.decode("utf-8-sig")), delimiter=";"))
+    assert rows[0][-1] == "time"
+    assert {r[-1] for r in rows[1:]} == {"SPED"}

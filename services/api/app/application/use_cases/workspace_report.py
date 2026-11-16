@@ -7,7 +7,7 @@ Super admin enxerga todos os workspaces; admin comum só os que tem em
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -58,6 +58,7 @@ class ReportOptions:
     workspaces: list[ReportWorkspace]
     branches: list[str]
     can_edit_themes: bool
+    teams: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,8 @@ class BuiltReport:
     report: WorkspaceReport
     # Cotação usada para mostrar R$; ``None`` quando a fonte não respondeu.
     brl: ExchangeRate | None = None
+    # Filtro de time aplicado (nome, ``__none__`` = sem time, ``None`` = todos).
+    team: str | None = None
 
 
 @dataclass(frozen=True)
@@ -132,6 +135,7 @@ class GetWorkspaceReportOptions:
             workspaces=await visible_workspaces(self._repo, viewer),
             branches=await self._repo.list_branches([ws.id for ws in scope]),
             can_edit_themes=viewer.is_super_admin,
+            teams=await self._repo.list_teams([ws.id for ws in scope]),
         )
 
 
@@ -153,11 +157,13 @@ class BuildWorkspaceReport:
         start: date | None,
         end: date | None,
         now: datetime,
+        team: str | None = None,
     ) -> BuiltReport:
         today = now.astimezone(REPORT_TZ).date()
         start, end = resolve_period(start, end, today)
         scope = await resolve_scope(self._repo, viewer, workspace_id)
         branch = (branch or "").strip() or None
+        team = " ".join((team or "").split()) or None
         since, until = period_bounds(start, end)
         messages = await self._repo.list_period_messages([ws.id for ws in scope], since, until)
         conversations = await self._repo.get_conversations(
@@ -170,6 +176,7 @@ class BuildWorkspaceReport:
             start=start,
             end=end,
             branch=branch,
+            team=team,
         )
         single = scope[0] if workspace_id is not None else None
         return BuiltReport(
@@ -183,6 +190,7 @@ class BuildWorkspaceReport:
             timezone=str(REPORT_TZ),
             report=report,
             brl=await self._rates.rate_on_or_before(min(end, today)) if self._rates else None,
+            team=team,
         )
 
 

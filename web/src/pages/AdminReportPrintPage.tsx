@@ -1,11 +1,16 @@
 import { useEffect } from 'react'
 import { Printer } from 'lucide-react'
 import { ExecutiveSummary } from '../components/reports/ExecutiveSummary'
-import { AnalystsTable, ConversationsTable, WorkspacesTable } from '../components/reports/ReportSections'
+import {
+  AnalystsTable,
+  ConversationsTable,
+  TeamsTable,
+  WorkspacesTable,
+} from '../components/reports/ReportSections'
 import { useWorkspaceReport } from '../components/reports/useWorkspaceReport'
 import { Button } from '../components/ui/button'
 import { applyTheme } from '../lib/theme'
-import { describeFilters } from '../reportsApi'
+import { describeFilters, hasTeams } from '../reportsApi'
 
 const PRINT_CSS = `
 @page { size: A4 landscape; margin: 10mm; }
@@ -58,6 +63,7 @@ export function AdminReportPrintPage() {
               {describeFilters(report)} · gerado em {new Date(report.generated_at).toLocaleString('pt-BR')}
             </p>
           </header>
+          {hasTeams(report) && <TeamsTable report={report} />}
           <AnalystsTable report={report} />
           {!report.filters.workspace_id && <WorkspacesTable report={report} />}
           <ConversationsTable report={report} rows={report.conversations} />

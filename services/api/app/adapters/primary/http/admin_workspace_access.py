@@ -5,6 +5,8 @@
   POST   /admin/users/{user_id}/access/workspaces/{workspace_id}      → libera
   DELETE /admin/users/{user_id}/access/workspaces/{workspace_id}      → revoga
   PUT    /admin/users/{user_id}/access/workspaces/{workspace_id}/admin → liga/desliga admin
+  GET    /admin/users/{user_id}/access/workspaces/teams               → time por workspace
+  PUT    /admin/users/{user_id}/access/workspaces/{workspace_id}/team  → define o time
 
 ADMIN global (inclui super admin) mexe em tudo, inclusive em quem é admin de
 workspace. Admin de workspace só nos workspaces que administra e só em USER
@@ -31,7 +33,7 @@ from app.application.use_cases.admin_scope import (
     ensure_can_revoke,
 )
 from app.domain.entities import User, UserRole
-from app.infrastructure.orm_models_workspaces import UserWorkspaceAccess
+from app.infrastructure.orm_models_workspaces import UserWorkspaceAccess, WorkspaceTeam
 from app.ports.repositories import UserRepository
 
 router = APIRouter(prefix="/admin/users/{user_id}/access/workspaces", tags=["admin"])
@@ -45,6 +47,10 @@ Users = Annotated[UserRepository, Depends(get_user_repo)]
 
 class WorkspaceAdminFlag(BaseModel):
     is_admin: bool
+
+
+class WorkspaceTeamChoice(BaseModel):
+    team_id: uuid.UUID | None = None
 
 
 def _forbidden(exc: AdminScopeDeniedError) -> HTTPException:
@@ -93,6 +99,23 @@ async def list_workspace_admin_flags(user_id: uuid.UUID, session: Session) -> li
         )
     )
     return list(rows.scalars())
+
+
+@router.get("/teams", response_model=dict[uuid.UUID, uuid.UUID])
+async def list_workspace_teams(
+    user_id: uuid.UUID, session: Session, scope: Scope
+) -> dict[uuid.UUID, uuid.UUID]:
+    """``workspace_id → team_id`` nos workspaces visíveis onde a pessoa tem time."""
+    rows = await session.execute(
+        select(UserWorkspaceAccess.workspace_id, UserWorkspaceAccess.team_id).where(
+            UserWorkspaceAccess.user_id == user_id, UserWorkspaceAccess.team_id.is_not(None)
+        )
+    )
+    return {
+        row.workspace_id: row.team_id
+        for row in rows
+        if row.team_id is not None and scope.allows(row.workspace_id)
+    }
 
 
 @router.post("/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -148,6 +171,38 @@ async def set_workspace_admin(
         row = UserWorkspaceAccess(id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id)
         session.add(row)
     row.is_admin = body.is_admin
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=404, detail="Workspace não encontrado.") from exc
+
+
+@router.put("/{workspace_id}/team", status_code=status.HTTP_204_NO_CONTENT)
+async def set_workspace_team(
+    user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    body: WorkspaceTeamChoice,
+    session: Session,
+    scope: Scope,
+    users: Users,
+) -> None:
+    """Define (ou limpa) o time da pessoa no workspace; concede o acesso se faltar."""
+    try:
+        ensure_can_grant(scope, await _target(users, user_id), workspace_id)
+    except AdminScopeDeniedError as exc:
+        raise _forbidden(exc) from exc
+    if body.team_id is not None:
+        team = await session.get(WorkspaceTeam, body.team_id)
+        if team is None or team.workspace_id != workspace_id:
+            raise HTTPException(status_code=422, detail="Time não pertence a este workspace.")
+    row = await _row(session, user_id, workspace_id)
+    if row is None:
+        if body.team_id is None:
+            return
+        row = UserWorkspaceAccess(id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id)
+        session.add(row)
+    row.team_id = body.team_id
     try:
         await session.commit()
     except IntegrityError as exc:

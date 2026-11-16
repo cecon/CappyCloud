@@ -1,5 +1,12 @@
 import { Badge, Group, Table, Text } from '@/components/ui/legacy'
-import { IconBrain, IconFileSpreadsheet, IconPencil, IconRefresh, IconTrash } from '@tabler/icons-react'
+import {
+  IconBrain,
+  IconFileSpreadsheet,
+  IconPencil,
+  IconRefresh,
+  IconTrash,
+  IconUsersGroup,
+} from '@tabler/icons-react'
 import {
   type AdminWorkspace,
   deleteAdminWorkspace,
@@ -16,6 +23,7 @@ type Props = {
   busyId: string | null
   onEdit: (ws: AdminWorkspace) => void
   onKnowledge: (ws: AdminWorkspace) => void
+  onTeams: (ws: AdminWorkspace) => void
   runAction: (id: string, action: (token: string) => Promise<unknown>) => void
   /** Admin de workspace: sem sincronizar nem remover. */
   limited?: boolean
@@ -27,6 +35,7 @@ export function WorkspacesTable({
   busyId,
   onEdit,
   onKnowledge,
+  onTeams,
   runAction,
   limited = false,
 }: Props) {
@@ -40,7 +49,7 @@ export function WorkspacesTable({
           <Table.Th>Repositórios</Table.Th>
           <Table.Th style={{ width: 120 }}>Sincronização</Table.Th>
           <Table.Th>Conhecimento</Table.Th>
-          <ActionsHeader width={172} />
+          <ActionsHeader width={204} />
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
@@ -101,6 +110,9 @@ export function WorkspacesTable({
               </RowActionIcon>
               <RowActionIcon label="Conhecimento (grafo e memória)" color="violet" onClick={() => onKnowledge(ws)}>
                 <IconBrain size={16} />
+              </RowActionIcon>
+              <RowActionIcon label="Times do relatório" color="teal" onClick={() => onTeams(ws)}>
+                <IconUsersGroup size={16} />
               </RowActionIcon>
               <RowActionIcon
                 label="Exportar chamados (CSV)"

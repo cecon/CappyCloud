@@ -37,6 +37,8 @@ class ReportConversation:
     ticket_number: str | None = None
     branches: frozenset[str] = field(default_factory=frozenset)
     first_user_message: str = ""
+    # Time da pessoa no workspace da conversa (None = sem time).
+    team: str | None = None
 
 
 def branches_from_repos(repos: Any) -> frozenset[str]:
@@ -78,6 +80,10 @@ class WorkspaceReportRepository(ABC):
     @abstractmethod
     async def list_branches(self, workspace_ids: Sequence[uuid.UUID]) -> list[str]:
         """Branches distintas das conversas desses workspaces, ordenadas."""
+
+    @abstractmethod
+    async def list_teams(self, workspace_ids: Sequence[uuid.UUID]) -> list[str]:
+        """Nomes distintos dos times desses workspaces, em ordem alfabética."""
 
     @abstractmethod
     async def save_theme_config(

@@ -14,6 +14,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 from openpyxl.worksheet.worksheet import Worksheet
 
+from app.application.use_cases._workspace_report_metrics import NO_TEAM_FILTER, NO_TEAM_LABEL
 from app.application.use_cases.workspace_report import BuiltReport
 
 USD_FORMAT = '"US$" #,##0.0000'
@@ -36,6 +37,7 @@ CONVERSATION_COLUMNS = [
     "custo_brl",
     "primeira_mensagem",
     "ultima_mensagem",
+    "time",
 ]
 
 
@@ -50,6 +52,12 @@ def _local(value: datetime) -> datetime:
 
 def _brl(built: BuiltReport, usd: float) -> float | None:
     return round(usd * built.brl.rate, 2) if built.brl else None
+
+
+def team_filter_label(team: str | None) -> str:
+    if team is None:
+        return "Todos"
+    return NO_TEAM_LABEL if team == NO_TEAM_FILTER else team
 
 
 def rate_note(built: BuiltReport) -> str:
@@ -74,6 +82,7 @@ def _conversation_values(built: BuiltReport) -> list[list[Any]]:
             _brl(built, row.cost_usd),
             _local(row.first_message_at),
             _local(row.last_message_at),
+            row.team,
         ]
         for row in built.report.conversations
     ]
@@ -123,6 +132,7 @@ def _summary_rows(built: BuiltReport) -> list[tuple[str, Any, str | None]]:
     return [
         ("Workspace", built.workspace_name or "Todos os workspaces visíveis", None),
         ("Branch", built.branch or "Todas", None),
+        ("Time", team_filter_label(built.team), None),
         ("Período", f"{built.start:%d/%m/%Y} a {built.end:%d/%m/%Y} ({built.timezone})", None),
         ("Gerado em", _local(generated), None),
         ("Total de consultas (perguntas)", t.questions, None),
@@ -155,12 +165,46 @@ def report_xlsx(built: BuiltReport) -> bytes:
     _sheet(
         wb,
         "Analistas",
-        ["Analista", "E-mail", "Consultas", "Custo (US$)", "Custo (R$)", "Conversas"],
+        ["Analista", "E-mail", "Consultas", "Custo (US$)", "Custo (R$)", "Conversas", "Time"],
         [
-            [a.label, a.email, a.questions, a.cost_usd, _brl(built, a.cost_usd), a.conversations]
+            [
+                a.label,
+                a.email,
+                a.questions,
+                a.cost_usd,
+                _brl(built, a.cost_usd),
+                a.conversations,
+                a.team,
+            ]
             for a in report.analysts
         ],
         money,
+    )
+    _sheet(
+        wb,
+        "Times",
+        [
+            "Time",
+            "Participação",
+            "Consultas",
+            "Custo (US$)",
+            "Custo (R$)",
+            "Conversas",
+            "Analistas",
+        ],
+        [
+            [
+                t.name,
+                t.share,
+                t.questions,
+                t.cost_usd,
+                _brl(built, t.cost_usd),
+                t.conversations,
+                t.analysts,
+            ]
+            for t in report.teams
+        ],
+        {2: "0%", **money},
     )
     _sheet(
         wb,

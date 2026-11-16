@@ -8,7 +8,9 @@ import {
   formatDate,
   formatMoney,
   formatUsd,
+  hasTeams,
   isoDaysAgo,
+  NO_TEAM,
 } from './reportsApi'
 
 describe('reportsApi helpers', () => {
@@ -51,5 +53,19 @@ describe('reportsApi helpers', () => {
       filters: { workspace_name: null, branch: 'main', start: '2026-09-01', end: '2026-09-30' },
     } as WorkspaceReport
     expect(describeFilters(report)).toBe('Todos os workspaces · 01/09/2026 a 30/09/2026 · branch main')
+  })
+
+  it('carries the team filter and shows teams only when one exists', () => {
+    const filters = { workspaceId: 'ws-1', team: NO_TEAM, start: '2026-11-01', end: '2026-11-16' }
+    const search = new URLSearchParams(filtersToSearch(filters))
+    expect(search.get('team')).toBe('__none__')
+    expect(filtersFromSearch(search, { start: 'x', end: 'y' })).toEqual(filters)
+    const report = {
+      filters: { workspace_name: 'PROTHEUS', branch: null, team: NO_TEAM, start: '2026-11-01', end: '2026-11-16' },
+      teams: [{ name: 'Sem time' }],
+    } as WorkspaceReport
+    expect(describeFilters(report)).toBe('PROTHEUS · 01/11/2026 a 16/11/2026 · todas as branches · time Sem time')
+    expect(hasTeams(report)).toBe(false)
+    expect(hasTeams({ ...report, teams: [{ name: 'SPED' }, { name: 'Sem time' }] } as WorkspaceReport)).toBe(true)
   })
 })
