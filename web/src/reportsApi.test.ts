@@ -9,6 +9,7 @@ import {
   formatMoney,
   formatUsd,
   hasTeams,
+  teamFilterSummary,
   isoDaysAgo,
   NO_TEAM,
 } from './reportsApi'
@@ -56,16 +57,22 @@ describe('reportsApi helpers', () => {
   })
 
   it('carries the team filter and shows teams only when one exists', () => {
-    const filters = { workspaceId: 'ws-1', team: NO_TEAM, start: '2026-11-01', end: '2026-11-16' }
+    const filters = { workspaceId: 'ws-1', teams: ['SPED', NO_TEAM], start: '2026-11-01', end: '2026-11-16' }
     const search = new URLSearchParams(filtersToSearch(filters))
-    expect(search.get('team')).toBe('__none__')
+    expect(search.getAll('team')).toEqual(['SPED', '__none__'])
     expect(filtersFromSearch(search, { start: 'x', end: 'y' })).toEqual(filters)
     const report = {
-      filters: { workspace_name: 'PROTHEUS', branch: null, team: NO_TEAM, start: '2026-11-01', end: '2026-11-16' },
+      filters: { workspace_name: 'PROTHEUS', branch: null, teams: ['SPED', NO_TEAM], start: '2026-11-01', end: '2026-11-16' },
       teams: [{ name: 'Sem time' }],
     } as WorkspaceReport
-    expect(describeFilters(report)).toBe('PROTHEUS · 01/11/2026 a 16/11/2026 · todas as branches · time Sem time')
+    expect(describeFilters(report)).toBe('PROTHEUS · 01/11/2026 a 16/11/2026 · todas as branches · times SPED, Sem time')
     expect(hasTeams(report)).toBe(false)
     expect(hasTeams({ ...report, teams: [{ name: 'SPED' }, { name: 'Sem time' }] } as WorkspaceReport)).toBe(true)
+  })
+
+  it('summarizes the team filter', () => {
+    expect(teamFilterSummary([])).toBe('Todos')
+    expect(teamFilterSummary([NO_TEAM])).toBe('Sem time')
+    expect(teamFilterSummary(['SPED', 'ÁGIL'])).toBe('2 times')
   })
 })

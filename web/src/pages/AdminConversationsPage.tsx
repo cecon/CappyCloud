@@ -12,6 +12,8 @@ import {
   getToken,
 } from '../api'
 import { AdminConsole } from '../components/admin/AdminConsole'
+import { TeamFilter } from '../components/reports/TeamFilter'
+import { fetchReportOptions } from '../reportsApi'
 import { useAdminWorkspaceIds } from '../hooks/useAdminWorkspaceIds'
 import { AdminConversationThread } from '../components/admin/AdminConversationThread'
 import { Badge } from '../components/ui/badge'
@@ -34,6 +36,8 @@ export function AdminConversationsPage() {
   const [appliedQuery, setAppliedQuery] = useState('')
   const [workspaceId, setWorkspaceId] = useState(ALL_WORKSPACES)
   const [workspaces, setWorkspaces] = useState<AccessibleWorkspace[]>([])
+  const [teams, setTeams] = useState<string[]>([])
+  const [teamOptions, setTeamOptions] = useState<string[]>([])
   const adminWorkspaceIds = useAdminWorkspaceIds()
   const [items, setItems] = useState<AdminConversationItem[]>([])
   const [total, setTotal] = useState(0)
@@ -51,6 +55,7 @@ export function AdminConversationsPage() {
       const result = await fetchAdminConversations(token, {
         q: appliedQuery,
         workspaceId: workspaceId || undefined,
+        teams,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       })
@@ -61,7 +66,7 @@ export function AdminConversationsPage() {
     } finally {
       setLoading(false)
     }
-  }, [appliedQuery, workspaceId, page])
+  }, [appliedQuery, workspaceId, teams, page])
 
   useEffect(() => {
     void load()
@@ -71,6 +76,15 @@ export function AdminConversationsPage() {
     const token = getToken()
     if (token) void fetchAdminFilterWorkspaces(token, adminWorkspaceIds).then(setWorkspaces)
   }, [adminWorkspaceIds])
+
+  // Times do workspace escolhido (ou de todos os que a pessoa administra).
+  useEffect(() => {
+    const token = getToken()
+    if (!token) return
+    fetchReportOptions(token, workspaceId || undefined)
+      .then((options) => setTeamOptions(options.teams))
+      .catch(() => setTeamOptions([]))
+  }, [workspaceId])
 
   function open(id: string | null) {
     const next = new URLSearchParams(params)
@@ -115,6 +129,7 @@ export function AdminConversationsPage() {
           value={workspaceId}
           onChange={(e) => {
             setPage(0)
+            setTeams([])
             setWorkspaceId(e.target.value)
           }}
           aria-label="Filtrar por workspace"
@@ -126,6 +141,16 @@ export function AdminConversationsPage() {
             </option>
           ))}
         </select>
+        {teamOptions.length > 0 && (
+          <TeamFilter
+            teams={teamOptions}
+            value={teams}
+            onChange={(next) => {
+              setPage(0)
+              setTeams(next)
+            }}
+          />
+        )}
         <Button type="submit" size="sm">
           Buscar
         </Button>
@@ -198,7 +223,8 @@ function ConversationRow({ item, onOpen }: { item: AdminConversationItem; onOpen
         {item.archived && <Badge variant="secondary">arquivada</Badge>}
       </div>
       <p className="text-xs text-muted-foreground">
-        {item.user_email ?? 'sem e-mail'} · {item.workspace_name ?? 'sem workspace'} · {item.questions} pergunta
+        {item.user_email ?? 'sem e-mail'} · {item.workspace_name ?? 'sem workspace'}
+        {item.team ? ` · ${item.team}` : ''} · {item.questions} pergunta
         {item.questions === 1 ? '' : 's'} · {formatCurrency(item.cost_usd)} ·{' '}
         {formatDateTime(item.last_message_at ?? item.created_at)}
       </p>

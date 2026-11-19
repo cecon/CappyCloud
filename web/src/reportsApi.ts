@@ -4,8 +4,8 @@ import { apiFetch, formatApiErrorPayload } from './api'
 export type ReportFilters = {
   workspaceId?: string
   branch?: string
-  /** Nome do time; `NO_TEAM` = quem não tem time. */
-  team?: string
+  /** Nomes dos times (vazio = todos); `NO_TEAM` = quem não tem time. */
+  teams?: string[]
   start: string
   end: string
 }
@@ -78,7 +78,7 @@ export type WorkspaceReport = {
     workspace_id: string | null
     workspace_name: string | null
     branch: string | null
-    team: string | null
+    teams: string[]
     start: string
     end: string
     timezone: string
@@ -108,7 +108,7 @@ function reportParams(filters: ReportFilters): URLSearchParams {
   const params = new URLSearchParams({ start: filters.start, end: filters.end })
   if (filters.workspaceId) params.set('workspace_id', filters.workspaceId)
   if (filters.branch) params.set('branch', filters.branch)
-  if (filters.team) params.set('team', filters.team)
+  for (const team of filters.teams ?? []) params.append('team', team)
   return params
 }
 
@@ -182,7 +182,7 @@ export function filtersFromSearch(search: URLSearchParams, fallback: ReportFilte
   return {
     workspaceId: search.get('workspace_id') ?? fallback.workspaceId,
     branch: search.get('branch') ?? fallback.branch,
-    team: search.get('team') ?? fallback.team,
+    teams: search.has('team') ? search.getAll('team') : fallback.teams,
     start: search.get('start') ?? fallback.start,
     end: search.get('end') ?? fallback.end,
   }
@@ -239,6 +239,13 @@ export function teamLabel(team: string): string {
   return team === NO_TEAM ? 'Sem time' : team
 }
 
+/** Resumo do filtro de times: "Todos", o nome do time ou "N times". */
+export function teamFilterSummary(value: string[]): string {
+  if (value.length === 0) return 'Todos'
+  if (value.length === 1) return teamLabel(value[0])
+  return `${value.length} times`
+}
+
 /** Workspace, período, branch e time — cabeçalho do relatório. */
 export function describeFilters(report: WorkspaceReport): string {
   const f = report.filters
@@ -246,6 +253,6 @@ export function describeFilters(report: WorkspaceReport): string {
     f.workspace_name ?? 'Todos os workspaces',
     `${formatDate(f.start)} a ${formatDate(f.end)}`,
     f.branch ? `branch ${f.branch}` : 'todas as branches',
-    ...(f.team ? [`time ${teamLabel(f.team)}`] : []),
+    ...(f.teams?.length ? [`${f.teams.length > 1 ? 'times' : 'time'} ${f.teams.map(teamLabel).join(', ')}`] : []),
   ].join(' · ')
 }

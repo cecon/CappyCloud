@@ -15,8 +15,9 @@ from app.adapters.primary.http.deps_auth import get_authenticated_user
 from app.domain.entities import User, UserRole
 from app.infrastructure.orm_models import Base, Conversation, Message, Sandbox
 from app.infrastructure.orm_models import User as UserORM
-from app.infrastructure.orm_models_workspaces import Workspace
+from app.infrastructure.orm_models_workspaces import UserWorkspaceAccess, Workspace, WorkspaceTeam
 from fastapi import FastAPI
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
@@ -133,3 +134,34 @@ async def test_usuario_comum_nao_le_conversa_de_outro(
     async with _client(factory, UserRole.USER) as client:
         assert (await client.get("/api/admin/conversations")).status_code == 403
         assert (await client.get(f"/api/admin/conversations/{ids['nfse']}")).status_code == 403
+
+
+async def test_filtra_por_um_ou_mais_times(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    ids = await _seed(factory)
+    async with factory() as session:
+        query = select(UserORM).where(UserORM.email == "ana@test.com")
+        ana = (await session.execute(query)).scalar_one()
+        sped = WorkspaceTeam(id=uuid.uuid4(), workspace_id=ids["ws"], name="PROTHEUS SPED")
+        session.add(sped)
+        await session.flush()
+        session.add(
+            UserWorkspaceAccess(
+                id=uuid.uuid4(), user_id=ana.id, workspace_id=ids["ws"], team_id=sped.id
+            )
+        )
+        await session.commit()
+
+    async def titles(*teams: str) -> list[str]:
+        params = [("team", t) for t in teams]
+        body = (await client.get("/api/admin/conversations", params=params)).json()
+        return sorted(i["title"] for i in body["items"])
+
+    async with _client(factory, UserRole.ADMIN) as client:
+        assert await titles("protheus sped") == ["RPS rejeitado"]
+        assert await titles("__none__") == ["Outra coisa"]
+        assert await titles("PROTHEUS SPED", "__none__") == ["Outra coisa", "RPS rejeitado"]
+        assert await titles("OUTRO") == []
+        item = (await client.get(f"/api/admin/conversations/{ids['nfse']}")).json()
+    assert item["team"] == "PROTHEUS SPED"

@@ -32,7 +32,7 @@ class ReportFiltersOut(_Out):
     workspace_id: uuid.UUID | None
     workspace_name: str | None
     branch: str | None
-    team: str | None = None
+    teams: list[str] = []
     start: date
     end: date
     timezone: str

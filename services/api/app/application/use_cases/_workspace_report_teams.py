@@ -7,7 +7,7 @@ O time vem do acesso da pessoa ao workspace; quem não tem time entra em
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from app.ports.workspace_report import ReportConversation
@@ -31,12 +31,27 @@ def money(value: float) -> float:
     return round(value, COST_DIGITS)
 
 
-def team_matches(conv: ReportConversation, team: str | None) -> bool:
-    if team is None:
+MAX_TEAM_FILTERS = 50
+
+
+def normalize_teams(teams: Iterable[str] | None) -> tuple[str, ...]:
+    """Limpa espaços, tira vazios e repetidos (sem diferenciar maiúsculas)."""
+    out: dict[str, str] = {}
+    for raw in teams or ():
+        name = " ".join(raw.split())[:128]
+        if name:
+            out.setdefault(name.lower(), name)
+    return tuple(out.values())[:MAX_TEAM_FILTERS]
+
+
+def team_matches(conv: ReportConversation, teams: Sequence[str]) -> bool:
+    """Sem filtro, tudo passa; com filtro, a conversa entra se for de algum dos times."""
+    if not teams:
         return True
-    if team == NO_TEAM_FILTER:
-        return conv.team is None
-    return (conv.team or "").lower() == team.lower()
+    wanted = {t.lower() for t in teams}
+    if conv.team is None:
+        return NO_TEAM_FILTER in wanted
+    return conv.team.lower() in wanted
 
 
 def analyst_team(pairs: Iterable[tuple[str, str]], email: str) -> str:
