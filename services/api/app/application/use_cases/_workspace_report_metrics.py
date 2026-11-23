@@ -163,7 +163,7 @@ def _conversations(
     messages: Sequence[ReportMessage],
     branch: str | None,
     tz: ZoneInfo,
-    team: str | None = None,
+    teams: Sequence[str] = (),
 ) -> tuple[list[ConversationRow], dict[uuid.UUID, list[ReportMessage]]]:
     by_ws = {ws.id: ws for ws in workspaces}
     classifiers = {
@@ -174,7 +174,7 @@ def _conversations(
         for conv in conversations
         if conv.workspace_id in by_ws
         and (branch is None or branch in conv.branches)
-        and team_matches(conv, team)
+        and team_matches(conv, teams)
     }
     grouped: dict[uuid.UUID, list[ReportMessage]] = defaultdict(list)
     for msg in messages:
@@ -255,9 +255,9 @@ def aggregate_report(
     end: date,
     branch: str | None = None,
     tz: ZoneInfo = REPORT_TZ,
-    team: str | None = None,
+    teams: Sequence[str] = (),
 ) -> WorkspaceReport:
-    rows, grouped = _conversations(workspaces, conversations, messages, branch, tz, team)
+    rows, grouped = _conversations(workspaces, conversations, messages, branch, tz, teams)
     total_cost = sum(row.cost_usd for row in rows)
     total_questions = sum(row.questions for row in rows)
     pairs = [(row.analyst_email, row.team) for row in rows]
@@ -290,7 +290,7 @@ def aggregate_report(
     ]
     themes.sort(key=lambda t: (t.key == OTHER_THEME_KEY, -t.questions, -t.conversations, t.label))
 
-    teams = team_rows(pairs, _group_rows(rows, "team"), total_questions)
+    team_breakdown = team_rows(pairs, _group_rows(rows, "team"), total_questions)
 
     per_ws = _group_rows(rows, "workspace_slug")
     ws_rows = []
@@ -326,5 +326,5 @@ def aggregate_report(
         themes=themes,
         workspaces=ws_rows,
         conversations=rows,
-        teams=teams,
+        teams=team_breakdown,
     )

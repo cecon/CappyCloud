@@ -62,6 +62,8 @@ export interface AdminConversationItem {
   user_email: string | null
   workspace_slug: string | null
   workspace_name: string | null
+  /** Time da pessoa no workspace da conversa. */
+  team?: string | null
   ticket_number: string | null
   created_at: string
   last_message_at: string | null
@@ -91,11 +93,12 @@ export interface AdminConversationDetail extends AdminConversationItem {
 
 export async function fetchAdminConversations(
   token: string,
-  filters: { q?: string; workspaceId?: string; limit?: number; offset?: number } = {},
+  filters: { q?: string; workspaceId?: string; teams?: string[]; limit?: number; offset?: number } = {},
 ): Promise<{ total: number; items: AdminConversationItem[] }> {
   const params = new URLSearchParams()
   if (filters.q) params.set('q', filters.q)
   if (filters.workspaceId) params.set('workspace_id', filters.workspaceId)
+  for (const team of filters.teams ?? []) params.append('team', team)
   params.set('limit', String(filters.limit ?? 50))
   params.set('offset', String(filters.offset ?? 0))
   const res = await apiFetch(`/api/admin/conversations?${params.toString()}`, {

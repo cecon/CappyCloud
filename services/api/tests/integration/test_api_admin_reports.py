@@ -300,8 +300,17 @@ async def test_team_filter_and_breakdown(
             "/api/admin/reports/workspace", headers=headers, params={**params, "team": " sped "}
         )
     ).json()
-    assert sped["filters"]["team"] == "sped"
+    assert sped["filters"]["teams"] == ["sped"]
     assert {c["analyst_email"] for c in sped["conversations"]} == {"ana@linx.com"}
+    both = (
+        await client.get(
+            "/api/admin/reports/workspace",
+            headers=headers,
+            params=[*params.items(), ("team", "SPED"), ("team", "__none__"), ("team", "sped")],
+        )
+    ).json()
+    assert both["filters"]["teams"] == ["SPED", "__none__"]
+    assert both["totals"]["questions"] == body["totals"]["questions"]
     none = (
         await client.get(
             "/api/admin/reports/workspace", headers=headers, params={**params, "team": "__none__"}

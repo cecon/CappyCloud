@@ -112,14 +112,14 @@ async def _build(
     branch: str | None,
     start: date | None,
     end: date | None,
-    team: str | None = None,
+    teams: list[str] | None = None,
 ) -> BuiltReport:
     try:
         return await BuildWorkspaceReport(repo, rates).execute(
             _viewer(user),
             workspace_id=workspace_id,
             branch=branch,
-            team=team,
+            teams=teams,
             start=start,
             end=end,
             now=datetime.now(UTC),
@@ -148,7 +148,8 @@ async def get_workspace_report(
     branch: str | None = Query(default=None, max_length=256),
     start: date | None = None,
     end: date | None = None,
-    team: str | None = Query(default=None, max_length=128),
+    # ``?team=A&team=B``: conversas de qualquer um dos times; ``__none__`` = sem time.
+    team: Annotated[list[str] | None, Query()] = None,
 ) -> WorkspaceReportOut:
     return report_out(await _build(repo, rates, user, workspace_id, branch, start, end, team))
 
@@ -163,7 +164,8 @@ async def export_workspace_report(
     start: date | None = None,
     end: date | None = None,
     format: Literal["xlsx", "csv"] = "xlsx",
-    team: str | None = Query(default=None, max_length=128),
+    # ``?team=A&team=B``: conversas de qualquer um dos times; ``__none__`` = sem time.
+    team: Annotated[list[str] | None, Query()] = None,
 ) -> Response:
     built = await _build(repo, rates, user, workspace_id, branch, start, end, team)
     if format == "csv":

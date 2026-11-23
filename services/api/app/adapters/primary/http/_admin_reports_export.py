@@ -54,10 +54,10 @@ def _brl(built: BuiltReport, usd: float) -> float | None:
     return round(usd * built.brl.rate, 2) if built.brl else None
 
 
-def team_filter_label(team: str | None) -> str:
-    if team is None:
+def team_filter_label(teams: Sequence[str]) -> str:
+    if not teams:
         return "Todos"
-    return NO_TEAM_LABEL if team == NO_TEAM_FILTER else team
+    return ", ".join(NO_TEAM_LABEL if t == NO_TEAM_FILTER else t for t in teams)
 
 
 def rate_note(built: BuiltReport) -> str:
@@ -132,7 +132,7 @@ def _summary_rows(built: BuiltReport) -> list[tuple[str, Any, str | None]]:
     return [
         ("Workspace", built.workspace_name or "Todos os workspaces visíveis", None),
         ("Branch", built.branch or "Todas", None),
-        ("Time", team_filter_label(built.team), None),
+        ("Time", team_filter_label(built.teams), None),
         ("Período", f"{built.start:%d/%m/%Y} a {built.end:%d/%m/%Y} ({built.timezone})", None),
         ("Gerado em", _local(generated), None),
         ("Total de consultas (perguntas)", t.questions, None),

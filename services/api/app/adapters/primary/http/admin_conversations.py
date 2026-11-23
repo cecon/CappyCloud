@@ -1,9 +1,10 @@
 """Admin: listar e ler qualquer conversa (só leitura).
 
-  GET /admin/conversations?q=&workspace_id=&limit=&offset=   → lista com usuário, workspace e uso
-  GET /admin/conversations/{id}                             → conversa completa com as mensagens
+  GET /admin/conversations?q=&workspace_id=&team=&limit=&offset=  → lista com usuário e uso
+  GET /admin/conversations/{id}  → conversa completa com as mensagens
 
-``q`` procura no título, no e-mail do usuário e no número do chamado.
+``q`` procura no título, no e-mail do usuário e no número do chamado. ``team`` (repetível)
+filtra pelo time da pessoa no workspace da conversa; ``__none__`` = sem time.
 """
 
 from __future__ import annotations
@@ -14,15 +15,16 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import case, desc, func, or_, select
+from sqlalchemy import and_, case, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.primary.http.deps import get_db_session
 from app.adapters.primary.http.deps_auth import get_admin_scope
+from app.application.use_cases._workspace_report_teams import NO_TEAM_FILTER, normalize_teams
 from app.application.use_cases.admin_scope import AdminScope
 from app.infrastructure.orm_models import Conversation, Message
 from app.infrastructure.orm_models import User as UserORM
-from app.infrastructure.orm_models_workspaces import Workspace
+from app.infrastructure.orm_models_workspaces import UserWorkspaceAccess, Workspace, WorkspaceTeam
 
 router = APIRouter(prefix="/admin/conversations", tags=["admin"])
 
@@ -37,6 +39,7 @@ class AdminConversationItem(BaseModel):
     user_email: str | None
     workspace_slug: str | None
     workspace_name: str | None
+    team: str | None = None
     ticket_number: str | None
     created_at: datetime
     last_message_at: datetime | None
@@ -85,9 +88,24 @@ def _usage():
 
 def _query(usage):
     return (
-        select(Conversation, UserORM.email, Workspace.slug, Workspace.name, usage)
+        select(
+            Conversation,
+            UserORM.email,
+            Workspace.slug,
+            Workspace.name,
+            WorkspaceTeam.name.label("team"),
+            usage,
+        )
         .join(UserORM, UserORM.id == Conversation.user_id)
         .outerjoin(Workspace, Workspace.id == Conversation.workspace_id)
+        .outerjoin(
+            UserWorkspaceAccess,
+            and_(
+                UserWorkspaceAccess.user_id == Conversation.user_id,
+                UserWorkspaceAccess.workspace_id == Conversation.workspace_id,
+            ),
+        )
+        .outerjoin(WorkspaceTeam, WorkspaceTeam.id == UserWorkspaceAccess.team_id)
         .outerjoin(usage, usage.c.cid == Conversation.id)
     )
 
@@ -100,6 +118,7 @@ def _item(row) -> dict:
         "user_email": row.email,
         "workspace_slug": row.slug,
         "workspace_name": row.name,
+        "team": row.team,
         "ticket_number": conv.ticket_number,
         "created_at": conv.created_at,
         "last_message_at": row.last_at,
@@ -117,6 +136,7 @@ async def list_conversations(
     scope: Scope,
     q: str = Query(default="", max_length=200),
     workspace_id: uuid.UUID | None = None,
+    team: Annotated[list[str] | None, Query()] = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> AdminConversationPage:
@@ -138,6 +158,13 @@ async def list_conversations(
         query = query.where(Conversation.workspace_id == workspace_id)
     elif scope.workspace_ids is not None:
         query = query.where(Conversation.workspace_id.in_(scope.workspace_ids))
+    teams = normalize_teams(team)
+    if teams:
+        names = [t.lower() for t in teams if t != NO_TEAM_FILTER]
+        conds = [func.lower(WorkspaceTeam.name).in_(names)] if names else []
+        if NO_TEAM_FILTER in teams:
+            conds.append(WorkspaceTeam.id.is_(None))
+        query = query.where(or_(*conds))
     total = await session.scalar(select(func.count()).select_from(query.subquery()))
     rows = (
         await session.execute(
