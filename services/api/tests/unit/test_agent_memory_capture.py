@@ -41,7 +41,7 @@ def test_so_captura_sessao_de_workspace_no_claude_cli() -> None:
     assert _for(question="  ") is None
 
 
-def test_openclaude_captura_com_provider_anthropic() -> None:
+def test_openclaude_captura_com_provider_configurado() -> None:
     azure = {
         "claude_cli": False,
         "provider_base_url": "https://r.services.ai.azure.com/api/projects/p/openai/v1",
@@ -51,8 +51,16 @@ def test_openclaude_captura_com_provider_anthropic() -> None:
     capture = _for(**azure)
 
     assert capture is not None and capture.workspace == "proteus"
-    assert capture.provider == {"base_url": azure["provider_base_url"], "api_key": "k"}
-    assert _for(**{**azure, "provider_api_format": "responses"}) is None
+    assert capture.provider == {
+        "base_url": azure["provider_base_url"],
+        "api_key": "k",
+        "api_format": "anthropic",
+    }
+    for fmt in ("responses", "chat_completions"):
+        other = _for(**{**azure, "provider_api_format": fmt})
+        assert other is not None and other.provider is not None
+        assert other.provider["api_format"] == fmt
+    assert _for(**{**azure, "provider_api_format": "desconhecido"}) is None
     assert _for(**{**azure, "provider_api_key": ""}) is None
 
 
@@ -123,4 +131,5 @@ async def test_openclaude_manda_o_provider_ao_sandbox(monkeypatch: pytest.Monkey
     assert bodies[0]["provider"] == {
         "base_url": "https://r.services.ai.azure.com/api/projects/p/openai/v1",
         "api_key": "k",
+        "api_format": "anthropic",
     }

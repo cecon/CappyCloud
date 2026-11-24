@@ -9,11 +9,15 @@
 // foi confirmado no código ou na documentação. Cada item vira uma memória.
 //
 // Sem `provider`, o passo roda no Claude CLI (login do sandbox) com o modelo
-// barato. Com `provider` ({base_url, api_key}, conversa do openclaude), roda na
-// API de mensagens desse provider com o modelo da conversa: o recurso da Azure
-// só tem os deployments cadastrados.
+// barato. Com `provider` ({base_url, api_key, api_format}, conversa do
+// openclaude), roda no provider da conversa com o modelo dela: o recurso da
+// Azure só tem os deployments cadastrados. "anthropic" (ou sem formato) usa a
+// API de mensagens; "chat_completions" e "responses", as APIs estilo OpenAI.
 
 const { saveMemory, searchMemory, createClient } = require('./memory_handler')
+const { askOpenAiStyle } = require('./memory_openai_llm')
+
+const OPENAI_FORMATS = ['chat_completions', 'responses']
 
 const MAX_ITEMS = 3
 const MAX_QUESTION = 4000
@@ -111,6 +115,9 @@ function loadAnthropicSdk(baseUrl) {
 
 /** Uma volta na API de mensagens do provider da conversa, sem ferramentas. */
 async function askProvider(prompt, model, provider, loadSdk = loadAnthropicSdk) {
+  if (OPENAI_FORMATS.includes(provider.api_format)) {
+    return askOpenAiStyle({ system: SYSTEM, prompt, model, provider })
+  }
   const Client = loadSdk(provider.base_url)
   const client = new Client({ baseURL: provider.base_url, apiKey: provider.api_key })
   const message = await client.messages.create({

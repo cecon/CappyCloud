@@ -107,3 +107,38 @@ test('askProvider chama a API de mensagens e junta só o texto', async () => {
   assert.deepEqual(request.messages, [{ role: 'user', content: 'prompt' }])
   assert.match(request.system, /memória compartilhada/)
 })
+
+test('provider estilo OpenAI: chat_completions e responses vão por fetch', async () => {
+  const { askOpenAiStyle } = require('../memory_openai_llm')
+  const calls = []
+  const fakeFetch = (reply) => async (url, init) => {
+    calls.push({ url, init, body: JSON.parse(init.body) })
+    return { ok: true, status: 200, json: async () => reply }
+  }
+  const chat = await askOpenAiStyle(
+    { system: 'S', prompt: 'P', model: 'claude-opus-5-5', provider: { base_url: 'https://proxy/v1/', api_key: 'k', api_format: 'chat_completions' } },
+    fakeFetch({ choices: [{ message: { content: '[]' } }] }),
+  )
+  assert.equal(chat, '[]')
+  assert.equal(calls[0].url, 'https://proxy/v1/chat/completions')
+  assert.deepEqual(calls[0].body.messages, [{ role: 'system', content: 'S' }, { role: 'user', content: 'P' }])
+  assert.equal(calls[0].init.headers['api-key'], 'k')
+
+  const resp = await askOpenAiStyle(
+    { system: 'S', prompt: 'P', model: 'gpt-5.4', provider: { base_url: 'https://r.services.ai.azure.com/openai/v1', api_key: 'k', api_format: 'responses' } },
+    fakeFetch({ output: [{ type: 'reasoning' }, { type: 'message', content: [{ type: 'output_text', text: '[1' }, { type: 'output_text', text: ']' }] }] }),
+  )
+  assert.equal(resp, '[1]')
+  assert.equal(calls[1].url, 'https://r.services.ai.azure.com/openai/v1/responses')
+  assert.equal(calls[1].body.instructions, 'S')
+  assert.equal(calls[1].body.input, 'P')
+})
+
+test('provider estilo OpenAI com erro vira 502 sem vazar a chave', async () => {
+  const { askOpenAiStyle } = require('../memory_openai_llm')
+  const fetchImpl = async () => ({ ok: false, status: 404, json: async () => ({ error: { message: 'deployment not found' } }) })
+  await assert.rejects(
+    askOpenAiStyle({ system: 'S', prompt: 'P', model: 'm', provider: { base_url: 'https://x/v1', api_key: 'segredo', api_format: 'responses' } }, fetchImpl),
+    (err) => err.status === 502 && /deployment not found/.test(err.message) && !err.message.includes('segredo'),
+  )
+})

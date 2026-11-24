@@ -27,6 +27,7 @@ log = logging.getLogger(__name__)
 # Uma volta do modelo sem ferramentas; folga para fila do login do Claude.
 _EXTRACT_TIMEOUT_S = 180.0
 _background: set[asyncio.Task] = set()
+_PROVIDER_FORMATS = frozenset({"anthropic", "chat_completions", "responses"})
 
 
 @dataclass(frozen=True)
@@ -49,15 +50,24 @@ def memory_capture_for(
     provider_api_key: str = "",
     provider_api_format: str = "",
 ) -> MemoryCapture | None:
-    """Sessão de workspace no Claude CLI, ou no openclaude com provider "anthropic"."""
+    """Sessão de workspace no Claude CLI, ou no openclaude com provider configurado.
+
+    No openclaude a extração roda no provider da conversa, em qualquer formato
+    suportado (``anthropic``, ``chat_completions`` ou ``responses``).
+    """
     root = workspace_root_of(session_root)
     if not (root and session_url and (question or "").strip()):
         return None
     provider: dict[str, str] | None = None
     if not claude_cli:
-        if provider_api_format != "anthropic" or not (provider_base_url and provider_api_key):
+        configured = provider_base_url and provider_api_key
+        if provider_api_format not in _PROVIDER_FORMATS or not configured:
             return None
-        provider = {"base_url": provider_base_url, "api_key": provider_api_key}
+        provider = {
+            "base_url": provider_base_url,
+            "api_key": provider_api_key,
+            "api_format": provider_api_format,
+        }
     return MemoryCapture(session_url, posixpath.basename(root), question or "", model, provider)
 
 
