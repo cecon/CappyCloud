@@ -45,4 +45,19 @@ describe('usePromptTemplate', () => {
     act(() => result.current.setActiveId(null))
     expect(result.current.input).toBe('Chamado:\nMunicípio:')
   })
+
+  it('conversa restaurada depois do carregamento tira o modelo intocado', () => {
+    const { result } = renderHook(() => useHarness({ workspaceId: 'a' }))
+    expect(result.current.input).toBe('Chamado:\nMunicípio:')
+
+    act(() => result.current.setActiveId('conv-1'))
+    expect(result.current.input).toBe('')
+  })
+
+  it('abrir conversa mantém o que a pessoa já editou', () => {
+    const { result } = renderHook(() => useHarness({ workspaceId: 'a' }))
+    act(() => result.current.setInput('Chamado: 99'))
+    act(() => result.current.setActiveId('conv-1'))
+    expect(result.current.input).toBe('Chamado: 99')
+  })
 })

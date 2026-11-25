@@ -25,6 +25,9 @@ export function usePromptTemplate(st: ChatPageState): void {
 
   useEffect(() => {
     if (activeId) {
+      // Abriu uma conversa (inclusive a restaurada ao carregar a página): o modelo
+      // intocado sai da caixa; o que a pessoa digitou fica.
+      if (applied.current && inputRef.current === applied.current) setInput('')
       applied.current = ''
       return
     }
