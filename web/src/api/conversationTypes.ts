@@ -35,6 +35,8 @@ export interface AccessibleWorkspace {
   plan_mode_enabled?: boolean
   /** Conversa nova só abre com o número do chamado. */
   require_ticket?: boolean
+  /** Texto que já vem na caixa de mensagem da conversa nova. */
+  prompt_template?: string
   repositories: Array<{ alias: string; slug: string; read_only?: boolean }>
 }
 

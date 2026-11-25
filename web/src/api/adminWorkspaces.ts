@@ -20,6 +20,8 @@ export interface AdminWorkspace {
   active: boolean
   plan_mode_enabled: boolean
   require_ticket: boolean
+  /** Texto que já vem na caixa de mensagem da conversa nova. */
+  prompt_template?: string
   sync_status: 'pending' | 'synced' | 'error' | string
   sync_error: string | null
   last_sync_at: string | null
@@ -43,6 +45,7 @@ export interface AdminWorkspaceCreate {
   claude_md?: string
   plan_mode_enabled?: boolean
   require_ticket?: boolean
+  prompt_template?: string
   repositories?: WorkspaceRepositoryLink[]
 }
 
@@ -52,6 +55,7 @@ export interface AdminWorkspaceUpdate {
   active?: boolean
   plan_mode_enabled?: boolean
   require_ticket?: boolean
+  prompt_template?: string
   repositories?: WorkspaceRepositoryLink[]
 }
 

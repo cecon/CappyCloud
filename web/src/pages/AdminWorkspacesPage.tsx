@@ -101,6 +101,7 @@ export function AdminWorkspacesPage() {
           claude_md: form.claude_md,
           plan_mode_enabled: form.plan_mode_enabled,
           require_ticket: form.require_ticket,
+          prompt_template: form.prompt_template,
         })
       } else if (editing) {
         await updateAdminWorkspace(token, editing.id, {
@@ -108,6 +109,7 @@ export function AdminWorkspacesPage() {
           claude_md: form.claude_md,
           plan_mode_enabled: form.plan_mode_enabled,
           require_ticket: form.require_ticket,
+          prompt_template: form.prompt_template,
           repositories,
         })
       } else {
@@ -118,6 +120,7 @@ export function AdminWorkspacesPage() {
           claude_md: form.claude_md,
           plan_mode_enabled: form.plan_mode_enabled,
           require_ticket: form.require_ticket,
+          prompt_template: form.prompt_template,
           repositories,
         })
       }

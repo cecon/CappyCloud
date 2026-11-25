@@ -11,6 +11,10 @@ SLUG_PATTERN = r"^[a-z0-9][a-z0-9-]{1,62}$"
 ALIAS_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
 
 
+# Prompt modelo da conversa nova: texto curto, não um documento.
+PROMPT_TEMPLATE_MAX = 8000
+
+
 class WorkspaceRepositoryIn(BaseModel):
     repository_id: uuid.UUID
     # Vazio = slug do repositório.
@@ -28,6 +32,7 @@ class WorkspaceCreate(BaseModel):
     claude_md: str = Field(default="", max_length=50000)
     plan_mode_enabled: bool = False
     require_ticket: bool = False
+    prompt_template: str = Field(default="", max_length=PROMPT_TEMPLATE_MAX)
     repositories: list[WorkspaceRepositoryIn] = Field(default_factory=list)
 
 
@@ -39,6 +44,7 @@ class WorkspaceUpdate(BaseModel):
     active: bool | None = None
     plan_mode_enabled: bool | None = None
     require_ticket: bool | None = None
+    prompt_template: str | None = Field(default=None, max_length=PROMPT_TEMPLATE_MAX)
     repositories: list[WorkspaceRepositoryIn] | None = None
 
 
@@ -62,6 +68,7 @@ class WorkspaceOut(BaseModel):
     active: bool
     plan_mode_enabled: bool = False
     require_ticket: bool = False
+    prompt_template: str = ""
     sync_status: str
     sync_error: str | None
     last_sync_at: datetime | None

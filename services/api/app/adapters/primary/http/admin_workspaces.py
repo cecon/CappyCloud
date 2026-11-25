@@ -41,7 +41,7 @@ router = APIRouter(prefix="/admin/workspaces", tags=["admin"])
 Session = Annotated[AsyncSession, Depends(get_db_session)]
 SuperAdmin = [Depends(require_super_admin)]
 # Campos que o admin de workspace pode mudar; o resto é do super admin.
-WORKSPACE_ADMIN_FIELDS = {"claude_md", "plan_mode_enabled", "require_ticket"}
+WORKSPACE_ADMIN_FIELDS = {"claude_md", "plan_mode_enabled", "require_ticket", "prompt_template"}
 
 
 Manager = Annotated[AdminScope, Depends(get_workspace_manager_scope)]
@@ -64,6 +64,7 @@ def _serialize(ws: Workspace) -> WorkspaceOut:
         active=ws.active,
         plan_mode_enabled=ws.plan_mode_enabled,
         require_ticket=ws.require_ticket,
+        prompt_template=ws.prompt_template,
         sync_status=ws.sync_status,
         sync_error=ws.sync_error,
         last_sync_at=ws.last_sync_at,
@@ -203,6 +204,7 @@ async def create_workspace(body: WorkspaceCreate, session: Session) -> Workspace
         active=True,
         plan_mode_enabled=body.plan_mode_enabled,
         require_ticket=body.require_ticket,
+        prompt_template=body.prompt_template,
         repositories=[],
     )
     session.add(ws)
@@ -221,8 +223,8 @@ async def update_workspace(
     if not scope.is_global and extra:
         raise HTTPException(
             status_code=403,
-            detail="Admin de workspace só altera CLAUDE.md, chamado obrigatório e modo de "
-            "planejamento.",
+            detail="Admin de workspace só altera CLAUDE.md, prompt modelo, chamado "
+            "obrigatório e modo de planejamento.",
         )
     ws = await _load(session, workspace_id)
     if body.name is not None:
@@ -235,6 +237,8 @@ async def update_workspace(
         ws.plan_mode_enabled = body.plan_mode_enabled
     if body.require_ticket is not None:
         ws.require_ticket = body.require_ticket
+    if body.prompt_template is not None:
+        ws.prompt_template = body.prompt_template
     if body.repositories is not None:
         await _set_repositories(session, ws, body.repositories)
     await _enqueue_sync(session, ws)

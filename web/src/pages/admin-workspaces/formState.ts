@@ -9,10 +9,11 @@ export type FormState = {
   claude_md: string
   plan_mode_enabled: boolean
   require_ticket: boolean
+  prompt_template: string
   repos: Record<string, RepoChoice>
 }
 
-export const EMPTY_FORM: FormState = { slug: '', name: '', sandbox_id: '', claude_md: '', plan_mode_enabled: false, require_ticket: false, repos: {} }
+export const EMPTY_FORM: FormState = { slug: '', name: '', sandbox_id: '', claude_md: '', plan_mode_enabled: false, require_ticket: false, prompt_template: '', repos: {} }
 
 export const SYNC_COLORS: Record<string, string> = { synced: 'green', pending: 'yellow', error: 'red' }
 
@@ -28,6 +29,7 @@ export function formFromWorkspace(ws: AdminWorkspace): FormState {
   }
   return { slug: ws.slug, name: ws.name, sandbox_id: ws.sandbox_id, claude_md: ws.claude_md, plan_mode_enabled: ws.plan_mode_enabled,
     require_ticket: ws.require_ticket,
+    prompt_template: ws.prompt_template ?? '',
     repos,
   }
 }
