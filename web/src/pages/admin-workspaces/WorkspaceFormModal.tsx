@@ -169,6 +169,17 @@ export function WorkspaceFormModal({
         </Stack>
 
         <Textarea
+          label="Prompt modelo"
+          description="Texto que já vem na caixa de mensagem de toda conversa nova deste workspace. A pessoa completa antes de enviar. Vazio, a caixa abre vazia."
+          placeholder={'Ex.: Chamado:\nMunicípio:\nO que aconteceu:'}
+          value={form.prompt_template}
+          onChange={(e) => setForm({ ...form, prompt_template: e.currentTarget.value })}
+          minRows={4}
+          autosize
+          maxRows={12}
+          maxLength={8000}
+        />
+        <Textarea
           label="CLAUDE.md do workspace"
           description="Instruções que o agente recebe em todas as conversas deste workspace."
           value={form.claude_md}

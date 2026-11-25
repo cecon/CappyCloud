@@ -41,6 +41,8 @@ class AccessibleWorkspace(BaseModel):
     plan_mode_enabled: bool = False
     # Conversa nova pede o número do chamado.
     require_ticket: bool = False
+    # Texto inicial da caixa de mensagem numa conversa nova (vazio = nada).
+    prompt_template: str = ""
     repositories: list[AccessibleWorkspaceRepo]
 
 
@@ -78,6 +80,7 @@ async def list_accessible_workspaces(
             ready=ws.sync_status == "synced" and bool(ws.repositories),
             plan_mode_enabled=ws.plan_mode_enabled,
             require_ticket=ws.require_ticket,
+            prompt_template=ws.prompt_template,
             repositories=[
                 AccessibleWorkspaceRepo(
                     alias=link.alias, slug=link.repository.slug, read_only=link.read_only

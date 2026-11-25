@@ -47,6 +47,10 @@ class Workspace(Base):
     require_ticket: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Texto que já vem na caixa de mensagem de toda conversa nova (vazio = nada).
+    prompt_template: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default="", default=""
+    )
     # Temas do relatório de uso: modelo pronto e, se houver, regras próprias.
     report_theme_preset: Mapped[str | None] = mapped_column(String(64), nullable=True)
     report_themes: Mapped[list | None] = mapped_column(JSONBType, nullable=True)

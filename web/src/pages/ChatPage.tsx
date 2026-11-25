@@ -20,6 +20,7 @@ import { useConversationActions } from './chat/useConversationActions'
 import { useConversationList } from './chat/useConversationList'
 import { useConversationMessages } from './chat/useConversationMessages'
 import { usePermissionSettings } from './chat/usePermissionSettings'
+import { usePromptTemplate } from './chat/usePromptTemplate'
 import { useRepoPreferences } from './chat/useRepoPreferences'
 import { useSendMessage } from './chat/useSendMessage'
 import { useStartConversation } from './chat/useStartConversation'
@@ -57,6 +58,7 @@ export function ChatPage() {
   useChatEffects(st, token)
   useChatBootstrap(st, token)
   useRepoPreferences(st, selection.availableSandboxes)
+  usePromptTemplate(st)
   const loadActivityHistory = useConversationMessages(st, token)
   const actions = useConversationActions(st, tray, token, closeMobile)
   const handleNewChatWithMessage = useStartConversation({ st, selection, tray, token, loadActivityHistory })
