@@ -2,6 +2,7 @@
 import { Navigate } from 'react-router-dom'
 import { Center, Loader, Stack, Text } from '@/components/ui/legacy'
 import { isWorkspaceAdmin } from '../api/auth'
+import { managesWorkspaces } from './layout/navigation'
 import { useCurrentUser } from '../hooks/useCurrentUser'
 
 type Props = {
@@ -48,7 +49,9 @@ export function RequireAdmin({ children, allowWorkspaceAdmin = false, superAdmin
   }
 
   const globalOk = superAdminOnly ? Boolean(state.user.is_super_admin) : state.user.role === 'admin'
-  if (!globalOk && !(allowWorkspaceAdmin && isWorkspaceAdmin(state.user))) {
+  // ADMIN global comum que é admin de algum workspace entra nas telas de admin de workspace.
+  const workspaceOk = isWorkspaceAdmin(state.user) || (state.user.role === 'admin' && managesWorkspaces(state.user))
+  if (!globalOk && !(allowWorkspaceAdmin && workspaceOk)) {
     return <Navigate to="/" replace />
   }
 
