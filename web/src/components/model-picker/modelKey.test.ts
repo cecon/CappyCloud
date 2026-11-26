@@ -3,8 +3,20 @@ import { describe, expect, it } from 'vitest'
 import type { AiModel } from '../../api'
 import { findModel } from './modelKey'
 
-const row = (id: string, modelId: string, isDefault = false) =>
-  ({ id, model_id: modelId, display_name: id, is_default: { text: isDefault } }) as AiModel
+const row = (id: string, modelId: string, isDefault = false): AiModel => ({
+  id,
+  provider_id: 'provider',
+  model_id: modelId,
+  display_name: id,
+  capabilities: ['text'],
+  is_default: { text: isDefault },
+  context_window: 200_000,
+  input_cost_per_1m_usd: null,
+  output_cost_per_1m_usd: null,
+  tier: 'paid',
+  active: true,
+  created_at: '',
+})
 
 describe('findModel', () => {
   const models = [row('azure', 'claude-opus-5-5'), row('lynn', 'claude-opus-5-5', true), row('gpt', 'gpt-5.4')]
