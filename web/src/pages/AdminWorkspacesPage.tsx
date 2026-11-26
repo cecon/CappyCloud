@@ -14,7 +14,7 @@ import {
 } from '../api'
 import { WorkspaceKnowledgeModal } from '../components/WorkspaceKnowledgeModal'
 import { WorkspaceTeamsDialog } from '../components/WorkspaceTeamsDialog'
-import { useAdminWorkspaceIds } from '../hooks/useAdminWorkspaceIds'
+import { useWorkspaceEditScope } from '../hooks/useWorkspaceEditScope'
 import { EMPTY_FORM, type FormState, formFromWorkspace, linksFromForm } from './admin-workspaces/formState'
 import { WorkspaceFormModal } from './admin-workspaces/WorkspaceFormModal'
 import { WorkspacesTable } from './admin-workspaces/WorkspacesTable'
@@ -25,7 +25,7 @@ import { WorkspacesTable } from './admin-workspaces/WorkspacesTable'
  * workspace vê só os dele e muda CLAUDE.md, chamado obrigatório e modo de planejamento.
  */
 export function AdminWorkspacesPage() {
-  const limited = useAdminWorkspaceIds() !== null
+  const { limited, editableIds, readsCatalog } = useWorkspaceEditScope()
   const [workspaces, setWorkspaces] = useState<AdminWorkspace[] | null>(null)
   const [sandboxes, setSandboxes] = useState<Sandbox[]>([])
   const [repositories, setRepositories] = useState<Repository[]>([])
@@ -44,11 +44,11 @@ export function AdminWorkspacesPage() {
     const token = getToken()
     if (!token) return
     try {
-      // Admin de workspace não lê o catálogo de sandboxes e repositórios.
+      // Só o ADMIN global lê o catálogo de sandboxes e repositórios.
       const [ws, sb, repos] = await Promise.all([
         fetchAdminWorkspaces(token),
-        limited ? Promise.resolve([]) : fetchSandboxes(token),
-        limited ? Promise.resolve([]) : fetchRepositories(token),
+        readsCatalog ? fetchSandboxes(token) : Promise.resolve([]),
+        readsCatalog ? fetchRepositories(token) : Promise.resolve([]),
       ])
       setWorkspaces(ws)
       setSandboxes(sb)
@@ -57,7 +57,7 @@ export function AdminWorkspacesPage() {
     } catch (err) {
       setLoadError(errorToUserMessage(err))
     }
-  }, [limited])
+  }, [readsCatalog])
 
   useEffect(() => {
     void reload()
@@ -195,6 +195,7 @@ export function AdminWorkspacesPage() {
               onTeams={setTeamsOf}
               runAction={(id, action) => void runAction(id, action)}
               limited={limited}
+              canEdit={(id) => editableIds === null || editableIds.has(id)}
             />
           )}
         </Paper>

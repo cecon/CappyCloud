@@ -149,12 +149,22 @@ async def require_workspace_in_scope(
 
 async def get_workspace_manager_scope(
     scope: Annotated[AdminScope, Depends(get_admin_scope)],
+    repo: Annotated[WorkspaceAdminRepository, Depends(get_workspace_admin_repo)],
 ) -> AdminScope:
-    """Super admin ou admin de workspace: ADMIN global comum nunca geriu workspaces."""
+    """Super admin gere todos; os demais, só os workspaces de que são admin.
+
+    O ADMIN global que não é super admin não gere workspaces pelo papel, mas
+    pode ser admin de alguns (``is_admin`` no acesso): nesses, vale o mesmo
+    escopo do admin de workspace.
+    """
     if scope.is_global and not scope.is_super_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Permissão de super admin necessária."
-        )
+        ids = await repo.admin_workspace_ids(scope.user.id)
+        if not ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Permissão de super admin necessária.",
+            )
+        return AdminScope(user=scope.user, workspace_ids=frozenset(ids))
     return scope
 
 

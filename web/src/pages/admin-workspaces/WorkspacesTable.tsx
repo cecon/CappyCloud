@@ -27,6 +27,8 @@ type Props = {
   runAction: (id: string, action: (token: string) => Promise<unknown>) => void
   /** Admin de workspace: sem sincronizar nem remover. */
   limited?: boolean
+  /** Pode editar este workspace (o ADMIN global comum lê todos, edita os que administra). */
+  canEdit?: (workspaceId: string) => boolean
 }
 
 export function WorkspacesTable({
@@ -38,6 +40,7 @@ export function WorkspacesTable({
   onTeams,
   runAction,
   limited = false,
+  canEdit = () => true,
 }: Props) {
   return (
     <Table verticalSpacing="sm" highlightOnHover>
@@ -100,14 +103,16 @@ export function WorkspacesTable({
               <WorkspaceKnowledgeBadges workspaceId={ws.id} onOpen={() => onKnowledge(ws)} />
             </Table.Td>
             <ActionsCell>
-              <RowActionIcon
-                label="Editar workspace"
-                color="gray"
-                disabled={busyId !== null}
-                onClick={() => onEdit(ws)}
-              >
-                <IconPencil size={16} />
-              </RowActionIcon>
+              {canEdit(ws.id) && (
+                <RowActionIcon
+                  label="Editar workspace"
+                  color="gray"
+                  disabled={busyId !== null}
+                  onClick={() => onEdit(ws)}
+                >
+                  <IconPencil size={16} />
+                </RowActionIcon>
+              )}
               <RowActionIcon label="Conhecimento (grafo e memória)" color="violet" onClick={() => onKnowledge(ws)}>
                 <IconBrain size={16} />
               </RowActionIcon>
