@@ -11,7 +11,7 @@ from ._evidence_tool import evidence_tool_context
 from ._grpc_helpers import sanitize_permission_mode
 from ._grpc_session import GrpcSession
 from ._claude_cli_resume import claude_cli_session_exists
-from ._pipeline_helpers import resolve_model_provider_runtime_config
+from ._model_provider_runtime import resolve_model_provider_runtime_config
 from ._task_events import (
     insert_error_event,
     insert_status_event,

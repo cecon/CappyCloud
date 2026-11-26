@@ -10,7 +10,7 @@ from app.infrastructure.azure_foundry_models import (
     fetch_azure_foundry_deployments,
 )
 
-from .agent_runtime_test_loader import pipeline_helpers as _pipeline_helpers
+from .agent_runtime_test_loader import model_provider_runtime as _pipeline_helpers
 
 
 def test_admin_provider_endpoint_infers_azure_responses_url() -> None:
