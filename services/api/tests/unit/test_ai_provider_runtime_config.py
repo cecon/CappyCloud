@@ -10,7 +10,7 @@ from app.infrastructure.azure_foundry_models import (
     fetch_azure_foundry_deployments,
 )
 
-from .agent_runtime_test_loader import pipeline_helpers as _pipeline_helpers
+from .agent_runtime_test_loader import model_provider_runtime as _pipeline_helpers
 
 
 def test_admin_provider_endpoint_infers_azure_responses_url() -> None:
@@ -238,3 +238,68 @@ async def test_fetch_azure_foundry_deployments_normalises_payload(monkeypatch) -
             "capabilities": ["text"],
         },
     ]
+
+
+def _fake_catalog(monkeypatch, rows_by_model_row: dict[str, str], first_url: str) -> list[tuple]:
+    """Catálogo falso: a linha pedida (``m.id``) ou a primeira com o nome."""
+    calls: list[tuple] = []
+
+    class FakeConn:
+        async def fetchrow(self, query: str, *args: str) -> dict[str, str] | None:
+            calls.append((query, args))
+            if "m.id = $2::uuid" in query:
+                url = rows_by_model_row.get(args[1])
+                if url is None:
+                    return None
+            else:
+                url = first_url
+            return {"base_url": url, "api_key_encrypted": "c", "api_format": "", "name": "p"}
+
+        async def close(self) -> None:
+            return None
+
+    async def fake_connect(database_url: str) -> FakeConn:
+        return FakeConn()
+
+    monkeypatch.setattr(_pipeline_helpers.asyncpg, "connect", fake_connect)
+    monkeypatch.setattr(_pipeline_helpers, "_decrypt_secret", lambda value: "k")
+    return calls
+
+
+LYNN_ROW = "87c57128-0000-4000-8000-000000000001"
+
+
+async def test_provider_follows_the_chosen_catalog_row(monkeypatch) -> None:
+    # Mesmo model_id no Azure e no Lynn: vale a linha que a conversa escolheu.
+    _fake_catalog(monkeypatch, {LYNN_ROW: "https://lynn.example/v1"}, "https://azure.example/v1")
+
+    config = await _pipeline_helpers.resolve_model_provider_runtime_config(
+        "postgresql://db", "claude-opus-5-5", LYNN_ROW
+    )
+
+    assert config is not None
+    assert config.base_url == "https://lynn.example/v1"
+
+
+async def test_provider_falls_back_to_model_name_when_row_does_not_match(monkeypatch) -> None:
+    # Linha de outro modelo (fallback trocou o modelo) ou desativada: vale o nome.
+    calls = _fake_catalog(monkeypatch, {}, "https://azure.example/v1")
+
+    config = await _pipeline_helpers.resolve_model_provider_runtime_config(
+        "postgresql://db", "claude-opus-5-5", LYNN_ROW
+    )
+
+    assert config is not None
+    assert config.base_url == "https://azure.example/v1"
+    assert len(calls) == 2
+
+
+async def test_provider_without_row_id_uses_model_name_only(monkeypatch) -> None:
+    calls = _fake_catalog(monkeypatch, {}, "https://azure.example/v1")
+
+    config = await _pipeline_helpers.resolve_model_provider_runtime_config(
+        "postgresql://db", "claude-opus-5-5", "not-a-uuid"
+    )
+
+    assert config is not None
+    assert [args for _, args in calls] == [("claude-opus-5-5",)]

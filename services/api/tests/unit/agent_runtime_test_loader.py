@@ -42,6 +42,10 @@ agent_prompt_sections = load_agent_module(
     "services.cappycloud_agent._agent_prompt_sections",
     ROOT / "services/cappycloud_agent/_agent_prompt_sections.py",
 )
+model_provider_runtime = load_agent_module(
+    "services.cappycloud_agent._model_provider_runtime",
+    ROOT / "services/cappycloud_agent/_model_provider_runtime.py",
+)
 pipeline_helpers = load_agent_module(
     "services.cappycloud_agent._pipeline_helpers",
     ROOT / "services/cappycloud_agent/_pipeline_helpers.py",

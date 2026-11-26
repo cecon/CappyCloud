@@ -11,7 +11,7 @@ from ._evidence_tool import evidence_tool_context
 from ._grpc_helpers import sanitize_permission_mode
 from ._grpc_session import GrpcSession
 from ._claude_cli_resume import claude_cli_session_exists
-from ._pipeline_helpers import resolve_model_provider_runtime_config
+from ._model_provider_runtime import resolve_model_provider_runtime_config
 from ._task_events import (
     insert_error_event,
     insert_status_event,
@@ -35,6 +35,7 @@ async def launch_runner(
     session_root: str = "",
     sandbox_id: str = "",
     override_model: str | None = None,
+    ai_model_id: str = "",
     permission_mode: str = "bypass_permissions",
     sandbox_session_url: str = "",
     attachments: list[dict] | None = None,
@@ -139,6 +140,7 @@ async def launch_runner(
         provider_config = await resolve_model_provider_runtime_config(
             dispatcher._db_url,
             effective_model,
+            ai_model_id,
         )
         session = GrpcSession(
             container_ip=sandbox.grpc_host,

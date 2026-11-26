@@ -1,4 +1,5 @@
 import type { AccessibleWorkspace, AiModel } from '../../api'
+import { findModel } from '../../components/model-picker/modelKey'
 import { CHAT_PREFS_KEY, LAST_WORKSPACE_KEY } from './constants'
 import type { ChatPreferenceState } from './types'
 
@@ -41,12 +42,11 @@ export function updateChatPrefs(update: (prefs: ChatPreferenceState) => ChatPref
 }
 
 export function defaultTextModelId(models: AiModel[]): string {
-  return models.find((m) => m.is_default?.text)?.model_id || models[0]?.model_id || ''
+  return models.find((m) => m.is_default?.text)?.id || models[0]?.id || ''
 }
 
 export function validModelId(models: AiModel[], modelId?: string): string {
-  if (!modelId) return ''
-  return models.some((model) => model.model_id === modelId) ? modelId : ''
+  return findModel(models, modelId)?.id ?? ''
 }
 
 /** Workspace da nova conversa: o atual se ainda existir, o último usado, ou o primeiro pronto. */

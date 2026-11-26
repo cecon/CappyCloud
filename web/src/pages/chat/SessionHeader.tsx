@@ -1,4 +1,5 @@
 import type { AiModel } from '../../api'
+import { findModel } from '../../components/model-picker/modelKey'
 import { ModelPicker } from '../../components/ModelPicker'
 import styles from '../../components/chat.module.css'
 import type { PrLink } from './types'
@@ -25,7 +26,7 @@ export function SessionHeader({
   onCreatePr: () => void
 }) {
   const selectedModelLabel =
-    models.find((model) => model.id === selectedModelId || model.model_id === selectedModelId)?.display_name ||
+    findModel(models, selectedModelId)?.display_name ||
     selectedModelId ||
     'Modelo'
   const activeBranchLabel = headBranch ?? activeBaseBranch ?? 'develop'

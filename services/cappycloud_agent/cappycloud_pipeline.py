@@ -209,6 +209,7 @@ class Pipeline(PipelinePromptMixin):
             "session_root": session_root,
             "sandbox_id": sandbox_id,
             "override_model": override_model,
+            "ai_model_id": str(body.get("ai_model_id") or ""),
             "permission_mode": permission_mode,
             "sandbox_session_url": sandbox_session_url,
             "attachments": attachments_payload,
