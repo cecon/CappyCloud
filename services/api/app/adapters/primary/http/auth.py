@@ -84,7 +84,8 @@ async def me(
 ) -> UserOut:
     """Devolve dados do utilizador autenticado, incluindo o papel e os workspaces que administra."""
     out = _to_user_out(current)
-    if current.role is not UserRole.ADMIN:
+    # Só o super admin gere todos os workspaces; os demais, os que administram.
+    if not (current.role is UserRole.ADMIN and current.is_super_admin):
         out.admin_workspace_ids = sorted(await workspace_admins.admin_workspace_ids(current.id))
     return out
 
