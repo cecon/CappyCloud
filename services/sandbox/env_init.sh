@@ -280,6 +280,9 @@ PATCH_EOF
     node /patch_openclaude_long_lines.js "$_GRPC_TS" || true
     # Tokens de cache no FinalResponse, para a Cappy precificar o cache.
     node /patch_openclaude_cache_usage.js "$_GRPC_TS" || true
+    # Provedor por conversa: as variáveis de provedor de cada stream ficam num
+    # escopo próprio (conversas simultâneas trocavam a chave uma da outra).
+    node /patch_openclaude_provider_scope.js "$_GRPC_TS" || true
 fi
 
 # ── Exporta vars para openclaude e session_server ────────────
