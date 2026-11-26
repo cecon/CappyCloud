@@ -24,26 +24,83 @@ env:
   IMAGE_NAMESPACE: cecon
 
 jobs:
+  # Só reconstrói a imagem cujos arquivos mudaram. Cada build sai com digest
+  # novo (as labels levam sha e data), e o redeploy da stack atualiza, e
+  # reinicia, todo serviço cujo :latest mudou. Reconstruir tudo derrubava as
+  # conversas em andamento nos sandboxes a cada merge, mesmo num ajuste de tela.
+  changes:
+    name: Detect changed images
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      any_image: ${{ steps.matrix.outputs.any_image }}
+      redeploy: ${{ steps.matrix.outputs.redeploy }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            api:
+              - "services/api/**"
+              - "services/cappycloud_agent/**"
+              - "proto/**"
+            web:
+              - "web/**"
+            sandbox:
+              - "services/sandbox/**"
+              - "sandbox/**"
+              - "services/cappycloud_agent/_evidence_*.py"
+            agentmemory:
+              - "services/agentmemory/**"
+            stack:
+              - "infra/swarm/**"
+
+      - id: matrix
+        env:
+          # Reconstruir tudo é manual (Run workflow). Mudar só este arquivo não
+          # reconstrói nada, para o merge dele não derrubar as conversas.
+          ALL: ${{ github.event_name == 'workflow_dispatch' }}
+          API: ${{ steps.filter.outputs.api }}
+          WEB: ${{ steps.filter.outputs.web }}
+          SANDBOX: ${{ steps.filter.outputs.sandbox }}
+          AGENTMEMORY: ${{ steps.filter.outputs.agentmemory }}
+          STACK: ${{ steps.filter.outputs.stack }}
+        # O runner usa bash -e: só `if`, nunca `[ ] && ...` (falso encerra o passo).
+        run: |
+          items=()
+          wants() { [ "$ALL" = true ] || [ "$1" = true ]; }
+          if wants "$API"; then
+            items+=('{"name":"api","image":"cappycloud-api","dockerfile":"services/api/Dockerfile"}')
+          fi
+          if wants "$WEB"; then
+            items+=('{"name":"web","image":"cappycloud-web","dockerfile":"web/Dockerfile"}')
+          fi
+          if wants "$SANDBOX"; then
+            items+=('{"name":"sandbox","image":"cappycloud-sandbox","dockerfile":"services/sandbox/Dockerfile"}')
+          fi
+          if wants "$AGENTMEMORY"; then
+            items+=('{"name":"agentmemory","image":"cappycloud-agentmemory","dockerfile":"services/agentmemory/Dockerfile","context":"services/agentmemory"}')
+          fi
+          joined=$(IFS=,; echo "${items[*]}")
+          echo "matrix={\"include\":[${joined}]}" >> "$GITHUB_OUTPUT"
+          any=false
+          if [ ${#items[@]} -gt 0 ]; then any=true; fi
+          echo "any_image=${any}" >> "$GITHUB_OUTPUT"
+          redeploy=false
+          if [ "$any" = true ] || [ "$STACK" = true ]; then redeploy=true; fi
+          echo "redeploy=${redeploy}" >> "$GITHUB_OUTPUT"
+          echo "Imagens: ${joined:-nenhuma}; redeploy: ${redeploy}"
+
   build-and-push:
     name: Build ${{ matrix.name }}
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.any_image == 'true'
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: api
-            image: cappycloud-api
-            dockerfile: services/api/Dockerfile
-          - name: web
-            image: cappycloud-web
-            dockerfile: web/Dockerfile
-          - name: sandbox
-            image: cappycloud-sandbox
-            dockerfile: services/sandbox/Dockerfile
-          - name: agentmemory
-            image: cappycloud-agentmemory
-            dockerfile: services/agentmemory/Dockerfile
-            context: services/agentmemory
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
 
     steps:
       - uses: actions/checkout@v4
@@ -77,8 +134,13 @@ jobs:
   redeploy-dokploy:
     name: Redeploy Dokploy stack
     runs-on: ubuntu-latest
-    needs: build-and-push
-    if: github.ref == 'refs/heads/main'
+    needs: [changes, build-and-push]
+    # Também quando só a stack (infra/swarm) mudou e nenhuma imagem foi construída.
+    if: >-
+      always() && github.ref == 'refs/heads/main'
+      && needs.changes.result == 'success'
+      && needs.changes.outputs.redeploy == 'true'
+      && (needs.build-and-push.result == 'success' || needs.build-and-push.result == 'skipped')
 
     steps:
       - name: Trigger Dokploy deploy webhook
