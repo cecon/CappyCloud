@@ -158,6 +158,9 @@ def build_pipeline_body(
         "session_root": conv.session_root or "",
         "sandbox_id": str(conv.sandbox_id) if conv.sandbox_id else "",
         "override_model": override_model,
+        # Linha do catálogo escolhida: o agente usa o provider dela, não o primeiro
+        # provider que tiver um modelo com o mesmo nome.
+        "ai_model_id": str(conv.ai_model_id) if conv.ai_model_id else "",
         "permission_mode": permission_mode,
         "execution_profile": validate_execution_profile(execution_profile),
     }

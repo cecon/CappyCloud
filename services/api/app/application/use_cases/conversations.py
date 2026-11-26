@@ -123,9 +123,8 @@ class StreamMessage:
             effective_model, resolved_model_uuid = override_model, None
         else:
             effective_model = await self._resolve_model(user_id, user_role, override_model)
-            resolved_model_uuid = await self._resolve_model_uuid(
-                user_id, user_role, effective_model
-            )
+            # O pedido decide a linha (e o provider): o mesmo nome pode estar em dois providers.
+            resolved_model_uuid = await self._resolve_model_uuid(user_id, user_role, override_model)
         if resolved_model_uuid and conv.ai_model_id != resolved_model_uuid:
             conv.ai_model_id = resolved_model_uuid
             should_update_conversation = True

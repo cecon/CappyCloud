@@ -200,6 +200,33 @@ async def test_build_pipeline_body_includes_conversation_permission_mode() -> No
     assert body["permission_mode"] == PermissionMode.AUTO.value
 
 
+async def test_build_pipeline_body_carries_the_chosen_catalog_row() -> None:
+    # O agente usa o provider dessa linha: o mesmo model_id pode estar em dois providers.
+    row = uuid.uuid4()
+    conv = Conversation(id=uuid.uuid4(), user_id=uuid.uuid4(), title="t", ai_model_id=row)
+
+    body = build_pipeline_body(
+        conv,
+        enriched_repos=[],
+        user_id=conv.user_id,
+        cursor=None,
+        override_model="claude-opus-5-5",
+        attachments_payload=None,
+    )
+    legacy = build_pipeline_body(
+        Conversation(id=uuid.uuid4(), user_id=conv.user_id, title="t"),
+        enriched_repos=[],
+        user_id=conv.user_id,
+        cursor=None,
+        override_model=None,
+        attachments_payload=None,
+    )
+
+    assert body["ai_model_id"] == str(row)
+    assert body["override_model"] == "claude-opus-5-5"
+    assert legacy["ai_model_id"] == ""
+
+
 async def test_build_pipeline_body_defaults_legacy_permission_mode() -> None:
     conv = Conversation(
         id=uuid.uuid4(),

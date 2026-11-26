@@ -35,6 +35,7 @@ async def launch_runner(
     session_root: str = "",
     sandbox_id: str = "",
     override_model: str | None = None,
+    ai_model_id: str = "",
     permission_mode: str = "bypass_permissions",
     sandbox_session_url: str = "",
     attachments: list[dict] | None = None,
@@ -139,6 +140,7 @@ async def launch_runner(
         provider_config = await resolve_model_provider_runtime_config(
             dispatcher._db_url,
             effective_model,
+            ai_model_id,
         )
         session = GrpcSession(
             container_ip=sandbox.grpc_host,

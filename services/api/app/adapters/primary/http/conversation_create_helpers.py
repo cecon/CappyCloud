@@ -16,7 +16,6 @@ from app.adapters.secondary.persistence.sqlalchemy_ai_model_access_policy import
 from app.application.use_cases.conversations import CreateConversation
 from app.domain.entities import Conversation, User, UserRole
 from app.domain.value_objects import is_claude_cli_model, normalize_ticket_number
-from app.infrastructure.orm_models_platform import AiModel
 from app.infrastructure.orm_models_workspaces import (
     UserWorkspaceAccess,
     Workspace,
@@ -36,24 +35,12 @@ async def resolve_ai_model_id(
     if not model_id or is_claude_cli_model(model_id):
         return None
     try:
-        resolved = await SQLAlchemyAiModelAccessPolicy(session).resolve_model_for_user(
+        # ``model_id`` é o id da linha (seletor do chat) ou o nome do modelo.
+        return await SQLAlchemyAiModelAccessPolicy(session).resolve_model_uuid_for_user(
             current.id, current.role, model_id
         )
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    ai_model_id = (
-        await session.execute(
-            select(AiModel.id)
-            .where(AiModel.model_id == resolved, AiModel.active.is_(True))
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if ai_model_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Modelo LLM indisponível ou desativado globalmente.",
-        )
-    return ai_model_id
 
 
 async def create_workspace_conversation(

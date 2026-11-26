@@ -30,6 +30,20 @@ describe('ModelPicker', () => {
     expect(screen.getByText('Nenhum modelo autorizado para este usuário.')).toBeInTheDocument()
   })
 
+  it('picks the catalog row when the same model is in two providers', () => {
+    const onChange = vi.fn()
+    const models = [
+      model({ id: 'azure-row', model_id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5' }),
+      model({ id: 'lynn-row', model_id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5 (Lynn)' }),
+    ]
+    render(<ModelPicker models={models} value="azure-row" onChange={onChange} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Modelo IA/i }))
+    fireEvent.click(screen.getByText('Claude Opus 5.5 (Lynn)'))
+
+    expect(onChange).toHaveBeenCalledWith('lynn-row')
+  })
+
   it('marks unavailable selected models in the trigger', () => {
     render(<ModelPicker models={[]} value="openrouter/retired" onChange={vi.fn()} />)
 

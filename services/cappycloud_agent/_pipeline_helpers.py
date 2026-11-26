@@ -273,10 +273,36 @@ def _path_has_azure_project_openai_v1(path: str) -> bool:
     )
 
 
+_PROVIDER_FOR_MODEL_SQL = """
+    SELECT p.base_url, p.api_key_encrypted, p.api_format, p.name
+    FROM ai_models m
+    JOIN ai_providers p ON p.id = m.provider_id
+    WHERE m.active = TRUE
+      AND p.active = TRUE
+      AND m.model_id = $1
+      AND m.capabilities ? 'text'
+"""
+
+
+def _is_uuid(value: str | None) -> bool:
+    if not value:
+        return False
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
+
+
 async def resolve_model_provider_runtime_config(
-    database_url: str, model_id: str | None
+    database_url: str, model_id: str | None, ai_model_id: str = ""
 ) -> LlmProviderRuntimeConfig | None:
     """Resolve base URL/chave/formato do provider do modelo selecionado.
+
+    ``ai_model_id`` é a linha do catálogo que a conversa escolheu: o mesmo
+    ``model_id`` pode existir em dois providers (ex.: Opus no Azure e no proxy
+    do Lynn). Sem ela, ou se ela não bate com ``model_id`` (modelo trocado pelo
+    fallback), vale a primeira linha ativa com esse nome, como antes.
 
     Retorna ``None`` quando o modelo não tem provider configurado com chave; nesse
     caso o sandbox usa as variáveis de ambiente padrão, preservando OpenRouter.
@@ -286,20 +312,18 @@ async def resolve_model_provider_runtime_config(
     try:
         conn = await asyncpg.connect(database_url)
         try:
-            row = await conn.fetchrow(
-                """
-                SELECT p.base_url, p.api_key_encrypted, p.api_format, p.name
-                FROM ai_models m
-                JOIN ai_providers p ON p.id = m.provider_id
-                WHERE m.active = TRUE
-                  AND p.active = TRUE
-                  AND m.model_id = $1
-                  AND m.capabilities ? 'text'
-                ORDER BY m.display_name
-                LIMIT 1
-                """,
-                model_id,
-            )
+            row = None
+            if _is_uuid(ai_model_id):
+                row = await conn.fetchrow(
+                    _PROVIDER_FOR_MODEL_SQL + " AND m.id = $2::uuid LIMIT 1",
+                    model_id,
+                    ai_model_id,
+                )
+            if row is None:
+                row = await conn.fetchrow(
+                    _PROVIDER_FOR_MODEL_SQL + " ORDER BY m.display_name LIMIT 1",
+                    model_id,
+                )
         finally:
             await conn.close()
         if not row:

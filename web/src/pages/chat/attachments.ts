@@ -1,5 +1,6 @@
 import type { AiModel } from '../../api'
 import type { TrayItem } from '../../components/AttachmentTray'
+import { findModel } from '../../components/model-picker/modelKey'
 import {
   ALLOWED_ATTACHMENT_EXT,
   ALLOWED_ATTACHMENT_MIME,
@@ -62,15 +63,15 @@ function isVisionModel(model: AiModel | undefined): boolean {
 function preferredVisionModelId(models: AiModel[]): string {
   const visionModels = models.filter((model) => isVisionModel(model))
   return (
-    visionModels.find((model) => model.is_default?.vision)?.model_id ||
-    sortModelsForSelect(visionModels)[0]?.model_id ||
+    visionModels.find((model) => model.is_default?.vision)?.id ||
+    sortModelsForSelect(visionModels)[0]?.id ||
     ''
   )
 }
 
 /** Aviso mostrado quando a imagem anexada obriga a trocar de modelo. */
 export function modelSwitchNotice(models: AiModel[], fromModelId: string, toModelId: string): string {
-  const name = (id: string) => models.find((model) => model.model_id === id)?.display_name || id
+  const name = (id: string) => findModel(models, id)?.display_name || id
   return `${name(fromModelId)} não lê imagem; a mensagem vai com ${name(toModelId)}.`
 }
 
@@ -80,7 +81,7 @@ export function modelIdForAttachments(
   hasImage: boolean,
 ): string {
   if (!hasImage) return selectedModelId
-  const selected = models.find((model) => model.model_id === selectedModelId)
+  const selected = findModel(models, selectedModelId)
   if (isVisionModel(selected)) return selectedModelId
   return preferredVisionModelId(models) || selectedModelId
 }

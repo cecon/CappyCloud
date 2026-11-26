@@ -30,6 +30,7 @@ import { createPortal } from 'react-dom'
 import type { AiModel } from '../api'
 import styles from './model-picker.module.css'
 import { normalize } from './model-picker/helpers'
+import { findModel } from './model-picker/modelKey'
 import { ModelListEmpty, ModelRow } from './model-picker/ModelRow'
 
 export interface ModelPickerProps {
@@ -76,8 +77,8 @@ export function ModelPicker({
   }, [rows, query])
 
   const selected = useMemo(
-    () => rows.find((r) => r.model.model_id === value) ?? null,
-    [rows, value],
+    () => rows.find((r) => r.model.id === findModel(models, value)?.id) ?? null,
+    [rows, models, value],
   )
   const searchable = !compact || rows.length > 8
 
@@ -190,7 +191,7 @@ export function ModelPicker({
       const idx = allowClear ? activeIndex - 1 : activeIndex
       const row = filtered[idx]
       if (row) {
-        onChange(row.model.model_id)
+        onChange(row.model.id)
         setOpen(false)
       }
     } else if (e.key === 'Tab') {
@@ -306,7 +307,7 @@ export function ModelPicker({
             {filtered.map((row, i) => {
               const idx = allowClear ? i + 1 : i
               const isActive = idx === activeIndex
-              const isSelected = row.model.model_id === value
+              const isSelected = row.model.id === selected?.model.id
               return (
                 <ModelRow
                   key={row.model.id}
@@ -317,7 +318,7 @@ export function ModelPicker({
                   isSelected={isSelected}
                   onHover={() => setActiveIndex(idx)}
                   onSelect={() => {
-                    onChange(row.model.model_id)
+                    onChange(row.model.id)
                     setOpen(false)
                   }}
                 />
