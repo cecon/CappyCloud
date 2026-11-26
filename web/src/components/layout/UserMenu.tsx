@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { CappyIcon } from './icons'
-import { roleFromUser, visibleNavigationItems, type NavigationItem } from './navigation'
+import { managesWorkspaces, roleFromUser, visibleNavigationItems, type NavigationItem } from './navigation'
 import { ThemeToggle } from './ThemeToggle'
 
 type UserMenuProps = {
@@ -41,10 +41,11 @@ function MenuLink({ item }: { item: NavigationItem }) {
 
 export function UserMenu({ user }: UserMenuProps) {
   const role = roleFromUser(user)
-  const primary = visibleNavigationItems(role, 'primary')
-  const work = visibleNavigationItems(role, 'work')
-  const admin = visibleNavigationItems(role, 'admin')
-  const account = visibleNavigationItems(role, 'account')
+  const manages = managesWorkspaces(user)
+  const primary = visibleNavigationItems(role, 'primary', manages)
+  const work = visibleNavigationItems(role, 'work', manages)
+  const admin = visibleNavigationItems(role, 'admin', manages)
+  const account = visibleNavigationItems(role, 'account', manages)
 
   function logout() {
     redirectToLogin()

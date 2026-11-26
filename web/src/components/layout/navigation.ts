@@ -77,16 +77,29 @@ export function roleFromUser(
   return 'user'
 }
 
-export function canAccessNavigationItem(item: NavigationItem, role: CappyRole): boolean {
+/** Administra algum workspace (``is_admin`` no acesso), inclusive o ADMIN global comum. */
+export function managesWorkspaces(user: { admin_workspace_ids?: string[] } | null): boolean {
+  return Boolean(user?.admin_workspace_ids?.length)
+}
+
+/**
+ * ``managesWorkspaces``: o ADMIN global comum que também é admin de algum
+ * workspace vê as telas de admin de workspace (ex.: Workspaces), limitadas a eles.
+ */
+export function canAccessNavigationItem(item: NavigationItem, role: CappyRole, managesWorkspaces = false): boolean {
   if (role === 'workspace-admin') return Boolean(item.workspaceAdmin) || (!item.adminOnly && !item.superAdminOnly)
-  if (item.superAdminOnly) return role === 'super-admin'
+  if (item.superAdminOnly) return role === 'super-admin' || (role === 'admin' && managesWorkspaces && Boolean(item.workspaceAdmin))
   if (item.adminOnly) return role === 'admin' || role === 'super-admin'
   return true
 }
 
-export function visibleNavigationItems(role: CappyRole, section?: NavigationItem['section']) {
+export function visibleNavigationItems(
+  role: CappyRole,
+  section?: NavigationItem['section'],
+  managesWorkspaces = false,
+) {
   return navigationItems.filter(
-    (item) => canAccessNavigationItem(item, role) && (!section || item.section === section),
+    (item) => canAccessNavigationItem(item, role, managesWorkspaces) && (!section || item.section === section),
   )
 }
 

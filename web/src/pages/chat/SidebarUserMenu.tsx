@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { redirectToLogin, type CurrentUser } from '../../api'
 import { CappyIcon } from '../../components/layout/icons'
-import { roleFromUser, visibleNavigationItems, type NavigationItem } from '../../components/layout/navigation'
+import { managesWorkspaces, roleFromUser, visibleNavigationItems, type NavigationItem } from '../../components/layout/navigation'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,10 +26,11 @@ function SidebarUserMenuLink({ item }: { item: NavigationItem }) {
 
 export function SidebarUserMenu({ user }: { user: CurrentUser | null }) {
   const role = roleFromUser(user)
-  const primary = visibleNavigationItems(role, 'primary')
-  const work = visibleNavigationItems(role, 'work')
-  const admin = visibleNavigationItems(role, 'admin')
-  const account = visibleNavigationItems(role, 'account')
+  const manages = managesWorkspaces(user)
+  const primary = visibleNavigationItems(role, 'primary', manages)
+  const work = visibleNavigationItems(role, 'work', manages)
+  const admin = visibleNavigationItems(role, 'admin', manages)
+  const account = visibleNavigationItems(role, 'account', manages)
 
   function logout() {
     redirectToLogin()
