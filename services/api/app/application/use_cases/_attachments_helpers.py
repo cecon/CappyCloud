@@ -8,8 +8,15 @@ from __future__ import annotations
 
 import uuid
 
+from app.application.use_cases._attachment_excerpts import (
+    EXCERPT_BUDGET_CHARS,
+    LocalIndex,
+    build_local_index,
+    coverage_note,
+    select_excerpts,
+)
 from app.application.use_cases.artifact_processing import extract_artifact_text
-from app.domain.entities import MessageAttachment
+from app.domain.entities import ConversationArtifactChunk, MessageAttachment
 from app.ports.repositories import AiModelCapabilityLookup, AttachmentRepository
 from app.ports.services import AttachmentStorage
 
@@ -125,11 +132,13 @@ async def inject_artifact_chunks(
     storage: AttachmentStorage | None = None,
     limit: int = 6,
     full_text_budget: int = FULL_TEXT_BUDGET_CHARS,
+    excerpt_budget: int = EXCERPT_BUDGET_CHARS,
 ) -> str:
     """Prepende os arquivos anexados à conversa.
 
     Arquivos que cabem em ``full_text_budget`` vão inteiros; os que não cabem
-    entram como trechos recuperados pela busca.
+    entram como trechos: sempre o começo do arquivo, os trechos com marcadores
+    de erro (logs) e os recuperados pela busca (ver ``_attachment_excerpts``).
     """
     if not attachment_ids or attachments is None:
         return prompt
@@ -143,19 +152,22 @@ async def inject_artifact_chunks(
     if not artifact_atts:
         return prompt
 
-    full_files, remaining = await _read_full_texts(storage, artifact_atts, full_text_budget)
-    chunks = []
+    full_files, remaining, local = await _read_full_texts(
+        storage, artifact_atts, full_text_budget, conversation_id
+    )
+    searched: list[ConversationArtifactChunk] = []
     if remaining:
         try:
-            chunks = await attachments.search_chunks(
+            searched = await attachments.search_chunks(
                 conversation_id=conversation_id,
                 attachment_ids=[att.id for att in remaining],
                 query=query,
                 limit=limit,
             )
         except Exception:
-            chunks = []
-    if not full_files and not chunks:
+            searched = []
+    excerpts = select_excerpts(remaining, local, searched, budget=excerpt_budget)
+    if not full_files and not excerpts:
         return prompt
 
     sections = ["## Arquivos anexados pelo utilizador"]
@@ -164,19 +176,30 @@ async def inject_artifact_chunks(
             f"### Arquivo {idx}: `{att.original_filename}` "
             f"(completo, linhas 1-{text.count(chr(10)) + 1})\n\n```text\n{text}\n```"
         )
-    if chunks:
-        by_id = {att.id: att for att in remaining}
+    if excerpts:
+        covered = {e.attachment_id for e in excerpts}
+        notes = [
+            coverage_note(att, local.get(att.id), excerpts)
+            for att in remaining
+            if att.id in covered
+        ]
         sections.append(
-            "Os arquivos abaixo são grandes demais para ir inteiros. Os trechos foram "
-            "recuperados pela busca e não representam o arquivo inteiro; se faltar algo, "
-            "peça ao utilizador o pedaço específico."
+            "Os arquivos abaixo são grandes demais para ir inteiros. Vão só trechos: "
+            "o começo de cada arquivo, os trechos com marcadores de erro e os "
+            "recuperados pela busca. Eles não representam o arquivo inteiro.\n\n"
+            + "\n".join(notes)
+            + "\n\nSe a resposta depender de uma parte que não veio, diga quais linhas "
+            "faltam e peça ao utilizador esse intervalo."
         )
-        for idx, chunk in enumerate(chunks, 1):
-            chunk_att = by_id.get(chunk.attachment_id)
-            filename = chunk_att.original_filename if chunk_att else str(chunk.attachment_id)
-            location = _format_chunk_location(chunk.line_start, chunk.line_end, chunk.page_start)
+        by_id = {att.id: att for att in remaining}
+        for idx, excerpt in enumerate(excerpts, 1):
+            chunk_att = by_id.get(excerpt.attachment_id)
+            filename = chunk_att.original_filename if chunk_att else str(excerpt.attachment_id)
+            location = _format_chunk_location(
+                excerpt.line_start, excerpt.line_end, excerpt.page_start
+            )
             sections.append(
-                f"### Trecho {idx}: `{filename}`{location}\n\n```text\n{chunk.content[:6000]}\n```"
+                f"### Trecho {idx}: `{filename}`{location}\n\n```text\n{excerpt.content}\n```"
             )
     return "\n\n".join(sections) + "\n\n---\n\n" + prompt
 
@@ -185,12 +208,21 @@ async def _read_full_texts(
     storage: AttachmentStorage | None,
     artifact_atts: list[MessageAttachment],
     budget: int,
-) -> tuple[list[tuple[MessageAttachment, str]], list[MessageAttachment]]:
-    """Separa os anexos que cabem inteiros no orçamento dos que vão por trechos."""
+    conversation_id: uuid.UUID,
+) -> tuple[
+    list[tuple[MessageAttachment, str]],
+    list[MessageAttachment],
+    dict[uuid.UUID, LocalIndex],
+]:
+    """Separa os anexos que cabem inteiros dos que vão por trechos.
+
+    Para os que vão por trechos, recalcula os chunks a partir do original.
+    """
     if storage is None:
-        return [], artifact_atts
+        return [], artifact_atts, {}
     full: list[tuple[MessageAttachment, str]] = []
     remaining: list[MessageAttachment] = []
+    local: dict[uuid.UUID, LocalIndex] = {}
     for att in artifact_atts:
         try:
             content = await storage.read(att.storage_path)
@@ -203,7 +235,8 @@ async def _read_full_texts(
             budget -= len(text)
         else:
             remaining.append(att)
-    return full, remaining
+            local[att.id] = build_local_index(att, conversation_id, text, content)
+    return full, remaining, local
 
 
 def _format_chunk_location(
